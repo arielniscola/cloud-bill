@@ -13,14 +13,16 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = createProductSchema.partial();
 
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 export const productQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
-  search: z.string().optional(),
-  categoryId: z.string().uuid().optional(),
-  isActive: z.string().transform((v) => v === 'true').optional(),
-  minPrice: z.string().transform(Number).optional(),
-  maxPrice: z.string().transform(Number).optional(),
+  search: z.preprocess(emptyToUndefined, z.string().optional()),
+  categoryId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  isActive: z.preprocess(emptyToUndefined, z.string().transform((v) => v === 'true').optional()),
+  minPrice: z.preprocess(emptyToUndefined, z.string().transform(Number).optional()),
+  maxPrice: z.preprocess(emptyToUndefined, z.string().transform(Number).optional()),
 });
 
 export type CreateProductDTO = z.infer<typeof createProductSchema>;

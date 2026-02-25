@@ -13,6 +13,7 @@ const currentAccountController = new CurrentAccountController();
 
 router.use(authMiddleware);
 
+router.get('/', currentAccountController.findAll);
 router.get('/customer/:customerId', currentAccountController.findByCustomerId);
 router.get('/customer/:customerId/balance', currentAccountController.getBalance);
 router.get(

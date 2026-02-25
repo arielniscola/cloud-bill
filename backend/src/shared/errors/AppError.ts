@@ -46,9 +46,9 @@ export class ConflictError extends AppError {
 }
 
 export class InsufficientStockError extends AppError {
-  constructor(productId: string, available: number, requested: number) {
+  constructor(productName: string, available: number, requested: number) {
     super(
-      `Insufficient stock for product ${productId}. Available: ${available}, Requested: ${requested}`,
+      `Stock insuficiente para "${productName}". Disponible: ${available}, Solicitado: ${requested}`,
       400
     );
   }

@@ -27,7 +27,7 @@ export class ProductController {
 
       res.status(201).json({
         status: 'success',
-        data: { product },
+        data: product,
       });
     } catch (error) {
       next(error);
@@ -45,7 +45,7 @@ export class ProductController {
 
       res.json({
         status: 'success',
-        data: { product },
+        data: product,
       });
     } catch (error) {
       next(error);
@@ -64,7 +64,7 @@ export class ProductController {
 
       res.json({
         status: 'success',
-        data: result,
+        ...result,
       });
     } catch (error) {
       next(error);
@@ -101,7 +101,7 @@ export class ProductController {
 
       res.json({
         status: 'success',
-        data: { product },
+        data: product,
       });
     } catch (error) {
       next(error);

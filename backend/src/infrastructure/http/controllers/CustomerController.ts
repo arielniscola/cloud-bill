@@ -5,6 +5,7 @@ import { GetCustomerUseCase } from '../../../application/use-cases/customers/Get
 import { ListCustomersUseCase } from '../../../application/use-cases/customers/ListCustomersUseCase';
 import { UpdateCustomerUseCase } from '../../../application/use-cases/customers/UpdateCustomerUseCase';
 import { DeleteCustomerUseCase } from '../../../application/use-cases/customers/DeleteCustomerUseCase';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 
 export class CustomerController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -12,9 +13,18 @@ export class CustomerController {
       const useCase = container.resolve(CreateCustomerUseCase);
       const customer = await useCase.execute(req.body);
 
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Customer',
+        entityId: customer.id,
+        description: `Cliente ${customer.name} creado`,
+      });
+
       res.status(201).json({
         status: 'success',
-        data: { customer },
+        data: customer,
       });
     } catch (error) {
       next(error);
@@ -28,7 +38,7 @@ export class CustomerController {
 
       res.json({
         status: 'success',
-        data: { customer },
+        data: customer,
       });
     } catch (error) {
       next(error);
@@ -47,7 +57,7 @@ export class CustomerController {
 
       res.json({
         status: 'success',
-        data: result,
+        ...result,
       });
     } catch (error) {
       next(error);
@@ -59,9 +69,18 @@ export class CustomerController {
       const useCase = container.resolve(UpdateCustomerUseCase);
       const customer = await useCase.execute(req.params.id, req.body);
 
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Customer',
+        entityId: customer.id,
+        description: `Cliente ${customer.name} actualizado`,
+      });
+
       res.json({
         status: 'success',
-        data: { customer },
+        data: customer,
       });
     } catch (error) {
       next(error);
@@ -72,6 +91,15 @@ export class CustomerController {
     try {
       const useCase = container.resolve(DeleteCustomerUseCase);
       await useCase.execute(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Customer',
+        entityId: req.params.id,
+        description: `Cliente ${req.params.id} eliminado`,
+      });
 
       res.status(204).send();
     } catch (error) {

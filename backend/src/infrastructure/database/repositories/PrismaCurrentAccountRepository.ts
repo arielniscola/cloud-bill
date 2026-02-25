@@ -7,7 +7,7 @@ import {
   AccountMovement,
   CreateAccountMovementInput,
 } from '../../../domain/entities/CurrentAccount';
-import { PaginationParams, PaginatedResult } from '../../../shared/types';
+import { PaginationParams, PaginatedResult, Currency } from '../../../shared/types';
 import prisma from '../prisma';
 
 @injectable()
@@ -25,17 +25,31 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     });
   }
 
-  async findByCustomerId(customerId: string): Promise<CurrentAccount | null> {
-    return this.prisma.currentAccount.findUnique({
+  async findByCustomerId(customerId: string, currency?: Currency): Promise<CurrentAccount | null> {
+    if (currency) {
+      return this.prisma.currentAccount.findUnique({
+        where: { customerId_currency: { customerId, currency } },
+        include: { customer: true },
+      });
+    }
+    return this.prisma.currentAccount.findFirst({
       where: { customerId },
       include: { customer: true },
     });
   }
 
-  async createForCustomer(customerId: string, creditLimit?: number): Promise<CurrentAccount> {
+  async findAllByCustomerId(customerId: string): Promise<CurrentAccount[]> {
+    return this.prisma.currentAccount.findMany({
+      where: { customerId },
+      include: { customer: true },
+    });
+  }
+
+  async createForCustomer(customerId: string, currency: Currency, creditLimit?: number): Promise<CurrentAccount> {
     return this.prisma.currentAccount.create({
       data: {
         customerId,
+        currency,
         creditLimit: creditLimit !== undefined ? new Decimal(creditLimit) : null,
       },
     });
@@ -82,6 +96,7 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
           balance: newBalance,
           description: data.description,
           invoiceId: data.invoiceId,
+          cashRegisterId: data.cashRegisterId,
         },
       });
     });
@@ -114,11 +129,18 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     };
   }
 
-  async getBalance(customerId: string): Promise<number> {
+  async getBalance(customerId: string, currency: Currency): Promise<number> {
     const account = await this.prisma.currentAccount.findUnique({
-      where: { customerId },
+      where: { customerId_currency: { customerId, currency } },
     });
 
     return account ? account.balance.toNumber() : 0;
+  }
+
+  async findAllWithDebt(): Promise<CurrentAccount[]> {
+    return this.prisma.currentAccount.findMany({
+      where: { balance: { gt: 0 } },
+      include: { customer: true },
+    });
   }
 }

@@ -17,7 +17,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: { stock },
+        data: stock,
       });
     } catch (error) {
       next(error);
@@ -31,7 +31,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: { stocks },
+        data: stocks,
       });
     } catch (error) {
       next(error);
@@ -45,7 +45,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: { stocks },
+        data: stocks,
       });
     } catch (error) {
       next(error);
@@ -67,7 +67,7 @@ export class StockController {
 
       res.status(201).json({
         status: 'success',
-        data: { movement },
+        data: movement,
       });
     } catch (error) {
       next(error);
@@ -110,7 +110,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: result,
+        ...result,
       });
     } catch (error) {
       next(error);
@@ -126,7 +126,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: { stocks },
+        data: stocks,
       });
     } catch (error) {
       next(error);
@@ -146,7 +146,7 @@ export class StockController {
 
       res.json({
         status: 'success',
-        data: { stock },
+        data: stock,
       });
     } catch (error) {
       next(error);

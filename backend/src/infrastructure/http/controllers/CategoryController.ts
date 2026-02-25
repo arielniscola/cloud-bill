@@ -15,7 +15,7 @@ export class CategoryController {
 
       res.status(201).json({
         status: 'success',
-        data: { category },
+        data: category,
       });
     } catch (error) {
       next(error);
@@ -33,7 +33,7 @@ export class CategoryController {
 
       res.json({
         status: 'success',
-        data: { category },
+        data: category,
       });
     } catch (error) {
       next(error);
@@ -47,7 +47,7 @@ export class CategoryController {
 
       res.json({
         status: 'success',
-        data: { categories },
+        data: categories,
       });
     } catch (error) {
       next(error);
@@ -70,7 +70,7 @@ export class CategoryController {
 
       res.json({
         status: 'success',
-        data: { category },
+        data: category,
       });
     } catch (error) {
       next(error);

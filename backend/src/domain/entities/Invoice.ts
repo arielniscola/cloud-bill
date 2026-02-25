@@ -1,5 +1,5 @@
 import { Decimal } from '@prisma/client/runtime/library';
-import { InvoiceType, InvoiceStatus } from '../../shared/types';
+import { InvoiceType, InvoiceStatus, Currency } from '../../shared/types';
 
 export interface Invoice {
   id: string;
@@ -12,8 +12,14 @@ export interface Invoice {
   subtotal: Decimal;
   taxAmount: Decimal;
   total: Decimal;
+  currency: Currency;
+  exchangeRate: Decimal;
   status: InvoiceStatus;
   notes: string | null;
+  cae: string | null;
+  caeExpiry: Date | null;
+  afipPtVenta: number | null;
+  afipCbtNum: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +53,8 @@ export interface CreateInvoiceInput {
   userId: string;
   dueDate?: Date;
   notes?: string;
+  currency: Currency;
+  exchangeRate: number;
   items: CreateInvoiceItemInput[];
 }
 

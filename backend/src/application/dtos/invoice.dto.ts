@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 const invoiceItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().positive('Quantity must be positive'),
@@ -20,8 +22,10 @@ export const createInvoiceSchema = z.object({
     'NOTA_DEBITO_C',
   ]),
   customerId: z.string().uuid(),
-  dueDate: z.string().datetime().optional(),
-  notes: z.string().optional(),
+  dueDate: z.preprocess(emptyToUndefined, z.string().optional()),
+  notes: z.preprocess(emptyToUndefined, z.string().optional()),
+  currency: z.enum(['ARS', 'USD']).default('ARS'),
+  exchangeRate: z.number().positive().default(1),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
 });
 
@@ -29,14 +33,19 @@ export const updateInvoiceStatusSchema = z.object({
   status: z.enum(['DRAFT', 'ISSUED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']),
 });
 
+export const payInvoiceSchema = z.object({
+  cashRegisterId: z.string().uuid('ID de caja inválido'),
+});
+
 export const invoiceQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
-  customerId: z.string().uuid().optional(),
-  userId: z.string().uuid().optional(),
-  status: z.enum(['DRAFT', 'ISSUED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']).optional(),
-  type: z
-    .enum([
+  customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  userId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  status: z.preprocess(emptyToUndefined, z.enum(['DRAFT', 'ISSUED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']).optional()),
+  type: z.preprocess(
+    emptyToUndefined,
+    z.enum([
       'FACTURA_A',
       'FACTURA_B',
       'FACTURA_C',
@@ -46,12 +55,14 @@ export const invoiceQuerySchema = z.object({
       'NOTA_DEBITO_A',
       'NOTA_DEBITO_B',
       'NOTA_DEBITO_C',
-    ])
-    .optional(),
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
+    ]).optional(),
+  ),
+  dateFrom: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
+  currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD']).optional()),
 });
 
 export type CreateInvoiceDTO = z.infer<typeof createInvoiceSchema>;
 export type UpdateInvoiceStatusDTO = z.infer<typeof updateInvoiceStatusSchema>;
+export type PayInvoiceDTO = z.infer<typeof payInvoiceSchema>;
 export type InvoiceQueryDTO = z.infer<typeof invoiceQuerySchema>;

@@ -36,7 +36,7 @@ export class CreateCustomerUseCase {
       isActive: data.isActive,
     });
 
-    await this.currentAccountRepository.createForCustomer(customer.id);
+    await this.currentAccountRepository.createForCustomer(customer.id, 'ARS');
 
     return customer;
   }

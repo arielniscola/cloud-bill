@@ -5,6 +5,7 @@ import { validate } from '../middlewares/validationMiddleware';
 import {
   createInvoiceSchema,
   updateInvoiceStatusSchema,
+  payInvoiceSchema,
   invoiceQuerySchema,
 } from '../../../application/dtos/invoice.dto';
 
@@ -21,12 +22,25 @@ router.post(
 );
 router.get('/', validate({ query: invoiceQuerySchema }), invoiceController.findAll);
 router.get('/:id', invoiceController.findById);
+router.put(
+  '/:id',
+  requireRoles('ADMIN', 'SELLER'),
+  validate({ body: createInvoiceSchema }),
+  invoiceController.updateDraft
+);
 router.patch(
   '/:id/status',
   requireRoles('ADMIN'),
   validate({ body: updateInvoiceStatusSchema }),
   invoiceController.updateStatus
 );
+router.post(
+  '/:id/pay',
+  requireRoles('ADMIN', 'SELLER'),
+  validate({ body: payInvoiceSchema }),
+  invoiceController.pay
+);
 router.post('/:id/cancel', requireRoles('ADMIN'), invoiceController.cancel);
+router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), invoiceController.emit);
 
 export { router as invoiceRoutes };

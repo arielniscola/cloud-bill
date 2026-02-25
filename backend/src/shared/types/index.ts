@@ -21,6 +21,8 @@ export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED' | 'PARTIAL
 
 export type MovementType = 'DEBIT' | 'CREDIT';
 
+export type Currency = 'ARS' | 'USD';
+
 export type StockMovementType =
   | 'PURCHASE'
   | 'SALE'
@@ -28,7 +30,13 @@ export type StockMovementType =
   | 'ADJUSTMENT_OUT'
   | 'TRANSFER_IN'
   | 'TRANSFER_OUT'
-  | 'RETURN';
+  | 'RETURN'
+  | 'REMITO_OUT'
+  | 'RESERVATION'
+  | 'RESERVATION_RELEASE';
+
+export type RemitoStatus = 'PENDING' | 'PARTIALLY_DELIVERED' | 'DELIVERED' | 'CANCELLED';
+export type StockBehavior = 'DISCOUNT' | 'RESERVE';
 
 export interface PaginationParams {
   page?: number;

@@ -18,14 +18,17 @@ export const createCustomerSchema = z.object({
 
 export const updateCustomerSchema = createCustomerSchema.partial();
 
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 export const customerQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
-  search: z.string().optional(),
-  taxCondition: z
-    .enum(['RESPONSABLE_INSCRIPTO', 'MONOTRIBUTISTA', 'EXENTO', 'CONSUMIDOR_FINAL'])
-    .optional(),
-  isActive: z.string().transform((v) => v === 'true').optional(),
+  search: z.preprocess(emptyToUndefined, z.string().optional()),
+  taxCondition: z.preprocess(
+    emptyToUndefined,
+    z.enum(['RESPONSABLE_INSCRIPTO', 'MONOTRIBUTISTA', 'EXENTO', 'CONSUMIDOR_FINAL']).optional(),
+  ),
+  isActive: z.preprocess(emptyToUndefined, z.string().transform((v) => v === 'true').optional()),
 });
 
 export type CreateCustomerDTO = z.infer<typeof createCustomerSchema>;

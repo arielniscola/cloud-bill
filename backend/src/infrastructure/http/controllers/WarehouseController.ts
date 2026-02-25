@@ -17,7 +17,7 @@ export class WarehouseController {
 
       res.status(201).json({
         status: 'success',
-        data: { warehouse },
+        data: warehouse,
       });
     } catch (error) {
       next(error);
@@ -35,7 +35,7 @@ export class WarehouseController {
 
       res.json({
         status: 'success',
-        data: { warehouse },
+        data: warehouse,
       });
     } catch (error) {
       next(error);
@@ -49,7 +49,7 @@ export class WarehouseController {
 
       res.json({
         status: 'success',
-        data: { warehouses },
+        data: warehouses,
       });
     } catch (error) {
       next(error);
@@ -74,7 +74,7 @@ export class WarehouseController {
 
       res.json({
         status: 'success',
-        data: { warehouse },
+        data: warehouse,
       });
     } catch (error) {
       next(error);

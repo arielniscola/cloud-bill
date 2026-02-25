@@ -1,9 +1,10 @@
 import { Decimal } from '@prisma/client/runtime/library';
-import { MovementType } from '../../shared/types';
+import { MovementType, Currency } from '../../shared/types';
 
 export interface CurrentAccount {
   id: string;
   customerId: string;
+  currency: Currency;
   balance: Decimal;
   creditLimit: Decimal | null;
   createdAt: Date;
@@ -18,6 +19,7 @@ export interface AccountMovement {
   balance: Decimal;
   description: string;
   invoiceId: string | null;
+  cashRegisterId: string | null;
   createdAt: Date;
 }
 
@@ -27,4 +29,5 @@ export interface CreateAccountMovementInput {
   amount: number;
   description: string;
   invoiceId?: string;
+  cashRegisterId?: string;
 }

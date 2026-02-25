@@ -61,6 +61,10 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       where.type = filters.type;
     }
 
+    if (filters.currency) {
+      where.currency = filters.currency;
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -128,6 +132,8 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         subtotal,
         taxAmount,
         total,
+        currency: data.currency,
+        exchangeRate: new Decimal(data.exchangeRate),
         items: {
           create: items,
         },
@@ -144,6 +150,55 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     return this.prisma.invoice.update({
       where: { id },
       data,
+    });
+  }
+
+  async updateWithItems(id: string, data: CreateInvoiceInput): Promise<InvoiceWithItems> {
+    const items = data.items.map((item) => {
+      const subtotal = new Decimal(item.quantity).times(item.unitPrice);
+      const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
+      const total = subtotal.plus(taxAmount);
+
+      return {
+        productId: item.productId,
+        quantity: new Decimal(item.quantity),
+        unitPrice: new Decimal(item.unitPrice),
+        taxRate: new Decimal(item.taxRate),
+        subtotal,
+        taxAmount,
+        total,
+      };
+    });
+
+    const subtotal = items.reduce((acc, item) => acc.plus(item.subtotal), new Decimal(0));
+    const taxAmount = items.reduce((acc, item) => acc.plus(item.taxAmount), new Decimal(0));
+    const total = subtotal.plus(taxAmount);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+
+      return tx.invoice.update({
+        where: { id },
+        data: {
+          type: data.type,
+          customerId: data.customerId,
+          dueDate: data.dueDate ?? null,
+          notes: data.notes ?? null,
+          subtotal,
+          taxAmount,
+          total,
+          currency: data.currency,
+          exchangeRate: new Decimal(data.exchangeRate),
+          items: {
+            create: items,
+          },
+        },
+        include: {
+          items: true,
+          customer: true,
+          user: true,
+        },
+      });
     });
   }
 

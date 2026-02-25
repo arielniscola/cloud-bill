@@ -27,11 +27,13 @@ export const setMinQuantitySchema = z.object({
   minQuantity: z.number().min(0).nullable(),
 });
 
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 export const stockQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
-  productId: z.string().uuid().optional(),
-  warehouseId: z.string().uuid().optional(),
+  productId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  warehouseId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 
 export type StockMovementDTO = z.infer<typeof stockMovementSchema>;

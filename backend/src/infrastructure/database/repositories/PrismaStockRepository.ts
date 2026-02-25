@@ -95,19 +95,21 @@ export class PrismaStockRepository implements IStockRepository {
             warehouseId: data.warehouseId,
           },
         },
+        include: { product: true },
       });
 
       const previousQuantity = currentStock?.quantity ?? new Decimal(0);
       const quantity = new Decimal(data.quantity);
       let newQuantity: Decimal;
 
-      const isOutgoing = ['SALE', 'ADJUSTMENT_OUT', 'TRANSFER_OUT'].includes(data.type);
+      const isOutgoing = ['SALE', 'ADJUSTMENT_OUT', 'TRANSFER_OUT', 'REMITO_OUT'].includes(data.type);
 
       if (isOutgoing) {
         newQuantity = previousQuantity.minus(quantity);
         if (newQuantity.lessThan(0)) {
+          const productName = currentStock?.product?.name ?? data.productId;
           throw new InsufficientStockError(
-            data.productId,
+            productName,
             previousQuantity.toNumber(),
             quantity.toNumber()
           );
