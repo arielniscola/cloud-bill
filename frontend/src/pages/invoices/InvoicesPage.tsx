@@ -12,9 +12,10 @@ import {
   INVOICE_STATUSES,
   INVOICE_STATUS_COLORS,
   INVOICE_STATUS_OPTIONS,
+  CURRENCY_OPTIONS,
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';
-import type { Invoice, InvoiceStatus } from '../../types';
+import type { Invoice, InvoiceStatus, Currency } from '../../types';
 
 export default function InvoicesPage() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function InvoicesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [currencyFilter, setCurrencyFilter] = useState<string>('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
@@ -33,6 +35,7 @@ export default function InvoicesPage() {
         page,
         limit,
         status: statusFilter as InvoiceStatus | undefined,
+        currency: (currencyFilter || undefined) as Currency | undefined,
       });
       setInvoices(response.data);
       setTotal(response.total);
@@ -41,7 +44,7 @@ export default function InvoicesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, statusFilter]);
+  }, [page, limit, statusFilter, currencyFilter]);
 
   useEffect(() => {
     fetchInvoices();
@@ -50,6 +53,11 @@ export default function InvoicesPage() {
   const statusOptions = [
     { value: '', label: 'Todos los estados' },
     ...INVOICE_STATUS_OPTIONS,
+  ];
+
+  const currencyOptions = [
+    { value: '', label: 'Todas las monedas' },
+    ...CURRENCY_OPTIONS,
   ];
 
   const columns: Column<Invoice>[] = [
@@ -70,9 +78,14 @@ export default function InvoicesPage() {
       render: (invoice) => formatDate(invoice.date),
     },
     {
+      key: 'currency',
+      header: 'Moneda',
+      render: (invoice) => invoice.currency,
+    },
+    {
       key: 'total',
       header: 'Total',
-      render: (invoice) => formatCurrency(invoice.total),
+      render: (invoice) => formatCurrency(invoice.total, invoice.currency),
     },
     {
       key: 'status',
@@ -130,6 +143,15 @@ export default function InvoicesPage() {
             value={statusFilter}
             onChange={(value) => {
               setStatusFilter(value);
+              setPage(1);
+            }}
+            className="w-48"
+          />
+          <Select
+            options={currencyOptions}
+            value={currencyFilter}
+            onChange={(value) => {
+              setCurrencyFilter(value);
               setPage(1);
             }}
             className="w-48"

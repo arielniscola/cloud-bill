@@ -9,10 +9,10 @@ export default function MainLayout() {
 
   if (menuType === 'navbar') {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-50">
         <Navbar />
         <main className="pt-16">
-          <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="max-w-7xl mx-auto px-6 py-6">
             <Outlet />
           </div>
         </main>
@@ -21,15 +21,15 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       <Sidebar />
       <main
         className={clsx(
-          'transition-all duration-300',
+          'transition-all duration-300 min-h-screen',
           sidebarOpen ? 'ml-64' : 'ml-20'
         )}
       >
-        <div className="p-6">
+        <div className="p-6 max-w-[1400px]">
           <Outlet />
         </div>
       </main>

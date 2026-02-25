@@ -5,13 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { DollarSign, Settings } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Card, Badge, Button, Modal, Input } from '../../components/ui';
+import { Card, Badge, Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, DataTable } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { currentAccountsService, customersService } from '../../services';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
-import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
-import type { Customer, CurrentAccount, AccountMovement } from '../../types';
+import { CURRENCY_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import type { Customer, CurrentAccount, AccountMovement, Currency } from '../../types';
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
@@ -29,9 +29,11 @@ export default function AccountDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [account, setAccount] = useState<CurrentAccount | null>(null);
+  const [accounts, setAccounts] = useState<CurrentAccount[]>([]);
   const [movements, setMovements] = useState<AccountMovement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>('ARS');
+  const [paymentCurrency, setPaymentCurrency] = useState<Currency>('ARS');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
@@ -51,22 +53,34 @@ export default function AccountDetailPage() {
     if (!customerId) return;
     setIsLoading(true);
     try {
-      const [customerData, accountData, movementsData] = await Promise.all([
+      const [customerData, accountsData] = await Promise.all([
         customersService.getById(customerId),
         currentAccountsService.getByCustomerId(customerId),
-        currentAccountsService.getMovements(customerId, { page, limit }),
       ]);
       setCustomer(customerData);
-      setAccount(accountData);
-      setMovements(movementsData.data);
-      setTotal(movementsData.total);
+      setAccounts(accountsData);
+
+      // Fetch movements for selected currency
+      const selectedAccount = accountsData.find((a: CurrentAccount) => a.currency === selectedCurrency);
+      if (selectedAccount) {
+        const movementsData = await currentAccountsService.getMovements(customerId, {
+          page,
+          limit,
+          currency: selectedCurrency,
+        });
+        setMovements(movementsData.data);
+        setTotal(movementsData.total);
+      } else {
+        setMovements([]);
+        setTotal(0);
+      }
     } catch (error) {
       toast.error('Error al cargar cuenta corriente');
       navigate('/current-accounts');
     } finally {
       setIsLoading(false);
     }
-  }, [customerId, page, limit, navigate]);
+  }, [customerId, page, limit, selectedCurrency, navigate]);
 
   useEffect(() => {
     fetchData();
@@ -76,7 +90,10 @@ export default function AccountDetailPage() {
     if (!customerId) return;
     setIsSaving(true);
     try {
-      await currentAccountsService.registerPayment(customerId, data);
+      await currentAccountsService.registerPayment(customerId, {
+        ...data,
+        currency: paymentCurrency,
+      });
       toast.success('Pago registrado');
       setIsPaymentModalOpen(false);
       paymentForm.reset();
@@ -107,6 +124,9 @@ export default function AccountDetailPage() {
     }
   };
 
+  const arsAccount = accounts.find((a) => a.currency === 'ARS');
+  const usdAccount = accounts.find((a) => a.currency === 'USD');
+
   const columns: Column<AccountMovement>[] = [
     {
       key: 'createdAt',
@@ -129,27 +149,65 @@ export default function AccountDetailPage() {
       render: (mov) => (
         <span className={mov.type === 'CREDIT' ? 'text-green-600' : 'text-red-600'}>
           {mov.type === 'CREDIT' ? '+' : '-'}
-          {formatCurrency(mov.amount)}
+          {formatCurrency(mov.amount, selectedCurrency)}
         </span>
       ),
     },
     {
       key: 'balance',
       header: 'Saldo',
-      render: (mov) => formatCurrency(mov.balance),
+      render: (mov) => formatCurrency(mov.balance, selectedCurrency),
     },
   ];
 
-  if (isLoading || !customer || !account) {
+  if (isLoading && !customer) {
     return <div className="p-6">Cargando...</div>;
   }
 
-  const balanceStatus =
-    account.balance > 0
-      ? 'deudor'
-      : account.balance < 0
-      ? 'acreedor'
-      : 'saldado';
+  if (!customer) {
+    return <div className="p-6">Cargando...</div>;
+  }
+
+  const getBalanceStatus = (balance: number) =>
+    balance > 0 ? 'deudor' : balance < 0 ? 'acreedor' : 'saldado';
+
+  const renderAccountCard = (account: CurrentAccount | undefined, currency: Currency) => {
+    const balance = account?.balance ?? 0;
+    const balanceStatus = getBalanceStatus(balance);
+
+    return (
+      <Card>
+        <p className="text-sm text-gray-500">Saldo {currency}</p>
+        <p
+          className={`text-2xl font-bold ${
+            balance > 0
+              ? 'text-red-600'
+              : balance < 0
+              ? 'text-green-600'
+              : 'text-gray-900'
+          }`}
+        >
+          {formatCurrency(Math.abs(balance), currency)}
+        </p>
+        <Badge
+          variant={
+            balanceStatus === 'deudor'
+              ? 'error'
+              : balanceStatus === 'acreedor'
+              ? 'success'
+              : 'default'
+          }
+          className="mt-2"
+        >
+          {balanceStatus === 'deudor'
+            ? 'Cliente debe'
+            : balanceStatus === 'acreedor'
+            ? 'A favor del cliente'
+            : 'Sin saldo'}
+        </Badge>
+      </Card>
+    );
+  };
 
   return (
     <div>
@@ -171,45 +229,8 @@ export default function AccountDetailPage() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <p className="text-sm text-gray-500">Saldo actual</p>
-          <p
-            className={`text-2xl font-bold ${
-              account.balance > 0
-                ? 'text-red-600'
-                : account.balance < 0
-                ? 'text-green-600'
-                : 'text-gray-900'
-            }`}
-          >
-            {formatCurrency(Math.abs(account.balance))}
-          </p>
-          <Badge
-            variant={
-              balanceStatus === 'deudor'
-                ? 'error'
-                : balanceStatus === 'acreedor'
-                ? 'success'
-                : 'default'
-            }
-            className="mt-2"
-          >
-            {balanceStatus === 'deudor'
-              ? 'Cliente debe'
-              : balanceStatus === 'acreedor'
-              ? 'A favor del cliente'
-              : 'Sin saldo'}
-          </Badge>
-        </Card>
-
-        <Card>
-          <p className="text-sm text-gray-500">Límite de crédito</p>
-          <p className="text-2xl font-bold text-gray-900">
-            {account.creditLimit !== null
-              ? formatCurrency(account.creditLimit)
-              : 'Sin límite'}
-          </p>
-        </Card>
+        {renderAccountCard(arsAccount, 'ARS')}
+        {renderAccountCard(usdAccount, 'USD')}
 
         <Card>
           <p className="text-sm text-gray-500">CUIT/CUIL</p>
@@ -227,10 +248,19 @@ export default function AccountDetailPage() {
       </div>
 
       <Card padding="none">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">
             Historial de movimientos
           </h3>
+          <Select
+            options={CURRENCY_OPTIONS}
+            value={selectedCurrency}
+            onChange={(value) => {
+              setSelectedCurrency(value as Currency);
+              setPage(1);
+            }}
+            className="w-48"
+          />
         </div>
         <DataTable
           columns={columns}
@@ -262,6 +292,13 @@ export default function AccountDetailPage() {
           onSubmit={paymentForm.handleSubmit(handlePayment)}
           className="space-y-4"
         >
+          <Select
+            label="Moneda"
+            options={CURRENCY_OPTIONS}
+            value={paymentCurrency}
+            onChange={(value) => setPaymentCurrency(value as Currency)}
+          />
+
           <Input
             label="Monto *"
             type="number"

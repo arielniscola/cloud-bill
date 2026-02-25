@@ -1,5 +1,5 @@
 import type { Customer } from './customer.types';
-import type { Invoice } from './invoice.types';
+import type { Invoice, Currency } from './invoice.types';
 
 export type MovementType = 'DEBIT' | 'CREDIT';
 
@@ -19,6 +19,7 @@ export interface CurrentAccount {
   id: string;
   customerId: string;
   customer?: Customer;
+  currency: Currency;
   balance: number;
   creditLimit: number | null;
   movements?: AccountMovement[];
@@ -29,6 +30,7 @@ export interface CurrentAccount {
 export interface RegisterPaymentDTO {
   amount: number;
   description?: string;
+  currency: Currency;
 }
 
 export interface SetCreditLimitDTO {

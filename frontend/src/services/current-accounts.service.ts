@@ -10,23 +10,24 @@ import type {
 } from '../types';
 
 export const currentAccountsService = {
-  async getByCustomerId(customerId: string): Promise<CurrentAccount> {
-    const response = await api.get<ApiResponse<CurrentAccount>>(
+  async getByCustomerId(customerId: string): Promise<CurrentAccount[]> {
+    const response = await api.get<ApiResponse<CurrentAccount[]>>(
       `/current-accounts/customer/${customerId}`
     );
     return response.data.data;
   },
 
-  async getBalance(customerId: string): Promise<{ balance: number }> {
+  async getBalance(customerId: string, currency?: string): Promise<{ balance: number }> {
     const response = await api.get<ApiResponse<{ balance: number }>>(
-      `/current-accounts/customer/${customerId}/balance`
+      `/current-accounts/customer/${customerId}/balance`,
+      { params: { currency } }
     );
     return response.data.data;
   },
 
   async getMovements(
     customerId: string,
-    filters?: AccountMovementFilters
+    filters?: AccountMovementFilters & { currency?: string }
   ): Promise<PaginatedResponse<AccountMovement>> {
     const response = await api.get<PaginatedResponse<AccountMovement>>(
       `/current-accounts/customer/${customerId}/movements`,
@@ -54,6 +55,13 @@ export const currentAccountsService = {
       `/current-accounts/customer/${customerId}/credit-limit`,
       data
     );
+    return response.data.data;
+  },
+
+  async getAllWithDebt(): Promise<CurrentAccount[]> {
+    const response = await api.get<ApiResponse<CurrentAccount[]>>('/current-accounts', {
+      params: { hasDebt: 'true' },
+    });
     return response.data.data;
   },
 };

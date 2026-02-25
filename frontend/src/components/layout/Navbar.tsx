@@ -17,6 +17,7 @@ import {
   User,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores';
+import NotificationBell from '../notifications/NotificationBell';
 
 interface NavItem {
   name: string;
@@ -135,7 +136,9 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* User Menu */}
+          {/* Notifications + User Menu */}
+          <div className="flex items-center gap-2">
+          <NotificationBell />
           <Menu as="div" className="relative">
             <Menu.Button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100">
               <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
@@ -195,6 +198,7 @@ export default function Navbar() {
               </Menu.Items>
             </Transition>
           </Menu>
+          </div>
         </div>
       </div>
     </nav>

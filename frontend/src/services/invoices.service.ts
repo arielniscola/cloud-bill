@@ -3,6 +3,7 @@ import type {
   Invoice,
   CreateInvoiceDTO,
   UpdateInvoiceStatusDTO,
+  PayInvoiceDTO,
   InvoiceFilters,
   ApiResponse,
   PaginatedResponse,
@@ -26,9 +27,22 @@ export const invoicesService = {
     return response.data.data;
   },
 
+  async update(id: string, data: CreateInvoiceDTO): Promise<Invoice> {
+    const response = await api.put<ApiResponse<Invoice>>(`/invoices/${id}`, data);
+    return response.data.data;
+  },
+
   async updateStatus(id: string, data: UpdateInvoiceStatusDTO): Promise<Invoice> {
     const response = await api.patch<ApiResponse<Invoice>>(
       `/invoices/${id}/status`,
+      data
+    );
+    return response.data.data;
+  },
+
+  async pay(id: string, data: PayInvoiceDTO): Promise<Invoice> {
+    const response = await api.post<ApiResponse<Invoice>>(
+      `/invoices/${id}/pay`,
       data
     );
     return response.data.data;

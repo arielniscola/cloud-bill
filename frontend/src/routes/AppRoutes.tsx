@@ -20,7 +20,18 @@ import InvoiceFormPage from '../pages/invoices/InvoiceFormPage';
 import InvoiceDetailPage from '../pages/invoices/InvoiceDetailPage';
 import CurrentAccountsPage from '../pages/current-accounts/CurrentAccountsPage';
 import AccountDetailPage from '../pages/current-accounts/AccountDetailPage';
+import RemitosPage from '../pages/remitos/RemitosPage';
+import RemitoFormPage from '../pages/remitos/RemitoFormPage';
+import RemitoDetailPage from '../pages/remitos/RemitoDetailPage';
+import CashRegistersPage from '../pages/cash-registers/CashRegistersPage';
+import CashRegisterFormPage from '../pages/cash-registers/CashRegisterFormPage';
 import SettingsPage from '../pages/settings/SettingsPage';
+import ActivityPage from '../pages/activity/ActivityPage';
+import IvaPage from '../pages/iva/IvaPage';
+import SuppliersPage from '../pages/suppliers/SuppliersPage';
+import SupplierFormPage from '../pages/suppliers/SupplierFormPage';
+import PurchasesPage from '../pages/purchases/PurchasesPage';
+import PurchaseFormPage from '../pages/purchases/PurchaseFormPage';
 
 export default function AppRoutes() {
   return (
@@ -64,14 +75,40 @@ export default function AppRoutes() {
         {/* Invoices */}
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoices/new" element={<InvoiceFormPage />} />
+        <Route path="/invoices/:id/edit" element={<InvoiceFormPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+
+        {/* Remitos */}
+        <Route path="/remitos" element={<RemitosPage />} />
+        <Route path="/remitos/new" element={<RemitoFormPage />} />
+        <Route path="/remitos/:id" element={<RemitoDetailPage />} />
 
         {/* Current Accounts */}
         <Route path="/current-accounts" element={<CurrentAccountsPage />} />
         <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
 
+        {/* Cash Registers */}
+        <Route path="/cash-registers" element={<CashRegistersPage />} />
+        <Route path="/cash-registers/new" element={<CashRegisterFormPage />} />
+        <Route path="/cash-registers/:id/edit" element={<CashRegisterFormPage />} />
+
+        {/* Activity */}
+        <Route path="/activity" element={<ActivityPage />} />
+
         {/* Settings */}
         <Route path="/settings" element={<SettingsPage />} />
+
+        {/* Libro IVA */}
+        <Route path="/iva" element={<IvaPage />} />
+
+        {/* Suppliers */}
+        <Route path="/suppliers" element={<SuppliersPage />} />
+        <Route path="/suppliers/new" element={<SupplierFormPage />} />
+        <Route path="/suppliers/:id/edit" element={<SupplierFormPage />} />
+
+        {/* Purchases */}
+        <Route path="/purchases" element={<PurchasesPage />} />
+        <Route path="/purchases/new" element={<PurchaseFormPage />} />
       </Route>
 
       {/* Catch all */}

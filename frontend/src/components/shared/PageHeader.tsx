@@ -21,21 +21,21 @@ export default function PageHeader({
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {backTo && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate(backTo)}
-              className="p-2"
+              className="p-1.5 text-gray-400 hover:text-gray-700"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
             </Button>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h1>
             {subtitle && (
-              <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+              <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>
             )}
           </div>
         </div>

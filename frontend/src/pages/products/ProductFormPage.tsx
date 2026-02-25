@@ -106,10 +106,18 @@ export default function ProductFormPage() {
     }
   };
 
-  const categoryOptions = [
-    { value: '', label: 'Sin categoría' },
-    ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
-  ];
+  // Opciones jerárquicas: raíces primero, luego sus hijos indentados
+  const categoryOptions = (() => {
+    const opts: { value: string; label: string }[] = [{ value: '', label: 'Sin categoría' }];
+    const roots = categories.filter((c) => !c.parentId);
+    for (const root of roots) {
+      opts.push({ value: root.id, label: root.name });
+      for (const child of root.children ?? []) {
+        opts.push({ value: child.id, label: `\u00A0\u00A0└ ${child.name}` });
+      }
+    }
+    return opts;
+  })();
 
   if (isFetching) {
     return <div className="p-6">Cargando...</div>;

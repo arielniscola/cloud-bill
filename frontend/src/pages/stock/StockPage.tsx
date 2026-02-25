@@ -65,8 +65,32 @@ export default function StockPage() {
     },
     {
       key: 'quantity',
-      header: 'Cantidad',
+      header: 'Stock total',
       render: (stock) => formatNumber(stock.quantity, 0),
+    },
+    {
+      key: 'reservedQuantity',
+      header: 'Reservado',
+      render: (stock) =>
+        stock.reservedQuantity > 0 ? (
+          <span className="text-amber-600 font-medium">
+            {formatNumber(stock.reservedQuantity, 0)}
+          </span>
+        ) : (
+          <span className="text-gray-400">-</span>
+        ),
+    },
+    {
+      key: 'available',
+      header: 'Disponible',
+      render: (stock) => {
+        const available = stock.quantity - stock.reservedQuantity;
+        return (
+          <span className={available <= 0 ? 'text-red-600 font-medium' : 'text-green-700 font-medium'}>
+            {formatNumber(available, 0)}
+          </span>
+        );
+      },
     },
     {
       key: 'minQuantity',
@@ -78,10 +102,14 @@ export default function StockPage() {
       key: 'status',
       header: 'Estado',
       render: (stock) => {
+        const available = stock.quantity - stock.reservedQuantity;
         if (stock.minQuantity === null) {
+          if (stock.reservedQuantity > 0) {
+            return <Badge variant="warning">Con reservas</Badge>;
+          }
           return <Badge variant="default">Sin mínimo</Badge>;
         }
-        if (stock.quantity <= stock.minQuantity) {
+        if (available <= stock.minQuantity) {
           return (
             <Badge variant="warning">
               <AlertTriangle className="w-3 h-3 mr-1" />

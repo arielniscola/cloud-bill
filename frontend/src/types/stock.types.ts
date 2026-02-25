@@ -8,7 +8,10 @@ export type StockMovementType =
   | 'ADJUSTMENT_OUT'
   | 'TRANSFER_IN'
   | 'TRANSFER_OUT'
-  | 'RETURN';
+  | 'RETURN'
+  | 'REMITO_OUT'
+  | 'RESERVATION'
+  | 'RESERVATION_RELEASE';
 
 export interface Stock {
   id: string;
@@ -17,6 +20,7 @@ export interface Stock {
   product?: Product;
   warehouse?: Warehouse;
   quantity: number;
+  reservedQuantity: number;
   minQuantity: number | null;
   updatedAt: string;
 }

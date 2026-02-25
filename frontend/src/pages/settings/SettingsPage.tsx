@@ -1,6 +1,7 @@
 import { PageHeader } from '../../components/shared';
 import { Card, Button } from '../../components/ui';
 import { useUIStore } from '../../stores';
+import AfipSettingsCard from './AfipSettingsCard';
 
 export default function SettingsPage() {
   const { menuType, setMenuType } = useUIStore();
@@ -9,7 +10,7 @@ export default function SettingsPage() {
     <div>
       <PageHeader title="Configuración" subtitle="Personaliza tu experiencia" />
 
-      <div className="max-w-2xl">
+      <div className="max-w-3xl space-y-6">
         <Card>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Tipo de Menú
@@ -32,6 +33,8 @@ export default function SettingsPage() {
             </Button>
           </div>
         </Card>
+
+        <AfipSettingsCard />
       </div>
     </div>
   );

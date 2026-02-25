@@ -65,5 +65,37 @@ export const USER_ROLES = {
   WAREHOUSE_CLERK: 'Empleado de Almacén',
 } as const;
 
+export const CURRENCIES = {
+  ARS: 'Peso Argentino',
+  USD: 'Dólar Estadounidense',
+} as const;
+
+export const CURRENCY_OPTIONS = Object.entries(CURRENCIES).map(
+  ([value, label]) => ({ value, label })
+);
+
+export const REMITO_STATUSES = {
+  PENDING: 'Pendiente',
+  PARTIALLY_DELIVERED: 'Parcialmente Entregado',
+  DELIVERED: 'Entregado',
+  CANCELLED: 'Cancelado',
+} as const;
+
+export const REMITO_STATUS_OPTIONS = Object.entries(REMITO_STATUSES).map(
+  ([value, label]) => ({ value, label })
+);
+
+export const REMITO_STATUS_COLORS: Record<string, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  PARTIALLY_DELIVERED: 'bg-blue-100 text-blue-800',
+  DELIVERED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+};
+
+export const STOCK_BEHAVIOR_OPTIONS = [
+  { value: 'DISCOUNT', label: 'Descontar stock (entrega directa)' },
+  { value: 'RESERVE', label: 'Reservar stock (retiro posterior)' },
+];
+
 export const DEFAULT_PAGE_SIZE = 10;
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];

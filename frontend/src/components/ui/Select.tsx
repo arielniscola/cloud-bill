@@ -42,12 +42,12 @@ export default function Select({
         <div className="relative">
           <Listbox.Button
             className={clsx(
-              'relative w-full cursor-default rounded-lg border bg-white py-2 pl-3 pr-10 text-left shadow-sm sm:text-sm',
+              'relative w-full cursor-default rounded-lg border bg-white py-2 pl-3 pr-10 text-left shadow-sm text-sm transition-colors',
               'focus:outline-none focus:ring-2 focus:ring-offset-0',
               error
-                ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:border-primary-500 focus:ring-primary-500',
-              disabled && 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                : 'border-gray-200 focus:border-primary-500 focus:ring-primary-500/20',
+              disabled && 'bg-gray-50 text-gray-400 cursor-not-allowed'
             )}
           >
             <span
@@ -69,15 +69,15 @@ export default function Select({
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg bg-white py-1 text-sm shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-sm shadow-lg ring-1 ring-gray-200 focus:outline-none">
               {options.map((option) => (
                 <Listbox.Option
                   key={option.value}
                   value={option.value}
                   className={({ active }) =>
                     clsx(
-                      'relative cursor-default select-none py-2 pl-10 pr-4',
-                      active ? 'bg-primary-50 text-primary-900' : 'text-gray-900'
+                      'relative cursor-default select-none py-2 pl-10 pr-4 transition-colors',
+                      active ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
                     )
                   }
                 >

@@ -112,10 +112,11 @@ export default function CategoriesPage() {
     }
   };
 
+  // Solo categorías raíz pueden ser padre (evita jerarquías de 3+ niveles)
   const parentOptions = [
     { value: '', label: 'Sin categoría padre' },
     ...categories
-      .filter((cat) => cat.id !== editingCategory?.id)
+      .filter((cat) => !cat.parentId && cat.id !== editingCategory?.id)
       .map((cat) => ({ value: cat.id, label: cat.name })),
   ];
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,8 +9,8 @@ import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { invoicesService, customersService, productsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import { INVOICE_TYPE_OPTIONS } from '../../utils/constants';
-import type { Customer, Product, InvoiceType } from '../../types';
+import { INVOICE_TYPE_OPTIONS, CURRENCY_OPTIONS } from '../../utils/constants';
+import type { Customer, Product, InvoiceType, Currency } from '../../types';
 
 const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Selecciona un producto'),
@@ -35,6 +35,8 @@ const invoiceSchema = z.object({
   date: z.string().optional(),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  currency: z.enum(['ARS', 'USD']).default('ARS'),
+  exchangeRate: z.coerce.number().positive('Tipo de cambio debe ser mayor a 0').default(1),
   items: z.array(invoiceItemSchema).min(1, 'Agrega al menos un item'),
 });
 
@@ -42,9 +44,12 @@ type InvoiceFormData = z.output<typeof invoiceSchema>;
 
 export default function InvoiceFormPage() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditing = !!id;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(isEditing);
 
   const {
     register,
@@ -52,11 +57,14 @@ export default function InvoiceFormPage() {
     handleSubmit,
     setValue,
     watch,
+    reset,
     formState: { errors },
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema) as any,
     defaultValues: {
       type: 'FACTURA_B',
+      currency: 'ARS',
+      exchangeRate: 1,
       items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
     },
   });
@@ -68,7 +76,14 @@ export default function InvoiceFormPage() {
 
   const type = watch('type') || 'FACTURA_B';
   const customerId = watch('customerId') || '';
+  const currency = watch('currency') || 'ARS';
   const items = watch('items');
+
+  useEffect(() => {
+    if (currency === 'ARS') {
+      setValue('exchangeRate', 1);
+    }
+  }, [currency, setValue]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -85,6 +100,40 @@ export default function InvoiceFormPage() {
     };
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const fetchInvoice = async () => {
+      try {
+        const invoice = await invoicesService.getById(id);
+        if (invoice.status !== 'DRAFT') {
+          toast.error('Solo se pueden editar facturas en borrador');
+          navigate(`/invoices/${id}`);
+          return;
+        }
+        reset({
+          type: invoice.type,
+          customerId: invoice.customerId,
+          dueDate: invoice.dueDate ? invoice.dueDate.substring(0, 10) : null,
+          notes: invoice.notes,
+          currency: invoice.currency,
+          exchangeRate: invoice.exchangeRate,
+          items: invoice.items.map((item) => ({
+            productId: item.productId,
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+            taxRate: Number(item.taxRate),
+          })),
+        });
+      } catch (error) {
+        toast.error('Error al cargar factura');
+        navigate('/invoices');
+      } finally {
+        setIsFetching(false);
+      }
+    };
+    fetchInvoice();
+  }, [id, isEditing, reset, navigate]);
 
   const handleProductChange = (index: number, productId: string) => {
     const product = products.find((p) => p.id === productId);
@@ -123,12 +172,18 @@ export default function InvoiceFormPage() {
   const onSubmit = async (data: InvoiceFormData) => {
     setIsLoading(true);
     try {
-      const invoice = await invoicesService.create(data);
-      toast.success('Factura creada');
-      navigate(`/invoices/${invoice.id}`);
+      if (isEditing) {
+        await invoicesService.update(id, data);
+        toast.success('Factura actualizada');
+        navigate(`/invoices/${id}`);
+      } else {
+        const invoice = await invoicesService.create(data);
+        toast.success('Factura creada');
+        navigate(`/invoices/${invoice.id}`);
+      }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al crear factura');
+      toast.error(err.response?.data?.message || 'Error al guardar factura');
     } finally {
       setIsLoading(false);
     }
@@ -144,9 +199,13 @@ export default function InvoiceFormPage() {
     label: `${p.sku} - ${p.name}`,
   }));
 
+  if (isFetching) {
+    return <div className="p-6">Cargando...</div>;
+  }
+
   return (
     <div>
-      <PageHeader title="Nueva Factura" backTo="/invoices" />
+      <PageHeader title={isEditing ? 'Editar Factura' : 'Nueva Factura'} backTo={isEditing ? `/invoices/${id}` : '/invoices'} />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card>
@@ -172,6 +231,25 @@ export default function InvoiceFormPage() {
               type="date"
               {...register('dueDate')}
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <Select
+              label="Moneda"
+              options={CURRENCY_OPTIONS}
+              value={currency}
+              onChange={(value) => setValue('currency', value as Currency)}
+            />
+
+            {currency === 'USD' && (
+              <Input
+                label="Tipo de cambio"
+                type="number"
+                step="0.0001"
+                {...register('exchangeRate')}
+                error={errors.exchangeRate?.message}
+              />
+            )}
           </div>
         </Card>
 
@@ -222,7 +300,7 @@ export default function InvoiceFormPage() {
                 <div className="col-span-2">
                   <p className="text-sm text-gray-500 mb-1">Total</p>
                   <p className="text-sm font-medium">
-                    {formatCurrency(calculateItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }))}
+                    {formatCurrency(calculateItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }), currency)}
                   </p>
                 </div>
                 <div className="col-span-1">
@@ -269,16 +347,16 @@ export default function InvoiceFormPage() {
             <div className="space-y-2 text-right">
               <div className="flex justify-between">
                 <span className="text-gray-500">Subtotal:</span>
-                <span className="font-medium">{formatCurrency(totals.subtotal)}</span>
+                <span className="font-medium">{formatCurrency(totals.subtotal, currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">IVA:</span>
-                <span className="font-medium">{formatCurrency(totals.taxAmount)}</span>
+                <span className="font-medium">{formatCurrency(totals.taxAmount, currency)}</span>
               </div>
               <div className="flex justify-between text-lg border-t pt-2">
                 <span className="font-semibold">Total:</span>
                 <span className="font-bold text-primary-600">
-                  {formatCurrency(totals.total)}
+                  {formatCurrency(totals.total, currency)}
                 </span>
               </div>
             </div>
@@ -287,7 +365,7 @@ export default function InvoiceFormPage() {
 
         <div className="flex gap-3">
           <Button type="submit" isLoading={isLoading}>
-            Crear factura
+            {isEditing ? 'Guardar cambios' : 'Crear factura'}
           </Button>
           <Button
             type="button"

@@ -20,6 +20,8 @@ export type InvoiceStatus =
   | 'CANCELLED'
   | 'PARTIALLY_PAID';
 
+export type Currency = 'ARS' | 'USD';
+
 export interface InvoiceItem {
   id: string;
   invoiceId: string;
@@ -46,8 +48,14 @@ export interface Invoice {
   subtotal: number;
   taxAmount: number;
   total: number;
+  currency: Currency;
+  exchangeRate: number;
   status: InvoiceStatus;
   notes: string | null;
+  cae: string | null;
+  caeExpiry: string | null;
+  afipPtVenta: number | null;
+  afipCbtNum: number | null;
   items: InvoiceItem[];
   createdAt: string;
   updatedAt: string;
@@ -66,11 +74,17 @@ export interface CreateInvoiceDTO {
   date?: string;
   dueDate?: string | null;
   notes?: string | null;
+  currency?: Currency;
+  exchangeRate?: number;
   items: CreateInvoiceItemDTO[];
 }
 
 export interface UpdateInvoiceStatusDTO {
   status: InvoiceStatus;
+}
+
+export interface PayInvoiceDTO {
+  cashRegisterId: string;
 }
 
 export interface InvoiceFilters {
@@ -79,6 +93,7 @@ export interface InvoiceFilters {
   customerId?: string;
   type?: InvoiceType;
   status?: InvoiceStatus;
+  currency?: Currency;
   startDate?: string;
   endDate?: string;
 }
