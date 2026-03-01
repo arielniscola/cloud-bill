@@ -7,6 +7,7 @@ import {
   stockTransferSchema,
   setMinQuantitySchema,
   stockQuerySchema,
+  bulkAdjustSchema,
 } from '../../../application/dtos/stock.dto';
 
 const router = Router();
@@ -15,6 +16,7 @@ const stockController = new StockController();
 router.use(authMiddleware);
 
 router.get('/product/:productId', stockController.getStockByProduct);
+router.get('/warehouse/:warehouseId/export', stockController.exportWarehouseStock);
 router.get('/warehouse/:warehouseId', stockController.getStockByWarehouse);
 router.get('/low-stock', stockController.getLowStock);
 router.get('/movements', validate({ query: stockQuerySchema }), stockController.getMovements);
@@ -31,6 +33,12 @@ router.post(
   requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
   validate({ body: stockTransferSchema }),
   stockController.transfer
+);
+router.post(
+  '/bulk-adjust',
+  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  validate({ body: bulkAdjustSchema }),
+  stockController.adjustBulk
 );
 router.put(
   '/:productId/:warehouseId/min-quantity',

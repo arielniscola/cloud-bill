@@ -14,5 +14,10 @@ export const updateCashRegisterSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const createCashRegisterCloseSchema = z.object({
+  notes: z.string().optional(),
+});
+
 export type CreateCashRegisterDTO = z.infer<typeof createCashRegisterSchema>;
 export type UpdateCashRegisterDTO = z.infer<typeof updateCashRegisterSchema>;
+export type CreateCashRegisterCloseDTO = z.infer<typeof createCashRegisterCloseSchema>;

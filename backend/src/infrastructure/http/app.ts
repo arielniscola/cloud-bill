@@ -18,6 +18,10 @@ import { ivaRoutes } from './routes/ivaRoutes';
 import { supplierRoutes } from './routes/supplierRoutes';
 import { purchaseRoutes } from './routes/purchaseRoutes';
 import { dashboardRoutes } from './routes/dashboardRoutes';
+import { brandRoutes } from './routes/brandRoutes';
+import { budgetRoutes } from './routes/budgetRoutes';
+import { appSettingsRoutes } from './routes/appSettingsRoutes';
+import { stockIntelligenceRoutes } from './routes/stockIntelligenceRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -49,6 +53,10 @@ export function createApp(): Application {
   app.use('/api/suppliers', supplierRoutes);
   app.use('/api/purchases', purchaseRoutes);
   app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/brands', brandRoutes);
+  app.use('/api/budgets', budgetRoutes);
+  app.use('/api/app-settings', appSettingsRoutes);
+  app.use('/api/stock-intelligence', stockIntelligenceRoutes);
 
   // 404 handler
   app.use((_req, res) => {

@@ -14,7 +14,7 @@ export class PrismaProductRepository implements IProductRepository {
   }
 
   async findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+    return this.prisma.product.findUnique({ where: { id }, include: { category: true, brand: true } } as any);
   }
 
   async findBySku(sku: string): Promise<Product | null> {
@@ -42,6 +42,10 @@ export class PrismaProductRepository implements IProductRepository {
       where.categoryId = filters.categoryId;
     }
 
+    if (filters.brandId) {
+      where.brandId = filters.brandId;
+    }
+
     if (filters.isActive !== undefined) {
       where.isActive = filters.isActive;
     }
@@ -62,7 +66,7 @@ export class PrismaProductRepository implements IProductRepository {
         skip,
         take: limit,
         orderBy: { name: 'asc' },
-        include: { category: true },
+        include: { category: true, brand: true },
       }),
       this.prisma.product.count({ where }),
     ]);

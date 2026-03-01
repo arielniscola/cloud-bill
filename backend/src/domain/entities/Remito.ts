@@ -6,6 +6,8 @@ export interface Remito {
   number: string;
   customerId: string;
   userId: string;
+  invoiceId: string | null;
+  budgetId: string | null;
   date: Date;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
@@ -24,6 +26,8 @@ export interface RemitoItem {
 
 export interface RemitoWithItems extends Remito {
   items: RemitoItem[];
+  invoice?: { id: string; number: string; type: string } | null;
+  budget?: { id: string; number: string } | null;
 }
 
 export interface CreateRemitoItemInput {
@@ -36,6 +40,8 @@ export interface CreateRemitoInput {
   userId: string;
   stockBehavior: StockBehavior;
   notes?: string;
+  invoiceId?: string;
+  budgetId?: string;
   items: CreateRemitoItemInput[];
 }
 

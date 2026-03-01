@@ -28,6 +28,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         },
         customer: true,
         user: true,
+        invoice: { select: { id: true, number: true, type: true } },
+        budget: { select: { id: true, number: true } },
       },
     });
   }
@@ -95,6 +97,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         stockBehavior: data.stockBehavior,
         status,
         notes: data.notes,
+        invoiceId: data.invoiceId ?? null,
+        budgetId: data.budgetId ?? null,
         items: {
           create: data.items.map((item) => ({
             productId: item.productId,
@@ -111,6 +115,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         },
         customer: true,
         user: true,
+        invoice: { select: { id: true, number: true, type: true } },
+        budget: { select: { id: true, number: true } },
       },
     });
   }

@@ -34,9 +34,40 @@ export const stockQuerySchema = z.object({
   limit: z.string().transform(Number).optional(),
   productId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   warehouseId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  type: z.preprocess(
+    emptyToUndefined,
+    z
+      .enum([
+        'PURCHASE',
+        'SALE',
+        'ADJUSTMENT_IN',
+        'ADJUSTMENT_OUT',
+        'TRANSFER_IN',
+        'TRANSFER_OUT',
+        'RETURN',
+        'REMITO_OUT',
+        'RESERVATION',
+        'RESERVATION_RELEASE',
+      ])
+      .optional()
+  ),
+  startDate: z.preprocess(emptyToUndefined, z.string().optional()),
+  endDate: z.preprocess(emptyToUndefined, z.string().optional()),
+});
+
+export const bulkAdjustSchema = z.object({
+  warehouseId: z.string().uuid(),
+  items: z.array(
+    z.object({
+      productId: z.string().uuid(),
+      newQuantity: z.number().min(0, 'La cantidad no puede ser negativa'),
+    })
+  ).min(1, 'Se requiere al menos un ítem'),
+  reason: z.string().min(1, 'El motivo es requerido'),
 });
 
 export type StockMovementDTO = z.infer<typeof stockMovementSchema>;
 export type StockTransferDTO = z.infer<typeof stockTransferSchema>;
 export type SetMinQuantityDTO = z.infer<typeof setMinQuantitySchema>;
 export type StockQueryDTO = z.infer<typeof stockQuerySchema>;
+export type BulkAdjustDTO = z.infer<typeof bulkAdjustSchema>;

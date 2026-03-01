@@ -14,6 +14,10 @@ import { IActivityLogRepository } from '../domain/repositories/IActivityLogRepos
 import { IAfipConfigRepository } from '../domain/repositories/IAfipConfigRepository';
 import { ISupplierRepository } from '../domain/repositories/ISupplierRepository';
 import { IPurchaseRepository } from '../domain/repositories/IPurchaseRepository';
+import { IBrandRepository } from '../domain/repositories/IBrandRepository';
+import { IBudgetRepository } from '../domain/repositories/IBudgetRepository';
+import { IAppSettingsRepository } from '../domain/repositories/IAppSettingsRepository';
+import { IStockIntelligenceRepository } from '../domain/repositories/IStockIntelligenceRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -29,6 +33,10 @@ import { PrismaActivityLogRepository } from '../infrastructure/database/reposito
 import { PrismaAfipConfigRepository } from '../infrastructure/database/repositories/PrismaAfipConfigRepository';
 import { PrismaSupplierRepository } from '../infrastructure/database/repositories/PrismaSupplierRepository';
 import { PrismaPurchaseRepository } from '../infrastructure/database/repositories/PrismaPurchaseRepository';
+import { PrismaBrandRepository } from '../infrastructure/database/repositories/PrismaBrandRepository';
+import { PrismaBudgetRepository } from '../infrastructure/database/repositories/PrismaBudgetRepository';
+import { PrismaAppSettingsRepository } from '../infrastructure/database/repositories/PrismaAppSettingsRepository';
+import { PrismaStockIntelligenceRepository } from '../infrastructure/database/repositories/PrismaStockIntelligenceRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -48,5 +56,9 @@ container.registerSingleton<IActivityLogRepository>('ActivityLogRepository', Pri
 container.registerSingleton<IAfipConfigRepository>('AfipConfigRepository', PrismaAfipConfigRepository);
 container.registerSingleton<ISupplierRepository>('SupplierRepository', PrismaSupplierRepository);
 container.registerSingleton<IPurchaseRepository>('PurchaseRepository', PrismaPurchaseRepository);
+container.registerSingleton<IBrandRepository>('BrandRepository', PrismaBrandRepository);
+container.registerSingleton<IBudgetRepository>('BudgetRepository', PrismaBudgetRepository);
+container.registerSingleton<IAppSettingsRepository>('AppSettingsRepository', PrismaAppSettingsRepository);
+container.registerSingleton<IStockIntelligenceRepository>('StockIntelligenceRepository', PrismaStockIntelligenceRepository);
 
 export { container };

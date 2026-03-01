@@ -17,6 +17,11 @@ export interface IWarehouseRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface BulkAdjustItem {
+  productId: string;
+  newQuantity: number;
+}
+
 export interface IStockRepository {
   getStock(productId: string, warehouseId: string): Promise<Stock | null>;
   getStockByProduct(productId: string): Promise<Stock[]>;
@@ -26,7 +31,7 @@ export interface IStockRepository {
   getLowStockItems(warehouseId?: string): Promise<Stock[]>;
   addMovement(data: CreateStockMovementInput): Promise<StockMovement>;
   getMovements(
-    filters: { productId?: string; warehouseId?: string },
+    filters: { productId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string },
     pagination?: PaginationParams
   ): Promise<PaginatedResult<StockMovement>>;
   transfer(
@@ -36,4 +41,11 @@ export interface IStockRepository {
     quantity: number,
     userId?: string
   ): Promise<void>;
+  adjustBulk(
+    warehouseId: string,
+    items: BulkAdjustItem[],
+    reason: string,
+    userId?: string
+  ): Promise<void>;
+  exportWarehouseStock(warehouseId: string): Promise<string>;
 }

@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { CashRegisterController } from '../controllers/CashRegisterController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
-import { createCashRegisterSchema, updateCashRegisterSchema } from '../../../application/dtos/cashRegister.dto';
+import {
+  createCashRegisterSchema,
+  updateCashRegisterSchema,
+  createCashRegisterCloseSchema,
+} from '../../../application/dtos/cashRegister.dto';
 
 const router = Router();
 const cashRegisterController = new CashRegisterController();
@@ -16,6 +20,15 @@ router.post(
   cashRegisterController.create
 );
 router.get('/', cashRegisterController.findAll);
+router.get('/:id/movements', cashRegisterController.getMovements);
+router.get('/:id/close-preview', cashRegisterController.getClosePreview);
+router.get('/:id/closes', cashRegisterController.getCloses);
+router.post(
+  '/:id/close',
+  requireRoles('ADMIN', 'SELLER'),
+  validate({ body: createCashRegisterCloseSchema }),
+  cashRegisterController.createClose
+);
 router.get('/:id', cashRegisterController.findById);
 router.put(
   '/:id',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 const purchaseItemSchema = z.object({
+  productId: z.string().uuid().optional().nullable(),
   description: z.string().min(1, 'La descripción es requerida'),
   quantity: z.number().positive('La cantidad debe ser positiva'),
   unitPrice: z.number().min(0, 'El precio debe ser positivo'),
@@ -15,6 +16,7 @@ export const createPurchaseSchema = z.object({
   ]),
   number: z.string().min(1, 'El número de comprobante es requerido'),
   supplierId: z.string().uuid('ID de proveedor inválido'),
+  warehouseId: z.string().uuid().optional().nullable(),
   date: z.string().optional(),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   notes: z.string().optional(),

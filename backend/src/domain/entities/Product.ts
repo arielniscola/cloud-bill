@@ -6,9 +6,14 @@ export interface Product {
   name: string;
   description: string | null;
   categoryId: string | null;
+  brandId: string | null;
+  barcode: string | null;
+  unit: string | null;
+  internalNotes: string | null;
   cost: Decimal;
   price: Decimal;
   taxRate: Decimal;
+  leadTimeDays?: number | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

@@ -98,12 +98,15 @@ export class StockController {
   async getMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
-      const { page, limit, productId, warehouseId } = req.query;
+      const { page, limit, productId, warehouseId, type, startDate, endDate } = req.query;
 
       const result = await stockRepository.getMovements(
         {
           productId: productId as string,
           warehouseId: warehouseId as string,
+          type: type as string,
+          startDate: startDate as string,
+          endDate: endDate as string,
         },
         { page: Number(page) || 1, limit: Number(limit) || 10 }
       );
@@ -148,6 +151,39 @@ export class StockController {
         status: 'success',
         data: stock,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async adjustBulk(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const stockRepository = container.resolve<IStockRepository>('StockRepository');
+
+      await stockRepository.adjustBulk(
+        req.body.warehouseId,
+        req.body.items,
+        req.body.reason,
+        req.user?.userId
+      );
+
+      res.json({
+        status: 'success',
+        message: 'Ajuste de inventario aplicado correctamente',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async exportWarehouseStock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const stockRepository = container.resolve<IStockRepository>('StockRepository');
+      const csv = await stockRepository.exportWarehouseStock(req.params.warehouseId);
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="stock-${req.params.warehouseId}.csv"`);
+      res.send('\uFEFF' + csv); // BOM for Excel compatibility
     } catch (error) {
       next(error);
     }

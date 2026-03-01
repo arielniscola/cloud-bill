@@ -19,6 +19,10 @@ export class ProductController {
         name: req.body.name,
         description: req.body.description ?? null,
         categoryId: req.body.categoryId ?? null,
+        brandId: req.body.brandId ?? null,
+        barcode: req.body.barcode ?? null,
+        unit: req.body.unit ?? null,
+        internalNotes: req.body.internalNotes ?? null,
         cost: new Decimal(req.body.cost),
         price: new Decimal(req.body.price),
         taxRate: new Decimal(req.body.taxRate ?? 21),
@@ -92,6 +96,10 @@ export class ProductController {
       if (req.body.name !== undefined) updateData.name = req.body.name;
       if (req.body.description !== undefined) updateData.description = req.body.description;
       if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
+      if (req.body.brandId !== undefined) updateData.brandId = req.body.brandId;
+      if (req.body.barcode !== undefined) updateData.barcode = req.body.barcode;
+      if (req.body.unit !== undefined) updateData.unit = req.body.unit;
+      if (req.body.internalNotes !== undefined) updateData.internalNotes = req.body.internalNotes;
       if (req.body.cost !== undefined) updateData.cost = new Decimal(req.body.cost);
       if (req.body.price !== undefined) updateData.price = new Decimal(req.body.price);
       if (req.body.taxRate !== undefined) updateData.taxRate = new Decimal(req.body.taxRate);

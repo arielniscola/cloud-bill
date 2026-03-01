@@ -7,6 +7,7 @@ import { IWarehouseRepository } from '../../../domain/repositories/IWarehouseRep
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { RemitoStatus } from '../../../shared/types';
 import prisma from '../../database/prisma';
+import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
 
 export class RemitoController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -15,11 +16,55 @@ export class RemitoController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
+      // Validate source document items if provided
+      const { invoiceId, budgetId } = req.body;
+      if (invoiceId) {
+        const invoice = await prisma.invoice.findUnique({
+          where: { id: invoiceId },
+          include: { items: true },
+        });
+        if (!invoice) throw new AppError('Factura no encontrada', 404);
+
+        const deliveryStatus = await computeDeliveryStatus('invoiceId', invoiceId, invoice.items);
+        if (deliveryStatus === 'DELIVERED') {
+          throw new AppError('Toda la mercadería de esta factura ya fue entregada. No se pueden crear más remitos.', 400);
+        }
+
+        const validProductIds = new Set(invoice.items.map((i) => i.productId));
+        for (const item of req.body.items) {
+          if (!validProductIds.has(item.productId)) {
+            throw new AppError('Uno o más productos no pertenecen a la factura seleccionada', 400);
+          }
+        }
+      } else if (budgetId) {
+        const budget = await prisma.budget.findUnique({
+          where: { id: budgetId },
+          include: { items: true },
+        });
+        if (!budget) throw new AppError('Presupuesto no encontrado', 404);
+
+        const deliveryStatus = await computeDeliveryStatus('budgetId', budgetId, budget.items);
+        if (deliveryStatus === 'DELIVERED') {
+          throw new AppError('Toda la mercadería de este presupuesto ya fue entregada. No se pueden crear más remitos.', 400);
+        }
+
+        const validProductIds = new Set(
+          budget.items.filter((i) => i.productId).map((i) => i.productId as string)
+        );
+        for (const item of req.body.items) {
+          if (!validProductIds.has(item.productId)) {
+            throw new AppError('Uno o más productos no pertenecen al presupuesto seleccionado', 400);
+          }
+        }
+      }
+
       const remito = await remitoRepository.create({
         customerId: req.body.customerId,
         userId: req.user!.userId,
         stockBehavior: req.body.stockBehavior,
         notes: req.body.notes,
+        invoiceId: invoiceId || undefined,
+        budgetId: budgetId || undefined,
         items: req.body.items,
       });
 

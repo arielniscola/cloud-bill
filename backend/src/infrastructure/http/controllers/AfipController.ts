@@ -24,6 +24,9 @@ export class AfipController {
           id: config.id,
           cuit: config.cuit,
           salePoint: config.salePoint,
+          businessName: config.businessName,
+          businessAddress: config.businessAddress,
+          taxCondition: config.taxCondition,
           isProduction: config.isProduction,
           isActive: config.isActive,
           hasCert: config.cert.length > 0,
@@ -40,9 +43,18 @@ export class AfipController {
   async saveConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const { cuit, salePoint, cert, privateKey, isProduction } = req.body;
+      const { cuit, salePoint, cert, privateKey, isProduction, businessName, businessAddress, taxCondition } = req.body;
 
-      const config = await repo.upsert({ cuit, salePoint: Number(salePoint), cert, privateKey, isProduction: Boolean(isProduction) });
+      const config = await repo.upsert({
+        cuit,
+        salePoint: Number(salePoint),
+        cert,
+        privateKey,
+        isProduction: Boolean(isProduction),
+        businessName: businessName || null,
+        businessAddress: businessAddress || null,
+        taxCondition: taxCondition || null,
+      });
 
       res.json({
         status: 'success',
@@ -50,6 +62,9 @@ export class AfipController {
           id: config.id,
           cuit: config.cuit,
           salePoint: config.salePoint,
+          businessName: config.businessName,
+          businessAddress: config.businessAddress,
+          taxCondition: config.taxCondition,
           isProduction: config.isProduction,
           isActive: config.isActive,
           hasCert: config.cert.length > 0,

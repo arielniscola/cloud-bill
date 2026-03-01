@@ -18,6 +18,9 @@ export class PrismaAfipConfigRepository implements IAfipConfigRepository {
         data: {
           cuit: data.cuit,
           salePoint: data.salePoint,
+          businessName: data.businessName,
+          businessAddress: data.businessAddress,
+          taxCondition: data.taxCondition,
           cert: data.cert,
           privateKey: data.privateKey,
           isProduction: data.isProduction,

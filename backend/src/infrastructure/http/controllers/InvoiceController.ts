@@ -10,6 +10,7 @@ import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegis
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigRepository';
 import { afipService } from '../../services/AfipService';
+import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
 
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -94,9 +95,11 @@ export class InvoiceController {
         throw new NotFoundError('Invoice');
       }
 
+      const deliveryStatus = await computeDeliveryStatus('invoiceId', invoice.id, invoice.items);
+
       res.json({
         status: 'success',
-        data: invoice,
+        data: { ...invoice, deliveryStatus },
       });
     } catch (error) {
       next(error);

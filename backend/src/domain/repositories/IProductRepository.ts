@@ -4,6 +4,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 export interface ProductFilters {
   search?: string;
   categoryId?: string;
+  brandId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;

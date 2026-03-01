@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IPurchaseRepository } from '../../../domain/repositories/IPurchaseRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
+import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 
 export class PurchaseController {
@@ -41,17 +42,40 @@ export class PurchaseController {
     try {
       const repo = container.resolve<IPurchaseRepository>('PurchaseRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      const stockRepo = container.resolve<IStockRepository>('StockRepository');
 
       const purchase = await repo.create({
         type: req.body.type,
         number: req.body.number,
         supplierId: req.body.supplierId,
         userId: req.user!.userId,
+        warehouseId: req.body.warehouseId || undefined,
         date: req.body.date ? new Date(req.body.date) : undefined,
         currency: req.body.currency,
         notes: req.body.notes,
         items: req.body.items,
       });
+
+      // Auto-stock: create PURCHASE movements for items linked to products
+      if (purchase.warehouseId) {
+        const itemsWithProduct = purchase.items.filter((i) => i.productId);
+        for (const item of itemsWithProduct) {
+          try {
+            await stockRepo.addMovement({
+              productId: item.productId!,
+              warehouseId: purchase.warehouseId,
+              type: 'PURCHASE',
+              quantity: Number(item.quantity),
+              reason: `Compra ${purchase.number}`,
+              referenceId: purchase.id,
+              userId: req.user!.userId,
+            });
+          } catch (stockError) {
+            // Log stock error but don't fail the purchase creation
+            console.error(`Stock movement failed for product ${item.productId}:`, stockError);
+          }
+        }
+      }
 
       await activityLogRepo.create({
         userId: req.user!.userId,

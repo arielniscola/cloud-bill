@@ -11,6 +11,8 @@ export const createRemitoSchema = z.object({
   customerId: z.string().uuid(),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']),
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
+  invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   items: z.array(remitoItemSchema).min(1, 'At least one item is required'),
 });
 
