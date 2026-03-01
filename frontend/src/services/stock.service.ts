@@ -6,6 +6,7 @@ import type {
   StockTransferDTO,
   SetMinQuantityDTO,
   StockMovementFilters,
+  BulkAdjustDTO,
   ApiResponse,
   PaginatedResponse,
 } from '../types';
@@ -73,6 +74,17 @@ export const stockService = {
       data
     );
     return response.data.data;
+  },
+
+  async adjustBulk(data: BulkAdjustDTO): Promise<void> {
+    await api.post('/stock/bulk-adjust', data);
+  },
+
+  async exportWarehouseStock(warehouseId: string): Promise<Blob> {
+    const response = await api.get(`/stock/warehouse/${warehouseId}/export`, {
+      responseType: 'blob',
+    });
+    return response.data;
   },
 };
 

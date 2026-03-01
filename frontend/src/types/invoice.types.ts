@@ -35,6 +35,8 @@ export interface InvoiceItem {
   total: number;
 }
 
+export type DeliveryStatus = 'NOT_DELIVERED' | 'PARTIALLY_DELIVERED' | 'DELIVERED';
+
 export interface Invoice {
   id: string;
   type: InvoiceType;
@@ -57,6 +59,7 @@ export interface Invoice {
   afipPtVenta: number | null;
   afipCbtNum: number | null;
   items: InvoiceItem[];
+  deliveryStatus?: DeliveryStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +97,6 @@ export interface InvoiceFilters {
   type?: InvoiceType;
   status?: InvoiceStatus;
   currency?: Currency;
-  startDate?: string;
-  endDate?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }

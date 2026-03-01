@@ -21,6 +21,10 @@ export interface Remito {
   customer?: Customer;
   userId: string;
   user?: User;
+  invoiceId: string | null;
+  budgetId: string | null;
+  invoice?: { id: string; number: string; type: string } | null;
+  budget?: { id: string; number: string } | null;
   date: string;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
@@ -34,6 +38,8 @@ export interface CreateRemitoDTO {
   customerId: string;
   stockBehavior: StockBehavior;
   notes?: string;
+  invoiceId?: string;
+  budgetId?: string;
   items: { productId: string; quantity: number }[];
 }
 

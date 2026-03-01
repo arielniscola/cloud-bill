@@ -1,73 +1,250 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { Card, Button, Input, Select } from '../../components/ui';
+import {
+  Building2, Hash, Phone, Mail,
+  MapPin, FileText, Power, Check,
+} from 'lucide-react';
+import { Button, Card, Textarea } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { suppliersService } from '../../services';
-import { TAX_CONDITION_OPTIONS } from '../../utils/constants';
-import type { CreateSupplierDTO } from '../../types';
+import type { TaxCondition } from '../../types';
 
-const defaultForm: CreateSupplierDTO = {
-  name: '',
-  cuit: '',
-  taxCondition: 'RESPONSABLE_INSCRIPTO',
-  address: '',
-  city: '',
-  phone: '',
-  email: '',
-  notes: '',
-  isActive: true,
-};
+// ── Schema ───────────────────────────────────────────────────────
+const supplierSchema = z.object({
+  name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
+  cuit: z.string().optional().nullable(),
+  taxCondition: z.enum([
+    'RESPONSABLE_INSCRIPTO',
+    'MONOTRIBUTISTA',
+    'EXENTO',
+    'CONSUMIDOR_FINAL',
+  ]),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email('Email inválido').optional().or(z.literal('')).nullable(),
+  notes: z.string().optional().nullable(),
+  isActive: z.boolean(),
+});
 
+type SupplierFormData = z.infer<typeof supplierSchema>;
+
+// ── Tax condition cards ──────────────────────────────────────────
+const TAX_OPTIONS: {
+  value: TaxCondition;
+  label: string;
+  desc: string;
+  activeColor: string;
+  hoverColor: string;
+}[] = [
+  {
+    value: 'RESPONSABLE_INSCRIPTO',
+    label: 'Resp. Inscripto',
+    desc: 'IVA discriminado (Factura A)',
+    activeColor: 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300',
+    hoverColor: 'border-gray-200 hover:border-indigo-300 bg-white',
+  },
+  {
+    value: 'MONOTRIBUTISTA',
+    label: 'Monotributista',
+    desc: 'Sin IVA discriminado (Factura B/C)',
+    activeColor: 'border-violet-400 bg-violet-50 ring-1 ring-violet-300',
+    hoverColor: 'border-gray-200 hover:border-violet-300 bg-white',
+  },
+  {
+    value: 'EXENTO',
+    label: 'Exento',
+    desc: 'Exento de IVA (Factura B)',
+    activeColor: 'border-amber-400 bg-amber-50 ring-1 ring-amber-300',
+    hoverColor: 'border-gray-200 hover:border-amber-300 bg-white',
+  },
+  {
+    value: 'CONSUMIDOR_FINAL',
+    label: 'Cons. Final',
+    desc: 'Sin CUIT requerido (Factura B/C)',
+    activeColor: 'border-gray-400 bg-gray-50 ring-1 ring-gray-300',
+    hoverColor: 'border-gray-200 hover:border-gray-400 bg-white',
+  },
+];
+
+function TaxConditionSelector({
+  value,
+  onChange,
+  error,
+}: {
+  value: TaxCondition;
+  onChange: (v: TaxCondition) => void;
+  error?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        Condición IVA *
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        {TAX_OPTIONS.map((opt) => {
+          const isSelected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all duration-150 ${
+                isSelected ? opt.activeColor : opt.hoverColor
+              }`}
+            >
+              <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+                isSelected ? 'border-current bg-current' : 'border-gray-300'
+              }`}>
+                {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xs font-semibold leading-tight ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
+                  {opt.label}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">{opt.desc}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+// ── Section header ───────────────────────────────────────────────
+function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider pt-1">
+      {icon}
+      {label}
+    </div>
+  );
+}
+
+// ── Toggle ───────────────────────────────────────────────────────
+function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
+      checked ? 'bg-emerald-50/70 border-emerald-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+    }`}>
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white border border-gray-200 text-gray-400'
+      }`}>
+        <Power className="w-4 h-4" />
+      </div>
+      <div className="flex-1">
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600'}`}>
+          Proveedor activo
+        </p>
+        <p className="text-xs text-gray-400 mt-1 leading-none">
+          Solo los proveedores activos aparecen al registrar compras.
+        </p>
+      </div>
+      <div
+        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200'}`}
+        style={{ width: 40, height: 22 }}
+      >
+        <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
+          checked ? 'translate-x-[19px]' : 'translate-x-[3px]'
+        }`} />
+      </div>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
+    </label>
+  );
+}
+
+// ── Skeleton ─────────────────────────────────────────────────────
+function FormSkeleton() {
+  return (
+    <Card className="max-w-2xl animate-pulse">
+      <div className="space-y-6">
+        {[1, 2, 3].map((s) => (
+          <div key={s} className="space-y-3">
+            <div className="h-3 w-28 bg-gray-100 rounded" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="h-10 bg-gray-100 rounded-lg" />
+              <div className="h-10 bg-gray-100 rounded-lg" />
+            </div>
+          </div>
+        ))}
+        <div className="h-20 bg-gray-100 rounded-xl" />
+        <div className="flex gap-3 pt-2">
+          <div className="h-9 w-36 bg-gray-100 rounded-lg" />
+          <div className="h-9 w-24 bg-gray-100 rounded-lg" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ── Shared input style ───────────────────────────────────────────
+const inputCls =
+  'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150';
+
+// ── Main component ───────────────────────────────────────────────
 export default function SupplierFormPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEditing = !!id;
-
-  const [form, setForm] = useState<CreateSupplierDTO>(defaultForm);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isFetching, setIsFetching] = useState(isEditing);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<SupplierFormData>({
+    resolver: zodResolver(supplierSchema),
+    defaultValues: {
+      taxCondition: 'RESPONSABLE_INSCRIPTO',
+      isActive: true,
+    },
+  });
+
+  const taxCondition = watch('taxCondition');
+  const isActiveVal = watch('isActive');
 
   useEffect(() => {
     if (!isEditing) return;
-    setIsLoading(true);
-    suppliersService.getById(id)
+    suppliersService
+      .getById(id)
       .then((s) => {
-        setForm({
-          name: s.name,
-          cuit: s.cuit || '',
-          taxCondition: s.taxCondition,
-          address: s.address || '',
-          city: s.city || '',
-          phone: s.phone || '',
-          email: s.email || '',
-          notes: s.notes || '',
-          isActive: s.isActive,
-        });
+        setValue('name', s.name);
+        setValue('cuit', s.cuit);
+        setValue('taxCondition', s.taxCondition);
+        setValue('address', s.address);
+        setValue('city', s.city);
+        setValue('phone', s.phone);
+        setValue('email', s.email);
+        setValue('notes', s.notes);
+        setValue('isActive', s.isActive);
       })
       .catch(() => {
         toast.error('Error al cargar proveedor');
         navigate('/suppliers');
       })
-      .finally(() => setIsLoading(false));
-  }, [id, isEditing, navigate]);
+      .finally(() => setIsFetching(false));
+  }, [id, isEditing, setValue, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name) {
-      toast.error('El nombre es requerido');
-      return;
-    }
-    setIsSaving(true);
+  const onSubmit = async (data: SupplierFormData) => {
+    setIsLoading(true);
     try {
       const payload = {
-        ...form,
-        cuit: form.cuit || undefined,
-        address: form.address || undefined,
-        city: form.city || undefined,
-        phone: form.phone || undefined,
-        email: form.email || undefined,
-        notes: form.notes || undefined,
+        ...data,
+        cuit:    data.cuit    || undefined,
+        address: data.address || undefined,
+        city:    data.city    || undefined,
+        phone:   data.phone   || undefined,
+        email:   data.email   || undefined,
+        notes:   data.notes   || undefined,
       };
       if (isEditing) {
         await suppliersService.update(id, payload);
@@ -81,11 +258,18 @@ export default function SupplierFormPage() {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al guardar proveedor');
     } finally {
-      setIsSaving(false);
+      setIsLoading(false);
     }
   };
 
-  if (isLoading) return <div className="p-6">Cargando...</div>;
+  if (isFetching) {
+    return (
+      <div>
+        <PageHeader title={isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor'} backTo="/suppliers" />
+        <FormSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -94,86 +278,138 @@ export default function SupplierFormPage() {
         backTo="/suppliers"
       />
 
-      <form onSubmit={handleSubmit} className="max-w-2xl">
-        <Card>
-          <h3 className="text-base font-semibold text-gray-900 mb-4">Información del proveedor</h3>
-          <div className="space-y-4">
-            <Input
-              label="Nombre *"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Razón social"
-              required
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="CUIT (sin guiones)"
-                value={form.cuit || ''}
-                onChange={(e) => setForm((f) => ({ ...f, cuit: e.target.value }))}
-                placeholder="20123456789"
-              />
-              <Select
-                label="Condición IVA"
-                options={TAX_CONDITION_OPTIONS}
-                value={form.taxCondition || 'RESPONSABLE_INSCRIPTO'}
-                onChange={(v) => setForm((f) => ({ ...f, taxCondition: v as CreateSupplierDTO['taxCondition'] }))}
-              />
-            </div>
-            <Input
-              label="Dirección"
-              value={form.address || ''}
-              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Ciudad"
-                value={form.city || ''}
-                onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-              />
-              <Input
-                label="Teléfono"
-                value={form.phone || ''}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-              />
-            </div>
-            <Input
-              label="Email"
-              type="email"
-              value={form.email || ''}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-              <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                rows={3}
-                value={form.notes || ''}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              />
-            </div>
-            {isEditing && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded"
-                  checked={form.isActive}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                />
-                <span className="text-sm text-gray-700">Activo</span>
-              </label>
-            )}
-          </div>
-        </Card>
+      <Card className="max-w-2xl">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-        <div className="flex gap-3 mt-4">
-          <Button type="submit" isLoading={isSaving}>
-            {isEditing ? 'Guardar cambios' : 'Crear proveedor'}
-          </Button>
-          <Button type="button" variant="outline" onClick={() => navigate('/suppliers')}>
-            Cancelar
-          </Button>
-        </div>
-      </form>
+          {/* ── Identificación ── */}
+          <div className="space-y-4">
+            <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} label="Identificación" />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Nombre / Razón Social *
+              </label>
+              <input
+                type="text"
+                placeholder="Ej: Distribuidora García S.A."
+                {...register('name')}
+                autoFocus={!isEditing}
+                className={inputCls}
+              />
+              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <Hash className="w-3.5 h-3.5 text-gray-400" />
+                  CUIT
+                </label>
+                <input
+                  type="text"
+                  placeholder="20-12345678-1"
+                  {...register('cuit')}
+                  className={`${inputCls} font-mono`}
+                />
+                {errors.cuit && <p className="mt-1 text-xs text-red-500">{errors.cuit.message}</p>}
+              </div>
+              <div />
+            </div>
+
+            <TaxConditionSelector
+              value={taxCondition}
+              onChange={(v) => setValue('taxCondition', v)}
+              error={errors.taxCondition?.message}
+            />
+          </div>
+
+          {/* ── Contacto ── */}
+          <div className="space-y-4">
+            <SectionHeader icon={<Phone className="w-3.5 h-3.5" />} label="Contacto" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-gray-400" />
+                  Email
+                </label>
+                <input
+                  type="email"
+                  placeholder="proveedor@ejemplo.com"
+                  {...register('email')}
+                  className={inputCls}
+                />
+                {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-gray-400" />
+                  Teléfono
+                </label>
+                <input
+                  type="text"
+                  placeholder="11 1234-5678"
+                  {...register('phone')}
+                  className={inputCls}
+                />
+                {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone.message}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Ubicación ── */}
+          <div className="space-y-4">
+            <SectionHeader icon={<MapPin className="w-3.5 h-3.5" />} label="Ubicación" />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Dirección</label>
+              <input
+                type="text"
+                placeholder="Av. San Martín 2500"
+                {...register('address')}
+                className={inputCls}
+              />
+            </div>
+            <div className="max-w-xs">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                Ciudad
+              </label>
+              <input
+                type="text"
+                placeholder="Buenos Aires"
+                {...register('city')}
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* ── Notas ── */}
+          <div className="space-y-3">
+            <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Notas" />
+            <Textarea
+              placeholder="Condiciones de pago, contacto comercial, plazos de entrega…"
+              rows={3}
+              {...register('notes')}
+              error={errors.notes?.message}
+            />
+          </div>
+
+          {/* ── Estado ── */}
+          <ActiveToggle
+            checked={isActiveVal}
+            onChange={(v) => setValue('isActive', v)}
+          />
+
+          {/* ── Actions ── */}
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <Button type="submit" isLoading={isLoading}>
+              {isEditing ? 'Guardar cambios' : 'Crear proveedor'}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => navigate('/suppliers')} disabled={isLoading}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }

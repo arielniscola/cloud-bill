@@ -72,3 +72,14 @@ export interface StockMovementFilters {
   startDate?: string;
   endDate?: string;
 }
+
+export interface BulkAdjustItem {
+  productId: string;
+  newQuantity: number;
+}
+
+export interface BulkAdjustDTO {
+  warehouseId: string;
+  items: BulkAdjustItem[];
+  reason: string;
+}

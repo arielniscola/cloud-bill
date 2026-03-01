@@ -16,3 +16,7 @@ export { default as suppliersService } from './suppliers.service';
 export { default as purchasesService } from './purchases.service';
 export { default as dashboardService } from './dashboard.service';
 export type { DashboardStats } from './dashboard.service';
+export { default as brandsService } from './brands.service';
+export { default as budgetsService } from './budgets.service';
+export { default as appSettingsService } from './app-settings.service';
+export { default as stockIntelligenceService } from './stock-intelligence.service';

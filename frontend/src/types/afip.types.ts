@@ -2,6 +2,9 @@ export interface AfipConfigSummary {
   id: string;
   cuit: string;
   salePoint: number;
+  businessName: string | null;
+  businessAddress: string | null;
+  taxCondition: string | null;
   isProduction: boolean;
   isActive: boolean;
   hasCert: boolean;
@@ -13,6 +16,9 @@ export interface AfipConfigSummary {
 export interface AfipConfigDTO {
   cuit: string;
   salePoint: number;
+  businessName?: string;
+  businessAddress?: string;
+  taxCondition?: string;
   cert: string;
   privateKey: string;
   isProduction: boolean;

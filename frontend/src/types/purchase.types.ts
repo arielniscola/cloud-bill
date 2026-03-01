@@ -6,6 +6,7 @@ export type PurchaseStatus = 'REGISTERED' | 'CANCELLED';
 export interface PurchaseItem {
   id: string;
   purchaseId: string;
+  productId: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -23,6 +24,7 @@ export interface Purchase {
   supplier?: Pick<Supplier, 'id' | 'name' | 'cuit'>;
   userId: string;
   user?: { id: string; name: string; email: string };
+  warehouseId: string | null;
   date: string;
   subtotal: number;
   taxAmount: number;
@@ -36,6 +38,7 @@ export interface Purchase {
 }
 
 export interface CreatePurchaseItemDTO {
+  productId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -46,6 +49,7 @@ export interface CreatePurchaseDTO {
   type: InvoiceType;
   number: string;
   supplierId: string;
+  warehouseId?: string | null;
   date?: string;
   currency?: Currency;
   notes?: string;

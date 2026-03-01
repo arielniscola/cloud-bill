@@ -13,6 +13,9 @@ export default function AfipSettingsCard() {
   const [form, setForm] = useState<AfipConfigDTO>({
     cuit: '',
     salePoint: 1,
+    businessName: '',
+    businessAddress: '',
+    taxCondition: 'Responsable Inscripto',
     cert: '',
     privateKey: '',
     isProduction: false,
@@ -28,6 +31,9 @@ export default function AfipSettingsCard() {
             ...f,
             cuit: data.cuit,
             salePoint: data.salePoint,
+            businessName: data.businessName ?? '',
+            businessAddress: data.businessAddress ?? '',
+            taxCondition: data.taxCondition ?? 'Responsable Inscripto',
             isProduction: data.isProduction,
           }));
         }
@@ -87,7 +93,7 @@ export default function AfipSettingsCard() {
 
   return (
     <Card>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">Configuración ARCA (AFIP)</h3>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -95,7 +101,7 @@ export default function AfipSettingsCard() {
           </p>
         </div>
         {config && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {config.hasCert && config.hasKey ? (
               <span className="flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded-full">
                 <CheckCircle className="w-3 h-3" />
@@ -121,7 +127,31 @@ export default function AfipSettingsCard() {
       </div>
 
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Razón Social"
+            placeholder="Mi Empresa S.A."
+            value={form.businessName ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, businessName: e.target.value }))}
+          />
+          <Input
+            label="Domicilio Comercial"
+            placeholder="Av. Corrientes 1234, CABA"
+            value={form.businessAddress ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Condición frente al IVA"
+            placeholder="Responsable Inscripto"
+            value={form.taxCondition ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, taxCondition: e.target.value }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
             label="CUIT (sin guiones)"
             placeholder="20123456789"

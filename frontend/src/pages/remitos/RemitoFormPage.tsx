@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Truck, FileText, Calculator, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button, Input, Select, Textarea, Card } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
-import { remitosService, customersService, productsService } from '../../services';
+import { Button, Input, Select, Textarea } from '../../components/ui';
+import { PageHeader, BarcodeProductInput } from '../../components/shared';
+import { remitosService, customersService, productsService, invoicesService, budgetsService } from '../../services';
 import { STOCK_BEHAVIOR_OPTIONS } from '../../utils/constants';
-import type { Customer, Product, StockBehavior } from '../../types';
+import type { Customer, Product, StockBehavior, Invoice, Budget } from '../../types';
 
 const remitoItemSchema = z.object({
   productId: z.string().min(1, 'Selecciona un producto'),
@@ -25,11 +25,36 @@ const remitoSchema = z.object({
 
 type RemitoFormData = z.output<typeof remitoSchema>;
 
+function SkeletonForm() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 animate-pulse">
+      <div className="space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <div className="h-5 bg-gray-100 rounded w-16" />
+          {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RemitoFormPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const invoiceId = searchParams.get('invoiceId') || undefined;
+  const budgetId = searchParams.get('budgetId') || undefined;
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [sourceDoc, setSourceDoc] = useState<Invoice | Budget | null>(null);
+  const [sourceProducts, setSourceProducts] = useState<{ id: string; name: string; sku: string; maxQty: number }[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
     register,
@@ -46,38 +71,102 @@ export default function RemitoFormPage() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'items',
-  });
-
+  const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const customerId = watch('customerId') || '';
   const stockBehavior = watch('stockBehavior') || 'DISCOUNT';
   const items = watch('items');
 
   useEffect(() => {
-    const fetchData = async () => {
+    const load = async () => {
+      setIsLoadingData(true);
       try {
-        const [customersData, productsData] = await Promise.all([
-          customersService.getAll({ limit: 1000 }),
-          productsService.getAll({ limit: 1000 }),
-        ]);
-        setCustomers(customersData.data);
-        setProducts(productsData.data);
-      } catch (error) {
+        if (invoiceId) {
+          const [inv, customersData] = await Promise.all([
+            invoicesService.getById(invoiceId),
+            customersService.getAll({ limit: 1000 }),
+          ]);
+          setSourceDoc(inv as Invoice);
+          setCustomers(customersData.data);
+          setValue('customerId', inv.customerId);
+
+          // Build source products from invoice items
+          const sp = inv.items
+            .filter((item) => item.product)
+            .map((item) => ({
+              id: item.product!.id,
+              name: item.product!.name,
+              sku: item.product!.sku ?? '',
+              maxQty: Number(item.quantity),
+            }));
+          setSourceProducts(sp);
+
+          // Pre-fill items from invoice
+          if (sp.length > 0) {
+            const prefilled = sp.map((p) => ({ productId: p.id, quantity: p.maxQty }));
+            setValue('items', prefilled);
+          }
+        } else if (budgetId) {
+          const [bud, customersData] = await Promise.all([
+            budgetsService.getById(budgetId),
+            customersService.getAll({ limit: 1000 }),
+          ]);
+          setSourceDoc(bud as Budget);
+          setCustomers(customersData.data);
+          if (bud.customerId) {
+            setValue('customerId', bud.customerId);
+          }
+
+          // Build source products from budget items that have productId
+          const sp = bud.items
+            .filter((item) => item.productId && item.product)
+            .map((item) => ({
+              id: item.product!.id,
+              name: item.product!.name,
+              sku: item.product!.sku ?? '',
+              maxQty: Number(item.quantity),
+            }));
+          setSourceProducts(sp);
+
+          // Pre-fill items from budget
+          if (sp.length > 0) {
+            const prefilled = sp.map((p) => ({ productId: p.id, quantity: p.maxQty }));
+            setValue('items', prefilled);
+          }
+        } else {
+          const [customersData, productsData] = await Promise.all([
+            customersService.getAll({ limit: 1000 }),
+            productsService.getAll({ limit: 1000 }),
+          ]);
+          setCustomers(customersData.data);
+          setProducts(productsData.data);
+        }
+      } catch {
         toast.error('Error al cargar datos');
+      } finally {
+        setIsLoadingData(false);
       }
     };
-    fetchData();
-  }, []);
+    load();
+  }, [invoiceId, budgetId, setValue]);
+
+  const handleBarcodeAdd = (product: Product) => {
+    const existingIndex = items.findIndex((item) => item.productId === product.id);
+    if (existingIndex >= 0) {
+      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + 1);
+    } else {
+      append({ productId: product.id, quantity: 1 });
+    }
+  };
 
   const onSubmit = async (data: RemitoFormData) => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       const remito = await remitosService.create({
         customerId: data.customerId,
         stockBehavior: data.stockBehavior,
         notes: data.notes || undefined,
+        invoiceId: invoiceId || undefined,
+        budgetId: budgetId || undefined,
         items: data.items,
       });
       toast.success('Remito creado');
@@ -86,122 +175,210 @@ export default function RemitoFormPage() {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al crear remito');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const customerOptions = customers.map((c) => ({
-    value: c.id,
-    label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}`,
-  }));
+  const customerOptions = [
+    { value: '', label: 'Seleccioná un cliente' },
+    ...customers.map((c) => ({
+      value: c.id,
+      label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}`,
+    })),
+  ];
 
-  const productOptions = products.map((p) => ({
-    value: p.id,
-    label: `${p.sku} - ${p.name}`,
-  }));
+  const freeProductOptions = [
+    { value: '', label: 'Seleccioná un producto' },
+    ...products.map((p) => ({ value: p.id, label: `${p.sku} - ${p.name}` })),
+  ];
+
+  const sourceProductOptions = [
+    { value: '', label: 'Seleccioná un producto' },
+    ...sourceProducts.map((p) => ({ value: p.id, label: `${p.sku} - ${p.name}` })),
+  ];
+
+  const hasSource = !!(invoiceId || budgetId);
+  const sourceLabel = invoiceId ? 'Factura' : 'Presupuesto';
+  const sourceNumber = sourceDoc
+    ? (sourceDoc as any).number
+    : null;
+
+  const canAddItem = !hasSource || items.length < sourceProducts.length;
+
+  if (isLoadingData) {
+    return (
+      <div>
+        <PageHeader title="Nuevo Remito" backTo="/remitos" />
+        <SkeletonForm />
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader title="Nuevo Remito" backTo="/remitos" />
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select
-              label="Cliente *"
-              options={customerOptions}
-              value={customerId}
-              onChange={(value) => setValue('customerId', value)}
-              error={errors.customerId?.message}
-            />
+      {/* Source document banner */}
+      {hasSource && sourceNumber && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800">
+          {invoiceId ? <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" /> : <Calculator className="w-4 h-4 text-indigo-500 flex-shrink-0" />}
+          <span>
+            Remito generado desde <strong>{sourceLabel} {sourceNumber}</strong>.
+            Solo se pueden entregar productos incluidos en ese documento.
+          </span>
+        </div>
+      )}
 
-            <Select
-              label="Comportamiento de stock *"
-              options={STOCK_BEHAVIOR_OPTIONS}
-              value={stockBehavior}
-              onChange={(value) => setValue('stockBehavior', value as StockBehavior)}
-              error={errors.stockBehavior?.message}
-            />
-          </div>
-        </Card>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
 
-        <Card>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Items</h3>
+          {/* ── Left: items ── */}
+          <div>
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                  Ítems a entregar
+                </h3>
+              </div>
 
-          <div className="space-y-4">
-            {fields.map((field, index) => (
-              <div
-                key={field.id}
-                className="grid grid-cols-12 gap-3 items-end p-4 bg-gray-50 rounded-lg"
-              >
-                <div className="col-span-7">
-                  <Select
-                    label="Producto"
-                    options={productOptions}
-                    value={items[index]?.productId || ''}
-                    onChange={(value) => setValue(`items.${index}.productId`, value)}
-                    error={errors.items?.[index]?.productId?.message}
-                  />
+              {/* Barcode input — only in free mode */}
+              {!hasSource && (
+                <div className="px-5 pt-4">
+                  <BarcodeProductInput products={products} onAdd={handleBarcodeAdd} />
                 </div>
-                <div className="col-span-3">
-                  <Input
-                    label="Cantidad"
-                    type="number"
-                    step="1"
-                    {...register(`items.${index}.quantity`)}
-                    error={errors.items?.[index]?.quantity?.message}
-                  />
+              )}
+
+              {/* Items grid */}
+              <div className="p-5 space-y-3">
+                {/* Header row */}
+                <div className="grid grid-cols-[1fr_80px_32px] gap-3 px-1">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Producto</span>
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Cantidad</span>
+                  <span />
                 </div>
-                <div className="col-span-2">
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => remove(index)}
+
+                {fields.map((field, index) => {
+                  const maxQty = hasSource
+                    ? sourceProducts.find((p) => p.id === items[index]?.productId)?.maxQty
+                    : undefined;
+                  return (
+                    <div
+                      key={field.id}
+                      className="grid grid-cols-[1fr_80px_32px] gap-3 items-center py-2 border-b border-gray-100 last:border-0"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
-                  )}
+                      <div>
+                        <Select
+                          options={hasSource ? sourceProductOptions : freeProductOptions}
+                          value={items[index]?.productId || ''}
+                          onChange={(value) => setValue(`items.${index}.productId`, value)}
+                          error={errors.items?.[index]?.productId?.message}
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          type="number"
+                          step="1"
+                          min={1}
+                          max={maxQty}
+                          {...register(`items.${index}.quantity`)}
+                          error={errors.items?.[index]?.quantity?.message}
+                        />
+                        {maxQty !== undefined && (
+                          <p className="text-xs text-gray-400 mt-0.5 text-right">máx. {maxQty}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => remove(index)}
+                        disabled={fields.length === 1}
+                        className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-[background-color,color] duration-150 disabled:opacity-20 disabled:pointer-events-none active:scale-[0.98]"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {errors.items?.message && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 mt-1">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {errors.items.message}
+                  </div>
+                )}
+
+                {canAddItem && (
+                  <button
+                    type="button"
+                    onClick={() => append({ productId: '', quantity: 1 })}
+                    className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2 py-1.5 rounded-lg hover:bg-indigo-50 transition-[background-color,color] duration-150 active:scale-[0.98] mt-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar ítem
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right: config + submit ── */}
+          <div className="lg:sticky lg:top-6 space-y-4">
+            {/* Config panel */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configuración</p>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <div>
+                  <Select
+                    label="Cliente *"
+                    options={customerOptions}
+                    value={customerId}
+                    onChange={(value) => setValue('customerId', value)}
+                    error={errors.customerId?.message}
+                    disabled={hasSource && !!sourceDoc && !!(sourceDoc as any).customerId}
+                  />
+                </div>
+                <div>
+                  <Select
+                    label="Tipo de entrega *"
+                    options={STOCK_BEHAVIOR_OPTIONS}
+                    value={stockBehavior}
+                    onChange={(value) => setValue('stockBehavior', value as StockBehavior)}
+                    error={errors.stockBehavior?.message}
+                  />
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    {stockBehavior === 'DISCOUNT'
+                      ? 'Descuenta stock inmediatamente y marca el remito como entregado.'
+                      : 'Reserva el stock hasta confirmar la entrega física.'}
+                  </p>
+                </div>
+                <div>
+                  <Textarea
+                    label="Notas"
+                    {...register('notes')}
+                    rows={3}
+                    placeholder="Observaciones internas..."
+                  />
                 </div>
               </div>
-            ))}
+            </div>
+
+            {/* Submit */}
+            <div className="flex flex-col gap-2">
+              <Button type="submit" isLoading={isSubmitting} className="w-full justify-center">
+                <Truck className="w-4 h-4 mr-2" />
+                Crear remito
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/remitos')}
+                className="w-full justify-center"
+              >
+                Cancelar
+              </Button>
+            </div>
           </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-4"
-            onClick={() => append({ productId: '', quantity: 1 })}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Agregar item
-          </Button>
-          {errors.items?.message && (
-            <p className="text-sm text-red-600 mt-2">{errors.items.message}</p>
-          )}
-        </Card>
-
-        <Card>
-          <Textarea
-            label="Notas"
-            {...register('notes')}
-            rows={3}
-          />
-        </Card>
-
-        <div className="flex gap-3">
-          <Button type="submit" isLoading={isLoading}>
-            Crear remito
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate('/remitos')}
-          >
-            Cancelar
-          </Button>
         </div>
       </form>
     </div>

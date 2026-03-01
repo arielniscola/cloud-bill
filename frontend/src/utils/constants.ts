@@ -97,5 +97,27 @@ export const STOCK_BEHAVIOR_OPTIONS = [
   { value: 'RESERVE', label: 'Reservar stock (retiro posterior)' },
 ];
 
+export const BUDGET_STATUSES = {
+  DRAFT: 'Borrador',
+  SENT: 'Enviado',
+  ACCEPTED: 'Aceptado',
+  REJECTED: 'Rechazado',
+  CONVERTED: 'Convertido',
+  EXPIRED: 'Vencido',
+} as const;
+
+export const BUDGET_STATUS_OPTIONS = Object.entries(BUDGET_STATUSES).map(
+  ([value, label]) => ({ value, label })
+);
+
+export const BUDGET_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-800',
+  SENT: 'bg-blue-100 text-blue-800',
+  ACCEPTED: 'bg-green-100 text-green-800',
+  REJECTED: 'bg-red-100 text-red-800',
+  CONVERTED: 'bg-purple-100 text-purple-800',
+  EXPIRED: 'bg-orange-100 text-orange-800',
+};
+
 export const DEFAULT_PAGE_SIZE = 10;
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];

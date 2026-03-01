@@ -12,3 +12,9 @@ export type { PaginationProps } from './Pagination';
 
 export { default as DataTable } from './DataTable';
 export type { DataTableProps, Column } from './DataTable';
+
+export { default as BarcodeProductInput } from './BarcodeProductInput';
+export type { BarcodeProductInputProps } from './BarcodeProductInput';
+
+export { default as ProductSearchSelect } from './ProductSearchSelect';
+export type { ProductSearchSelectProps } from './ProductSearchSelect';

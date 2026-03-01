@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button, Input, Select } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
-import { purchasesService, suppliersService } from '../../services';
+import { PageHeader, ProductSearchSelect } from '../../components/shared';
+import { purchasesService, suppliersService, warehousesService, productsService } from '../../services';
 import { INVOICE_TYPE_OPTIONS, CURRENCY_OPTIONS } from '../../utils/constants';
 import { formatCurrency } from '../../utils/formatters';
-import type { CreatePurchaseDTO, CreatePurchaseItemDTO, Supplier } from '../../types';
+import type { CreatePurchaseDTO, CreatePurchaseItemDTO, Supplier, Warehouse, Product } from '../../types';
 
 const defaultItem: CreatePurchaseItemDTO = {
+  productId: null,
   description: '',
   quantity: 1,
   unitPrice: 0,
@@ -19,12 +20,15 @@ const defaultItem: CreatePurchaseItemDTO = {
 export default function PurchaseFormPage() {
   const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   const [form, setForm] = useState<Omit<CreatePurchaseDTO, 'items'>>({
     type: 'FACTURA_A',
     number: '',
     supplierId: '',
+    warehouseId: null,
     date: new Date().toISOString().split('T')[0],
     currency: 'ARS',
     notes: '',
@@ -33,9 +37,17 @@ export default function PurchaseFormPage() {
   const [items, setItems] = useState<CreatePurchaseItemDTO[]>([{ ...defaultItem }]);
 
   useEffect(() => {
-    suppliersService.getAll({ limit: 200, isActive: true })
-      .then((r) => setSuppliers(r.data))
-      .catch(() => toast.error('Error al cargar proveedores'));
+    Promise.all([
+      suppliersService.getAll({ limit: 200, isActive: true }),
+      warehousesService.getAll(),
+      productsService.getAll({ limit: 1000, isActive: true }),
+    ])
+      .then(([suppRes, wareRes, prodRes]) => {
+        setSuppliers(suppRes.data);
+        setWarehouses(wareRes);
+        setProducts(prodRes.data);
+      })
+      .catch(() => toast.error('Error al cargar datos'));
   }, []);
 
   const addItem = () => setItems((prev) => [...prev, { ...defaultItem }]);
@@ -43,10 +55,32 @@ export default function PurchaseFormPage() {
   const removeItem = (index: number) =>
     setItems((prev) => prev.filter((_, i) => i !== index));
 
-  const updateItem = (index: number, field: keyof CreatePurchaseItemDTO, value: string | number) => {
+  const updateItem = (index: number, field: keyof CreatePurchaseItemDTO, value: string | number | null) => {
     setItems((prev) =>
       prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
     );
+  };
+
+  // When a product is selected for an item, auto-fill description and price
+  const handleProductSelect = (index: number, productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    if (product) {
+      setItems((prev) =>
+        prev.map((item, i) =>
+          i === index
+            ? {
+                ...item,
+                productId,
+                description: product.name,
+                unitPrice: product.cost,
+                taxRate: product.taxRate,
+              }
+            : item
+        )
+      );
+    } else {
+      updateItem(index, 'productId', null);
+    }
   };
 
   const calcItemTotal = (item: CreatePurchaseItemDTO) => {
@@ -85,7 +119,12 @@ export default function PurchaseFormPage() {
     setIsSaving(true);
     try {
       await purchasesService.create({ ...form, items });
-      toast.success('Compra registrada');
+      const hasStockItems = form.warehouseId && items.some((i) => i.productId);
+      toast.success(
+        hasStockItems
+          ? 'Compra registrada y stock actualizado'
+          : 'Compra registrada'
+      );
       navigate('/purchases');
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -100,8 +139,12 @@ export default function PurchaseFormPage() {
     label: `${s.name}${s.cuit ? ` (${s.cuit})` : ''}`,
   }));
 
-  // Filter to only show purchase-relevant invoice types
-  const typeOptions = INVOICE_TYPE_OPTIONS;
+  const warehouseOptions = [
+    { value: '', label: 'Sin actualizar stock' },
+    ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+  ];
+
+  const hasWarehouse = !!form.warehouseId;
 
   return (
     <div>
@@ -120,7 +163,7 @@ export default function PurchaseFormPage() {
             />
             <Select
               label="Tipo de comprobante *"
-              options={typeOptions}
+              options={INVOICE_TYPE_OPTIONS}
               value={form.type}
               onChange={(v) => setForm((f) => ({ ...f, type: v as CreatePurchaseDTO['type'] }))}
             />
@@ -143,7 +186,19 @@ export default function PurchaseFormPage() {
               value={form.currency || 'ARS'}
               onChange={(v) => setForm((f) => ({ ...f, currency: v as 'ARS' | 'USD' }))}
             />
+            <Select
+              label="Almacén (para actualizar stock)"
+              options={warehouseOptions}
+              value={form.warehouseId ?? ''}
+              onChange={(v) => setForm((f) => ({ ...f, warehouseId: v || null }))}
+            />
           </div>
+          {hasWarehouse && (
+            <p className="mt-3 text-xs text-indigo-600 flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5" />
+              Los ítems vinculados a un producto actualizarán el stock automáticamente al guardar.
+            </p>
+          )}
         </Card>
 
         {/* Items */}
@@ -158,8 +213,9 @@ export default function PurchaseFormPage() {
 
           <div className="space-y-3">
             {/* Header row */}
-            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 uppercase px-1">
-              <div className="col-span-4">Descripción</div>
+            <div className={`grid gap-2 text-xs font-medium text-gray-500 uppercase px-1 ${hasWarehouse ? 'grid-cols-13' : 'grid-cols-12'}`}>
+              {hasWarehouse && <div className="col-span-3">Producto</div>}
+              <div className={hasWarehouse ? 'col-span-3' : 'col-span-4'}>Descripción</div>
               <div className="col-span-2 text-right">Cantidad</div>
               <div className="col-span-2 text-right">Precio Unit.</div>
               <div className="col-span-1 text-right">IVA%</div>
@@ -170,12 +226,22 @@ export default function PurchaseFormPage() {
             {items.map((item, index) => {
               const { total } = calcItemTotal(item);
               return (
-                <div key={index} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-4">
+                <div key={index} className={`grid gap-2 items-center ${hasWarehouse ? 'grid-cols-13' : 'grid-cols-12'}`}>
+                  {hasWarehouse && (
+                    <div className="col-span-3">
+                      <ProductSearchSelect
+                        products={products}
+                        value={item.productId ?? ''}
+                        onChange={(pid) => handleProductSelect(index, pid)}
+                        optional
+                      />
+                    </div>
+                  )}
+                  <div className={hasWarehouse ? 'col-span-3' : 'col-span-4'}>
                     <input
                       type="text"
                       className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="Descripción del ítem"
+                      placeholder="Descripción"
                       value={item.description}
                       onChange={(e) => updateItem(index, 'description', e.target.value)}
                       required

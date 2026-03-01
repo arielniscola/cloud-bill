@@ -3,44 +3,56 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Calculator } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button, Input, Select, Textarea, Card } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { Button, Input, Select, Textarea } from '../../components/ui';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect } from '../../components/shared';
 import { invoicesService, customersService, productsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, CURRENCY_OPTIONS } from '../../utils/constants';
 import type { Customer, Product, InvoiceType, Currency } from '../../types';
 
 const invoiceItemSchema = z.object({
-  productId: z.string().min(1, 'Selecciona un producto'),
-  quantity: z.coerce.number().positive('Cantidad debe ser mayor a 0'),
-  unitPrice: z.coerce.number().min(0, 'Precio debe ser mayor o igual a 0'),
+  productId: z.string().min(1, 'Seleccioná un producto'),
+  quantity: z.coerce.number().positive('> 0'),
+  unitPrice: z.coerce.number().min(0, '>= 0'),
   taxRate: z.coerce.number().min(0).max(100),
 });
 
 const invoiceSchema = z.object({
   type: z.enum([
-    'FACTURA_A',
-    'FACTURA_B',
-    'FACTURA_C',
-    'NOTA_CREDITO_A',
-    'NOTA_CREDITO_B',
-    'NOTA_CREDITO_C',
-    'NOTA_DEBITO_A',
-    'NOTA_DEBITO_B',
-    'NOTA_DEBITO_C',
+    'FACTURA_A', 'FACTURA_B', 'FACTURA_C',
+    'NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C',
+    'NOTA_DEBITO_A', 'NOTA_DEBITO_B', 'NOTA_DEBITO_C',
   ]),
-  customerId: z.string().min(1, 'Selecciona un cliente'),
+  customerId: z.string().min(1, 'Seleccioná un cliente'),
   date: z.string().optional(),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
-  exchangeRate: z.coerce.number().positive('Tipo de cambio debe ser mayor a 0').default(1),
-  items: z.array(invoiceItemSchema).min(1, 'Agrega al menos un item'),
+  exchangeRate: z.coerce.number().positive('Debe ser mayor a 0').default(1),
+  items: z.array(invoiceItemSchema).min(1, 'Agrega al menos un ítem'),
 });
 
 type InvoiceFormData = z.output<typeof invoiceSchema>;
+
+function SkeletonForm() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start animate-pulse">
+      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="h-5 bg-gray-100 rounded w-16" />
+        {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+      </div>
+      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="h-5 bg-gray-100 rounded w-32" />
+        <div className="h-10 bg-gray-100 rounded-lg" />
+        <div className="h-10 bg-gray-100 rounded-lg" />
+        <div className="h-10 bg-gray-100 rounded-lg" />
+        <div className="h-24 bg-gray-100 rounded-lg mt-4" />
+      </div>
+    </div>
+  );
+}
 
 export default function InvoiceFormPage() {
   const navigate = useNavigate();
@@ -52,12 +64,7 @@ export default function InvoiceFormPage() {
   const [isFetching, setIsFetching] = useState(isEditing);
 
   const {
-    register,
-    control,
-    handleSubmit,
-    setValue,
-    watch,
-    reset,
+    register, control, handleSubmit, setValue, watch, reset,
     formState: { errors },
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema) as any,
@@ -69,10 +76,7 @@ export default function InvoiceFormPage() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'items',
-  });
+  const { fields, append, remove } = useFieldArray({ control, name: 'items' });
 
   const type = watch('type') || 'FACTURA_B';
   const customerId = watch('customerId') || '';
@@ -80,9 +84,7 @@ export default function InvoiceFormPage() {
   const items = watch('items');
 
   useEffect(() => {
-    if (currency === 'ARS') {
-      setValue('exchangeRate', 1);
-    }
+    if (currency === 'ARS') setValue('exchangeRate', 1);
   }, [currency, setValue]);
 
   useEffect(() => {
@@ -94,7 +96,7 @@ export default function InvoiceFormPage() {
         ]);
         setCustomers(customersData.data);
         setProducts(productsData.data);
-      } catch (error) {
+      } catch {
         toast.error('Error al cargar datos');
       }
     };
@@ -125,7 +127,7 @@ export default function InvoiceFormPage() {
             taxRate: Number(item.taxRate),
           })),
         });
-      } catch (error) {
+      } catch {
         toast.error('Error al cargar factura');
         navigate('/invoices');
       } finally {
@@ -144,30 +146,29 @@ export default function InvoiceFormPage() {
     }
   };
 
-  const calculateItemTotal = (item: typeof items[0]) => {
-    const subtotal = item.quantity * item.unitPrice;
-    const taxAmount = subtotal * (item.taxRate / 100);
-    return subtotal + taxAmount;
+  const handleBarcodeAdd = (product: Product) => {
+    const existingIndex = items.findIndex((item) => item.productId === product.id);
+    if (existingIndex >= 0) {
+      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + 1);
+    } else {
+      append({ productId: product.id, quantity: 1, unitPrice: product.price, taxRate: product.taxRate });
+    }
   };
 
-  const calculateTotals = () => {
-    let subtotal = 0;
-    let taxAmount = 0;
-
-    items.forEach((item) => {
-      const itemSubtotal = item.quantity * item.unitPrice;
-      subtotal += itemSubtotal;
-      taxAmount += itemSubtotal * (item.taxRate / 100);
-    });
-
-    return {
-      subtotal,
-      taxAmount,
-      total: subtotal + taxAmount,
-    };
+  const calcItemTotal = (item: typeof items[0]) => {
+    const sub = item.quantity * item.unitPrice;
+    return sub + sub * (item.taxRate / 100);
   };
 
-  const totals = calculateTotals();
+  const totals = items.reduce(
+    (acc, item) => {
+      const sub = item.quantity * item.unitPrice;
+      const tax = sub * (item.taxRate / 100);
+      return { subtotal: acc.subtotal + sub, taxAmount: acc.taxAmount + tax };
+    },
+    { subtotal: 0, taxAmount: 0 }
+  );
+  const grandTotal = totals.subtotal + totals.taxAmount;
 
   const onSubmit = async (data: InvoiceFormData) => {
     setIsLoading(true);
@@ -189,191 +190,243 @@ export default function InvoiceFormPage() {
     }
   };
 
-  const customerOptions = customers.map((c) => ({
-    value: c.id,
-    label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}`,
-  }));
-
-  const productOptions = products.map((p) => ({
-    value: p.id,
-    label: `${p.sku} - ${p.name}`,
-  }));
-
-  if (isFetching) {
-    return <div className="p-6">Cargando...</div>;
-  }
+  const customerOptions = [
+    { value: '', label: 'Seleccionar cliente...' },
+    ...customers.map((c) => ({ value: c.id, label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}` })),
+  ];
+  if (isFetching) return (
+    <div>
+      <PageHeader title={isEditing ? 'Editar Factura' : 'Nueva Factura'} backTo={isEditing ? `/invoices/${id}` : '/invoices'} />
+      <SkeletonForm />
+    </div>
+  );
 
   return (
     <div>
-      <PageHeader title={isEditing ? 'Editar Factura' : 'Nueva Factura'} backTo={isEditing ? `/invoices/${id}` : '/invoices'} />
+      <PageHeader
+        title={isEditing ? 'Editar Factura' : 'Nueva Factura'}
+        backTo={isEditing ? `/invoices/${id}` : '/invoices'}
+      />
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Select
-              label="Tipo de comprobante *"
-              options={INVOICE_TYPE_OPTIONS}
-              value={type}
-              onChange={(value) => setValue('type', value as InvoiceType)}
-              error={errors.type?.message}
-            />
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
 
-            <Select
-              label="Cliente *"
-              options={customerOptions}
-              value={customerId}
-              onChange={(value) => setValue('customerId', value)}
-              error={errors.customerId?.message}
-            />
+          {/* ── Left: items + notes ── */}
+          <div className="space-y-4 min-w-0">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Ítems</h2>
+                <BarcodeProductInput products={products} onAdd={handleBarcodeAdd} />
+              </div>
 
-            <Input
-              label="Fecha de vencimiento"
-              type="date"
-              {...register('dueDate')}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-            <Select
-              label="Moneda"
-              options={CURRENCY_OPTIONS}
-              value={currency}
-              onChange={(value) => setValue('currency', value as Currency)}
-            />
-
-            {currency === 'USD' && (
-              <Input
-                label="Tipo de cambio"
-                type="number"
-                step="0.0001"
-                {...register('exchangeRate')}
-                error={errors.exchangeRate?.message}
-              />
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Items</h3>
-
-          <div className="space-y-4">
-            {fields.map((field, index) => (
-              <div
-                key={field.id}
-                className="grid grid-cols-12 gap-3 items-end p-4 bg-gray-50 rounded-lg"
-              >
-                <div className="col-span-4">
-                  <Select
-                    label="Producto"
-                    options={productOptions}
-                    value={items[index]?.productId || ''}
-                    onChange={(value) => handleProductChange(index, value)}
-                    error={errors.items?.[index]?.productId?.message}
-                  />
+              <div className="px-5 py-3">
+                {/* Column headers */}
+                <div className="hidden md:grid grid-cols-[3fr_72px_104px_60px_88px_32px] gap-3 pb-2 mb-1 border-b border-gray-100">
+                  {['Producto', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''].map((h) => (
+                    <span key={h} className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</span>
+                  ))}
                 </div>
-                <div className="col-span-2">
-                  <Input
-                    label="Cantidad"
-                    type="number"
-                    step="1"
-                    {...register(`items.${index}.quantity`)}
-                    error={errors.items?.[index]?.quantity?.message}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Input
-                    label="Precio unit."
-                    type="number"
-                    step="0.01"
-                    {...register(`items.${index}.unitPrice`)}
-                    error={errors.items?.[index]?.unitPrice?.message}
-                  />
-                </div>
-                <div className="col-span-1">
-                  <Input
-                    label="IVA %"
-                    type="number"
-                    step="0.01"
-                    {...register(`items.${index}.taxRate`)}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-500 mb-1">Total</p>
-                  <p className="text-sm font-medium">
-                    {formatCurrency(calculateItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }), currency)}
-                  </p>
-                </div>
-                <div className="col-span-1">
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => remove(index)}
+
+                {/* Item rows */}
+                <div className="divide-y divide-gray-100">
+                  {fields.map((field, index) => (
+                    <div
+                      key={field.id}
+                      className="grid grid-cols-1 md:grid-cols-[3fr_72px_104px_60px_88px_32px] gap-3 items-center py-3"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
+                      {/* Product */}
+                      <div>
+                        <label className="block md:hidden text-xs text-gray-400 mb-1">Producto *</label>
+                        <ProductSearchSelect
+                          products={products}
+                          value={items[index]?.productId || ''}
+                          onChange={(value) => handleProductChange(index, value)}
+                          error={errors.items?.[index]?.productId?.message}
+                        />
+                      </div>
+
+                      {/* Quantity */}
+                      <div>
+                        <label className="block md:hidden text-xs text-gray-400 mb-1">Cantidad</label>
+                        <Input
+                          type="number"
+                          step="1"
+                          min="1"
+                          placeholder="1"
+                          {...register(`items.${index}.quantity`)}
+                          error={errors.items?.[index]?.quantity?.message}
+                        />
+                      </div>
+
+                      {/* Unit price */}
+                      <div>
+                        <label className="block md:hidden text-xs text-gray-400 mb-1">Precio unit.</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          {...register(`items.${index}.unitPrice`)}
+                          error={errors.items?.[index]?.unitPrice?.message}
+                        />
+                      </div>
+
+                      {/* Tax rate */}
+                      <div>
+                        <label className="block md:hidden text-xs text-gray-400 mb-1">IVA %</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          {...register(`items.${index}.taxRate`)}
+                        />
+                      </div>
+
+                      {/* Total */}
+                      <div className="text-right">
+                        <label className="block md:hidden text-xs text-gray-400 mb-1">Total</label>
+                        <span className="text-sm font-semibold text-gray-900 tabular-nums">
+                          {formatCurrency(
+                            calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }),
+                            currency
+                          )}
+                        </span>
+                      </div>
+
+                      {/* Remove */}
+                      <div className="flex justify-end">
+                        {fields.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => remove(index)}
+                            className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors duration-150"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add item */}
+                <div className="pt-3 border-t border-gray-100 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => append({ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 })}
+                    className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors duration-150 py-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar ítem
+                  </button>
+                  {errors.items?.message && (
+                    <p className="text-xs text-red-500 mt-1">{errors.items.message}</p>
                   )}
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-4"
-            onClick={() =>
-              append({ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 })
-            }
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Agregar item
-          </Button>
-          {errors.items?.message && (
-            <p className="text-sm text-red-600 mt-2">{errors.items.message}</p>
-          )}
-        </Card>
-
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Textarea
-              label="Notas"
-              {...register('notes')}
-              rows={3}
-            />
-
-            <div className="space-y-2 text-right">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Subtotal:</span>
-                <span className="font-medium">{formatCurrency(totals.subtotal, currency)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">IVA:</span>
-                <span className="font-medium">{formatCurrency(totals.taxAmount, currency)}</span>
-              </div>
-              <div className="flex justify-between text-lg border-t pt-2">
-                <span className="font-semibold">Total:</span>
-                <span className="font-bold text-primary-600">
-                  {formatCurrency(totals.total, currency)}
-                </span>
-              </div>
+            {/* Notes */}
+            <div className="bg-white border border-gray-200 rounded-xl p-5">
+              <Textarea
+                label="Notas"
+                placeholder="Condiciones, aclaraciones..."
+                {...register('notes')}
+                rows={3}
+              />
             </div>
           </div>
-        </Card>
 
-        <div className="flex gap-3">
-          <Button type="submit" isLoading={isLoading}>
-            {isEditing ? 'Guardar cambios' : 'Crear factura'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate('/invoices')}
-          >
-            Cancelar
-          </Button>
+          {/* ── Right: sticky sidebar ── */}
+          <div className="lg:sticky lg:top-6 space-y-4">
+            {/* Metadata */}
+            <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+              <Select
+                label="Tipo de comprobante"
+                options={INVOICE_TYPE_OPTIONS}
+                value={type}
+                onChange={(value) => setValue('type', value as InvoiceType)}
+                error={errors.type?.message}
+              />
+
+              <Select
+                label="Cliente *"
+                options={customerOptions}
+                value={customerId}
+                onChange={(value) => setValue('customerId', value)}
+                error={errors.customerId?.message}
+              />
+
+              <Input
+                label="Fecha de vencimiento"
+                type="date"
+                {...register('dueDate')}
+              />
+
+              <div className={currency === 'USD' ? 'grid grid-cols-2 gap-3' : ''}>
+                <Select
+                  label="Moneda"
+                  options={CURRENCY_OPTIONS}
+                  value={currency}
+                  onChange={(value) => setValue('currency', value as Currency)}
+                />
+                {currency === 'USD' && (
+                  <Input
+                    label="Tipo de cambio"
+                    type="number"
+                    step="0.0001"
+                    {...register('exchangeRate')}
+                    error={errors.exchangeRate?.message}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Calculator className="w-4 h-4 text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Resumen</span>
+              </div>
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">Subtotal</span>
+                  <span className="text-sm font-medium text-gray-900 tabular-nums">
+                    {formatCurrency(totals.subtotal, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">IVA</span>
+                  <span className="text-sm font-medium text-gray-900 tabular-nums">
+                    {formatCurrency(totals.taxAmount, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2.5 border-t border-gray-200">
+                  <span className="text-sm font-semibold text-gray-900">Total</span>
+                  <span className="text-lg font-bold text-indigo-600 tabular-nums">
+                    {formatCurrency(grandTotal, currency)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2.5">
+              <Button type="submit" isLoading={isLoading} className="w-full justify-center">
+                {isEditing ? 'Guardar cambios' : 'Crear factura'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center"
+                onClick={() => navigate(isEditing ? `/invoices/${id}` : '/invoices')}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+
         </div>
       </form>
     </div>

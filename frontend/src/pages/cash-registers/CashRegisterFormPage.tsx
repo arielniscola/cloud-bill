@@ -3,55 +3,71 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Save, Landmark } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button, Input, Card, Textarea } from '../../components/ui';
+import { Button, Input, Textarea } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { cashRegistersService } from '../../services';
 
 const cashRegisterSchema = z.object({
-  name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
+  name:        z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   description: z.string().optional().nullable(),
-  isActive: z.boolean(),
+  isActive:    z.boolean(),
 });
 
 type CashRegisterFormData = z.infer<typeof cashRegisterSchema>;
 
+function FormSkeleton() {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-6 max-w-xl animate-pulse space-y-5">
+      <div className="flex items-center gap-3 pb-5 border-b border-gray-100">
+        <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+        <div className="space-y-2">
+          <div className="h-4 bg-gray-100 rounded w-24" />
+          <div className="h-3 bg-gray-100 rounded w-48" />
+        </div>
+      </div>
+      <div className="h-9 bg-gray-100 rounded-lg" />
+      <div className="h-20 bg-gray-100 rounded-lg" />
+      <div className="h-14 bg-gray-100 rounded-xl" />
+    </div>
+  );
+}
+
 export default function CashRegisterFormPage() {
-  const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditing = !!id;
-  const [isLoading, setIsLoading] = useState(false);
+  const navigate    = useNavigate();
+  const { id }      = useParams();
+  const isEditing   = !!id;
+  const [isLoading, setIsLoading]   = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
 
   const {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<CashRegisterFormData>({
     resolver: zodResolver(cashRegisterSchema),
-    defaultValues: {
-      isActive: true,
-    },
+    defaultValues: { isActive: true },
   });
 
+  const isActive = watch('isActive');
+
   useEffect(() => {
-    if (isEditing) {
-      const fetchCashRegister = async () => {
-        try {
-          const cr = await cashRegistersService.getById(id);
-          setValue('name', cr.name);
-          setValue('description', cr.description);
-          setValue('isActive', cr.isActive);
-        } catch (error) {
-          toast.error('Error al cargar caja');
-          navigate('/cash-registers');
-        } finally {
-          setIsFetching(false);
-        }
-      };
-      fetchCashRegister();
-    }
+    if (!isEditing) return;
+    cashRegistersService
+      .getById(id)
+      .then((cr) => {
+        setValue('name', cr.name);
+        setValue('description', cr.description);
+        setValue('isActive', cr.isActive);
+      })
+      .catch(() => {
+        toast.error('Error al cargar caja');
+        navigate('/cash-registers');
+      })
+      .finally(() => setIsFetching(false));
   }, [id, isEditing, setValue, navigate]);
 
   const onSubmit = async (data: CashRegisterFormData) => {
@@ -74,18 +90,38 @@ export default function CashRegisterFormPage() {
   };
 
   if (isFetching) {
-    return <div className="p-6">Cargando...</div>;
+    return (
+      <div>
+        <PageHeader title={isEditing ? 'Editar caja' : 'Nueva caja'} backTo="/cash-registers" />
+        <FormSkeleton />
+      </div>
+    );
   }
 
   return (
     <div>
       <PageHeader
-        title={isEditing ? 'Editar Caja' : 'Nueva Caja'}
+        title={isEditing ? 'Editar caja' : 'Nueva caja'}
         backTo="/cash-registers"
       />
 
-      <Card className="max-w-xl">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div className="bg-white border border-gray-200 rounded-xl p-6 max-w-xl">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6 pb-5 border-b border-gray-100">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+            <Landmark className="w-5 h-5 text-indigo-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">
+              {isEditing ? 'Editar caja' : 'Nueva caja'}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Las cajas agrupan cobros de facturas y presupuestos.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           <Input
             label="Nombre *"
             placeholder="Ej: Efectivo mostrador, Banco Santander, Mercado Pago..."
@@ -99,20 +135,34 @@ export default function CashRegisterFormPage() {
             {...register('description')}
           />
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isActive"
-              {...register('isActive')}
-              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-            />
-            <label htmlFor="isActive" className="text-sm text-gray-700">
-              Caja activa
-            </label>
+          {/* Toggle switch */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Caja activa</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Solo las cajas activas aparecen al registrar cobros.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isActive}
+              onClick={() => setValue('isActive', !isActive)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                isActive ? 'bg-indigo-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
+                  isActive ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-1">
             <Button type="submit" isLoading={isLoading}>
+              <Save className="w-4 h-4 mr-2" />
               {isEditing ? 'Guardar cambios' : 'Crear caja'}
             </Button>
             <Button
@@ -124,7 +174,7 @@ export default function CashRegisterFormPage() {
             </Button>
           </div>
         </form>
-      </Card>
+      </div>
     </div>
   );
 }
