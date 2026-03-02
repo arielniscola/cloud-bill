@@ -6,11 +6,11 @@ import { z } from 'zod';
 import { Plus, Trash2, Calculator } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect } from '../../components/shared';
-import { invoicesService, customersService, productsService } from '../../services';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect } from '../../components/shared';
+import { invoicesService, customersService, productsService, cashRegistersService, appSettingsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import { INVOICE_TYPE_OPTIONS, CURRENCY_OPTIONS } from '../../utils/constants';
-import type { Customer, Product, InvoiceType, Currency } from '../../types';
+import { INVOICE_TYPE_OPTIONS, PAYMENT_METHOD_OPTIONS, PAYMENT_TERMS_OPTIONS, SALE_CONDITION_OPTIONS } from '../../utils/constants';
+import type { Customer, Product, InvoiceType, CashRegister } from '../../types';
 
 const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Seleccioná un producto'),
@@ -29,8 +29,8 @@ const invoiceSchema = z.object({
   date: z.string().optional(),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
-  currency: z.enum(['ARS', 'USD']).default('ARS'),
-  exchangeRate: z.coerce.number().positive('Debe ser mayor a 0').default(1),
+  paymentTerms: z.string().optional().nullable(),
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   items: z.array(invoiceItemSchema).min(1, 'Agrega al menos un ítem'),
 });
 
@@ -62,6 +62,10 @@ export default function InvoiceFormPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
+  const [registerPayment, setRegisterPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
+  const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
+  const [selectedCashRegisterId, setSelectedCashRegisterId] = useState<string>('');
 
   const {
     register, control, handleSubmit, setValue, watch, reset,
@@ -70,8 +74,7 @@ export default function InvoiceFormPage() {
     resolver: zodResolver(invoiceSchema) as any,
     defaultValues: {
       type: 'FACTURA_B',
-      currency: 'ARS',
-      exchangeRate: 1,
+      saleCondition: 'CONTADO',
       items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
     },
   });
@@ -80,12 +83,7 @@ export default function InvoiceFormPage() {
 
   const type = watch('type') || 'FACTURA_B';
   const customerId = watch('customerId') || '';
-  const currency = watch('currency') || 'ARS';
   const items = watch('items');
-
-  useEffect(() => {
-    if (currency === 'ARS') setValue('exchangeRate', 1);
-  }, [currency, setValue]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -118,8 +116,8 @@ export default function InvoiceFormPage() {
           customerId: invoice.customerId,
           dueDate: invoice.dueDate ? invoice.dueDate.substring(0, 10) : null,
           notes: invoice.notes,
-          currency: invoice.currency,
-          exchangeRate: invoice.exchangeRate,
+          paymentTerms: invoice.paymentTerms,
+          saleCondition: invoice.saleCondition ?? 'CONTADO',
           items: invoice.items.map((item) => ({
             productId: item.productId,
             quantity: Number(item.quantity),
@@ -170,16 +168,45 @@ export default function InvoiceFormPage() {
   );
   const grandTotal = totals.subtotal + totals.taxAmount;
 
+  const loadCashRegisters = async () => {
+    try {
+      const [crs, settings] = await Promise.all([
+        cashRegistersService.getAll(true),
+        appSettingsService.get().catch(() => null),
+      ]);
+      setCashRegisters(crs);
+      const preferred = settings?.defaultInvoiceCashRegisterId;
+      const found = preferred ? crs.find((c) => c.id === preferred) : null;
+      setSelectedCashRegisterId(found ? found.id : crs[0]?.id ?? '');
+    } catch {
+      /* silent */
+    }
+  };
+
   const onSubmit = async (data: InvoiceFormData) => {
     setIsLoading(true);
     try {
       if (isEditing) {
-        await invoicesService.update(id, data);
+        await invoicesService.update(id, { ...data, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition });
         toast.success('Factura actualizada');
         navigate(`/invoices/${id}`);
       } else {
-        const invoice = await invoicesService.create(data);
-        toast.success('Factura creada');
+        const invoice = await invoicesService.create({ ...data, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition });
+        if (registerPayment && selectedCashRegisterId) {
+          try {
+            await invoicesService.pay(invoice.id, {
+              amount: grandTotal,
+              paymentMethod: paymentMethod as any,
+              cashRegisterId: selectedCashRegisterId,
+            });
+            toast.success('Factura creada y pago registrado');
+          } catch {
+            toast.success('Factura creada');
+            toast.error('No se pudo registrar el pago automáticamente');
+          }
+        } else {
+          toast.success('Factura creada');
+        }
         navigate(`/invoices/${invoice.id}`);
       }
     } catch (error: unknown) {
@@ -190,10 +217,6 @@ export default function InvoiceFormPage() {
     }
   };
 
-  const customerOptions = [
-    { value: '', label: 'Seleccionar cliente...' },
-    ...customers.map((c) => ({ value: c.id, label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}` })),
-  ];
   if (isFetching) return (
     <div>
       <PageHeader title={isEditing ? 'Editar Factura' : 'Nueva Factura'} backTo={isEditing ? `/invoices/${id}` : '/invoices'} />
@@ -289,7 +312,7 @@ export default function InvoiceFormPage() {
                         <span className="text-sm font-semibold text-gray-900 tabular-nums">
                           {formatCurrency(
                             calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }),
-                            currency
+                            'ARS'
                           )}
                         </span>
                       </div>
@@ -350,11 +373,11 @@ export default function InvoiceFormPage() {
                 error={errors.type?.message}
               />
 
-              <Select
-                label="Cliente *"
-                options={customerOptions}
+              <CustomerSearchSelect
+                customers={customers}
                 value={customerId}
-                onChange={(value) => setValue('customerId', value)}
+                onChange={(id) => setValue('customerId', id)}
+                label="Cliente *"
                 error={errors.customerId?.message}
               />
 
@@ -364,23 +387,20 @@ export default function InvoiceFormPage() {
                 {...register('dueDate')}
               />
 
-              <div className={currency === 'USD' ? 'grid grid-cols-2 gap-3' : ''}>
-                <Select
-                  label="Moneda"
-                  options={CURRENCY_OPTIONS}
-                  value={currency}
-                  onChange={(value) => setValue('currency', value as Currency)}
-                />
-                {currency === 'USD' && (
-                  <Input
-                    label="Tipo de cambio"
-                    type="number"
-                    step="0.0001"
-                    {...register('exchangeRate')}
-                    error={errors.exchangeRate?.message}
-                  />
-                )}
-              </div>
+              <Select
+                label="Condiciones de venta"
+                options={PAYMENT_TERMS_OPTIONS}
+                value={watch('paymentTerms') ?? ''}
+                onChange={(v) => setValue('paymentTerms', v || null)}
+              />
+
+              <Select
+                label="Condición de cobro"
+                options={SALE_CONDITION_OPTIONS}
+                value={watch('saleCondition') ?? 'CONTADO'}
+                onChange={(v) => setValue('saleCondition', v as 'CONTADO' | 'CUENTA_CORRIENTE')}
+              />
+
             </div>
 
             {/* Totals */}
@@ -393,23 +413,73 @@ export default function InvoiceFormPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500">Subtotal</span>
                   <span className="text-sm font-medium text-gray-900 tabular-nums">
-                    {formatCurrency(totals.subtotal, currency)}
+                    {formatCurrency(totals.subtotal, 'ARS')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500">IVA</span>
                   <span className="text-sm font-medium text-gray-900 tabular-nums">
-                    {formatCurrency(totals.taxAmount, currency)}
+                    {formatCurrency(totals.taxAmount, 'ARS')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2.5 border-t border-gray-200">
                   <span className="text-sm font-semibold text-gray-900">Total</span>
                   <span className="text-lg font-bold text-indigo-600 tabular-nums">
-                    {formatCurrency(grandTotal, currency)}
+                    {formatCurrency(grandTotal, 'ARS')}
                   </span>
                 </div>
               </div>
             </div>
+
+            {/* Register payment at creation */}
+            {!isEditing && (
+              <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    checked={registerPayment}
+                    onChange={(e) => {
+                      setRegisterPayment(e.target.checked);
+                      if (e.target.checked && cashRegisters.length === 0) loadCashRegisters();
+                    }}
+                  />
+                  <span className="text-sm font-medium text-gray-700">Registrar pago al crear</span>
+                </label>
+
+                {registerPayment && (
+                  <div className="space-y-3 pt-2 border-t border-gray-100">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Método de pago</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setPaymentMethod(opt.value)}
+                            className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-150 ${
+                              paymentMethod === opt.value
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {cashRegisters.length > 0 && (
+                      <Select
+                        label="Caja"
+                        options={cashRegisters.map((cr) => ({ value: cr.id, label: cr.name }))}
+                        value={selectedCashRegisterId}
+                        onChange={setSelectedCashRegisterId}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex flex-col gap-2.5">

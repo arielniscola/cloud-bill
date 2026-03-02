@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Plus, Trash2, Truck, FileText, Calculator, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
-import { PageHeader, BarcodeProductInput } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, CustomerSearchSelect } from '../../components/shared';
 import { remitosService, customersService, productsService, invoicesService, budgetsService } from '../../services';
 import { STOCK_BEHAVIOR_OPTIONS } from '../../utils/constants';
 import type { Customer, Product, StockBehavior, Invoice, Budget } from '../../types';
@@ -179,14 +179,6 @@ export default function RemitoFormPage() {
     }
   };
 
-  const customerOptions = [
-    { value: '', label: 'Seleccioná un cliente' },
-    ...customers.map((c) => ({
-      value: c.id,
-      label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}`,
-    })),
-  ];
-
   const freeProductOptions = [
     { value: '', label: 'Seleccioná un producto' },
     ...products.map((p) => ({ value: p.id, label: `${p.sku} - ${p.name}` })),
@@ -329,11 +321,11 @@ export default function RemitoFormPage() {
               </div>
               <div className="px-5 py-4 space-y-4">
                 <div>
-                  <Select
-                    label="Cliente *"
-                    options={customerOptions}
+                  <CustomerSearchSelect
+                    customers={customers}
                     value={customerId}
-                    onChange={(value) => setValue('customerId', value)}
+                    onChange={(id) => setValue('customerId', id)}
+                    label="Cliente *"
                     error={errors.customerId?.message}
                     disabled={hasSource && !!sourceDoc && !!(sourceDoc as any).customerId}
                   />

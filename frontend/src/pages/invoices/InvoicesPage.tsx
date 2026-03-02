@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Eye, X, CalendarRange, Receipt } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Badge, Card, Select, Input } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, CustomerSearchSelect } from '../../components/shared';
 import Pagination from '../../components/shared/Pagination';
 import { invoicesService, customersService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -12,6 +12,7 @@ import {
   INVOICE_STATUSES,
   INVOICE_STATUS_OPTIONS,
   INVOICE_TYPE_OPTIONS,
+  DELIVERY_STATUSES,
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';
 import type { Invoice, InvoiceStatus, InvoiceType, Customer } from '../../types';
@@ -24,6 +25,12 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
   PAID: 'success',
   CANCELLED: 'error',
   PARTIALLY_PAID: 'warning',
+};
+
+const DELIVERY_VARIANT: Record<string, StatusVariant> = {
+  NOT_DELIVERED: 'default',
+  PARTIALLY_DELIVERED: 'warning',
+  DELIVERED: 'success',
 };
 
 const TYPE_CHIP: Record<string, { label: string; cls: string }> = {
@@ -47,9 +54,9 @@ function SkeletonRows({ count }: { count: number }) {
           <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-10" /></td>
           <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-44" /></td>
           <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-20" /></td>
-          <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-10" /></td>
           <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-24 ml-auto" /></td>
           <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-16 mx-auto" /></td>
+          <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-20 mx-auto" /></td>
           <td className="px-4 py-4" />
         </tr>
       ))}
@@ -114,10 +121,6 @@ export default function InvoicesPage() {
 
   const statusOptions = [{ value: '', label: 'Todos los estados' }, ...INVOICE_STATUS_OPTIONS];
   const typeOptions = [{ value: '', label: 'Todos los tipos' }, ...INVOICE_TYPE_OPTIONS];
-  const customerOptions = [
-    { value: '', label: 'Todos los clientes' },
-    ...customers.map((c) => ({ value: c.id, label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}` })),
-  ];
 
   const showSkeleton = isFirstLoad && isLoading;
   const showEmpty = !isLoading && !isFirstLoad && invoices.length === 0;
@@ -148,8 +151,12 @@ export default function InvoicesPage() {
                 onChange={(v) => { setStatusFilter(v); setPage(1); }} />
             </div>
             <div className="w-52">
-              <Select options={customerOptions} value={customerFilter}
-                onChange={(v) => { setCustomerFilter(v); setPage(1); }} />
+              <CustomerSearchSelect
+                customers={customers}
+                value={customerFilter}
+                onChange={(v) => { setCustomerFilter(v); setPage(1); }}
+                clearLabel="Todos los clientes"
+              />
             </div>
 
             <button
@@ -196,7 +203,7 @@ export default function InvoicesPage() {
             <table className="min-w-full">
               <thead className="bg-gray-50/80">
                 <tr>
-                  {['Número', 'Tipo', 'Cliente', 'Fecha', 'Moneda', 'Total', 'Estado', ''].map((h) => (
+                  {['Número', 'Tipo', 'Cliente', 'Fecha', 'Total', 'Estado', 'Entrega', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -242,9 +249,9 @@ export default function InvoicesPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Moneda</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Entrega</th>
                     <th className="px-4 py-3 w-10" />
                   </tr>
                 </thead>
@@ -270,11 +277,6 @@ export default function InvoicesPage() {
                           {inv.customer?.name ?? <span className="text-gray-400 italic text-xs">—</span>}
                         </td>
                         <td className="px-4 py-3.5 text-sm text-gray-500 tabular-nums">{formatDate(inv.date)}</td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
-                            {inv.currency}
-                          </span>
-                        </td>
                         <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
                           {formatCurrency(inv.total, inv.currency)}
                         </td>
@@ -282,6 +284,15 @@ export default function InvoicesPage() {
                           <Badge variant={STATUS_VARIANT[inv.status] ?? 'default'} dot>
                             {INVOICE_STATUSES[inv.status]}
                           </Badge>
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {inv.deliveryStatus && inv.deliveryStatus !== 'NOT_DELIVERED' ? (
+                            <Badge variant={DELIVERY_VARIANT[inv.deliveryStatus] ?? 'default'} dot>
+                              {DELIVERY_STATUSES[inv.deliveryStatus]}
+                            </Badge>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <button

@@ -20,3 +20,4 @@ export { default as brandsService } from './brands.service';
 export { default as budgetsService } from './budgets.service';
 export { default as appSettingsService } from './app-settings.service';
 export { default as stockIntelligenceService } from './stock-intelligence.service';
+export { default as recibosService } from './recibos.service';

@@ -54,6 +54,8 @@ export interface Invoice {
   exchangeRate: number;
   status: InvoiceStatus;
   notes: string | null;
+  paymentTerms: string | null;
+  saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
   cae: string | null;
   caeExpiry: string | null;
   afipPtVenta: number | null;
@@ -77,6 +79,8 @@ export interface CreateInvoiceDTO {
   date?: string;
   dueDate?: string | null;
   notes?: string | null;
+  paymentTerms?: string | null;
+  saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   currency?: Currency;
   exchangeRate?: number;
   items: CreateInvoiceItemDTO[];
@@ -87,7 +91,14 @@ export interface UpdateInvoiceStatusDTO {
 }
 
 export interface PayInvoiceDTO {
-  cashRegisterId: string;
+  amount: number;
+  paymentMethod: string;
+  cashRegisterId?: string | null;
+  reference?: string | null;
+  bank?: string | null;
+  checkDueDate?: string | null;
+  installments?: number | null;
+  notes?: string | null;
 }
 
 export interface InvoiceFilters {

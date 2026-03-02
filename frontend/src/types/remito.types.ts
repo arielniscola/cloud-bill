@@ -52,4 +52,6 @@ export interface RemitoFilters {
   limit?: number;
   customerId?: string;
   status?: RemitoStatus;
+  dateFrom?: string;
+  dateTo?: string;
 }

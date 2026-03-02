@@ -2,25 +2,26 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Eye, X, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button, Badge, Card, Select } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { Button, Badge } from '../../components/ui';
+import { PageHeader, CustomerSearchSelect } from '../../components/shared';
 import Pagination from '../../components/shared/Pagination';
-import { remitosService } from '../../services';
+import { remitosService, customersService } from '../../services';
 import { formatDate } from '../../utils/formatters';
 import {
   REMITO_STATUSES,
   REMITO_STATUS_OPTIONS,
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';
-import type { Remito, RemitoStatus } from '../../types';
+import type { Remito, RemitoStatus, Customer } from '../../types';
 
+// ── Helpers ────────────────────────────────────────────────────────
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
 const STATUS_VARIANT: Record<string, StatusVariant> = {
-  PENDING: 'warning',
-  PARTIALLY_DELIVERED: 'info',
-  DELIVERED: 'success',
-  CANCELLED: 'error',
+  PENDING:              'warning',
+  PARTIALLY_DELIVERED:  'info',
+  DELIVERED:            'success',
+  CANCELLED:            'error',
 };
 
 const BEHAVIOR_CHIP = {
@@ -28,12 +29,43 @@ const BEHAVIOR_CHIP = {
   RESERVE:  { label: 'Reserva',  cls: 'text-sky-700 bg-sky-50 ring-sky-200/60' },
 };
 
+// ── Compact native select ──────────────────────────────────────────
+function CompactSelect({
+  value, onChange, options, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`appearance-none pl-3 pr-7 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+          value
+            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+        }`}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
+    </div>
+  );
+}
+
+// ── Skeleton ───────────────────────────────────────────────────────
 function SkeletonRows({ count }: { count: number }) {
   return (
     <>
       {Array.from({ length: count }).map((_, i) => (
         <tr key={i} className="animate-pulse border-b border-gray-100 last:border-0">
-          <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-32" /></td>
+          <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-28" /></td>
           <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-20" /></td>
           <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-44" /></td>
           <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-20" /></td>
@@ -45,22 +77,42 @@ function SkeletonRows({ count }: { count: number }) {
   );
 }
 
+// ── Page ───────────────────────────────────────────────────────────
 export default function RemitosPage() {
   const navigate = useNavigate();
-  const [remitos, setRemitos] = useState<Remito[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFirstLoad, setIsFirstLoad] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
+
+  // Data
+  const [remitos,   setRemitos]   = useState<Remito[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading,    setIsLoading]    = useState(true);
+  const [isFirstLoad,  setIsFirstLoad]  = useState(true);
+  const [page,  setPage]  = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+
+  // Filters
+  const [statusFilter,   setStatusFilter]   = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [dateFrom,       setDateFrom]       = useState('');
+  const [dateTo,         setDateTo]         = useState('');
+
+  // Load customers once
+  useEffect(() => {
+    customersService.getAll({ limit: 1000 })
+      .then(res => setCustomers(res.data))
+      .catch(() => {});
+  }, []);
 
   const fetchRemitos = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await remitosService.getAll({
-        page, limit,
-        status: (statusFilter || undefined) as RemitoStatus | undefined,
+        page,
+        limit,
+        status:     (statusFilter   || undefined) as RemitoStatus | undefined,
+        customerId:  customerFilter || undefined,
+        dateFrom:    dateFrom       || undefined,
+        dateTo:      dateTo         || undefined,
       });
       setRemitos(response.data);
       setTotal(response.total);
@@ -70,21 +122,32 @@ export default function RemitosPage() {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
-  }, [page, limit, statusFilter]);
+  }, [page, limit, statusFilter, customerFilter, dateFrom, dateTo]);
 
   useEffect(() => { fetchRemitos(); }, [fetchRemitos]);
 
-  const statusOptions = [{ value: '', label: 'Todos los estados' }, ...REMITO_STATUS_OPTIONS];
-  const hasFilters = !!statusFilter;
+  const clearFilters = () => {
+    setStatusFilter('');
+    setCustomerFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
+  const hasFilters = !!(statusFilter || customerFilter || dateFrom || dateTo);
 
   const showSkeleton = isFirstLoad && isLoading;
-  const showEmpty = !isLoading && !isFirstLoad && remitos.length === 0;
+  const showEmpty    = !isLoading && !isFirstLoad && remitos.length === 0;
 
   return (
     <div>
       <PageHeader
         title="Remitos"
-        subtitle={total > 0 ? `${total} remitos registrados` : undefined}
+        subtitle={
+          total > 0
+            ? `${total} remito${total !== 1 ? 's' : ''}${hasFilters ? ' · filtros activos' : ''}`
+            : undefined
+        }
         actions={
           <Button onClick={() => navigate('/remitos/new')}>
             <Plus className="w-4 h-4 mr-2" />
@@ -93,37 +156,101 @@ export default function RemitosPage() {
         }
       />
 
-      <Card padding="none">
-        {/* Filters */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {/* ── Filter bar ── */}
         <div className="px-4 py-3 border-b border-gray-100">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="w-48">
-              <Select
-                options={statusOptions}
-                value={statusFilter}
-                onChange={(v) => { setStatusFilter(v); setPage(1); }}
+
+            {/* Estado */}
+            <CompactSelect
+              value={statusFilter}
+              onChange={(v) => { setStatusFilter(v); setPage(1); }}
+              placeholder="Estado"
+              options={REMITO_STATUS_OPTIONS}
+            />
+
+            {/* Fecha desde → hasta */}
+            <div className="flex flex-wrap items-center gap-1">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+              />
+              <span className="text-gray-300 text-xs">→</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
               />
             </div>
+
+            {/* Cliente */}
+            <div className="w-52">
+              <CustomerSearchSelect
+                customers={customers}
+                value={customerFilter}
+                onChange={(v) => { setCustomerFilter(v); setPage(1); }}
+                clearLabel="Todos los clientes"
+              />
+            </div>
+
+            {/* Limpiar */}
             {hasFilters && (
               <button
-                onClick={() => { setStatusFilter(''); setPage(1); }}
-                className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 px-2 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-150"
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors px-2 py-1.5 rounded-lg hover:bg-gray-100"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
                 Limpiar
               </button>
             )}
           </div>
+
+          {/* Active filter chips */}
+          {hasFilters && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {statusFilter && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {REMITO_STATUSES[statusFilter as RemitoStatus]}
+                  <button onClick={() => { setStatusFilter(''); setPage(1); }}>
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              )}
+              {customerFilter && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {customers.find(c => c.id === customerFilter)?.name ?? 'Cliente'}
+                  <button onClick={() => { setCustomerFilter(''); setPage(1); }}>
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              )}
+              {(dateFrom || dateTo) && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {dateFrom && dateTo
+                    ? `${dateFrom} → ${dateTo}`
+                    : dateFrom
+                    ? `desde ${dateFrom}`
+                    : `hasta ${dateTo}`}
+                  <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Skeleton */}
+        {/* ── Skeleton ── */}
         {showSkeleton && (
           <div className="overflow-x-auto">
-            <table className="min-w-full">
+            <table className="min-w-full min-w-[600px]">
               <thead className="bg-gray-50/80">
                 <tr>
                   {['Número', 'Tipo', 'Cliente', 'Fecha', 'Estado', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -134,7 +261,7 @@ export default function RemitosPage() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* ── Empty state ── */}
         {showEmpty && (
           <div className="py-20 flex flex-col items-center text-center px-4">
             <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-4">
@@ -148,7 +275,14 @@ export default function RemitosPage() {
                 ? 'Probá ajustando los filtros para encontrar lo que buscás.'
                 : 'Creá tu primer remito para registrar entregas de mercadería.'}
             </p>
-            {!hasFilters && (
+            {hasFilters ? (
+              <button
+                onClick={clearFilters}
+                className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
+              >
+                Limpiar filtros
+              </button>
+            ) : (
               <Button onClick={() => navigate('/remitos/new')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Nuevo remito
@@ -157,18 +291,18 @@ export default function RemitosPage() {
           </div>
         )}
 
-        {/* Data table */}
+        {/* ── Data table ── */}
         {!showSkeleton && !showEmpty && (
           <div className={`transition-opacity duration-200 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
             <div className="overflow-x-auto">
-              <table className="min-w-full">
+              <table className="min-w-full min-w-[600px]">
                 <thead className="bg-gray-50/80">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Número</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo entrega</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Número</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Tipo entrega</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Fecha</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Estado</th>
                     <th className="px-4 py-3 w-10" />
                   </tr>
                 </thead>
@@ -181,16 +315,20 @@ export default function RemitosPage() {
                         className="cursor-pointer hover:bg-gray-50/80 transition-colors duration-150 group"
                         onClick={() => navigate(`/remitos/${rem.id}`)}
                       >
-                        <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 tabular-nums">{rem.number}</td>
+                        <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+                          {rem.number}
+                        </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ring-1 ring-inset ${chip.cls}`}>
                             {chip.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-sm text-gray-700">
+                        <td className="px-4 py-3.5 text-sm text-gray-700 max-w-[200px] truncate">
                           {rem.customer?.name ?? <span className="text-gray-400 italic text-xs">—</span>}
                         </td>
-                        <td className="px-4 py-3.5 text-sm text-gray-500 tabular-nums">{formatDate(rem.date)}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-500 tabular-nums whitespace-nowrap">
+                          {formatDate(rem.date)}
+                        </td>
                         <td className="px-4 py-3.5 text-center">
                           <Badge variant={STATUS_VARIANT[rem.status] ?? 'default'} dot>
                             {REMITO_STATUSES[rem.status]}
@@ -210,6 +348,7 @@ export default function RemitosPage() {
                 </tbody>
               </table>
             </div>
+
             {total > limit && (
               <Pagination
                 page={page}
@@ -222,7 +361,7 @@ export default function RemitosPage() {
             )}
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

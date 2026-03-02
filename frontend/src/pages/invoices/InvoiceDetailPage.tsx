@@ -6,11 +6,13 @@ import {
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import QRCode from 'qrcode';
-import { Badge, Button, Modal, Select } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { invoicesService, cashRegistersService, afipService, appSettingsService } from '../../services';
+import { Badge, Button } from '../../components/ui';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
+import { invoicesService, recibosService, afipService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
+import type { Invoice, Recibo, CreateReciboDTO } from '../../types';
+import InvoicePDF from '../../components/pdf/InvoicePDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   NOT_DELIVERED: 'Sin entregas',
@@ -23,8 +25,6 @@ const DELIVERY_STATUS_VARIANT: Record<string, DeliveryVariant> = {
   PARTIALLY_DELIVERED: 'warning',
   DELIVERED: 'success',
 };
-import type { Invoice, CashRegister } from '../../types';
-import InvoicePDF from '../../components/pdf/InvoicePDF';
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -67,28 +67,35 @@ export default function InvoiceDetailPage() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
-  const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
-  const [selectedCashRegisterId, setSelectedCashRegisterId] = useState<string>('');
+  const [isPayLoading, setIsPayLoading] = useState(false);
   const [showIssueDialog, setShowIssueDialog] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isEmitting, setIsEmitting] = useState(false);
   const [showEmitDialog, setShowEmitDialog] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [recibos, setRecibos] = useState<Recibo[]>([]);
+  const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
+  const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
+
+  const loadData = async () => {
+    if (!id) return;
+    try {
+      const [invoiceData, recibosData] = await Promise.all([
+        invoicesService.getById(id),
+        recibosService.getAll({ invoiceId: id }),
+      ]);
+      setInvoice(invoiceData);
+      setRecibos(recibosData.data);
+    } catch {
+      toast.error('Error al cargar factura');
+      navigate('/invoices');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchInvoice = async () => {
-      if (!id) return;
-      try {
-        const data = await invoicesService.getById(id);
-        setInvoice(data);
-      } catch {
-        toast.error('Error al cargar factura');
-        navigate('/invoices');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchInvoice();
+    loadData();
   }, [id, navigate]);
 
   const handleCancel = async () => {
@@ -107,36 +114,35 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const handleOpenPayModal = async () => {
+  const handlePay = async (data: CreateReciboDTO) => {
+    if (!id) return;
+    setIsPayLoading(true);
     try {
-      const [data, settings] = await Promise.all([
-        cashRegistersService.getAll(true),
-        appSettingsService.get().catch(() => null),
-      ]);
-      setCashRegisters(data);
-      const defaultId = settings?.defaultInvoiceCashRegisterId;
-      const found = defaultId ? data.find((cr) => cr.id === defaultId) : null;
-      setSelectedCashRegisterId(found ? found.id : data[0]?.id ?? '');
-    } catch {
-      toast.error('Error al cargar cajas');
-      return;
-    }
-    setShowPayModal(true);
-  };
-
-  const handleMarkAsPaid = async () => {
-    if (!id || !selectedCashRegisterId) return;
-    setIsUpdating(true);
-    try {
-      const updated = await invoicesService.pay(id, { cashRegisterId: selectedCashRegisterId });
-      setInvoice(updated);
-      toast.success('Factura marcada como pagada');
+      await invoicesService.pay(id, data);
+      toast.success('Pago registrado correctamente');
       setShowPayModal(false);
+      await loadData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al registrar pago');
     } finally {
-      setIsUpdating(false);
+      setIsPayLoading(false);
+    }
+  };
+
+  const handleCancelRecibo = async () => {
+    if (!cancelReciboId) return;
+    setIsCancellingRecibo(true);
+    try {
+      await recibosService.cancel(cancelReciboId);
+      toast.success('Recibo cancelado');
+      setCancelReciboId(null);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al cancelar recibo');
+    } finally {
+      setIsCancellingRecibo(false);
     }
   };
 
@@ -229,8 +235,11 @@ export default function InvoiceDetailPage() {
 
   const isDraft = invoice.status === 'DRAFT';
   const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
-  const canMarkAsPaid = invoice.status === 'ISSUED';
+  const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
   const canEmitArca = isDraft && !invoice.cae;
+  const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
+  const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
+  const remaining = Math.max(0, Number(invoice.total) - paidAmount);
   const isCancelled = invoice.status === 'CANCELLED';
 
   return (
@@ -259,9 +268,9 @@ export default function InvoiceDetailPage() {
                 Emitir a ARCA
               </Button>
             )}
-            {canMarkAsPaid && (
-              <Button variant="outline" onClick={handleOpenPayModal}>
-                <CheckCircle className="w-4 h-4 mr-2" />
+            {canMarkAsPaid && remaining > 0 && (
+              <Button variant="outline" onClick={() => setShowPayModal(true)}>
+                <Banknote className="w-4 h-4 mr-2" />
                 Registrar pago
               </Button>
             )}
@@ -402,6 +411,16 @@ export default function InvoiceDetailPage() {
               <p className="text-sm text-gray-600 leading-relaxed">{invoice.notes}</p>
             </div>
           )}
+
+          {/* Recibos */}
+          <RecibosList
+            recibos={recibos}
+            total={Number(invoice.total)}
+            currency={invoice.currency}
+            canPay={canMarkAsPaid}
+            onPay={() => setShowPayModal(true)}
+            onCancel={(r) => setCancelReciboId(r.id)}
+          />
         </div>
 
         {/* ── Right: info sidebar ── */}
@@ -432,22 +451,18 @@ export default function InvoiceDetailPage() {
                   <span className="text-sm text-gray-900 tabular-nums">{formatDate(invoice.dueDate)}</span>
                 </div>
               )}
+              {invoice.paymentTerms && (
+                <div className="flex justify-between items-center px-5 py-3">
+                  <span className="text-sm text-gray-500">Cond. de venta</span>
+                  <span className="text-sm font-medium text-gray-900">{invoice.paymentTerms}</span>
+                </div>
+              )}
               {invoice.deliveryStatus && (
                 <div className="flex justify-between items-center px-5 py-3">
                   <span className="text-sm text-gray-500">Entrega</span>
                   <Badge variant={DELIVERY_STATUS_VARIANT[invoice.deliveryStatus] ?? 'default'} dot>
                     {DELIVERY_STATUS_LABEL[invoice.deliveryStatus]}
                   </Badge>
-                </div>
-              )}
-              <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Moneda</span>
-                <span className="text-sm font-semibold text-gray-900">{invoice.currency}</span>
-              </div>
-              {invoice.currency === 'USD' && (
-                <div className="flex justify-between items-center px-5 py-3">
-                  <span className="text-sm text-gray-500">Tipo de cambio</span>
-                  <span className="text-sm text-gray-900 tabular-nums">{Number(invoice.exchangeRate)}</span>
                 </div>
               )}
             </div>
@@ -540,53 +555,25 @@ export default function InvoiceDetailPage() {
         isLoading={isEmitting}
       />
 
-      {/* Pay modal */}
-      <Modal
-        isOpen={showPayModal}
+      <PaymentModal
+        open={showPayModal}
         onClose={() => setShowPayModal(false)}
-        title="Registrar pago"
-        size="sm"
-      >
-        <div className="space-y-4">
-          <div className="flex justify-between items-center py-3 border-b border-gray-100">
-            <span className="text-sm text-gray-500">Total a cobrar</span>
-            <span className="text-base font-bold text-gray-900 tabular-nums">
-              {invoice && formatCurrency(invoice.total, invoice.currency)}
-            </span>
-          </div>
+        onSubmit={handlePay}
+        remaining={remaining}
+        currency={invoice.currency}
+        isLoading={isPayLoading}
+        defaultCashRegisterId={undefined}
+      />
 
-          {cashRegisters.length === 0 ? (
-            <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg p-3.5">
-              <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-800">
-                No hay cajas activas.{' '}
-                <a href="/cash-registers" className="underline font-medium">Creá una caja</a> para registrar pagos.
-              </p>
-            </div>
-          ) : (
-            <Select
-              label="Caja destino"
-              options={cashRegisters.map((cr) => ({ value: cr.id, label: cr.name }))}
-              value={selectedCashRegisterId}
-              onChange={setSelectedCashRegisterId}
-            />
-          )}
-
-          <div className="flex justify-end gap-2.5 pt-1">
-            <Button variant="outline" onClick={() => setShowPayModal(false)} disabled={isUpdating}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleMarkAsPaid}
-              isLoading={isUpdating}
-              disabled={cashRegisters.length === 0 || !selectedCashRegisterId}
-            >
-              <Banknote className="w-4 h-4 mr-2" />
-              Confirmar pago
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <ConfirmDialog
+        isOpen={!!cancelReciboId}
+        onClose={() => setCancelReciboId(null)}
+        onConfirm={handleCancelRecibo}
+        title="Cancelar recibo"
+        message="¿Estás seguro de que deseas cancelar este recibo? Se revertirá el movimiento de cuenta corriente y el estado de la factura se actualizará."
+        confirmText="Cancelar recibo"
+        isLoading={isCancellingRecibo}
+      />
     </div>
   );
 }

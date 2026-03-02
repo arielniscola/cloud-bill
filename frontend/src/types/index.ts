@@ -18,3 +18,4 @@ export * from './purchase.types';
 export * from './budget.types';
 export * from './app-settings.types';
 export * from './stock-intelligence.types';
+export * from './recibo.types';

@@ -4,6 +4,7 @@ import ProtectedRoute from './ProtectedRoute';
 
 // Pages
 import LoginPage from '../pages/auth/LoginPage';
+import HomePage from '../pages/home/HomePage';
 import DashboardPage from '../pages/dashboard/DashboardPage';
 import CustomersPage from '../pages/customers/CustomersPage';
 import CustomerFormPage from '../pages/customers/CustomerFormPage';
@@ -41,6 +42,8 @@ import BrandsPage from '../pages/brands/BrandsPage';
 import BudgetsPage from '../pages/budgets/BudgetsPage';
 import BudgetFormPage from '../pages/budgets/BudgetFormPage';
 import BudgetDetailPage from '../pages/budgets/BudgetDetailPage';
+import RecibosPage from '../pages/recibos/RecibosPage';
+import ReciboDetailPage from '../pages/recibos/ReciboDetailPage';
 
 export default function AppRoutes() {
   return (
@@ -56,7 +59,8 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* Customers */}
         <Route path="/customers" element={<CustomersPage />} />
@@ -132,6 +136,10 @@ export default function AppRoutes() {
         <Route path="/budgets/new" element={<BudgetFormPage />} />
         <Route path="/budgets/:id/edit" element={<BudgetFormPage />} />
         <Route path="/budgets/:id" element={<BudgetDetailPage />} />
+
+        {/* Recibos */}
+        <Route path="/recibos" element={<RecibosPage />} />
+        <Route path="/recibos/:id" element={<ReciboDetailPage />} />
       </Route>
 
       {/* Catch all */}

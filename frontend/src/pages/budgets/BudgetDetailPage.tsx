@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, Send, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, ClipboardList } from 'lucide-react';
+import { Pencil, Send, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, ClipboardList, Banknote, FileDown } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Select } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { budgetsService } from '../../services';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
+import { budgetsService, recibosService, afipService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
   BUDGET_STATUSES,
   INVOICE_TYPE_OPTIONS,
   INVOICE_TYPES,
 } from '../../utils/constants';
+import type { Budget, Recibo, CreateReciboDTO } from '../../types';
+import BudgetPDF from '../../components/pdf/BudgetPDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   NOT_DELIVERED: 'Sin entregas',
@@ -23,7 +26,6 @@ const DELIVERY_STATUS_VARIANT: Record<string, DeliveryVariant> = {
   PARTIALLY_DELIVERED: 'warning',
   DELIVERED: 'success',
 };
-import type { Budget } from '../../types';
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -34,6 +36,8 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
   REJECTED: 'error',
   CONVERTED: 'success',
   EXPIRED: 'warning',
+  PARTIALLY_PAID: 'warning',
+  PAID: 'success',
 };
 
 function SkeletonDetail() {
@@ -73,22 +77,53 @@ export default function BudgetDetailPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [selectedInvoiceType, setSelectedInvoiceType] = useState('');
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [recibos, setRecibos] = useState<Recibo[]>([]);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [isPayLoading, setIsPayLoading] = useState(false);
+  const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
+  const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (!budget) return;
+    setIsGeneratingPDF(true);
+    try {
+      const afipConfig = await afipService.getConfig();
+      const blob = await pdf(<BudgetPDF budget={budget} afipConfig={afipConfig} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `presupuesto-${budget.number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      toast.error(err.message || 'Error al generar PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const loadData = async () => {
+    if (!id) return;
+    try {
+      const [budgetData, recibosData] = await Promise.all([
+        budgetsService.getById(id),
+        recibosService.getAll({ budgetId: id }),
+      ]);
+      setBudget(budgetData);
+      setSelectedInvoiceType(budgetData.type);
+      setRecibos(recibosData.data);
+    } catch {
+      toast.error('Error al cargar presupuesto');
+      navigate('/budgets');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchBudget = async () => {
-      if (!id) return;
-      try {
-        const data = await budgetsService.getById(id);
-        setBudget(data);
-        setSelectedInvoiceType(data.type);
-      } catch {
-        toast.error('Error al cargar presupuesto');
-        navigate('/budgets');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchBudget();
+    loadData();
   }, [id, navigate]);
 
   const handleUpdateStatus = async (status: Budget['status']) => {
@@ -122,6 +157,38 @@ export default function BudgetDetailPage() {
     }
   };
 
+  const handlePay = async (data: CreateReciboDTO) => {
+    if (!id) return;
+    setIsPayLoading(true);
+    try {
+      await budgetsService.pay(id, data);
+      toast.success('Pago registrado correctamente');
+      setShowPayModal(false);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al registrar pago');
+    } finally {
+      setIsPayLoading(false);
+    }
+  };
+
+  const handleCancelRecibo = async () => {
+    if (!cancelReciboId) return;
+    setIsCancellingRecibo(true);
+    try {
+      await recibosService.cancel(cancelReciboId);
+      toast.success('Recibo cancelado');
+      setCancelReciboId(null);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al cancelar recibo');
+    } finally {
+      setIsCancellingRecibo(false);
+    }
+  };
+
   const handleConvert = async () => {
     if (!id) return;
     setIsConverting(true);
@@ -148,6 +215,10 @@ export default function BudgetDetailPage() {
   const isDraft = budget.status === 'DRAFT';
   const canConvert = budget.status === 'DRAFT' || budget.status === 'SENT' || budget.status === 'ACCEPTED';
   const isTerminal = budget.status === 'CONVERTED' || budget.status === 'REJECTED' || budget.status === 'EXPIRED';
+  const canPay = budget.status !== 'REJECTED' && budget.status !== 'CONVERTED' && budget.status !== 'EXPIRED' && budget.status !== 'PAID' && !!budget.customerId;
+  const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
+  const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
+  const remaining = Math.max(0, Number(budget.total) - paidAmount);
 
   const nextStatuses: Array<{ value: Budget['status']; label: string }> = [];
   if (budget.status === 'DRAFT') nextStatuses.push({ value: 'SENT', label: 'Marcar como enviado' });
@@ -172,6 +243,11 @@ export default function BudgetDetailPage() {
         backTo="/budgets"
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" onClick={handleDownloadPDF} isLoading={isGeneratingPDF}>
+              <FileDown className="w-4 h-4 mr-2" />
+              PDF
+            </Button>
+
             {canEdit && (
               <Button variant="outline" onClick={() => navigate(`/budgets/${budget.id}/edit`)}>
                 <Pencil className="w-4 h-4 mr-2" />
@@ -211,6 +287,13 @@ export default function BudgetDetailPage() {
                   </>
                 )}
               </div>
+            )}
+
+            {canPay && remaining > 0 && (
+              <Button variant="outline" onClick={() => setShowPayModal(true)}>
+                <Banknote className="w-4 h-4 mr-2" />
+                Registrar pago
+              </Button>
             )}
 
             {canConvert && (
@@ -361,6 +444,16 @@ export default function BudgetDetailPage() {
               <p className="text-sm text-gray-600 leading-relaxed">{budget.notes}</p>
             </div>
           )}
+
+          {/* Recibos */}
+          <RecibosList
+            recibos={recibos}
+            total={Number(budget.total)}
+            currency={budget.currency}
+            canPay={canPay}
+            onPay={() => setShowPayModal(true)}
+            onCancel={(r) => setCancelReciboId(r.id)}
+          />
         </div>
 
         {/* ── Right: info sidebar ── */}
@@ -389,6 +482,12 @@ export default function BudgetDetailPage() {
                 <div className="flex justify-between items-center px-5 py-3">
                   <span className="text-sm text-gray-500">Válido hasta</span>
                   <span className="text-sm text-gray-900 tabular-nums">{formatDate(budget.validUntil)}</span>
+                </div>
+              )}
+              {budget.paymentTerms && (
+                <div className="flex justify-between items-center px-5 py-3">
+                  <span className="text-sm text-gray-500">Cond. de venta</span>
+                  <span className="text-sm font-medium text-gray-900">{budget.paymentTerms}</span>
                 </div>
               )}
               {budget.deliveryStatus && hasDeliverableItems && (
@@ -448,6 +547,26 @@ export default function BudgetDetailPage() {
         message="¿Estás seguro de que deseas eliminar este presupuesto? Esta acción no se puede deshacer."
         confirmText="Eliminar"
         isLoading={isDeleting}
+      />
+
+      {/* Payment modal */}
+      <PaymentModal
+        open={showPayModal}
+        onClose={() => setShowPayModal(false)}
+        onSubmit={handlePay}
+        remaining={remaining}
+        currency={budget.currency}
+        isLoading={isPayLoading}
+      />
+
+      <ConfirmDialog
+        isOpen={!!cancelReciboId}
+        onClose={() => setCancelReciboId(null)}
+        onConfirm={handleCancelRecibo}
+        title="Cancelar recibo"
+        message="¿Estás seguro de que deseas cancelar este recibo? Se revertirá el movimiento de cuenta corriente y el estado del presupuesto se actualizará."
+        confirmText="Cancelar recibo"
+        isLoading={isCancellingRecibo}
       />
 
       {/* Convert to invoice modal */}

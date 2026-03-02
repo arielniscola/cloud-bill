@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, Truck, CheckCircle, ArrowRight, FileText, Calculator,
+  XCircle, Truck, CheckCircle, ArrowRight, FileText, Calculator, FileDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { remitosService } from '../../services';
+import { remitosService, afipService } from '../../services';
 import { formatDate } from '../../utils/formatters';
 import { REMITO_STATUSES } from '../../utils/constants';
 import type { Remito } from '../../types';
+import RemitoPDF from '../../components/pdf/RemitoPDF';
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -53,6 +55,27 @@ export default function RemitoDetailPage() {
   const [showDeliverModal, setShowDeliverModal] = useState(false);
   const [isDelivering, setIsDelivering] = useState(false);
   const [deliverQuantities, setDeliverQuantities] = useState<Record<string, number>>({});
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (!remito) return;
+    setIsGeneratingPDF(true);
+    try {
+      const afipConfig = await afipService.getConfig();
+      const blob = await pdf(<RemitoPDF remito={remito} afipConfig={afipConfig} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `remito-${remito.number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      toast.error(err.message || 'Error al generar PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -138,6 +161,10 @@ export default function RemitoDetailPage() {
         backTo="/remitos"
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleDownloadPDF} isLoading={isGeneratingPDF}>
+              <FileDown className="w-4 h-4 mr-2" />
+              PDF
+            </Button>
             {canDeliver && (
               <Button onClick={openDeliverModal}>
                 <Truck className="w-4 h-4 mr-2" />

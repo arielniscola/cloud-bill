@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
-  LayoutDashboard,
+  Home,
   Users,
   Package,
   FolderTree,
@@ -11,6 +11,7 @@ import {
   PackageSearch,
   FileText,
   ClipboardList,
+  ClipboardCheck,
   CreditCard,
   Landmark,
   ChevronLeft,
@@ -20,12 +21,14 @@ import {
   Settings,
   ArrowRightLeft,
   BarChart2,
+  TrendingUp,
   History,
   BookOpen,
   Truck,
   ShoppingCart,
   Calculator,
   Brain,
+  Receipt,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -48,16 +51,26 @@ const navigationGroups: NavGroup[] = [
   {
     label: '',
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'Inicio',        href: '/',          icon: Home },
+      { name: 'Estadísticas',  href: '/dashboard', icon: TrendingUp },
     ],
   },
   {
     label: 'Ventas',
     items: [
-      { name: 'Clientes',     href: '/customers', icon: Users },
-      { name: 'Presupuestos', href: '/budgets',   icon: Calculator },
-      { name: 'Facturas',     href: '/invoices',  icon: FileText },
-      { name: 'Remitos',      href: '/remitos',   icon: ClipboardList },
+      {
+        name: 'Clientes',
+        href: '/customers',
+        icon: Users,
+        children: [
+          { name: 'Lista',              href: '/customers',        icon: Users },
+          { name: 'Cuentas Corrientes', href: '/current-accounts', icon: CreditCard },
+        ],
+      },
+      { name: 'Presupuestos', href: '/budgets',  icon: Calculator },
+      { name: 'Facturas',     href: '/invoices', icon: FileText },
+      { name: 'Remitos',      href: '/remitos',  icon: ClipboardList },
+      { name: 'Recibos',      href: '/recibos',  icon: Receipt },
     ],
   },
   {
@@ -85,11 +98,12 @@ const navigationGroups: NavGroup[] = [
         href: '/stock',
         icon: PackageSearch,
         children: [
-          { name: 'Inventario',     href: '/stock',              icon: PackageSearch },
-          { name: 'Movimientos',    href: '/stock/movements',    icon: BarChart2 },
-          { name: 'Transferencias', href: '/stock/transfer',     icon: ArrowRightLeft },
-          { name: 'Almacenes',      href: '/warehouses',         icon: Warehouse },
-          { name: 'Inteligente',    href: '/stock/intelligence', icon: Brain },
+          { name: 'Inventario',     href: '/stock',                icon: PackageSearch },
+          { name: 'Movimientos',    href: '/stock/movements',      icon: BarChart2 },
+          { name: 'Transferencias', href: '/stock/transfer',       icon: ArrowRightLeft },
+          { name: 'Conteo físico',  href: '/stock/physical-count', icon: ClipboardCheck },
+          { name: 'Almacenes',      href: '/warehouses',           icon: Warehouse },
+          { name: 'Inteligente',    href: '/stock/intelligence',   icon: Brain },
         ],
       },
     ],
@@ -97,9 +111,8 @@ const navigationGroups: NavGroup[] = [
   {
     label: 'Finanzas',
     items: [
-      { name: 'Cuentas Corrientes', href: '/current-accounts', icon: CreditCard },
-      { name: 'Cajas',              href: '/cash-registers',   icon: Landmark },
-      { name: 'Libro IVA',          href: '/iva',              icon: BookOpen },
+      { name: 'Cajas',     href: '/cash-registers', icon: Landmark },
+      { name: 'Libro IVA', href: '/iva',             icon: BookOpen },
     ],
   },
   {

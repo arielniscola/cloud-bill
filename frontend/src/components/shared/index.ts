@@ -18,3 +18,9 @@ export type { BarcodeProductInputProps } from './BarcodeProductInput';
 
 export { default as ProductSearchSelect } from './ProductSearchSelect';
 export type { ProductSearchSelectProps } from './ProductSearchSelect';
+
+export { PaymentModal } from './PaymentModal';
+export { RecibosList } from './RecibosList';
+
+export { default as CustomerSearchSelect } from './CustomerSearchSelect';
+export type { CustomerSearchSelectProps } from './CustomerSearchSelect';

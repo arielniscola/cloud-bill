@@ -6,10 +6,10 @@ import { z } from 'zod';
 import { Plus, Trash2, Calculator } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect } from '../../components/shared';
 import { budgetsService, customersService, productsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import { CURRENCY_OPTIONS, INVOICE_TYPE_OPTIONS } from '../../utils/constants';
+import { CURRENCY_OPTIONS, INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, SALE_CONDITION_OPTIONS } from '../../utils/constants';
 import type { Customer, Product, Currency, InvoiceType } from '../../types';
 
 const budgetItemSchema = z.object({
@@ -29,6 +29,8 @@ const budgetSchema = z.object({
   customerId: z.string().optional().nullable(),
   validUntil: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  paymentTerms: z.string().optional().nullable(),
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.coerce.number().positive().default(1),
   items: z.array(budgetItemSchema).min(1, 'Agrega al menos un ítem'),
@@ -76,6 +78,7 @@ export default function BudgetFormPage() {
       type: 'FACTURA_B',
       currency: 'ARS',
       exchangeRate: 1,
+      saleCondition: 'CONTADO',
       items: [{ productId: null, description: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
     },
   });
@@ -122,6 +125,8 @@ export default function BudgetFormPage() {
           customerId: budget.customerId,
           validUntil: budget.validUntil ? budget.validUntil.substring(0, 10) : null,
           notes: budget.notes,
+          paymentTerms: budget.paymentTerms,
+          saleCondition: budget.saleCondition ?? 'CONTADO',
           currency: budget.currency,
           exchangeRate: Number(budget.exchangeRate),
           items: budget.items.map((item) => ({
@@ -192,6 +197,8 @@ export default function BudgetFormPage() {
         customerId: data.customerId || null,
         validUntil: data.validUntil || null,
         notes: data.notes || null,
+        paymentTerms: data.paymentTerms || null,
+        saleCondition: data.saleCondition,
         currency: data.currency,
         exchangeRate: data.exchangeRate,
         items: data.items.map(buildItemDTO),
@@ -213,10 +220,6 @@ export default function BudgetFormPage() {
     }
   };
 
-  const customerOptions = [
-    { value: '', label: 'Sin cliente (consumidor final)' },
-    ...customers.map((c) => ({ value: c.id, label: `${c.name}${c.taxId ? ` (${c.taxId})` : ''}` })),
-  ];
   if (isFetching) return (
     <div>
       <PageHeader title={isEditing ? 'Editar Presupuesto' : 'Nuevo Presupuesto'} backTo={isEditing ? `/budgets/${id}` : '/budgets'} />
@@ -383,17 +386,32 @@ export default function BudgetFormPage() {
                 onChange={(value) => setValue('type', value as InvoiceType)}
               />
 
-              <Select
-                label="Cliente"
-                options={customerOptions}
+              <CustomerSearchSelect
+                customers={customers}
                 value={customerId}
-                onChange={(value) => setValue('customerId', value || null)}
+                onChange={(id) => setValue('customerId', id || null)}
+                label="Cliente"
+                clearLabel="Sin cliente (consumidor final)"
               />
 
               <Input
                 label="Válido hasta"
                 type="date"
                 {...register('validUntil')}
+              />
+
+              <Select
+                label="Condiciones de venta"
+                options={PAYMENT_TERMS_OPTIONS}
+                value={watch('paymentTerms') ?? ''}
+                onChange={(v) => setValue('paymentTerms', v || null)}
+              />
+
+              <Select
+                label="Condición de cobro"
+                options={SALE_CONDITION_OPTIONS}
+                value={watch('saleCondition') ?? 'CONTADO'}
+                onChange={(v) => setValue('saleCondition', v as 'CONTADO' | 'CUENTA_CORRIENTE')}
               />
 
               <div className={currency === 'USD' ? 'grid grid-cols-2 gap-3' : ''}>
