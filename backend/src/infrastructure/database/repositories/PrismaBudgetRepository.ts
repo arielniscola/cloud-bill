@@ -92,6 +92,8 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         currency: data.currency,
         exchangeRate: new Decimal(data.exchangeRate),
         notes: data.notes ?? null,
+        paymentTerms: data.paymentTerms ?? null,
+        saleCondition: data.saleCondition ?? 'CONTADO',
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),

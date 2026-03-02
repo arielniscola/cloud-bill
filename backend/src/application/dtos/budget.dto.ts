@@ -22,20 +22,22 @@ export const createBudgetSchema = z.object({
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().positive().default(1),
   notes: z.string().optional().nullable(),
+  paymentTerms: z.string().optional().nullable(),
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   items: z.array(budgetItemSchema).min(1, 'Agrega al menos un item'),
 });
 
 export const updateBudgetSchema = createBudgetSchema.partial();
 
 export const updateBudgetStatusSchema = z.object({
-  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED']),
+  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'PARTIALLY_PAID', 'PAID']),
 });
 
 export const budgetQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   customerId: z.string().uuid().optional(),
-  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'CONVERTED', 'EXPIRED']).optional(),
+  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'CONVERTED', 'EXPIRED', 'PARTIALLY_PAID', 'PAID']).optional(),
   type: z.enum([
     'FACTURA_A', 'FACTURA_B', 'FACTURA_C',
     'NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C',

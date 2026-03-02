@@ -9,8 +9,11 @@ import { Currency } from '../../../shared/types';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigRepository';
+import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { afipService } from '../../services/AfipService';
-import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
+import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
+import { createReciboSchema } from '../../../application/dtos/recibo.dto';
+import prisma from '../../database/prisma';
 
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -25,30 +28,36 @@ export class InvoiceController {
       const currency: Currency = req.body.currency || 'ARS';
       const exchangeRate: number = req.body.exchangeRate || 1;
 
+      const saleCondition: string = req.body.saleCondition ?? 'CONTADO';
+
       const invoice = await invoiceRepository.create({
         type: req.body.type,
         customerId: req.body.customerId,
         userId: req.user!.userId,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
+        paymentTerms: req.body.paymentTerms ?? null,
+        saleCondition,
         currency,
         exchangeRate,
         items: req.body.items,
       });
 
-      // Update current account - find or create for this currency
-      let currentAccount = await currentAccountRepository.findByCustomerId(req.body.customerId, currency);
-      if (!currentAccount) {
-        currentAccount = await currentAccountRepository.createForCustomer(req.body.customerId, currency);
+      // Update current account only for cuenta corriente sales
+      if (saleCondition === 'CUENTA_CORRIENTE') {
+        let currentAccount = await currentAccountRepository.findByCustomerId(req.body.customerId, currency);
+        if (!currentAccount) {
+          currentAccount = await currentAccountRepository.createForCustomer(req.body.customerId, currency);
+        }
+        const isCredit = req.body.type.startsWith('NOTA_CREDITO');
+        await currentAccountRepository.addMovement({
+          currentAccountId: currentAccount.id,
+          type: isCredit ? 'CREDIT' : 'DEBIT',
+          amount: invoice.total.toNumber(),
+          description: `${req.body.type} ${invoice.number}`,
+          invoiceId: invoice.id,
+        });
       }
-      const isCredit = req.body.type.startsWith('NOTA_CREDITO');
-      await currentAccountRepository.addMovement({
-        currentAccountId: currentAccount.id,
-        type: isCredit ? 'CREDIT' : 'DEBIT',
-        amount: invoice.total.toNumber(),
-        description: `${req.body.type} ${invoice.number}`,
-        invoiceId: invoice.id,
-      });
 
       // Update stock for sales invoices
       if (req.body.type.startsWith('FACTURA')) {
@@ -124,9 +133,14 @@ export class InvoiceController {
         }
       );
 
+      const ids = result.data.map((i: any) => i.id);
+      const deliveryStatuses = await computeDeliveryStatusBatch('invoiceId', ids);
+      const data = result.data.map((i: any) => ({ ...i, deliveryStatus: deliveryStatuses[i.id] }));
+
       res.json({
         status: 'success',
         ...result,
+        data,
       });
     } catch (error) {
       next(error);
@@ -155,6 +169,8 @@ export class InvoiceController {
         userId: req.user!.userId,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
+        paymentTerms: req.body.paymentTerms ?? null,
+        saleCondition: req.body.saleCondition ?? 'CONTADO',
         currency,
         exchangeRate,
         items: req.body.items,
@@ -204,6 +220,8 @@ export class InvoiceController {
       const cashRegisterRepository = container.resolve<ICashRegisterRepository>(
         'CashRegisterRepository'
       );
+      const reciboRepository = container.resolve<IReciboRepository>('ReciboRepository');
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
       const invoice = await invoiceRepository.findById(req.params.id);
       if (!invoice) throw new NotFoundError('Invoice');
@@ -214,43 +232,94 @@ export class InvoiceController {
       if (invoice.status === 'CANCELLED') {
         throw new AppError('No se puede pagar una factura cancelada', 400);
       }
-      if (invoice.status === 'DRAFT') {
-        throw new AppError('No se puede pagar una factura en borrador, debe emitirse primero', 400);
+
+      const paymentData = createReciboSchema.parse(req.body);
+
+      // Validate cash register if provided
+      let cashRegisterName = '';
+      if (paymentData.cashRegisterId) {
+        const cashRegister = await cashRegisterRepository.findById(paymentData.cashRegisterId);
+        if (!cashRegister) throw new AppError('Caja no encontrada', 400);
+        if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
+        cashRegisterName = cashRegister.name;
       }
 
-      const { cashRegisterId } = req.body;
-      const cashRegister = await cashRegisterRepository.findById(cashRegisterId);
-      if (!cashRegister) throw new AppError('Caja no encontrada', 400);
-      if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
-
-      // Record payment credit in current account
-      const currentAccount = await currentAccountRepository.findByCustomerId(
-        invoice.customerId,
-        invoice.currency
+      // Calculate remaining balance
+      const activeRecibos = await prisma.recibo.findMany({
+        where: { invoiceId: invoice.id, status: 'EMITTED' },
+      });
+      const alreadyPaid = activeRecibos.reduce(
+        (sum: number, r: any) => sum + Number(r.amount),
+        0
       );
-      if (currentAccount) {
-        await currentAccountRepository.addMovement({
-          currentAccountId: currentAccount.id,
-          type: 'CREDIT',
-          amount: invoice.total.toNumber(),
-          description: `Pago ${cashRegister.name} - ${invoice.type} ${invoice.number}`,
-          invoiceId: invoice.id,
-          cashRegisterId,
-        });
+      const total = Number(invoice.total);
+      const remaining = total - alreadyPaid;
+
+      if (paymentData.amount > remaining + 0.001) {
+        throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
       }
 
-      const updated = await invoiceRepository.update(req.params.id, { status: 'PAID' });
+      // Create recibo
+      const recibo = await reciboRepository.create({
+        invoiceId: invoice.id,
+        customerId: invoice.customerId,
+        userId: req.user!.userId,
+        cashRegisterId: paymentData.cashRegisterId ?? null,
+        amount: paymentData.amount,
+        currency: invoice.currency,
+        paymentMethod: paymentData.paymentMethod,
+        reference: paymentData.reference ?? null,
+        bank: paymentData.bank ?? null,
+        checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
+        installments: paymentData.installments ?? null,
+        notes: paymentData.notes ?? null,
+      });
 
-      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      // Record payment in current account only for cuenta corriente
+      if ((invoice as any).saleCondition === 'CUENTA_CORRIENTE') {
+        const currentAccount = await currentAccountRepository.findByCustomerId(
+          invoice.customerId,
+          invoice.currency
+        );
+        if (currentAccount) {
+          const movement = await currentAccountRepository.addMovement({
+            currentAccountId: currentAccount.id,
+            type: 'CREDIT',
+            amount: paymentData.amount,
+            description: `Pago ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
+            invoiceId: invoice.id,
+            cashRegisterId: paymentData.cashRegisterId ?? undefined,
+          });
+          // Link movement to recibo
+          if (movement?.id) {
+            await prisma.accountMovement.update({
+              where: { id: movement.id },
+              data: { reciboId: recibo.id },
+            });
+          }
+        }
+      }
+
+      // Update invoice status
+      const newPaid = alreadyPaid + paymentData.amount;
+      let newStatus: 'PAID' | 'PARTIALLY_PAID' | 'ISSUED';
+      if (newPaid >= total - 0.001) {
+        newStatus = 'PAID';
+      } else {
+        newStatus = 'PARTIALLY_PAID';
+      }
+
+      const updated = await invoiceRepository.update(req.params.id, { status: newStatus });
+
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'PAYMENT',
         entity: 'Invoice',
         entityId: invoice.id,
-        description: `Factura ${invoice.number} pagada`,
+        description: `Pago ${recibo.number} registrado en factura ${invoice.number}`,
       });
 
-      res.json({ status: 'success', data: updated });
+      res.json({ status: 'success', data: updated, recibo });
     } catch (error) {
       next(error);
     }
@@ -319,20 +388,22 @@ export class InvoiceController {
         throw new AppError('Invoice is already cancelled', 400);
       }
 
-      // Reverse current account movement - use the invoice's currency
-      const currentAccount = await currentAccountRepository.findByCustomerId(
-        existingInvoice.customerId,
-        existingInvoice.currency
-      );
-      if (currentAccount) {
-        const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');
-        await currentAccountRepository.addMovement({
-          currentAccountId: currentAccount.id,
-          type: wasCredit ? 'DEBIT' : 'CREDIT',
-          amount: existingInvoice.total.toNumber(),
-          description: `Cancelled: ${existingInvoice.type} ${existingInvoice.number}`,
-          invoiceId: existingInvoice.id,
-        });
+      // Reverse current account movement only for cuenta corriente
+      if ((existingInvoice as any).saleCondition === 'CUENTA_CORRIENTE') {
+        const currentAccount = await currentAccountRepository.findByCustomerId(
+          existingInvoice.customerId,
+          existingInvoice.currency
+        );
+        if (currentAccount) {
+          const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');
+          await currentAccountRepository.addMovement({
+            currentAccountId: currentAccount.id,
+            type: wasCredit ? 'DEBIT' : 'CREDIT',
+            amount: existingInvoice.total.toNumber(),
+            description: `Cancelled: ${existingInvoice.type} ${existingInvoice.number}`,
+            invoiceId: existingInvoice.id,
+          });
+        }
       }
 
       const invoice = await invoiceRepository.update(req.params.id, {

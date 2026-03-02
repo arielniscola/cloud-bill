@@ -18,6 +18,7 @@ import { IBrandRepository } from '../domain/repositories/IBrandRepository';
 import { IBudgetRepository } from '../domain/repositories/IBudgetRepository';
 import { IAppSettingsRepository } from '../domain/repositories/IAppSettingsRepository';
 import { IStockIntelligenceRepository } from '../domain/repositories/IStockIntelligenceRepository';
+import { IReciboRepository } from '../domain/repositories/IReciboRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -37,6 +38,7 @@ import { PrismaBrandRepository } from '../infrastructure/database/repositories/P
 import { PrismaBudgetRepository } from '../infrastructure/database/repositories/PrismaBudgetRepository';
 import { PrismaAppSettingsRepository } from '../infrastructure/database/repositories/PrismaAppSettingsRepository';
 import { PrismaStockIntelligenceRepository } from '../infrastructure/database/repositories/PrismaStockIntelligenceRepository';
+import { PrismaReciboRepository } from '../infrastructure/database/repositories/PrismaReciboRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -60,5 +62,6 @@ container.registerSingleton<IBrandRepository>('BrandRepository', PrismaBrandRepo
 container.registerSingleton<IBudgetRepository>('BudgetRepository', PrismaBudgetRepository);
 container.registerSingleton<IAppSettingsRepository>('AppSettingsRepository', PrismaAppSettingsRepository);
 container.registerSingleton<IStockIntelligenceRepository>('StockIntelligenceRepository', PrismaStockIntelligenceRepository);
+container.registerSingleton<IReciboRepository>('ReciboRepository', PrismaReciboRepository);
 
 export { container };

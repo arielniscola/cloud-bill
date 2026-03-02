@@ -1,4 +1,4 @@
-export type BudgetStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'CONVERTED' | 'EXPIRED';
+export type BudgetStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'CONVERTED' | 'EXPIRED' | 'PARTIALLY_PAID' | 'PAID';
 export type Currency = 'ARS' | 'USD';
 export type InvoiceType =
   | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C'
@@ -34,6 +34,8 @@ export interface Budget {
   exchangeRate: number;
   status: BudgetStatus;
   notes: string | null;
+  paymentTerms?: string | null;
+  saleCondition?: string | null;
   invoiceId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -65,6 +67,8 @@ export interface CreateBudgetInput {
   currency: Currency;
   exchangeRate: number;
   notes?: string | null;
+  paymentTerms?: string | null;
+  saleCondition?: string;
   items: CreateBudgetItemInput[];
   subtotal: number;
   taxAmount: number;

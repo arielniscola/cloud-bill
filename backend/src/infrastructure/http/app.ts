@@ -22,6 +22,7 @@ import { brandRoutes } from './routes/brandRoutes';
 import { budgetRoutes } from './routes/budgetRoutes';
 import { appSettingsRoutes } from './routes/appSettingsRoutes';
 import { stockIntelligenceRoutes } from './routes/stockIntelligenceRoutes';
+import { reciboRoutes } from './routes/reciboRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -57,6 +58,7 @@ export function createApp(): Application {
   app.use('/api/budgets', budgetRoutes);
   app.use('/api/app-settings', appSettingsRoutes);
   app.use('/api/stock-intelligence', stockIntelligenceRoutes);
+  app.use('/api/recibos', reciboRoutes);
 
   // 404 handler
   app.use((_req, res) => {

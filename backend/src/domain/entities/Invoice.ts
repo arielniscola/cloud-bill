@@ -16,6 +16,8 @@ export interface Invoice {
   exchangeRate: Decimal;
   status: InvoiceStatus;
   notes: string | null;
+  paymentTerms?: string | null;
+  saleCondition?: string | null;
   cae: string | null;
   caeExpiry: Date | null;
   afipPtVenta: number | null;
@@ -53,6 +55,8 @@ export interface CreateInvoiceInput {
   userId: string;
   dueDate?: Date;
   notes?: string;
+  paymentTerms?: string | null;
+  saleCondition?: string;
   currency: Currency;
   exchangeRate: number;
   items: CreateInvoiceItemInput[];

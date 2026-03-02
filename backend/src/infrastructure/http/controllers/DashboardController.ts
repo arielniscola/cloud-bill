@@ -11,42 +11,63 @@ export class DashboardController {
       const [
         ventasMesAgg,
         cobrosPendientesAgg,
-        facturasBorrador,
+        cobrosDelMesAgg,
+        presupuestosMesAgg,
+        comprasMesAgg,
         totalClientes,
         totalProductos,
         totalProveedores,
-        comprasMesAgg,
+        facturasBorrador,
+        remitosPendientesCount,
         recentInvoices,
+        recentBudgets,
+        pendingRemitos,
         customersWithDebt,
         lowStockRaw,
       ] = await Promise.all([
-        // Ventas del mes (ISSUED + PAID, ARS)
+        // Ventas del mes (ISSUED + PAID + PARTIALLY_PAID, ARS)
         prisma.invoice.aggregate({
           _sum: { total: true },
           _count: true,
           where: {
-            status: { in: ['ISSUED', 'PAID'] },
+            status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
             currency: 'ARS',
             date: { gte: monthStart, lte: monthEnd },
           },
         }),
-        // Cobros pendientes (solo ISSUED, ARS)
+
+        // Cobros pendientes (ISSUED + PARTIALLY_PAID sin importar fecha, ARS)
         prisma.invoice.aggregate({
           _sum: { total: true },
           _count: true,
           where: {
-            status: 'ISSUED',
+            status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
             currency: 'ARS',
           },
         }),
-        // Facturas borrador
-        prisma.invoice.count({ where: { status: 'DRAFT' } }),
-        // Clientes activos
-        prisma.customer.count({ where: { isActive: true } }),
-        // Productos activos
-        prisma.product.count({ where: { isActive: true } }),
-        // Proveedores activos
-        prisma.supplier.count({ where: { isActive: true } }),
+
+        // Cobros del mes — recibos EMITIDOS en el mes (dinero efectivamente cobrado)
+        prisma.recibo.aggregate({
+          _sum: { amount: true },
+          _count: true,
+          where: {
+            status: 'EMITTED',
+            currency: 'ARS',
+            date: { gte: monthStart, lte: monthEnd },
+          },
+        }),
+
+        // Presupuestos del mes (excluye RECHAZADOS y VENCIDOS)
+        prisma.budget.aggregate({
+          _sum: { total: true },
+          _count: true,
+          where: {
+            status: { notIn: ['REJECTED', 'EXPIRED'] },
+            currency: 'ARS',
+            date: { gte: monthStart, lte: monthEnd },
+          },
+        }),
+
         // Compras del mes (no canceladas)
         prisma.purchase.aggregate({
           _sum: { total: true },
@@ -56,12 +77,43 @@ export class DashboardController {
             date: { gte: monthStart, lte: monthEnd },
           },
         }),
-        // Últimas 5 facturas con cliente
+
+        // Contadores
+        prisma.customer.count({ where: { isActive: true } }),
+        prisma.product.count({ where: { isActive: true } }),
+        prisma.supplier.count({ where: { isActive: true } }),
+        prisma.invoice.count({ where: { status: 'DRAFT' } }),
+
+        // Remitos pendientes de entrega
+        prisma.remito.count({
+          where: { status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
+        }),
+
+        // Últimas 5 facturas
         prisma.invoice.findMany({
+          take: 5,
+          orderBy: { date: 'desc' },
+          where: { status: { not: 'DRAFT' } },
+          include: { customer: { select: { id: true, name: true } } },
+        }),
+
+        // Últimos 5 presupuestos
+        prisma.budget.findMany({
           take: 5,
           orderBy: { date: 'desc' },
           include: { customer: { select: { id: true, name: true } } },
         }),
+
+        // Remitos pendientes de entrega (detalle, top 5)
+        prisma.remito.findMany({
+          where: { status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
+          take: 5,
+          orderBy: { date: 'asc' },
+          include: {
+            customer: { select: { id: true, name: true } },
+          },
+        }),
+
         // Clientes con deuda (balance > 0, ARS)
         prisma.currentAccount.findMany({
           where: { balance: { gt: 0 }, currency: 'ARS' },
@@ -69,6 +121,7 @@ export class DashboardController {
           orderBy: { balance: 'desc' },
           take: 5,
         }),
+
         // Stock con minQuantity configurado
         prisma.stock.findMany({
           where: { minQuantity: { not: null } },
@@ -79,7 +132,7 @@ export class DashboardController {
         }),
       ]);
 
-      // Filtrar solo los que están por debajo del mínimo
+      // Filtrar stock por debajo del mínimo
       const lowStockItems = lowStockRaw
         .filter((s) => s.minQuantity !== null && s.quantity.lessThan(s.minQuantity))
         .slice(0, 5);
@@ -95,14 +148,23 @@ export class DashboardController {
             total: cobrosPendientesAgg._sum.total?.toNumber() ?? 0,
             count: cobrosPendientesAgg._count,
           },
-          facturasBorrador,
-          totalClientes,
-          totalProductos,
-          totalProveedores,
+          cobrosDelMes: {
+            total: cobrosDelMesAgg._sum.amount?.toNumber() ?? 0,
+            count: cobrosDelMesAgg._count,
+          },
+          presupuestosMes: {
+            total: presupuestosMesAgg._sum.total?.toNumber() ?? 0,
+            count: presupuestosMesAgg._count,
+          },
           comprasMes: {
             total: comprasMesAgg._sum.total?.toNumber() ?? 0,
             count: comprasMesAgg._count,
           },
+          facturasBorrador,
+          totalClientes,
+          totalProductos,
+          totalProveedores,
+          remitosPendientes: remitosPendientesCount,
           recentInvoices: recentInvoices.map((inv) => ({
             id: inv.id,
             number: inv.number,
@@ -112,6 +174,22 @@ export class DashboardController {
             total: inv.total.toNumber(),
             currency: inv.currency,
             customer: inv.customer,
+          })),
+          recentBudgets: recentBudgets.map((b) => ({
+            id: b.id,
+            number: b.number,
+            date: b.date,
+            status: b.status,
+            total: b.total.toNumber(),
+            currency: b.currency,
+            customer: b.customer,
+          })),
+          pendingRemitos: pendingRemitos.map((r) => ({
+            id: r.id,
+            number: r.number,
+            date: r.date,
+            status: r.status,
+            customer: r.customer,
           })),
           customersWithDebt: customersWithDebt.map((ca) => ({
             id: ca.id,

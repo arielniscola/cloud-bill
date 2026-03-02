@@ -2,15 +2,20 @@ import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
+import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
+import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
+import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
-import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
+import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import {
   createBudgetSchema,
   updateBudgetSchema,
   updateBudgetStatusSchema,
   budgetQuerySchema,
 } from '../../../application/dtos/budget.dto';
+import { createReciboSchema } from '../../../application/dtos/recibo.dto';
+import prisma from '../../database/prisma';
 
 export class BudgetController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -30,7 +35,11 @@ export class BudgetController {
         }
       );
 
-      res.json({ status: 'success', ...result });
+      const ids = result.data.map((b: any) => b.id);
+      const deliveryStatuses = await computeDeliveryStatusBatch('budgetId', ids);
+      const data = result.data.map((b: any) => ({ ...b, deliveryStatus: deliveryStatuses[b.id] }));
+
+      res.json({ status: 'success', ...result, data });
     } catch (error) {
       next(error);
     }
@@ -81,6 +90,8 @@ export class BudgetController {
         currency: data.currency,
         exchangeRate: data.exchangeRate,
         notes: data.notes ?? null,
+        paymentTerms: data.paymentTerms ?? null,
+        saleCondition: data.saleCondition ?? 'CONTADO',
         subtotal,
         taxAmount,
         total: subtotal + taxAmount,
@@ -215,6 +226,8 @@ export class BudgetController {
       // Determine invoice type from request or use budget's own type
       const invoiceType = req.body.invoiceType || budget.type;
 
+      const budgetSaleCondition = (budget as any).saleCondition ?? 'CONTADO';
+
       const invoice = await invoiceRepo.create({
         type: invoiceType,
         customerId: budget.customerId,
@@ -223,6 +236,7 @@ export class BudgetController {
         notes: budget.notes ?? undefined,
         currency: budget.currency as any,
         exchangeRate: Number(budget.exchangeRate),
+        saleCondition: budgetSaleCondition,
         items: budget.items.map((item) => ({
           productId: item.productId!,
           quantity: Number(item.quantity),
@@ -230,6 +244,22 @@ export class BudgetController {
           taxRate: Number(item.taxRate),
         })),
       });
+
+      // Create account movement if cuenta corriente
+      if (budgetSaleCondition === 'CUENTA_CORRIENTE') {
+        const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+        let currentAccount = await currentAccountRepo.findByCustomerId(budget.customerId, budget.currency as any);
+        if (!currentAccount) {
+          currentAccount = await currentAccountRepo.createForCustomer(budget.customerId, budget.currency as any);
+        }
+        await currentAccountRepo.addMovement({
+          currentAccountId: currentAccount.id,
+          type: 'DEBIT',
+          amount: Number(invoice.total),
+          description: `${invoiceType} ${invoice.number} (desde ${budget.number})`,
+          invoiceId: invoice.id,
+        });
+      }
 
       // Mark budget as CONVERTED and link to invoice
       await budgetRepo.update(req.params.id, {
@@ -246,6 +276,123 @@ export class BudgetController {
       });
 
       res.status(201).json({ status: 'success', data: invoice });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async pay(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const budgetRepo = container.resolve<IBudgetRepository>('BudgetRepository');
+      const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+      const cashRegisterRepo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
+      const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+
+      const budget = await budgetRepo.findById(req.params.id);
+      if (!budget) throw new NotFoundError('Presupuesto');
+
+      if (budget.status === 'REJECTED' || budget.status === 'CONVERTED' || budget.status === 'EXPIRED') {
+        throw new AppError('No se puede registrar un pago en este presupuesto', 400);
+      }
+      if (budget.status === 'PAID') {
+        throw new AppError('El presupuesto ya está pagado', 400);
+      }
+
+      const paymentData = createReciboSchema.parse(req.body);
+
+      // Validate cash register if provided
+      let cashRegisterName = '';
+      if (paymentData.cashRegisterId) {
+        const cashRegister = await cashRegisterRepo.findById(paymentData.cashRegisterId);
+        if (!cashRegister) throw new AppError('Caja no encontrada', 400);
+        if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
+        cashRegisterName = cashRegister.name;
+      }
+
+      // Calculate remaining balance
+      const activeRecibos = await prisma.recibo.findMany({
+        where: { budgetId: budget.id, status: 'EMITTED' },
+      });
+      const alreadyPaid = activeRecibos.reduce(
+        (sum: number, r: any) => sum + Number(r.amount),
+        0
+      );
+      const total = Number(budget.total);
+      const remaining = total - alreadyPaid;
+
+      if (paymentData.amount > remaining + 0.001) {
+        throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
+      }
+
+      if (!budget.customerId) {
+        throw new AppError('El presupuesto debe tener un cliente para registrar un pago', 400);
+      }
+
+      // Create recibo
+      const recibo = await reciboRepo.create({
+        budgetId: budget.id,
+        customerId: budget.customerId,
+        userId: req.user!.userId,
+        cashRegisterId: paymentData.cashRegisterId ?? null,
+        amount: paymentData.amount,
+        currency: budget.currency,
+        paymentMethod: paymentData.paymentMethod,
+        reference: paymentData.reference ?? null,
+        bank: paymentData.bank ?? null,
+        checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
+        installments: paymentData.installments ?? null,
+        notes: paymentData.notes ?? null,
+      });
+
+      // Record in current account only for cuenta corriente
+      if ((budget as any).saleCondition === 'CUENTA_CORRIENTE') {
+        let currentAccount = await currentAccountRepo.findByCustomerId(
+          budget.customerId,
+          budget.currency as any
+        );
+        if (!currentAccount) {
+          currentAccount = await currentAccountRepo.createForCustomer(
+            budget.customerId,
+            budget.currency as any
+          );
+        }
+        const movement = await currentAccountRepo.addMovement({
+          currentAccountId: currentAccount.id,
+          type: 'CREDIT',
+          amount: paymentData.amount,
+          description: `Pago ${cashRegisterName || paymentData.paymentMethod} - Presupuesto ${budget.number} (${recibo.number})`,
+          cashRegisterId: paymentData.cashRegisterId ?? undefined,
+        });
+        // Link movement to recibo
+        if (movement?.id) {
+          await prisma.accountMovement.update({
+            where: { id: movement.id },
+            data: { reciboId: recibo.id },
+          });
+        }
+      }
+
+      // Update budget status
+      const newPaid = alreadyPaid + paymentData.amount;
+      let newStatus: string;
+      if (newPaid >= total - 0.001) {
+        newStatus = 'PAID';
+      } else {
+        newStatus = 'PARTIALLY_PAID';
+      }
+
+      const updated = await budgetRepo.update(req.params.id, { status: newStatus as any });
+
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'PAYMENT',
+        entity: 'Budget',
+        entityId: budget.id,
+        description: `Pago ${recibo.number} registrado en presupuesto ${budget.number}`,
+      });
+
+      res.json({ status: 'success', data: updated, recibo });
     } catch (error) {
       next(error);
     }
