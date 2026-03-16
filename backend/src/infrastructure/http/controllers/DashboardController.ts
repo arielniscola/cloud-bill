@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../../database/prisma';
 
 export class DashboardController {
@@ -206,6 +207,87 @@ export class DashboardController {
           })),
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getCharts(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const now = new Date();
+
+      // Build 12 month buckets: oldest first
+      const months: { year: number; month: number; start: Date; end: Date }[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = d.getFullYear();
+        const month = d.getMonth();
+        months.push({
+          year,
+          month,
+          start: new Date(year, month, 1),
+          end: new Date(year, month + 1, 0, 23, 59, 59, 999),
+        });
+      }
+
+      // Fetch all relevant records once, then group in JS
+      const [invoiceRows, purchaseRows, reciboRows] = await Promise.all([
+        prisma.invoice.findMany({
+          where: {
+            status: { in: ['ISSUED', 'PARTIALLY_PAID', 'PAID'] },
+            currency: 'ARS',
+            date: { gte: months[0].start, lte: months[11].end },
+          },
+          select: { date: true, total: true },
+        }),
+        prisma.purchase.findMany({
+          where: {
+            status: { not: 'CANCELLED' },
+            date: { gte: months[0].start, lte: months[11].end },
+          },
+          select: { date: true, total: true },
+        }),
+        prisma.recibo.findMany({
+          where: {
+            status: 'EMITTED',
+            currency: 'ARS',
+            date: { gte: months[0].start, lte: months[11].end },
+          },
+          select: { date: true, amount: true },
+        }),
+      ]);
+
+      const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+      const data = months.map(({ year, month, start, end }) => {
+        const inRange = (d: Date) => d >= start && d <= end;
+
+        const ventas = invoiceRows
+          .filter((r) => inRange(new Date(r.date)))
+          .reduce((acc, r) => acc + (r.total as Decimal).toNumber(), 0);
+
+        const compras = purchaseRows
+          .filter((r) => inRange(new Date(r.date)))
+          .reduce((acc, r) => acc + (r.total as Decimal).toNumber(), 0);
+
+        const cobros = reciboRows
+          .filter((r) => inRange(new Date(r.date)))
+          .reduce((acc, r) => acc + (r.amount as Decimal).toNumber(), 0);
+
+        return {
+          label: `${MONTH_LABELS[month]} ${year}`,
+          shortLabel: MONTH_LABELS[month],
+          year,
+          month: month + 1,
+          ventas: Math.round(ventas),
+          compras: Math.round(compras),
+          cobros: Math.round(cobros),
+          ganancia: Math.round(ventas - compras),
+          margen: ventas > 0 ? Math.round(((ventas - compras) / ventas) * 100) : 0,
+        };
+      });
+
+      res.json({ status: 'success', data });
     } catch (error) {
       next(error);
     }

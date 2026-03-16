@@ -19,6 +19,8 @@ import { IBudgetRepository } from '../domain/repositories/IBudgetRepository';
 import { IAppSettingsRepository } from '../domain/repositories/IAppSettingsRepository';
 import { IStockIntelligenceRepository } from '../domain/repositories/IStockIntelligenceRepository';
 import { IReciboRepository } from '../domain/repositories/IReciboRepository';
+import { IOrdenPedidoRepository } from '../domain/repositories/IOrdenPedidoRepository';
+import { IOrdenCompraRepository } from '../domain/repositories/IOrdenCompraRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -39,6 +41,8 @@ import { PrismaBudgetRepository } from '../infrastructure/database/repositories/
 import { PrismaAppSettingsRepository } from '../infrastructure/database/repositories/PrismaAppSettingsRepository';
 import { PrismaStockIntelligenceRepository } from '../infrastructure/database/repositories/PrismaStockIntelligenceRepository';
 import { PrismaReciboRepository } from '../infrastructure/database/repositories/PrismaReciboRepository';
+import { PrismaOrdenPedidoRepository } from '../infrastructure/database/repositories/PrismaOrdenPedidoRepository';
+import { PrismaOrdenCompraRepository } from '../infrastructure/database/repositories/PrismaOrdenCompraRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -63,5 +67,7 @@ container.registerSingleton<IBudgetRepository>('BudgetRepository', PrismaBudgetR
 container.registerSingleton<IAppSettingsRepository>('AppSettingsRepository', PrismaAppSettingsRepository);
 container.registerSingleton<IStockIntelligenceRepository>('StockIntelligenceRepository', PrismaStockIntelligenceRepository);
 container.registerSingleton<IReciboRepository>('ReciboRepository', PrismaReciboRepository);
+container.registerSingleton<IOrdenPedidoRepository>('OrdenPedidoRepository', PrismaOrdenPedidoRepository);
+container.registerSingleton<IOrdenCompraRepository>('OrdenCompraRepository', PrismaOrdenCompraRepository);
 
 export { container };

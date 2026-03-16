@@ -36,6 +36,7 @@ export interface Budget {
   notes: string | null;
   paymentTerms?: string | null;
   saleCondition?: string | null;
+  stockBehavior?: string | null;
   invoiceId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -69,6 +70,7 @@ export interface CreateBudgetInput {
   notes?: string | null;
   paymentTerms?: string | null;
   saleCondition?: string;
+  stockBehavior?: string;
   items: CreateBudgetItemInput[];
   subtotal: number;
   taxAmount: number;

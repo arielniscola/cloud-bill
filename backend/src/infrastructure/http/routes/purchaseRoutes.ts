@@ -6,10 +6,11 @@ const router = Router();
 const purchaseController = new PurchaseController();
 
 router.use(authMiddleware);
+router.use(requireRoles('ADMIN'));
 
 router.get('/', purchaseController.findAll);
 router.get('/:id', purchaseController.findById);
-router.post('/', requireRoles('ADMIN', 'SELLER'), purchaseController.create);
-router.post('/:id/cancel', requireRoles('ADMIN'), purchaseController.cancel);
+router.post('/', purchaseController.create);
+router.post('/:id/cancel', purchaseController.cancel);
 
 export { router as purchaseRoutes };

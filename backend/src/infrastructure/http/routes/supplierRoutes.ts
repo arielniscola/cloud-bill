@@ -6,11 +6,13 @@ const router = Router();
 const supplierController = new SupplierController();
 
 router.use(authMiddleware);
+router.use(requireRoles('ADMIN'));
 
 router.get('/', supplierController.findAll);
+router.get('/:id/products', supplierController.findProducts);
 router.get('/:id', supplierController.findById);
-router.post('/', requireRoles('ADMIN', 'SELLER'), supplierController.create);
-router.put('/:id', requireRoles('ADMIN', 'SELLER'), supplierController.update);
-router.delete('/:id', requireRoles('ADMIN'), supplierController.delete);
+router.post('/', supplierController.create);
+router.put('/:id', supplierController.update);
+router.delete('/:id', supplierController.delete);
 
 export { router as supplierRoutes };

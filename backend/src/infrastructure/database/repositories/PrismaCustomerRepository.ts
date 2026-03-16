@@ -8,6 +8,8 @@ import { Customer, CreateCustomerInput, UpdateCustomerInput } from '../../../dom
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 
+type RawSaleCondition = { id: string; saleCondition: string };
+
 @injectable()
 export class PrismaCustomerRepository implements ICustomerRepository {
   private prisma: PrismaClient;
@@ -16,12 +18,25 @@ export class PrismaCustomerRepository implements ICustomerRepository {
     this.prisma = prisma;
   }
 
+  private async getSaleCondition(id: string): Promise<string> {
+    const rows = await this.prisma.$queryRaw<{ saleCondition: string }[]>(
+      Prisma.sql`SELECT "saleCondition" FROM customers WHERE id = ${id}`
+    );
+    return rows[0]?.saleCondition ?? 'CONTADO';
+  }
+
   async findById(id: string): Promise<Customer | null> {
-    return this.prisma.customer.findUnique({ where: { id } });
+    const customer = await this.prisma.customer.findUnique({ where: { id } });
+    if (!customer) return null;
+    const saleCondition = await this.getSaleCondition(id);
+    return { ...(customer as any), saleCondition } as Customer;
   }
 
   async findByTaxId(taxId: string): Promise<Customer | null> {
-    return this.prisma.customer.findUnique({ where: { taxId } });
+    const customer = await this.prisma.customer.findUnique({ where: { taxId } });
+    if (!customer) return null;
+    const saleCondition = await this.getSaleCondition(customer.id);
+    return { ...(customer as any), saleCondition } as Customer;
   }
 
   async findAll(
@@ -59,8 +74,17 @@ export class PrismaCustomerRepository implements ICustomerRepository {
       this.prisma.customer.count({ where }),
     ]);
 
+    // Fetch saleCondition via raw query (bypass stale Prisma client types)
+    const scMap = new Map<string, string>();
+    if (data.length > 0) {
+      const scRows = await this.prisma.$queryRaw<RawSaleCondition[]>(
+        Prisma.sql`SELECT id, "saleCondition" FROM customers WHERE id IN (${Prisma.join(data.map(c => c.id))})`
+      );
+      for (const r of scRows) scMap.set(r.id, r.saleCondition);
+    }
+
     return {
-      data,
+      data: (data as any[]).map(c => ({ ...c, saleCondition: scMap.get(c.id) ?? 'CONTADO' })) as Customer[],
       total,
       page,
       limit,
@@ -69,14 +93,25 @@ export class PrismaCustomerRepository implements ICustomerRepository {
   }
 
   async create(data: CreateCustomerInput): Promise<Customer> {
-    return this.prisma.customer.create({ data });
+    const { saleCondition = 'CONTADO', ...rest } = data as any;
+    const created = await this.prisma.customer.create({ data: rest });
+    await this.prisma.$executeRaw(
+      Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition} WHERE id = ${created.id}`
+    );
+    return { ...(created as any), saleCondition } as Customer;
   }
 
   async update(id: string, data: UpdateCustomerInput): Promise<Customer> {
-    return this.prisma.customer.update({
-      where: { id },
-      data,
-    });
+    const { saleCondition, ...rest } = data as any;
+    const updated = await this.prisma.customer.update({ where: { id }, data: rest });
+    if (saleCondition !== undefined) {
+      await this.prisma.$executeRaw(
+        Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition} WHERE id = ${id}`
+      );
+      return { ...(updated as any), saleCondition } as Customer;
+    }
+    const currentSC = await this.getSaleCondition(id);
+    return { ...(updated as any), saleCondition: currentSC } as Customer;
   }
 
   async delete(id: string): Promise<void> {

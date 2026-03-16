@@ -12,6 +12,7 @@ export interface InvoiceFilters {
   status?: InvoiceStatus;
   type?: InvoiceType;
   currency?: Currency;
+  saleCondition?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

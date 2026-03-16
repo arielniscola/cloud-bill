@@ -25,6 +25,7 @@ export class ProductController {
         internalNotes: req.body.internalNotes ?? null,
         cost: new Decimal(req.body.cost),
         price: new Decimal(req.body.price),
+        salePriceUSD: req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null,
         taxRate: new Decimal(req.body.taxRate ?? 21),
         isActive: req.body.isActive ?? true,
       });
@@ -102,6 +103,7 @@ export class ProductController {
       if (req.body.internalNotes !== undefined) updateData.internalNotes = req.body.internalNotes;
       if (req.body.cost !== undefined) updateData.cost = new Decimal(req.body.cost);
       if (req.body.price !== undefined) updateData.price = new Decimal(req.body.price);
+      if (req.body.salePriceUSD !== undefined) updateData.salePriceUSD = req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null;
       if (req.body.taxRate !== undefined) updateData.taxRate = new Decimal(req.body.taxRate);
       if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
 
@@ -111,6 +113,32 @@ export class ProductController {
         status: 'success',
         data: product,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async bulkUpdatePrices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const productRepository = container.resolve<IProductRepository>('ProductRepository');
+      const updates: Array<{ id: string; price?: number; cost?: number; salePriceUSD?: number | null }> = req.body.updates;
+
+      if (!Array.isArray(updates) || updates.length === 0) {
+        res.status(400).json({ status: 'error', message: 'No hay actualizaciones' });
+        return;
+      }
+
+      await Promise.all(
+        updates.map(({ id, price, cost, salePriceUSD }) => {
+          const data: Record<string, unknown> = {};
+          if (price        !== undefined) data.price       = new Decimal(price);
+          if (cost         !== undefined) data.cost        = new Decimal(cost);
+          if (salePriceUSD !== undefined) data.salePriceUSD = salePriceUSD != null ? new Decimal(salePriceUSD) : null;
+          return productRepository.update(id, data);
+        })
+      );
+
+      res.json({ status: 'success', updated: updates.length });
     } catch (error) {
       next(error);
     }

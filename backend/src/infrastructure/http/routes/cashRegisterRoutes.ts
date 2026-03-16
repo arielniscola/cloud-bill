@@ -15,27 +15,27 @@ router.use(authMiddleware);
 
 router.post(
   '/',
-  requireRoles('ADMIN', 'SELLER'),
+  requireRoles('ADMIN'),
   validate({ body: createCashRegisterSchema }),
   cashRegisterController.create
 );
 router.get('/', cashRegisterController.findAll);
-router.get('/:id/movements', cashRegisterController.getMovements);
-router.get('/:id/close-preview', cashRegisterController.getClosePreview);
-router.get('/:id/closes', cashRegisterController.getCloses);
+router.get('/:id/movements', requireRoles('ADMIN'), cashRegisterController.getMovements);
+router.get('/:id/close-preview', requireRoles('ADMIN'), cashRegisterController.getClosePreview);
+router.get('/:id/closes', requireRoles('ADMIN'), cashRegisterController.getCloses);
 router.post(
   '/:id/close',
-  requireRoles('ADMIN', 'SELLER'),
+  requireRoles('ADMIN'),
   validate({ body: createCashRegisterCloseSchema }),
   cashRegisterController.createClose
 );
 router.get('/:id', cashRegisterController.findById);
 router.put(
   '/:id',
-  requireRoles('ADMIN', 'SELLER'),
+  requireRoles('ADMIN'),
   validate({ body: updateCashRegisterSchema }),
   cashRegisterController.update
 );
-router.delete('/:id', requireRoles('ADMIN', 'SELLER'), cashRegisterController.delete);
+router.delete('/:id', requireRoles('ADMIN'), cashRegisterController.delete);
 
 export { router as cashRegisterRoutes };

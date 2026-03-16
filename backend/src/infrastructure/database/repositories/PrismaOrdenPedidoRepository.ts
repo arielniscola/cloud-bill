@@ -1,13 +1,12 @@
 import { injectable } from 'tsyringe';
-import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { IBudgetRepository, BudgetFilters } from '../../../domain/repositories/IBudgetRepository';
+import { IOrdenPedidoRepository, OrdenPedidoFilters } from '../../../domain/repositories/IOrdenPedidoRepository';
 import {
-  Budget,
-  BudgetWithItems,
-  CreateBudgetInput,
-  UpdateBudgetInput,
-} from '../../../domain/entities/Budget';
+  OrdenPedido,
+  OrdenPedidoWithItems,
+  CreateOrdenPedidoInput,
+  UpdateOrdenPedidoInput,
+} from '../../../domain/entities/OrdenPedido';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 
@@ -20,24 +19,23 @@ const includeRelations = {
   customer: { select: { id: true, name: true, taxId: true, email: true, address: true } },
   user: { select: { id: true, name: true } },
   invoice: { select: { id: true, number: true, status: true } },
+  cashRegister: { select: { id: true, name: true } },
+  invoiceCashRegister: { select: { id: true, name: true } },
 };
 
 @injectable()
-export class PrismaBudgetRepository implements IBudgetRepository {
+export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
   async findAll(
-    pagination: PaginationParams = { page: 1, limit: 10 },
-    filters: BudgetFilters = {}
-  ): Promise<PaginatedResult<Budget>> {
-    const { page = 1, limit = 10 } = pagination;
+    pagination: PaginationParams = { page: 1, limit: 20 },
+    filters: OrdenPedidoFilters = {}
+  ): Promise<PaginatedResult<OrdenPedido>> {
+    const { page = 1, limit = 20 } = pagination;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.BudgetWhereInput = {};
-
+    const where: any = {};
     if (filters.customerId) where.customerId = filters.customerId;
-    if (filters.status) where.status = filters.status as any;
-    if (filters.type) where.type = filters.type as any;
-    if (filters.currency) where.currency = filters.currency as any;
-
+    if (filters.status) where.status = filters.status;
+    if (filters.currency) where.currency = filters.currency;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -45,7 +43,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     }
 
     const [data, total] = await Promise.all([
-      prisma.budget.findMany({
+      (prisma as any).ordenPedido.findMany({
         where,
         skip,
         take: limit,
@@ -55,21 +53,21 @@ export class PrismaBudgetRepository implements IBudgetRepository {
           user: { select: { id: true, name: true } },
         },
       }),
-      prisma.budget.count({ where }),
+      (prisma as any).ordenPedido.count({ where }),
     ]);
 
-    return { data: data as any, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<BudgetWithItems | null> {
-    return prisma.budget.findUnique({
+  async findById(id: string): Promise<OrdenPedidoWithItems | null> {
+    return (prisma as any).ordenPedido.findUnique({
       where: { id },
       include: includeRelations,
-    }) as Promise<BudgetWithItems | null>;
+    }) as Promise<OrdenPedidoWithItems | null>;
   }
 
-  async create(data: CreateBudgetInput): Promise<BudgetWithItems> {
-    const number = await this.getNextBudgetNumber();
+  async create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
+    const number = await this.getNextNumber();
 
     const items = data.items.map((item) => ({
       productId: item.productId ?? null,
@@ -82,35 +80,35 @@ export class PrismaBudgetRepository implements IBudgetRepository {
       total: new Decimal(item.total),
     }));
 
-    return prisma.budget.create({
+    return (prisma as any).ordenPedido.create({
       data: {
         number,
-        type: data.type,
         customerId: data.customerId ?? null,
         userId: data.userId,
-        validUntil: data.validUntil ?? null,
+        dueDate: data.dueDate ?? null,
         currency: data.currency,
         exchangeRate: new Decimal(data.exchangeRate),
         notes: data.notes ?? null,
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
-        stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
+        stockBehavior: data.stockBehavior ?? 'DISCOUNT',
+        cashRegisterId: (data as any).cashRegisterId ?? null,
+        invoiceCashRegisterId: (data as any).invoiceCashRegisterId ?? null,
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),
         items: { create: items },
       },
       include: includeRelations,
-    }) as unknown as Promise<BudgetWithItems>;
+    }) as Promise<OrdenPedidoWithItems>;
   }
 
-  async update(id: string, data: UpdateBudgetInput): Promise<BudgetWithItems> {
+  async update(id: string, data: UpdateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
     const { items, ...rest } = data;
 
     if (items) {
-      // Replace items: delete all and recreate
-      await prisma.budgetItem.deleteMany({ where: { budgetId: id } });
-      await prisma.budget.update({
+      await (prisma as any).ordenPedidoItem.deleteMany({ where: { ordenPedidoId: id } });
+      await (prisma as any).ordenPedido.update({
         where: { id },
         data: {
           ...rest,
@@ -129,24 +127,22 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         },
       });
     } else {
-      await prisma.budget.update({ where: { id }, data: rest as any });
+      await (prisma as any).ordenPedido.update({ where: { id }, data: rest });
     }
 
-    return this.findById(id) as Promise<BudgetWithItems>;
+    return this.findById(id) as Promise<OrdenPedidoWithItems>;
   }
 
   async delete(id: string): Promise<void> {
-    await prisma.budget.delete({ where: { id } });
+    await (prisma as any).ordenPedido.delete({ where: { id } });
   }
 
-  async getNextBudgetNumber(): Promise<string> {
+  async getNextNumber(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await prisma.budget.count({
-      where: {
-        number: { startsWith: `PRES-${year}-` },
-      },
+    const count = await (prisma as any).ordenPedido.count({
+      where: { number: { startsWith: `OP-${year}-` } },
     });
     const seq = String(count + 1).padStart(4, '0');
-    return `PRES-${year}-${seq}`;
+    return `OP-${year}-${seq}`;
   }
 }

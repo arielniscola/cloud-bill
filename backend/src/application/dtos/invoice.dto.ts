@@ -26,6 +26,8 @@ export const createInvoiceSchema = z.object({
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().positive().default(1),
+  originInvoiceId: z.string().uuid().optional().nullable(),
+  stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
 });
 
@@ -34,7 +36,14 @@ export const updateInvoiceStatusSchema = z.object({
 });
 
 export const payInvoiceSchema = z.object({
-  cashRegisterId: z.string().uuid('ID de caja inválido'),
+  amount: z.number().positive('El monto debe ser mayor a 0'),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
+  cashRegisterId: z.string().uuid().optional().nullable(),
+  reference: z.string().optional().nullable(),
+  bank: z.string().optional().nullable(),
+  checkDueDate: z.string().optional().nullable(),
+  installments: z.number().int().positive().optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 export const invoiceQuerySchema = z.object({

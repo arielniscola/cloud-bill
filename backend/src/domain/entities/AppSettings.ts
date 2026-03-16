@@ -4,6 +4,16 @@ export interface AppSettings {
   defaultInvoiceCashRegisterId: string | null;
   deadStockDays:                number;
   safetyStockDays:              number;
+  stalePriceWarnDays1:          number;
+  stalePriceWarnDays2:          number;
+  companyTaxCondition:          string;
+  printFormat:                  string;
+  smtpHost:                     string | null;
+  smtpPort:                     number;
+  smtpUser:                     string | null;
+  smtpPass:                     string | null;
+  smtpFrom:                     string | null;
+  smtpSecure:                   boolean;
   createdAt: Date;
   updatedAt: Date;
   defaultBudgetCashRegister?:  { id: string; name: string } | null;
@@ -15,4 +25,14 @@ export interface UpdateAppSettingsInput {
   defaultInvoiceCashRegisterId?: string | null;
   deadStockDays?:                number;
   safetyStockDays?:              number;
+  stalePriceWarnDays1?:          number;
+  stalePriceWarnDays2?:          number;
+  companyTaxCondition?:          string;
+  printFormat?:                  string;
+  smtpHost?:                     string | null;
+  smtpPort?:                     number;
+  smtpUser?:                     string | null;
+  smtpPass?:                     string | null;
+  smtpFrom?:                     string | null;
+  smtpSecure?:                   boolean;
 }

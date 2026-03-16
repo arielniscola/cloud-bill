@@ -42,5 +42,6 @@ router.post(
 );
 router.post('/:id/cancel', requireRoles('ADMIN'), invoiceController.cancel);
 router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), invoiceController.emit);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), invoiceController.sendEmail);
 
 export { router as invoiceRoutes };

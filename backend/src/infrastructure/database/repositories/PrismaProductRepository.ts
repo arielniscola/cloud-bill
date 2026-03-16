@@ -81,13 +81,17 @@ export class PrismaProductRepository implements IProductRepository {
   }
 
   async create(data: CreateProductInput): Promise<Product> {
-    return this.prisma.product.create({ data });
+    return (this.prisma as any).product.create({ data: { ...data, priceUpdatedAt: new Date() } });
   }
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
-    return this.prisma.product.update({
+    const priceChanged = data.price !== undefined || data.salePriceUSD !== undefined;
+    return (this.prisma as any).product.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        ...(priceChanged && { priceUpdatedAt: new Date() }),
+      },
     });
   }
 

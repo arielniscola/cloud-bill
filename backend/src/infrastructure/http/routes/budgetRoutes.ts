@@ -12,8 +12,7 @@ router.get('/:id', budgetController.findById);
 router.post('/', requireRoles('ADMIN', 'SELLER'), budgetController.create);
 router.put('/:id', requireRoles('ADMIN', 'SELLER'), budgetController.update);
 router.patch('/:id/status', requireRoles('ADMIN', 'SELLER'), budgetController.updateStatus);
-router.post('/:id/convert', requireRoles('ADMIN', 'SELLER'), budgetController.convertToInvoice);
-router.post('/:id/pay', requireRoles('ADMIN', 'SELLER'), budgetController.pay);
 router.delete('/:id', requireRoles('ADMIN'), budgetController.delete);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), budgetController.sendEmail);
 
 export { router as budgetRoutes };

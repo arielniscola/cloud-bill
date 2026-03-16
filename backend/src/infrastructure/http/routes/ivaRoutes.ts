@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { IvaController } from '../controllers/IvaController';
-import { authMiddleware } from '../middlewares/authMiddleware';
+import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 
 const router = Router();
 const ivaController = new IvaController();
 
 router.use(authMiddleware);
+router.use(requireRoles('ADMIN'));
 
 router.get('/ventas', ivaController.getVentas);
 router.get('/ventas/export', ivaController.exportVentasCSV);

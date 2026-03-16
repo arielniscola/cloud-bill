@@ -19,6 +19,7 @@ export interface AccountMovement {
   balance: Decimal;
   description: string;
   invoiceId: string | null;
+  budgetId: string | null;
   cashRegisterId: string | null;
   createdAt: Date;
 }
@@ -29,5 +30,6 @@ export interface CreateAccountMovementInput {
   amount: number;
   description: string;
   invoiceId?: string;
+  budgetId?: string;
   cashRegisterId?: string;
 }

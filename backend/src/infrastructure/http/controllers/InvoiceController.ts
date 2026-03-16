@@ -10,7 +10,9 @@ import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegis
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigRepository';
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
+import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { afipService } from '../../services/AfipService';
+import { sendInvoiceEmail } from '../../services/EmailService';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
@@ -30,18 +32,28 @@ export class InvoiceController {
 
       const saleCondition: string = req.body.saleCondition ?? 'CONTADO';
 
+      if (req.body.customerId) {
+        const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
+        const customer = await customerRepo.findById(req.body.customerId);
+        if (!customer) throw new NotFoundError('Cliente');
+        if (!customer.isActive) throw new AppError('El cliente está inactivo y no puede recibir nuevas facturas', 400);
+      }
+
       const invoice = await invoiceRepository.create({
         type: req.body.type,
         customerId: req.body.customerId,
         userId: req.user!.userId,
+        date: req.body.date ? new Date(req.body.date) : undefined,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
         paymentTerms: req.body.paymentTerms ?? null,
         saleCondition,
+        stockBehavior: req.body.stockBehavior ?? 'DISCOUNT',
+        originInvoiceId: req.body.originInvoiceId ?? null,
         currency,
         exchangeRate,
         items: req.body.items,
-      });
+      } as any);
 
       // Update current account only for cuenta corriente sales
       if (saleCondition === 'CUENTA_CORRIENTE') {
@@ -61,18 +73,31 @@ export class InvoiceController {
 
       // Update stock for sales invoices
       if (req.body.type.startsWith('FACTURA')) {
+        const stockBehavior: string = req.body.stockBehavior ?? 'DISCOUNT';
         const defaultWarehouse = await warehouseRepository.findDefault();
         if (defaultWarehouse) {
-          for (const item of invoice.items) {
-            await stockRepository.addMovement({
-              productId: item.productId,
-              warehouseId: defaultWarehouse.id,
-              type: 'SALE',
-              quantity: item.quantity.toNumber(),
-              reason: `Invoice ${invoice.number}`,
-              referenceId: invoice.id,
-              userId: req.user!.userId,
-            });
+          if (stockBehavior === 'RESERVE') {
+            // Reserve stock (increment reservedQuantity)
+            for (const item of invoice.items) {
+              await prisma.stock.upsert({
+                where: { productId_warehouseId: { productId: item.productId, warehouseId: defaultWarehouse.id } },
+                update: { reservedQuantity: { increment: item.quantity } },
+                create: { productId: item.productId, warehouseId: defaultWarehouse.id, quantity: 0, reservedQuantity: item.quantity },
+              });
+            }
+          } else {
+            // DISCOUNT: create SALE movement (immediate deduction)
+            for (const item of invoice.items) {
+              await stockRepository.addMovement({
+                productId: item.productId,
+                warehouseId: defaultWarehouse.id,
+                type: 'SALE',
+                quantity: item.quantity.toNumber(),
+                reason: `Invoice ${invoice.number}`,
+                referenceId: invoice.id,
+                userId: req.user!.userId,
+              });
+            }
           }
         }
       }
@@ -128,6 +153,7 @@ export class InvoiceController {
           status: filters.status as 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED' | 'PARTIALLY_PAID',
           type: filters.type as string as 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C',
           currency: filters.currency as Currency | undefined,
+          saleCondition: filters.saleCondition as string | undefined,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
         }
@@ -171,6 +197,7 @@ export class InvoiceController {
         notes: req.body.notes,
         paymentTerms: req.body.paymentTerms ?? null,
         saleCondition: req.body.saleCondition ?? 'CONTADO',
+        originInvoiceId: req.body.originInvoiceId ?? null,
         currency,
         exchangeRate,
         items: req.body.items,
@@ -334,8 +361,8 @@ export class InvoiceController {
       const invoice = await invoiceRepo.findById(req.params.id);
       if (!invoice) throw new NotFoundError('Invoice');
 
-      if (invoice.status !== 'DRAFT') {
-        throw new AppError('Solo se pueden emitir facturas en estado DRAFT', 400);
+      if (invoice.status !== 'DRAFT' && invoice.status !== 'ISSUED') {
+        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador o Emitida', 400);
       }
 
       if (invoice.cae) {
@@ -427,4 +454,16 @@ export class InvoiceController {
       next(error);
     }
   }
+
+  sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { to } = req.body;
+      if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
+      await sendInvoiceEmail(id, to);
+      res.json({ status: 'success', message: 'Correo enviado correctamente' });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

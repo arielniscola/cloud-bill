@@ -78,6 +78,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
       return {
+        productId: item.productId ?? null,
         description: item.description,
         quantity: new Decimal(item.quantity),
         unitPrice: new Decimal(item.unitPrice),

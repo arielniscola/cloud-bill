@@ -4,9 +4,10 @@ import { IReciboRepository } from '../../../domain/repositories/IReciboRepositor
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
+import { IOrdenPedidoRepository } from '../../../domain/repositories/IOrdenPedidoRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
-import { reciboQuerySchema } from '../../../application/dtos/recibo.dto';
+import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
 
 export class ReciboController {
@@ -20,8 +21,10 @@ export class ReciboController {
         {
           invoiceId: query.invoiceId,
           budgetId: query.budgetId,
+          ordenPedidoId: (query as any).ordenPedidoId,
           customerId: query.customerId,
           status: query.status,
+          paymentMethod: query.paymentMethod,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
         }
@@ -45,12 +48,63 @@ export class ReciboController {
     }
   }
 
+  async findChecks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<IReciboRepository>('ReciboRepository');
+      const query = reciboCheckQuerySchema.parse(req.query);
+
+      const result = await repo.findChecks(
+        { page: query.page, limit: query.limit },
+        {
+          customerId: query.customerId,
+          checkStatus: query.checkStatus,
+          dueDateFrom: query.dueDateFrom ? new Date(query.dueDateFrom) : undefined,
+          dueDateTo: query.dueDateTo ? new Date(query.dueDateTo) : undefined,
+          dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
+          dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+        }
+      );
+
+      res.json({ status: 'success', ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateCheckStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<IReciboRepository>('ReciboRepository');
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+
+      const recibo = await repo.findById(req.params.id);
+      if (!recibo) throw new NotFoundError('Recibo');
+      if (recibo.paymentMethod !== 'CHECK') throw new AppError('Solo se puede cambiar el estado de cheques', 400);
+      if (recibo.status === 'CANCELLED') throw new AppError('El recibo está cancelado', 400);
+
+      const { checkStatus } = updateCheckStatusSchema.parse(req.body);
+      const updated = await repo.updateCheckStatus(req.params.id, checkStatus);
+
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Recibo',
+        entityId: recibo.id,
+        description: `Cheque ${recibo.number} actualizado a estado ${checkStatus}`,
+      });
+
+      res.json({ status: 'success', data: updated });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async cancel(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
       const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
       const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
       const budgetRepo = container.resolve<IBudgetRepository>('BudgetRepository');
+      const opRepo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
       const recibo = await reciboRepo.findById(req.params.id);
@@ -89,6 +143,11 @@ export class ReciboController {
       // Recalculate budget status
       if (recibo.budgetId) {
         await this._recalculateBudgetStatus(recibo.budgetId, budgetRepo);
+      }
+
+      // Recalculate orden pedido status
+      if ((recibo as any).ordenPedidoId) {
+        await this._recalculateOrdenPedidoStatus((recibo as any).ordenPedidoId, opRepo);
       }
 
       await activityLogRepo.create({
@@ -134,6 +193,37 @@ export class ReciboController {
     }
 
     await invoiceRepo.update(invoiceId, { status: newStatus as any });
+  }
+
+  private async _recalculateOrdenPedidoStatus(
+    ordenPedidoId: string,
+    opRepo: IOrdenPedidoRepository
+  ): Promise<void> {
+    const op = await opRepo.findById(ordenPedidoId);
+    if (!op || op.status === 'CANCELLED' || op.status === 'CONVERTED') return;
+
+    const activeRecibos = await prisma.recibo.findMany({
+      where: { ordenPedidoId, status: 'EMITTED' } as any,
+    });
+
+    const paidAmount = activeRecibos.reduce(
+      (sum: number, r: any) => sum + Number(r.amount),
+      0
+    );
+    const total = Number(op.total);
+
+    let newStatus: string;
+    if (paidAmount >= total) {
+      newStatus = 'PAID';
+    } else if (paidAmount > 0) {
+      newStatus = 'PARTIALLY_PAID';
+    } else {
+      newStatus = op.status === 'PAID' || op.status === 'PARTIALLY_PAID'
+        ? 'CONFIRMED'
+        : op.status;
+    }
+
+    await opRepo.update(ordenPedidoId, { status: newStatus as any });
   }
 
   private async _recalculateBudgetStatus(

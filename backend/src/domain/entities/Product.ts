@@ -12,8 +12,10 @@ export interface Product {
   internalNotes: string | null;
   cost: Decimal;
   price: Decimal;
+  salePriceUSD?: Decimal | null;
   taxRate: Decimal;
   leadTimeDays?: number | null;
+  priceUpdatedAt?: Date | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

@@ -15,7 +15,7 @@ router.use(authMiddleware);
 
 router.post(
   '/',
-  requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: createRemitoSchema }),
   remitoController.create
 );
@@ -23,10 +23,11 @@ router.get('/', validate({ query: remitoQuerySchema }), remitoController.findAll
 router.get('/:id', remitoController.findById);
 router.post(
   '/:id/deliver',
-  requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: deliverRemitoSchema }),
   remitoController.deliver
 );
 router.post('/:id/cancel', requireRoles('ADMIN'), remitoController.cancel);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), remitoController.sendEmail);
 
 export { router as remitoRoutes };

@@ -65,6 +65,10 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       where.currency = filters.currency;
     }
 
+    if (filters.saleCondition) {
+      (where as any).saleCondition = filters.saleCondition;
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -84,6 +88,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         include: {
           customer: true,
           user: { select: { id: true, name: true, email: true } },
+          _count: { select: { items: true } },
         },
       }),
       this.prisma.invoice.count({ where }),
@@ -127,10 +132,14 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         number: invoiceNumber,
         customerId: data.customerId,
         userId: data.userId,
+        ...(data.date ? { date: data.date } : {}),
         dueDate: data.dueDate,
         notes: data.notes,
         paymentTerms: data.paymentTerms,
         saleCondition: data.saleCondition ?? 'CONTADO',
+        stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
+        originInvoiceId: (data as any).originInvoiceId ?? null,
+        ordenPedidoId: (data as any).ordenPedidoId ?? null,
         subtotal,
         taxAmount,
         total,
@@ -145,7 +154,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         customer: true,
         user: true,
       },
-    });
+    } as any);
   }
 
   async update(id: string, data: UpdateInvoiceInput): Promise<Invoice> {
@@ -188,6 +197,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
           notes: data.notes ?? null,
           paymentTerms: data.paymentTerms ?? null,
           saleCondition: data.saleCondition ?? 'CONTADO',
+          originInvoiceId: (data as any).originInvoiceId ?? null,
           subtotal,
           taxAmount,
           total,
@@ -202,7 +212,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
           customer: true,
           user: true,
         },
-      });
+      } as any);
     });
   }
 

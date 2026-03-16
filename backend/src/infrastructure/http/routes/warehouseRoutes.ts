@@ -14,7 +14,7 @@ router.use(authMiddleware);
 
 router.post(
   '/',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN'),
   validate({ body: createWarehouseSchema }),
   warehouseController.create
 );
@@ -22,7 +22,7 @@ router.get('/', warehouseController.findAll);
 router.get('/:id', warehouseController.findById);
 router.put(
   '/:id',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN'),
   validate({ body: updateWarehouseSchema }),
   warehouseController.update
 );

@@ -8,6 +8,7 @@ export interface Remito {
   userId: string;
   invoiceId: string | null;
   budgetId: string | null;
+  ordenPedidoId: string | null;
   date: Date;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
@@ -28,6 +29,7 @@ export interface RemitoWithItems extends Remito {
   items: RemitoItem[];
   invoice?: { id: string; number: string; type: string } | null;
   budget?: { id: string; number: string } | null;
+  ordenPedido?: { id: string; number: string } | null;
 }
 
 export interface CreateRemitoItemInput {
@@ -42,6 +44,7 @@ export interface CreateRemitoInput {
   notes?: string;
   invoiceId?: string;
   budgetId?: string;
+  ordenPedidoId?: string;
   items: CreateRemitoItemInput[];
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { CustomerController } from '../controllers/CustomerController';
-import { authMiddleware } from '../middlewares/authMiddleware';
+import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
 import {
   createCustomerSchema,
@@ -13,10 +13,10 @@ const customerController = new CustomerController();
 
 router.use(authMiddleware);
 
-router.post('/', validate({ body: createCustomerSchema }), customerController.create);
+router.post('/', requireRoles('ADMIN', 'SELLER'), validate({ body: createCustomerSchema }), customerController.create);
 router.get('/', validate({ query: customerQuerySchema }), customerController.findAll);
 router.get('/:id', customerController.findById);
-router.put('/:id', validate({ body: updateCustomerSchema }), customerController.update);
-router.delete('/:id', customerController.delete);
+router.put('/:id', requireRoles('ADMIN', 'SELLER'), validate({ body: updateCustomerSchema }), customerController.update);
+router.delete('/:id', requireRoles('ADMIN', 'SELLER'), customerController.delete);
 
 export { router as customerRoutes };

@@ -11,6 +11,7 @@ export const createProductSchema = z.object({
   internalNotes: z.string().optional().nullable(),
   cost: z.number().min(0, 'Cost must be positive'),
   price: z.number().min(0, 'Price must be positive'),
+  salePriceUSD: z.number().min(0).optional().nullable(),
   taxRate: z.number().min(0).max(100).default(21),
   isActive: z.boolean().default(true),
 });

@@ -96,9 +96,10 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
           balance: newBalance,
           description: data.description,
           invoiceId: data.invoiceId,
+          budgetId: data.budgetId,
           cashRegisterId: data.cashRegisterId,
         },
-      });
+      } as any);
     });
   }
 
@@ -115,7 +116,7 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { invoice: true },
+        include: { invoice: true, budget: true } as any,
       }),
       this.prisma.accountMovement.count({ where: { currentAccountId } }),
     ]);

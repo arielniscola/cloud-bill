@@ -13,6 +13,7 @@ export const createCustomerSchema = z.object({
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
   notes: z.string().optional().nullable(),
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   isActive: z.boolean().default(true),
 });
 

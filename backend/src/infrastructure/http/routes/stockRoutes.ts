@@ -24,25 +24,25 @@ router.get('/:productId/:warehouseId', stockController.getStock);
 
 router.post(
   '/movement',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: stockMovementSchema }),
   stockController.addMovement
 );
 router.post(
   '/transfer',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: stockTransferSchema }),
   stockController.transfer
 );
 router.post(
   '/bulk-adjust',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: bulkAdjustSchema }),
   stockController.adjustBulk
 );
 router.put(
   '/:productId/:warehouseId/min-quantity',
-  requireRoles('ADMIN', 'WAREHOUSE_CLERK'),
+  requireRoles('ADMIN', 'SELLER'),
   validate({ body: setMinQuantitySchema }),
   stockController.setMinQuantity
 );

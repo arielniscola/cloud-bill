@@ -8,6 +8,7 @@ import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { RemitoStatus } from '../../../shared/types';
 import prisma from '../../database/prisma';
 import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
+import { sendRemitoEmail } from '../../services/EmailService';
 
 export class RemitoController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -16,8 +17,11 @@ export class RemitoController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      // Validate source document items if provided
+      // Validate source document items if provided and determine stockBehavior
       const { invoiceId, budgetId } = req.body;
+      let stockBehaviorForRemito: 'DISCOUNT' | 'RESERVE' = 'DISCOUNT';
+      let isLinked = false;
+
       if (invoiceId) {
         const invoice = await prisma.invoice.findUnique({
           where: { id: invoiceId },
@@ -36,6 +40,9 @@ export class RemitoController {
             throw new AppError('Uno o más productos no pertenecen a la factura seleccionada', 400);
           }
         }
+
+        stockBehaviorForRemito = ((invoice as any).stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        isLinked = true;
       } else if (budgetId) {
         const budget = await prisma.budget.findUnique({
           where: { id: budgetId },
@@ -56,24 +63,27 @@ export class RemitoController {
             throw new AppError('Uno o más productos no pertenecen al presupuesto seleccionado', 400);
           }
         }
+
+        stockBehaviorForRemito = ((budget as any).stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        isLinked = true;
       }
 
       const remito = await remitoRepository.create({
         customerId: req.body.customerId,
         userId: req.user!.userId,
-        stockBehavior: req.body.stockBehavior,
+        stockBehavior: stockBehaviorForRemito,
         notes: req.body.notes,
         invoiceId: invoiceId || undefined,
         budgetId: budgetId || undefined,
         items: req.body.items,
       });
 
-      const defaultWarehouse = await warehouseRepository.findDefault();
-      if (!defaultWarehouse) {
-        throw new AppError('No se encontró un almacén por defecto', 400);
-      }
-
-      if (req.body.stockBehavior === 'DISCOUNT') {
+      // Stock movements only for standalone remitos (linked docs handled stock at creation)
+      if (!isLinked) {
+        const defaultWarehouse = await warehouseRepository.findDefault();
+        if (!defaultWarehouse) {
+          throw new AppError('No se encontró un almacén por defecto', 400);
+        }
         for (const item of remito.items) {
           await stockRepository.addMovement({
             productId: item.productId,
@@ -83,29 +93,6 @@ export class RemitoController {
             reason: `Remito ${remito.number}`,
             referenceId: remito.id,
             userId: req.user!.userId,
-          });
-        }
-      } else {
-        // RESERVE: increment reservedQuantity for each item
-        for (const item of remito.items) {
-          await prisma.stock.upsert({
-            where: {
-              productId_warehouseId: {
-                productId: item.productId,
-                warehouseId: defaultWarehouse.id,
-              },
-            },
-            update: {
-              reservedQuantity: {
-                increment: item.quantity,
-              },
-            },
-            create: {
-              productId: item.productId,
-              warehouseId: defaultWarehouse.id,
-              quantity: new Decimal(0),
-              reservedQuantity: item.quantity,
-            },
           });
         }
       }
@@ -200,19 +187,18 @@ export class RemitoController {
         const newDeliveredQuantity = remitoItem.deliveredQuantity.plus(deliverItem.quantity).toNumber();
         await remitoRepository.updateItemDeliveredQuantity(remitoItem.id, newDeliveredQuantity);
 
-        // Discount actual stock
-        await stockRepository.addMovement({
-          productId: remitoItem.productId,
-          warehouseId: defaultWarehouse.id,
-          type: 'REMITO_OUT',
-          quantity: deliverItem.quantity,
-          reason: `Entrega remito ${remito.number}`,
-          referenceId: remito.id,
-          userId: req.user!.userId,
-        });
-
-        // Release reservation
+        // For RESERVE mode: discount actual stock and release reservation
         if (remito.stockBehavior === 'RESERVE') {
+          await stockRepository.addMovement({
+            productId: remitoItem.productId,
+            warehouseId: defaultWarehouse.id,
+            type: 'REMITO_OUT',
+            quantity: deliverItem.quantity,
+            reason: `Entrega remito ${remito.number}`,
+            referenceId: remito.id,
+            userId: req.user!.userId,
+          });
+
           await prisma.stock.update({
             where: {
               productId_warehouseId: {
@@ -227,6 +213,8 @@ export class RemitoController {
             },
           });
         }
+        // For DISCOUNT mode: stock was already moved at invoice/budget creation (linked)
+        // or at remito creation (standalone). No additional movement needed.
       }
 
       // Recalculate status
@@ -284,6 +272,8 @@ export class RemitoController {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }
 
+      const isLinkedRemito = !!(remito.invoiceId || remito.budgetId);
+
       if (remito.stockBehavior === 'RESERVE') {
         for (const item of remito.items) {
           // Release pending reservations
@@ -317,8 +307,8 @@ export class RemitoController {
             });
           }
         }
-      } else {
-        // DISCOUNT: revert all stock
+      } else if (!isLinkedRemito) {
+        // Standalone DISCOUNT remito: revert stock moved at creation
         for (const item of remito.items) {
           if (item.deliveredQuantity.greaterThan(0)) {
             await stockRepository.addMovement({
@@ -333,6 +323,7 @@ export class RemitoController {
           }
         }
       }
+      // Linked DISCOUNT remito: stock is owned by the invoice/budget, no reversal here
 
       await remitoRepository.updateStatus(remito.id, 'CANCELLED');
 
@@ -346,4 +337,16 @@ export class RemitoController {
       next(error);
     }
   }
+
+  sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { to } = req.body;
+      if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
+      await sendRemitoEmail(id, to);
+      res.json({ status: 'success', message: 'Correo enviado correctamente' });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

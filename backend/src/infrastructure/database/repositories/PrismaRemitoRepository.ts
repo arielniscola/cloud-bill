@@ -89,7 +89,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
 
     const status: RemitoStatus = data.stockBehavior === 'DISCOUNT' ? 'DELIVERED' : 'PENDING';
 
-    return this.prisma.remito.create({
+    return (this.prisma as any).remito.create({
       data: {
         number,
         customerId: data.customerId,
@@ -99,6 +99,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         notes: data.notes,
         invoiceId: data.invoiceId ?? null,
         budgetId: data.budgetId ?? null,
+        ordenPedidoId: data.ordenPedidoId ?? null,
         items: {
           create: data.items.map((item) => ({
             productId: item.productId,
@@ -117,6 +118,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         user: true,
         invoice: { select: { id: true, number: true, type: true } },
         budget: { select: { id: true, number: true } },
+        ordenPedido: { select: { id: true, number: true } },
       },
     });
   }

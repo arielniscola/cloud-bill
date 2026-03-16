@@ -1,6 +1,6 @@
 import { injectable } from 'tsyringe';
 import { Decimal } from '@prisma/client/runtime/library';
-import { IReciboRepository, ReciboFilters } from '../../../domain/repositories/IReciboRepository';
+import { IReciboRepository, ReciboFilters, CheckFilters } from '../../../domain/repositories/IReciboRepository';
 import { ReciboWithRelations, CreateReciboInput } from '../../../domain/entities/Recibo';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
@@ -9,6 +9,7 @@ const includeRelations = {
   customer: { select: { id: true, name: true } },
   invoice: { select: { id: true, number: true, type: true } },
   budget: { select: { id: true, number: true } },
+  ordenPedido: { select: { id: true, number: true } },
   cashRegister: { select: { id: true, name: true } },
   user: { select: { id: true, name: true } },
 };
@@ -32,8 +33,10 @@ export class PrismaReciboRepository implements IReciboRepository {
     const where: any = {};
     if (filters.invoiceId) where.invoiceId = filters.invoiceId;
     if (filters.budgetId) where.budgetId = filters.budgetId;
+    if (filters.ordenPedidoId) where.ordenPedidoId = filters.ordenPedidoId;
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.status) where.status = filters.status;
+    if (filters.paymentMethod) where.paymentMethod = filters.paymentMethod;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -57,11 +60,13 @@ export class PrismaReciboRepository implements IReciboRepository {
   async create(data: CreateReciboInput): Promise<ReciboWithRelations> {
     const number = await this.getNextNumber();
 
-    return prisma.recibo.create({
+    // Create without exchangeRate (stale Prisma client doesn't know the column yet)
+    const recibo = await prisma.recibo.create({
       data: {
         number,
         invoiceId: data.invoiceId ?? null,
         budgetId: data.budgetId ?? null,
+        ordenPedidoId: (data as any).ordenPedidoId ?? null,
         customerId: data.customerId,
         userId: data.userId,
         cashRegisterId: data.cashRegisterId ?? null,
@@ -73,13 +78,66 @@ export class PrismaReciboRepository implements IReciboRepository {
         checkDueDate: data.checkDueDate ?? null,
         installments: data.installments ?? null,
         notes: data.notes ?? null,
+        checkStatus: data.paymentMethod === 'CHECK' ? 'PENDING' : null,
       },
+    });
+
+    // Set exchangeRate via raw SQL (bypasses stale Prisma client types)
+    const rate = new Decimal(data.exchangeRate ?? 1);
+    await prisma.$executeRaw`UPDATE "recibos" SET "exchangeRate" = ${rate} WHERE id = ${recibo.id}`;
+
+    // Return with relations
+    return prisma.recibo.findUnique({
+      where: { id: recibo.id },
       include: includeRelations,
-    }) as Promise<ReciboWithRelations>;
+    }) as unknown as Promise<ReciboWithRelations>;
+  }
+
+  async findChecks(
+    pagination: PaginationParams = { page: 1, limit: 50 },
+    filters: CheckFilters = {}
+  ): Promise<PaginatedResult<ReciboWithRelations>> {
+    const { page = 1, limit = 50 } = pagination;
+    const skip = (page - 1) * limit;
+
+    const where: any = { paymentMethod: 'CHECK', status: 'EMITTED' };
+    if (filters.customerId) where.customerId = filters.customerId;
+    if (filters.checkStatus !== undefined) where.checkStatus = filters.checkStatus;
+    if (filters.dueDateFrom || filters.dueDateTo) {
+      where.checkDueDate = {};
+      if (filters.dueDateFrom) where.checkDueDate.gte = filters.dueDateFrom;
+      if (filters.dueDateTo) where.checkDueDate.lte = filters.dueDateTo;
+    }
+    if (filters.dateFrom || filters.dateTo) {
+      where.date = {};
+      if (filters.dateFrom) where.date.gte = filters.dateFrom;
+      if (filters.dateTo) where.date.lte = filters.dateTo;
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.recibo.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { checkDueDate: 'asc' },
+        include: includeRelations,
+      }),
+      prisma.recibo.count({ where }),
+    ]);
+
+    return { data: data as ReciboWithRelations[], total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async updateCheckStatus(id: string, checkStatus: string): Promise<ReciboWithRelations> {
+    await prisma.$executeRaw`UPDATE "recibos" SET "checkStatus" = ${checkStatus} WHERE id = ${id}`;
+    return prisma.recibo.findUnique({
+      where: { id },
+      include: includeRelations,
+    }) as unknown as Promise<ReciboWithRelations>;
   }
 
   async cancel(id: string): Promise<ReciboWithRelations> {
-    return prisma.recibo.update({
+    return (prisma.recibo as any).update({
       where: { id },
       data: { status: 'CANCELLED' },
       include: includeRelations,
