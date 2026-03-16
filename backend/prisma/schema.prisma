@@ -122,31 +122,35 @@ model User {
   cashRegisterCloses  CashRegisterClose[]
   budgets             Budget[]
   recibos             Recibo[]
+  ordenPedidos        OrdenPedido[]
+  ordenCompras        OrdenCompra[]
 
   @@map("users")
 }
 
 model Customer {
-  id           String       @id @default(uuid())
-  name         String
-  taxId        String?      @unique // CUIT/CUIL
-  taxCondition TaxCondition @default(CONSUMIDOR_FINAL)
-  address      String?
-  city         String?
-  province     String?
-  postalCode   String?
-  phone        String?
-  email        String?
-  notes        String?
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id             String       @id @default(uuid())
+  name           String
+  taxId          String?      @unique // CUIT/CUIL
+  taxCondition   TaxCondition @default(CONSUMIDOR_FINAL)
+  saleCondition  String       @default("CONTADO")  // CONTADO | CUENTA_CORRIENTE
+  address        String?
+  city           String?
+  province       String?
+  postalCode     String?
+  phone          String?
+  email          String?
+  notes          String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   invoices       Invoice[]
   currentAccounts CurrentAccount[]
   remitos        Remito[]
   budgets        Budget[]
   recibos        Recibo[]
+  ordenPedidos   OrdenPedido[]
 
   @@map("customers")
 }
@@ -189,6 +193,7 @@ model Product {
   internalNotes String?
   cost          Decimal  @db.Decimal(12, 2)
   price         Decimal  @db.Decimal(12, 2)
+  salePriceUSD  Decimal? @db.Decimal(12, 2) // Precio de venta en USD (opcional, para presupuestos)
   taxRate       Decimal  @default(21) @db.Decimal(5, 2)
   leadTimeDays  Int?                          // Días de reposición para predicción de quiebre
   isActive      Boolean  @default(true)
@@ -202,7 +207,9 @@ model Product {
   stockMovements StockMovement[]
   remitoItems    RemitoItem[]
   purchaseItems  PurchaseItem[]
-  budgetItems    BudgetItem[]
+  budgetItems      BudgetItem[]
+  ordenPedidoItems OrdenPedidoItem[]
+  ordenCompraItems OrdenCompraItem[]
 
   @@map("products")
 }
@@ -224,6 +231,9 @@ model Invoice {
   notes          String?
   paymentTerms   String?
   saleCondition  String  @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
+  stockBehavior  String  @default("DISCOUNT") // DISCOUNT | RESERVE
+  originInvoiceId String?                    // FK to origin invoice (for NC/ND)
+  ordenPedidoId  String?                    // Set when created from an OrdenPedido
   cae            String?
   caeExpiry    DateTime?
   afipPtVenta  Int?
@@ -233,11 +243,14 @@ model Invoice {
 
   customer         Customer          @relation(fields: [customerId], references: [id])
   user             User              @relation(fields: [userId], references: [id])
+  originInvoice    Invoice?          @relation("InvoiceOrigin", fields: [originInvoiceId], references: [id], onDelete: SetNull)
+  creditDebitNotes Invoice[]         @relation("InvoiceOrigin")
   items            InvoiceItem[]
   accountMovements AccountMovement[]
   budgets          Budget[]
   remitos          Remito[]
   recibos          Recibo[]
+  ordenPedidos     OrdenPedido[]     @relation("InvoiceOrdenPedido")
 
   @@map("invoices")
 }
@@ -283,12 +296,16 @@ model AccountMovement {
   balance          Decimal  @db.Decimal(12, 2) // Balance after movement
   description      String
   invoiceId        String?
+  budgetId         String?
+  ordenPedidoId    String?
   cashRegisterId   String?  // Only for payment movements
   reciboId         String?  @unique
   createdAt        DateTime @default(now())
 
   currentAccount CurrentAccount @relation(fields: [currentAccountId], references: [id])
   invoice        Invoice?       @relation(fields: [invoiceId], references: [id])
+  budget         Budget?        @relation(fields: [budgetId], references: [id])
+  ordenPedido    OrdenPedido?   @relation(fields: [ordenPedidoId], references: [id])
   cashRegister   CashRegister?  @relation(fields: [cashRegisterId], references: [id])
   recibo         Recibo?        @relation(fields: [reciboId], references: [id])
 
@@ -308,6 +325,8 @@ model CashRegister {
   appSettingsBudget        AppSettings[]       @relation("AppSettingsBudgetCR")
   appSettingsInvoice       AppSettings[]       @relation("AppSettingsInvoiceCR")
   recibos                  Recibo[]
+  ordenPedidosCashReg      OrdenPedido[]       @relation("OrdenPedidoCashRegister")
+  ordenPedidosInvoiceCR    OrdenPedido[]       @relation("OrdenPedidoInvoiceCashRegister")
 
   @@map("cash_registers")
 }
@@ -343,6 +362,7 @@ model Warehouse {
   stocks         Stock[]
   stockMovements StockMovement[]
   purchases      Purchase[]
+  ordenCompras   OrdenCompra[]
 
   @@map("warehouses")
 }
@@ -391,6 +411,7 @@ model Remito {
   userId        String
   invoiceId     String?
   budgetId      String?
+  ordenPedidoId String?
   date          DateTime      @default(now())
   status        RemitoStatus  @default(PENDING)
   stockBehavior StockBehavior
@@ -398,11 +419,12 @@ model Remito {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  customer Customer     @relation(fields: [customerId], references: [id])
-  user     User         @relation(fields: [userId], references: [id])
-  invoice  Invoice?     @relation(fields: [invoiceId], references: [id])
-  budget   Budget?      @relation(fields: [budgetId], references: [id])
-  items    RemitoItem[]
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
+  budget      Budget?      @relation(fields: [budgetId], references: [id])
+  ordenPedido OrdenPedido? @relation(fields: [ordenPedidoId], references: [id])
+  items       RemitoItem[]
 
   @@map("remitos")
 }
@@ -469,7 +491,8 @@ model Supplier {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  purchases Purchase[]
+  purchases    Purchase[]
+  ordenCompras OrdenCompra[]
 
   @@map("suppliers")
 }
@@ -491,10 +514,11 @@ model Purchase {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  supplier  Supplier       @relation(fields: [supplierId], references: [id])
-  user      User           @relation(fields: [userId], references: [id])
-  warehouse Warehouse?     @relation(fields: [warehouseId], references: [id])
-  items     PurchaseItem[]
+  supplier     Supplier       @relation(fields: [supplierId], references: [id])
+  user         User           @relation(fields: [userId], references: [id])
+  warehouse    Warehouse?     @relation(fields: [warehouseId], references: [id])
+  items        PurchaseItem[]
+  ordenCompra  OrdenCompra?
 
   @@map("purchases")
 }
@@ -516,16 +540,18 @@ model Budget {
   notes          String?
   paymentTerms   String?
   saleCondition  String  @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
+  stockBehavior  String  @default("DISCOUNT") // DISCOUNT | RESERVE
   invoiceId      String?      // Set when converted to invoice
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  customer Customer? @relation(fields: [customerId], references: [id])
-  user     User      @relation(fields: [userId], references: [id])
-  invoice  Invoice?  @relation(fields: [invoiceId], references: [id])
-  items    BudgetItem[]
-  remitos  Remito[]
-  recibos  Recibo[]
+  customer         Customer?         @relation(fields: [customerId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  invoice          Invoice?          @relation(fields: [invoiceId], references: [id])
+  items            BudgetItem[]
+  remitos          Remito[]
+  recibos          Recibo[]
+  accountMovements AccountMovement[]
 
   @@map("budgets")
 }
@@ -554,6 +580,7 @@ model AppSettings {
   defaultInvoiceCashRegisterId String?
   deadStockDays                Int      @default(90)  // Días sin ventas para considerar producto muerto
   safetyStockDays              Int      @default(14)  // Días de stock de seguridad para recomendaciones
+  companyTaxCondition          String   @default("RESPONSABLE_INSCRIPTO")
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
@@ -590,6 +617,8 @@ model Recibo {
   invoice        Invoice?      @relation(fields: [invoiceId], references: [id])
   budgetId       String?
   budget         Budget?       @relation(fields: [budgetId], references: [id])
+  ordenPedidoId  String?
+  ordenPedido    OrdenPedido?  @relation(fields: [ordenPedidoId], references: [id])
 
   customerId     String
   customer       Customer      @relation(fields: [customerId], references: [id])
@@ -601,6 +630,7 @@ model Recibo {
 
   amount         Decimal       @db.Decimal(12, 2)
   currency       String        @default("ARS")
+  exchangeRate   Decimal       @default(1) @db.Decimal(12, 4) // Cotización usada (para USD → ARS)
 
   paymentMethod  String        // CASH | BANK_TRANSFER | CHECK | CARD
   reference      String?       // N° referencia (transferencia), N° cheque, últimos 4 dígitos tarjeta
@@ -610,6 +640,7 @@ model Recibo {
 
   notes          String?
   status         String        @default("EMITTED")       // EMITTED | CANCELLED
+  checkStatus    String?                                  // PENDING | DEPOSITED | CLEARED | BOUNCED | RETURNED (only for CHECK)
 
   accountMovement AccountMovement?
 
@@ -617,4 +648,104 @@ model Recibo {
   updatedAt      DateTime      @updatedAt
 
   @@map("recibos")
+}
+
+model OrdenPedido {
+  id            String   @id @default(uuid())
+  number        String   @unique
+  customerId    String?
+  userId        String
+  date          DateTime @default(now())
+  dueDate       DateTime?
+  subtotal      Decimal  @db.Decimal(12, 2)
+  taxAmount     Decimal  @db.Decimal(12, 2)
+  total         Decimal  @db.Decimal(12, 2)
+  currency      Currency @default(ARS)
+  exchangeRate  Decimal  @default(1) @db.Decimal(12, 4)
+  status        String   @default("DRAFT")
+  notes         String?
+  paymentTerms  String?
+  saleCondition       String   @default("CONTADO")
+  stockBehavior       String   @default("DISCOUNT")
+  invoiceId           String?
+  cashRegisterId      String?
+  invoiceCashRegisterId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  customer              Customer?      @relation(fields: [customerId], references: [id])
+  user                  User           @relation(fields: [userId], references: [id])
+  invoice               Invoice?       @relation("InvoiceOrdenPedido", fields: [invoiceId], references: [id])
+  cashRegister          CashRegister?  @relation("OrdenPedidoCashRegister", fields: [cashRegisterId], references: [id])
+  invoiceCashRegister   CashRegister?  @relation("OrdenPedidoInvoiceCashRegister", fields: [invoiceCashRegisterId], references: [id])
+  items                 OrdenPedidoItem[]
+  remitos               Remito[]
+  recibos               Recibo[]
+  accountMovements      AccountMovement[]
+
+  @@map("orden_pedidos")
+}
+
+model OrdenCompra {
+  id             String   @id @default(uuid())
+  number         String   @unique                        // OC-YYYY-XXXX
+  supplierId     String
+  userId         String
+  date           DateTime @default(now())
+  expectedDate   DateTime?                               // Fecha esperada de entrega
+  subtotal       Decimal  @db.Decimal(12, 2)
+  taxAmount      Decimal  @db.Decimal(12, 2)
+  total          Decimal  @db.Decimal(12, 2)
+  currency       Currency @default(ARS)
+  exchangeRate   Decimal  @default(1) @db.Decimal(12, 4)
+  status         String   @default("DRAFT")             // DRAFT|SENT|CONFIRMED|RECEIVED|CANCELLED
+  warehouseId    String?                                 // Almacén destino al recibir
+  notes          String?
+  purchaseId     String?  @unique                        // Set when converted to Purchase
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  supplier   Supplier   @relation(fields: [supplierId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+  warehouse  Warehouse? @relation(fields: [warehouseId], references: [id])
+  purchase   Purchase?  @relation(fields: [purchaseId], references: [id])
+  items      OrdenCompraItem[]
+
+  @@map("orden_compras")
+}
+
+model OrdenCompraItem {
+  id            String  @id @default(uuid())
+  ordenCompraId String
+  productId     String?
+  description   String
+  quantity      Decimal @db.Decimal(10, 2)
+  unitPrice     Decimal @db.Decimal(12, 2)
+  taxRate       Decimal @db.Decimal(5, 2)
+  subtotal      Decimal @db.Decimal(12, 2)
+  taxAmount     Decimal @db.Decimal(12, 2)
+  total         Decimal @db.Decimal(12, 2)
+
+  ordenCompra OrdenCompra @relation(fields: [ordenCompraId], references: [id], onDelete: Cascade)
+  product     Product?    @relation(fields: [productId], references: [id])
+
+  @@map("orden_compra_items")
+}
+
+model OrdenPedidoItem {
+  id              String  @id @default(uuid())
+  ordenPedidoId   String
+  productId       String?
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(12, 2)
+  taxRate         Decimal @db.Decimal(5, 2)
+  subtotal        Decimal @db.Decimal(12, 2)
+  taxAmount       Decimal @db.Decimal(12, 2)
+  total           Decimal @db.Decimal(12, 2)
+
+  ordenPedido OrdenPedido @relation(fields: [ordenPedidoId], references: [id], onDelete: Cascade)
+  product     Product?    @relation(fields: [productId], references: [id])
+
+  @@map("orden_pedido_items")
 }

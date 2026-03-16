@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: cloud-bill
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: cloudbill
+      POSTGRES_PASSWORD: cirilla
+      POSTGRES_DB: cloudbill_db
+      # NO seteamos TimeZone acá a propósito
+
+    ports:
+      - '5432:5432'
+
+    volumes:
+      # Correcto para Postgres 18+
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata:

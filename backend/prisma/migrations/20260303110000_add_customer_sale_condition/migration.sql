@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD COLUMN "saleCondition" TEXT NOT NULL DEFAULT 'CONTADO';
