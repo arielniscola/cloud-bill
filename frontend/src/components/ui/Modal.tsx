@@ -56,16 +56,16 @@ export default function Modal({
             >
               <Dialog.Panel
                 className={clsx(
-                  'w-full transform overflow-hidden rounded-xl bg-white p-6 text-left align-middle shadow-xl transition-all',
+                  'w-full transform overflow-hidden rounded-xl bg-white dark:bg-slate-800 p-6 text-left align-middle shadow-xl transition-all',
                   sizes[size]
                 )}
               >
                 {(title || showCloseButton) && (
-                  <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100 dark:border-slate-700">
                     {title && (
                       <Dialog.Title
                         as="h3"
-                        className="text-base font-semibold text-gray-900"
+                        className="text-base font-semibold text-gray-900 dark:text-white"
                       >
                         {title}
                       </Dialog.Title>
@@ -73,7 +73,7 @@ export default function Modal({
                     {showCloseButton && (
                       <button
                         type="button"
-                        className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none transition-colors"
+                        className="p-1 rounded-lg text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none transition-colors"
                         onClick={onClose}
                       >
                         <X className="h-4 w-4" />

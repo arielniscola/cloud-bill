@@ -8,8 +8,7 @@ import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, CustomerSearchSelect } from '../../components/shared';
 import { remitosService, customersService, productsService, invoicesService, budgetsService } from '../../services';
-import { STOCK_BEHAVIOR_OPTIONS } from '../../utils/constants';
-import type { Customer, Product, StockBehavior, Invoice, Budget } from '../../types';
+import type { Customer, Product, Invoice, Budget } from '../../types';
 
 const remitoItemSchema = z.object({
   productId: z.string().min(1, 'Selecciona un producto'),
@@ -18,7 +17,6 @@ const remitoItemSchema = z.object({
 
 const remitoSchema = z.object({
   customerId: z.string().min(1, 'Selecciona un cliente'),
-  stockBehavior: z.enum(['DISCOUNT', 'RESERVE']),
   notes: z.string().optional().nullable(),
   items: z.array(remitoItemSchema).min(1, 'Agrega al menos un item'),
 });
@@ -29,14 +27,14 @@ function SkeletonForm() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 animate-pulse">
       <div className="space-y-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-          <div className="h-5 bg-gray-100 rounded w-16" />
-          {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 space-y-4">
+          <div className="h-5 bg-gray-100 dark:bg-slate-700 rounded w-16" />
+          {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 dark:bg-slate-700 rounded-lg" />)}
         </div>
       </div>
       <div className="space-y-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-3">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />)}
         </div>
       </div>
     </div>
@@ -66,14 +64,12 @@ export default function RemitoFormPage() {
   } = useForm<RemitoFormData>({
     resolver: zodResolver(remitoSchema) as any,
     defaultValues: {
-      stockBehavior: 'DISCOUNT',
       items: [{ productId: '', quantity: 1 }],
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
   const customerId = watch('customerId') || '';
-  const stockBehavior = watch('stockBehavior') || 'DISCOUNT';
   const items = watch('items');
 
   useEffect(() => {
@@ -163,7 +159,6 @@ export default function RemitoFormPage() {
     try {
       const remito = await remitosService.create({
         customerId: data.customerId,
-        stockBehavior: data.stockBehavior,
         notes: data.notes || undefined,
         invoiceId: invoiceId || undefined,
         budgetId: budgetId || undefined,
@@ -212,8 +207,8 @@ export default function RemitoFormPage() {
 
       {/* Source document banner */}
       {hasSource && sourceNumber && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800">
-          {invoiceId ? <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" /> : <Calculator className="w-4 h-4 text-indigo-500 flex-shrink-0" />}
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-xl text-sm text-indigo-800 dark:text-indigo-300">
+          {invoiceId ? <FileText className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0" /> : <Calculator className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />}
           <span>
             Remito generado desde <strong>{sourceLabel} {sourceNumber}</strong>.
             Solo se pueden entregar productos incluidos en ese documento.
@@ -226,9 +221,9 @@ export default function RemitoFormPage() {
 
           {/* ── Left: items ── */}
           <div>
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
                   Ítems a entregar
                 </h3>
               </div>
@@ -244,8 +239,8 @@ export default function RemitoFormPage() {
               <div className="p-5 space-y-3">
                 {/* Header row */}
                 <div className="grid grid-cols-[1fr_80px_32px] gap-3 px-1">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Producto</span>
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Cantidad</span>
+                  <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Producto</span>
+                  <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider text-right">Cantidad</span>
                   <span />
                 </div>
 
@@ -256,7 +251,7 @@ export default function RemitoFormPage() {
                   return (
                     <div
                       key={field.id}
-                      className="grid grid-cols-[1fr_80px_32px] gap-3 items-center py-2 border-b border-gray-100 last:border-0"
+                      className="grid grid-cols-[1fr_80px_32px] gap-3 items-center py-2 border-b border-gray-100 dark:border-slate-700 last:border-0"
                     >
                       <div>
                         <Select
@@ -276,14 +271,14 @@ export default function RemitoFormPage() {
                           error={errors.items?.[index]?.quantity?.message}
                         />
                         {maxQty !== undefined && (
-                          <p className="text-xs text-gray-400 mt-0.5 text-right">máx. {maxQty}</p>
+                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 text-right">máx. {maxQty}</p>
                         )}
                       </div>
                       <button
                         type="button"
                         onClick={() => remove(index)}
                         disabled={fields.length === 1}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-[background-color,color] duration-150 disabled:opacity-20 disabled:pointer-events-none active:scale-[0.98]"
+                        className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 disabled:opacity-20 disabled:pointer-events-none active:scale-[0.98]"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -292,7 +287,7 @@ export default function RemitoFormPage() {
                 })}
 
                 {errors.items?.message && (
-                  <div className="flex items-center gap-2 text-sm text-red-600 mt-1">
+                  <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 mt-1">
                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
                     {errors.items.message}
                   </div>
@@ -302,7 +297,7 @@ export default function RemitoFormPage() {
                   <button
                     type="button"
                     onClick={() => append({ productId: '', quantity: 1 })}
-                    className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2 py-1.5 rounded-lg hover:bg-indigo-50 transition-[background-color,color] duration-150 active:scale-[0.98] mt-1"
+                    className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 px-2 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98] mt-1"
                   >
                     <Plus className="w-4 h-4" />
                     Agregar ítem
@@ -315,9 +310,9 @@ export default function RemitoFormPage() {
           {/* ── Right: config + submit ── */}
           <div className="lg:sticky lg:top-6 space-y-4">
             {/* Config panel */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configuración</p>
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+                <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Configuración</p>
               </div>
               <div className="px-5 py-4 space-y-4">
                 <div>
@@ -329,20 +324,6 @@ export default function RemitoFormPage() {
                     error={errors.customerId?.message}
                     disabled={hasSource && !!sourceDoc && !!(sourceDoc as any).customerId}
                   />
-                </div>
-                <div>
-                  <Select
-                    label="Tipo de entrega *"
-                    options={STOCK_BEHAVIOR_OPTIONS}
-                    value={stockBehavior}
-                    onChange={(value) => setValue('stockBehavior', value as StockBehavior)}
-                    error={errors.stockBehavior?.message}
-                  />
-                  <p className="text-xs text-gray-400 mt-1.5">
-                    {stockBehavior === 'DISCOUNT'
-                      ? 'Descuenta stock inmediatamente y marca el remito como entregado.'
-                      : 'Reserva el stock hasta confirmar la entrega física.'}
-                  </p>
                 </div>
                 <div>
                   <Textarea

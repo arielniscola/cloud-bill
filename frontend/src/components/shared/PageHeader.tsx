@@ -33,9 +33,9 @@ export default function PageHeader({
             </Button>
           )}
           <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h1>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{title}</h1>
             {subtitle && (
-              <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>
+              <p className="mt-0.5 text-sm text-gray-500 dark:text-slate-400">{subtitle}</p>
             )}
           </div>
         </div>

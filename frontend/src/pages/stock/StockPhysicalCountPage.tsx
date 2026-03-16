@@ -112,24 +112,24 @@ export default function StockPhysicalCountPage() {
 
         {rows.length > 0 && (
           <Card padding="none">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ClipboardList className="w-5 h-5 text-gray-400" />
-                <h3 className="text-sm font-semibold text-gray-700">
+                <ClipboardList className="w-5 h-5 text-gray-400 dark:text-slate-500" />
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                   {rows.length} productos · Ingresá las cantidades contadas
                 </h3>
               </div>
               {changedRows.length > 0 && (
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-medium">
+                <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-1 rounded-full font-medium">
                   {changedRows.length} diferencia{changedRows.length !== 1 ? 's' : ''}
                 </span>
               )}
             </div>
 
             <div className="overflow-x-auto">
-              <div className="min-w-[520px] divide-y divide-gray-100">
+              <div className="min-w-[520px] divide-y divide-gray-100 dark:divide-slate-700">
                 {/* Header */}
-                <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase bg-gray-50">
+                <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase bg-gray-50 dark:bg-slate-700/50">
                   <div className="col-span-2">SKU</div>
                   <div className="col-span-4">Producto</div>
                   <div className="col-span-2 text-right">Sistema</div>
@@ -138,7 +138,7 @@ export default function StockPhysicalCountPage() {
                 </div>
 
                 {isLoading ? (
-                  <div className="p-8 text-center text-gray-400">Cargando productos...</div>
+                  <div className="p-8 text-center text-gray-400 dark:text-slate-500">Cargando productos...</div>
                 ) : (
                   rows.map((row, index) => {
                     const counted = parseFloat(row.countedQty);
@@ -148,15 +148,15 @@ export default function StockPhysicalCountPage() {
                     return (
                       <div
                         key={row.stock.id}
-                        className={`grid grid-cols-12 gap-4 px-4 py-2.5 items-center ${hasDiff ? 'bg-amber-50' : ''}`}
+                        className={`grid grid-cols-12 gap-4 px-4 py-2.5 items-center ${hasDiff ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}
                       >
-                        <div className="col-span-2 font-mono text-xs text-gray-500">
+                        <div className="col-span-2 font-mono text-xs text-gray-500 dark:text-slate-400">
                           {row.stock.product?.sku}
                         </div>
-                        <div className="col-span-4 text-sm text-gray-800 truncate">
+                        <div className="col-span-4 text-sm text-gray-800 dark:text-slate-200 truncate">
                           {row.stock.product?.name}
                         </div>
-                        <div className="col-span-2 text-right text-sm text-gray-600">
+                        <div className="col-span-2 text-right text-sm text-gray-600 dark:text-slate-400">
                           {formatNumber(Number(row.stock.quantity), 0)}
                         </div>
                         <div className="col-span-2">
@@ -166,18 +166,18 @@ export default function StockPhysicalCountPage() {
                             step="1"
                             value={row.countedQty}
                             onChange={(e) => updateRow(index, e.target.value)}
-                            className={`w-full border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                              hasDiff ? 'border-amber-400 bg-white' : 'border-gray-300'
+                            className={`w-full border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:text-slate-200 dark:placeholder:text-slate-500 ${
+                              hasDiff ? 'border-amber-400 bg-white dark:bg-slate-700' : 'border-gray-300 dark:border-slate-600'
                             }`}
                           />
                         </div>
                         <div className="col-span-2 text-right text-sm font-medium">
                           {diff === null ? (
-                            <span className="text-gray-400">-</span>
+                            <span className="text-gray-400 dark:text-slate-500">-</span>
                           ) : diff === 0 ? (
-                            <span className="text-gray-400">sin cambios</span>
+                            <span className="text-gray-400 dark:text-slate-500">sin cambios</span>
                           ) : (
-                            <span className={diff > 0 ? 'text-green-600' : 'text-red-600'}>
+                            <span className={diff > 0 ? 'text-green-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
                               {diff > 0 ? '+' : ''}{formatNumber(diff, 0)}
                             </span>
                           )}

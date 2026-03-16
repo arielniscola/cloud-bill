@@ -56,11 +56,16 @@ export interface Invoice {
   notes: string | null;
   paymentTerms: string | null;
   saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
+  stockBehavior: 'DISCOUNT' | 'RESERVE';
+  originInvoiceId: string | null;
+  originInvoice?: Invoice;
+  ordenPedidoId: string | null;
   cae: string | null;
   caeExpiry: string | null;
   afipPtVenta: number | null;
   afipCbtNum: number | null;
   items: InvoiceItem[];
+  _count?: { items: number };
   deliveryStatus?: DeliveryStatus;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +86,8 @@ export interface CreateInvoiceDTO {
   notes?: string | null;
   paymentTerms?: string | null;
   saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
+  stockBehavior?: 'DISCOUNT' | 'RESERVE';
+  originInvoiceId?: string | null;
   currency?: Currency;
   exchangeRate?: number;
   items: CreateInvoiceItemDTO[];
@@ -108,6 +115,7 @@ export interface InvoiceFilters {
   type?: InvoiceType;
   status?: InvoiceStatus;
   currency?: Currency;
+  saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   dateFrom?: string;
   dateTo?: string;
 }

@@ -40,6 +40,10 @@ export const remitosService = {
     );
     return response.data.data;
   },
+
+  async sendEmail(id: string, to: string): Promise<void> {
+    await api.post(`/remitos/${id}/send-email`, { to });
+  },
 };
 
 export default remitosService;

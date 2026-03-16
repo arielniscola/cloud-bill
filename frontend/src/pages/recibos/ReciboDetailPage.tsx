@@ -12,11 +12,11 @@ import type { Recibo } from '../../types';
 function SkeletonDetail() {
   return (
     <div className="animate-pulse space-y-6 max-w-xl mx-auto">
-      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 space-y-4">
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="flex justify-between">
-            <div className="h-4 bg-gray-100 rounded w-24" />
-            <div className="h-4 bg-gray-100 rounded w-32" />
+            <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-24" />
+            <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-32" />
           </div>
         ))}
       </div>
@@ -87,84 +87,100 @@ export default function ReciboDetailPage() {
       />
 
       {recibo.status === 'CANCELLED' && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
-          <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-800 dark:text-red-400">
+          <XCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" />
           Este recibo fue cancelado.
         </div>
       )}
 
       <div className="max-w-xl">
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Datos del recibo</p>
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+            <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Datos del recibo</p>
           </div>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-slate-700">
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Número</span>
-              <span className="text-sm font-mono font-semibold text-indigo-600">{recibo.number}</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">Número</span>
+              <span className="text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400">{recibo.number}</span>
             </div>
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Estado</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">Estado</span>
               <Badge variant={recibo.status === 'EMITTED' ? 'success' : 'error'} dot>
                 {RECIBO_STATUSES[recibo.status]}
               </Badge>
             </div>
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Fecha</span>
-              <span className="text-sm tabular-nums text-gray-900">{formatDate(recibo.date)}</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">Fecha</span>
+              <span className="text-sm tabular-nums text-gray-900 dark:text-white">{formatDate(recibo.date)}</span>
             </div>
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Monto</span>
-              <span className="text-base font-bold text-indigo-600 tabular-nums">
+              <span className="text-sm text-gray-500 dark:text-slate-400">Monto</span>
+              <span className="text-base font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">
                 {formatCurrency(Number(recibo.amount), recibo.currency)}
               </span>
             </div>
+            {recibo.currency === 'USD' && Number(recibo.exchangeRate) > 1 && (
+              <>
+                <div className="flex justify-between items-center px-5 py-3">
+                  <span className="text-sm text-gray-500 dark:text-slate-400">Cotización</span>
+                  <span className="text-sm tabular-nums text-gray-900 dark:text-white">
+                    {Number(recibo.exchangeRate).toLocaleString('es-AR', { minimumFractionDigits: 2 })} ARS/USD
+                  </span>
+                </div>
+                <div className="flex justify-between items-center px-5 py-3 bg-indigo-50 dark:bg-indigo-900/20">
+                  <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Equivalente en ARS</span>
+                  <span className="text-base font-bold text-indigo-700 dark:text-indigo-300 tabular-nums">
+                    {formatCurrency(Number(recibo.amount) * Number(recibo.exchangeRate), 'ARS')}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Método de pago</span>
-              <span className="text-sm text-gray-900">{PAYMENT_METHODS[recibo.paymentMethod] ?? recibo.paymentMethod}</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">Método de pago</span>
+              <span className="text-sm text-gray-900 dark:text-white">{PAYMENT_METHODS[recibo.paymentMethod] ?? recibo.paymentMethod}</span>
             </div>
             {recibo.reference && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Referencia</span>
-                <span className="text-sm font-mono text-gray-900">{recibo.reference}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Referencia</span>
+                <span className="text-sm font-mono text-gray-900 dark:text-white">{recibo.reference}</span>
               </div>
             )}
             {recibo.bank && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Banco</span>
-                <span className="text-sm text-gray-900">{recibo.bank}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Banco</span>
+                <span className="text-sm text-gray-900 dark:text-white">{recibo.bank}</span>
               </div>
             )}
             {recibo.checkDueDate && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Vto. cheque</span>
-                <span className="text-sm tabular-nums text-gray-900">{formatDate(recibo.checkDueDate)}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Vto. cheque</span>
+                <span className="text-sm tabular-nums text-gray-900 dark:text-white">{formatDate(recibo.checkDueDate)}</span>
               </div>
             )}
             {recibo.installments && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Cuotas</span>
-                <span className="text-sm text-gray-900">{recibo.installments}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Cuotas</span>
+                <span className="text-sm text-gray-900 dark:text-white">{recibo.installments}</span>
               </div>
             )}
             {recibo.cashRegister && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Caja</span>
-                <span className="text-sm text-gray-900">{recibo.cashRegister.name}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Caja</span>
+                <span className="text-sm text-gray-900 dark:text-white">{recibo.cashRegister.name}</span>
               </div>
             )}
             <div className="flex justify-between items-center px-5 py-3">
-              <span className="text-sm text-gray-500">Cliente</span>
-              <span className="text-sm font-medium text-gray-900">{recibo.customer?.name ?? '—'}</span>
+              <span className="text-sm text-gray-500 dark:text-slate-400">Cliente</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{recibo.customer?.name ?? '—'}</span>
             </div>
 
             {/* Links to related documents */}
             {recibo.invoice && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Factura</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Factura</span>
                 <button
                   onClick={() => navigate(`/invoices/${recibo.invoiceId}`)}
-                  className="flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                  className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
                 >
                   {recibo.invoice.number}
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -173,10 +189,10 @@ export default function ReciboDetailPage() {
             )}
             {recibo.budget && (
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Presupuesto</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Presupuesto</span>
                 <button
                   onClick={() => navigate(`/budgets/${recibo.budgetId}`)}
-                  className="flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                  className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
                 >
                   {recibo.budget.number}
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -186,8 +202,8 @@ export default function ReciboDetailPage() {
 
             {recibo.notes && (
               <div className="px-5 py-3">
-                <p className="text-sm text-gray-500 mb-1">Notas</p>
-                <p className="text-sm text-gray-700">{recibo.notes}</p>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">Notas</p>
+                <p className="text-sm text-gray-700 dark:text-slate-300">{recibo.notes}</p>
               </div>
             )}
           </div>

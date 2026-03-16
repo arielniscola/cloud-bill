@@ -19,17 +19,17 @@ type CashRegisterFormData = z.infer<typeof cashRegisterSchema>;
 
 function FormSkeleton() {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-6 max-w-xl animate-pulse space-y-5">
-      <div className="flex items-center gap-3 pb-5 border-b border-gray-100">
-        <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 max-w-xl animate-pulse space-y-5">
+      <div className="flex items-center gap-3 pb-5 border-b border-gray-100 dark:border-slate-700">
+        <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-slate-700 flex-shrink-0" />
         <div className="space-y-2">
-          <div className="h-4 bg-gray-100 rounded w-24" />
-          <div className="h-3 bg-gray-100 rounded w-48" />
+          <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-24" />
+          <div className="h-3 bg-gray-100 dark:bg-slate-700 rounded w-48" />
         </div>
       </div>
-      <div className="h-9 bg-gray-100 rounded-lg" />
-      <div className="h-20 bg-gray-100 rounded-lg" />
-      <div className="h-14 bg-gray-100 rounded-xl" />
+      <div className="h-9 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+      <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+      <div className="h-14 bg-gray-100 dark:bg-slate-700 rounded-xl" />
     </div>
   );
 }
@@ -105,17 +105,17 @@ export default function CashRegisterFormPage() {
         backTo="/cash-registers"
       />
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6 max-w-xl">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 max-w-xl">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6 pb-5 border-b border-gray-100">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
-            <Landmark className="w-5 h-5 text-indigo-600" />
+        <div className="flex items-center gap-3 mb-6 pb-5 border-b border-gray-100 dark:border-slate-700">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+            <Landmark className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-gray-900">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">
               {isEditing ? 'Editar caja' : 'Nueva caja'}
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
               Las cajas agrupan cobros de facturas y presupuestos.
             </p>
           </div>
@@ -136,10 +136,10 @@ export default function CashRegisterFormPage() {
           />
 
           {/* Toggle switch */}
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-700/50 rounded-xl border border-gray-100 dark:border-slate-600">
             <div>
-              <p className="text-sm font-medium text-gray-800">Caja activa</p>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-sm font-medium text-gray-800 dark:text-slate-200">Caja activa</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
                 Solo las cajas activas aparecen al registrar cobros.
               </p>
             </div>
@@ -148,8 +148,8 @@ export default function CashRegisterFormPage() {
               role="switch"
               aria-checked={isActive}
               onClick={() => setValue('isActive', !isActive)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                isActive ? 'bg-indigo-600' : 'bg-gray-300'
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 ${
+                isActive ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-slate-600'
               }`}
             >
               <span

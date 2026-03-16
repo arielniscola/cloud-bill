@@ -1,21 +1,27 @@
 import { useState } from 'react';
-import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify } from 'lucide-react';
 import { clsx } from 'clsx';
+import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 import { Card } from '../../components/ui';
 import { useUIStore } from '../../stores';
 import AfipSettingsCard from './AfipSettingsCard';
+import SmtpSettingsCard from './SmtpSettingsCard';
 import BudgetSettingsCard from './BudgetSettingsCard';
 import StockSettingsCard from './StockSettingsCard';
+import PriceSettingsCard from './PriceSettingsCard';
+import PrintSettingsCard from './PrintSettingsCard';
+import UsersSettingsCard from './UsersSettingsCard';
 
 // ── Types ──────────────────────────────────────────────────────────
-type Tab = 'general' | 'empresa' | 'operaciones' | 'stock';
+type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios';
 
 const TABS: { id: Tab; label: string; icon: React.ElementType; description: string }[] = [
   { id: 'general',     label: 'General',     icon: Monitor,       description: 'Apariencia y preferencias' },
   { id: 'empresa',     label: 'Empresa',     icon: Building2,     description: 'Datos fiscales y ARCA/AFIP' },
   { id: 'operaciones', label: 'Operaciones', icon: Landmark,      description: 'Cajas predeterminadas' },
   { id: 'stock',       label: 'Stock',       icon: PackageSearch, description: 'Análisis inteligente' },
+  { id: 'correo',      label: 'Correo',      icon: Mail,          description: 'Configuración SMTP para envío de emails' },
+  { id: 'usuarios',    label: 'Usuarios',    icon: Users,         description: 'Gestión de usuarios y roles de acceso' },
 ];
 
 // ── Sub-components ─────────────────────────────────────────────────
@@ -25,8 +31,8 @@ function MenuTypeCard() {
   return (
     <Card>
       <div className="mb-5">
-        <h3 className="text-sm font-semibold text-gray-900">Tipo de menú</h3>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Tipo de menú</h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
           Elegí cómo querés ver la navegación principal.
         </p>
       </div>
@@ -37,21 +43,21 @@ function MenuTypeCard() {
           className={clsx(
             'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-150',
             menuType === 'sidebar'
-              ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-300'
-              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 ring-1 ring-indigo-300'
+              : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300'
           )}
         >
           <div className={clsx(
             'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-            menuType === 'sidebar' ? 'bg-indigo-100' : 'bg-gray-100'
+            menuType === 'sidebar' ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-gray-100 dark:bg-slate-600'
           )}>
-            <LayoutDashboard className={clsx('w-5 h-5', menuType === 'sidebar' ? 'text-indigo-600' : 'text-gray-400')} />
+            <LayoutDashboard className={clsx('w-5 h-5', menuType === 'sidebar' ? 'text-indigo-600' : 'text-gray-400 dark:text-slate-400')} />
           </div>
           <div>
-            <p className={clsx('text-sm font-medium', menuType === 'sidebar' ? 'text-indigo-800' : 'text-gray-700')}>
+            <p className={clsx('text-sm font-medium', menuType === 'sidebar' ? 'text-indigo-800 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300')}>
               Sidebar lateral
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">Panel fijo o contraíble a la izquierda</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Panel fijo o contraíble a la izquierda</p>
           </div>
         </button>
 
@@ -60,21 +66,84 @@ function MenuTypeCard() {
           className={clsx(
             'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-150',
             menuType === 'navbar'
-              ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-300'
-              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 ring-1 ring-indigo-300'
+              : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300'
           )}
         >
           <div className={clsx(
             'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-            menuType === 'navbar' ? 'bg-indigo-100' : 'bg-gray-100'
+            menuType === 'navbar' ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-gray-100 dark:bg-slate-600'
           )}>
-            <AlignJustify className={clsx('w-5 h-5', menuType === 'navbar' ? 'text-indigo-600' : 'text-gray-400')} />
+            <AlignJustify className={clsx('w-5 h-5', menuType === 'navbar' ? 'text-indigo-600' : 'text-gray-400 dark:text-slate-400')} />
           </div>
           <div>
-            <p className={clsx('text-sm font-medium', menuType === 'navbar' ? 'text-indigo-800' : 'text-gray-700')}>
+            <p className={clsx('text-sm font-medium', menuType === 'navbar' ? 'text-indigo-800 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300')}>
               Navbar superior
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">Barra horizontal fija en la parte de arriba</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Barra horizontal fija en la parte de arriba</p>
+          </div>
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function DarkModeCard() {
+  const { isDarkMode, toggleDarkMode } = useUIStore();
+
+  return (
+    <Card>
+      <div className="mb-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Tema de la interfaz</h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+          Elegí entre el modo claro u oscuro.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          onClick={() => isDarkMode && toggleDarkMode()}
+          className={clsx(
+            'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-150',
+            !isDarkMode
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 ring-1 ring-indigo-300'
+              : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300'
+          )}
+        >
+          <div className={clsx(
+            'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
+            !isDarkMode ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-gray-100 dark:bg-slate-600'
+          )}>
+            <Sun className={clsx('w-5 h-5', !isDarkMode ? 'text-indigo-600' : 'text-gray-400 dark:text-slate-400')} />
+          </div>
+          <div>
+            <p className={clsx('text-sm font-medium', !isDarkMode ? 'text-indigo-800 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300')}>
+              Modo claro
+            </p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Fondo blanco, ideal para ambientes con luz</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => !isDarkMode && toggleDarkMode()}
+          className={clsx(
+            'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-150',
+            isDarkMode
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 ring-1 ring-indigo-300'
+              : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300'
+          )}
+        >
+          <div className={clsx(
+            'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
+            isDarkMode ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-gray-100 dark:bg-slate-600'
+          )}>
+            <Moon className={clsx('w-5 h-5', isDarkMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-400')} />
+          </div>
+          <div>
+            <p className={clsx('text-sm font-medium', isDarkMode ? 'text-indigo-800 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300')}>
+              Modo oscuro
+            </p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Fondo oscuro, reduce la fatiga visual</p>
           </div>
         </button>
       </div>
@@ -95,7 +164,7 @@ export default function SettingsPage() {
       />
 
       {/* ── Tab navigation ── */}
-      <div className="flex overflow-x-auto gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex overflow-x-auto gap-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-1 mb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -107,7 +176,7 @@ export default function SettingsPage() {
                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150 flex-shrink-0',
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                  : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-white'
               )}
             >
               <Icon className="w-4 h-4" />
@@ -118,14 +187,19 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Tab description ── */}
-      <p className="text-xs text-gray-400 mb-4 ml-0.5">{active.description}</p>
+      <p className="text-xs text-gray-400 dark:text-slate-500 mb-4 ml-0.5">{active.description}</p>
 
       {/* ── Tab content ── */}
-      <div className="max-w-3xl space-y-6">
+      <div className={clsx('space-y-6', activeTab !== 'usuarios' && 'max-w-3xl')}>
         {activeTab === 'general'     && <MenuTypeCard />}
+        {activeTab === 'general'     && <DarkModeCard />}
         {activeTab === 'empresa'     && <AfipSettingsCard />}
+        {activeTab === 'correo'      && <SmtpSettingsCard />}
         {activeTab === 'operaciones' && <BudgetSettingsCard />}
+        {activeTab === 'operaciones' && <PriceSettingsCard />}
+        {activeTab === 'operaciones' && <PrintSettingsCard />}
         {activeTab === 'stock'       && <StockSettingsCard />}
+        {activeTab === 'usuarios'    && <UsersSettingsCard />}
       </div>
     </div>
   );

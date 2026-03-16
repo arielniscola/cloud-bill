@@ -34,6 +34,11 @@ export const productsService = {
   async delete(id: string): Promise<void> {
     await api.delete(`/products/${id}`);
   },
+
+  async bulkUpdatePrices(updates: Array<{ id: string; price?: number; cost?: number; salePriceUSD?: number | null }>): Promise<{ updated: number }> {
+    const response = await api.patch<{ status: string; updated: number }>('/products/bulk-price-update', { updates });
+    return response.data;
+  },
 };
 
 export default productsService;

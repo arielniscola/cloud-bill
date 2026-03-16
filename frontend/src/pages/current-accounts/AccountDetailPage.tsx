@@ -47,10 +47,10 @@ function BalanceCard({
 }) {
   if (isLoading) {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3 animate-pulse">
-        <div className="h-4 w-20 bg-gray-100 rounded" />
-        <div className="h-8 w-36 bg-gray-100 rounded" />
-        <div className="h-5 w-24 bg-gray-100 rounded-full" />
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-3 animate-pulse">
+        <div className="h-4 w-20 bg-gray-100 dark:bg-slate-700 rounded" />
+        <div className="h-8 w-36 bg-gray-100 dark:bg-slate-700 rounded" />
+        <div className="h-5 w-24 bg-gray-100 dark:bg-slate-700 rounded-full" />
       </div>
     );
   }
@@ -63,9 +63,9 @@ function BalanceCard({
     balance > 0 ? 'owes' : balance < 0 ? 'favor' : 'settled';
 
   const statusCfg = {
-    owes:    { label: 'Cliente debe',           icon: TrendingDown, valueClass: 'text-red-600',     badgeClass: 'text-red-600 bg-red-50 border-red-200'        },
-    favor:   { label: 'A favor del cliente',    icon: TrendingUp,   valueClass: 'text-emerald-600', badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-    settled: { label: 'Sin saldo pendiente',    icon: Minus,        valueClass: 'text-gray-400',    badgeClass: 'text-gray-500 bg-gray-100 border-gray-200'    },
+    owes:    { label: 'Cliente debe',           icon: TrendingDown, valueClass: 'text-red-600 dark:text-red-400',     badgeClass: 'text-red-600 bg-red-50 border-red-200'        },
+    favor:   { label: 'A favor del cliente',    icon: TrendingUp,   valueClass: 'text-emerald-600 dark:text-emerald-400', badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+    settled: { label: 'Sin saldo pendiente',    icon: Minus,        valueClass: 'text-gray-400 dark:text-slate-500',    badgeClass: 'text-gray-500 bg-gray-100 border-gray-200'    },
   }[status];
 
   const StatusIcon = statusCfg.icon;
@@ -74,9 +74,9 @@ function BalanceCard({
     : 0;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5">
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
           Saldo {currency}
         </span>
         <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
@@ -91,12 +91,12 @@ function BalanceCard({
 
       {/* Credit limit */}
       {creditLimit !== null && (
-        <div className="mt-4 pt-3 border-t border-gray-100">
-          <div className="flex justify-between items-center text-xs text-gray-400 mb-1.5">
+        <div className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-700">
+          <div className="flex justify-between items-center text-xs text-gray-400 dark:text-slate-500 mb-1.5">
             <span>Límite de crédito</span>
             <span className="font-mono font-semibold">{formatCurrency(creditLimit, currency)}</span>
           </div>
-          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-gray-100 dark:bg-slate-700 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 usedPct > 90 ? 'bg-red-500' :
@@ -107,7 +107,7 @@ function BalanceCard({
             />
           </div>
           {balance > 0 && (
-            <p className="text-[11px] text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
               {usedPct.toFixed(0)}% del límite utilizado
             </p>
           )}
@@ -134,14 +134,14 @@ function PageSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
       {/* Customer bar */}
-      <div className="h-16 bg-white border border-gray-200 rounded-xl" />
+      <div className="h-16 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl" />
       {/* Balance cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="h-36 bg-white border border-gray-200 rounded-xl" />
-        <div className="h-36 bg-white border border-gray-200 rounded-xl" />
+        <div className="h-36 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl" />
+        <div className="h-36 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl" />
       </div>
       {/* Table */}
-      <div className="h-64 bg-white border border-gray-200 rounded-xl" />
+      <div className="h-64 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl" />
     </div>
   );
 }
@@ -259,8 +259,8 @@ export default function AccountDetailPage() {
         const d = new Date(mov.createdAt);
         return (
           <div className="whitespace-nowrap">
-            <p className="text-sm text-gray-800">{d.toLocaleDateString('es-AR')}</p>
-            <p className="text-xs text-gray-400">{d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</p>
+            <p className="text-sm text-gray-800 dark:text-slate-200">{d.toLocaleDateString('es-AR')}</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500">{d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</p>
           </div>
         );
       },
@@ -286,12 +286,26 @@ export default function AccountDetailPage() {
       header: 'Descripción',
       render: (mov) => (
         <div className="min-w-0">
-          <p className="text-sm text-gray-700 truncate max-w-[220px]">{mov.description || '—'}</p>
+          <p className="text-sm text-gray-700 dark:text-slate-300 truncate max-w-[220px]">{mov.description || '—'}</p>
           {mov.invoice && (
-            <p className="text-xs text-indigo-500 flex items-center gap-1 mt-0.5">
+            <button
+              type="button"
+              onClick={() => navigate(`/invoices/${mov.invoiceId}`)}
+              className="text-xs text-indigo-500 dark:text-indigo-400 flex items-center gap-1 mt-0.5 hover:underline"
+            >
               <FileText className="w-3 h-3" />
-              {mov.invoice.number ?? `Factura`}
-            </p>
+              {mov.invoice.number ?? 'Factura'}
+            </button>
+          )}
+          {!mov.invoice && mov.budget && (
+            <button
+              type="button"
+              onClick={() => navigate(`/budgets/${mov.budgetId}`)}
+              className="text-xs text-indigo-500 dark:text-indigo-400 flex items-center gap-1 mt-0.5 hover:underline"
+            >
+              <FileText className="w-3 h-3" />
+              {mov.budget.number ?? 'Presupuesto'}
+            </button>
           )}
         </div>
       ),
@@ -302,7 +316,7 @@ export default function AccountDetailPage() {
       render: (mov) => {
         const isCredit = mov.type === 'CREDIT';
         return (
-          <span className={`text-sm font-bold tabular-nums ${isCredit ? 'text-emerald-700' : 'text-red-600'}`}>
+          <span className={`text-sm font-bold tabular-nums ${isCredit ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
             {isCredit ? '+' : '−'}{formatCurrency(mov.amount, selectedCurrency)}
           </span>
         );
@@ -313,7 +327,7 @@ export default function AccountDetailPage() {
       header: 'Saldo',
       render: (mov) => (
         <span className={`text-sm tabular-nums font-mono ${
-          mov.balance > 0 ? 'text-red-500' : mov.balance < 0 ? 'text-emerald-600' : 'text-gray-400'
+          mov.balance > 0 ? 'text-red-500 dark:text-red-400' : mov.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
         }`}>
           {formatCurrency(mov.balance, selectedCurrency)}
         </span>
@@ -356,30 +370,30 @@ export default function AccountDetailPage() {
       />
 
       {/* ── Customer info bar ── */}
-      <div className="flex flex-wrap items-center gap-4 px-4 py-3 bg-white border border-gray-200 rounded-xl">
+      <div className="flex flex-wrap items-center gap-4 px-4 py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-base font-bold ${color.bg} ${color.text}`}>
           {customer.name.charAt(0).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900">{customer.name}</p>
-          <p className="text-xs text-gray-400">{TAX_LABEL[customer.taxCondition]}</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">{customer.name}</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500">{TAX_LABEL[customer.taxCondition]}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-500 dark:text-slate-400">
           {customer.taxId && (
             <span className="flex items-center gap-1.5">
-              <Hash className="w-3.5 h-3.5 text-gray-300" />
-              <span className="font-mono text-xs text-gray-600">{customer.taxId}</span>
+              <Hash className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
+              <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{customer.taxId}</span>
             </span>
           )}
           {customer.email && (
             <span className="flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-gray-300" />
+              <Mail className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
               <span className="text-xs">{customer.email}</span>
             </span>
           )}
           {customer.phone && (
             <span className="flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-gray-300" />
+              <Phone className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
               <span className="text-xs">{customer.phone}</span>
             </span>
           )}
@@ -393,24 +407,24 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Movements table ── */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
         {/* Header with currency tabs */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-700">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
             Movimientos
-            {total > 0 && <span className="ml-1.5 text-xs font-normal text-gray-400">· {total}</span>}
+            {total > 0 && <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-slate-500">· {total}</span>}
           </h3>
 
           {/* Currency segmented control */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
             {(['ARS', 'USD'] as Currency[]).map((cur) => (
               <button
                 key={cur}
                 onClick={() => { setSelectedCurrency(cur); setPage(1); }}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-150 ${
                   selectedCurrency === cur
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-slate-200 shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
                 }`}
               >
                 {cur}
@@ -441,7 +455,7 @@ export default function AccountDetailPage() {
         <form onSubmit={paymentForm.handleSubmit(handlePayment)} className="space-y-4">
           {/* Currency tabs */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Moneda</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Moneda</label>
             <div className="flex gap-2">
               {(['ARS', 'USD'] as Currency[]).map((cur) => (
                 <button
@@ -450,8 +464,8 @@ export default function AccountDetailPage() {
                   onClick={() => setPaymentCurrency(cur)}
                   className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all duration-150 ${
                     paymentCurrency === cur
-                      ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                      ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400'
+                      : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-gray-300 dark:hover:border-slate-500'
                   }`}
                 >
                   {cur}
@@ -486,7 +500,7 @@ export default function AccountDetailPage() {
       {/* ── Credit limit modal ── */}
       <Modal isOpen={isCreditModalOpen} onClose={() => setIsCreditModalOpen(false)} title="Límite de crédito">
         <form onSubmit={creditForm.handleSubmit(handleCreditLimit)} className="space-y-4">
-          <div className="p-3 bg-gray-50 rounded-xl text-xs text-gray-500 leading-relaxed">
+          <div className="p-3 bg-gray-50 dark:bg-slate-700/50 rounded-xl text-xs text-gray-500 dark:text-slate-400 leading-relaxed">
             Definí el monto máximo que este cliente puede tener como deuda. Dejá el campo vacío o en 0 para no establecer límite.
           </div>
           <Input

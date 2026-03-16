@@ -301,12 +301,245 @@ interface InvoicePDFProps {
   qrCodeDataUrl?: string;
 }
 
+const COPY_LABELS = ['ORIGINAL', 'DUPLICADO', 'TRIPLICADO'] as const;
+
+interface InvoicePageProps extends InvoicePDFProps {
+  copyLabel: string;
+  typeLetter: string;
+  typeShort: string;
+  isDraft: boolean;
+  taxBreakdown: Record<number, { base: number; tax: number }>;
+  issuerName: string;
+  issuerAddress: string;
+  issuerCuit: string;
+  issuerTaxCondition: string;
+}
+
+function InvoicePage({
+  invoice, qrCodeDataUrl, copyLabel, typeLetter, typeShort, isDraft,
+  taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
+}: InvoicePageProps) {
+  return (
+    <Page size="A4" style={s.page}>
+      {/* Draft watermark */}
+      {isDraft && <Text style={s.draftWatermark}>BORRADOR</Text>}
+
+      {/* Copy label stamp */}
+      <Text style={s.original}>{copyLabel}</Text>
+
+      {/* ── HEADER ──────────────────────────────────────────── */}
+      <View style={s.header}>
+        {/* Left: issuer */}
+        <View style={s.headerLeft}>
+          {issuerName ? <Text style={s.companyName}>{issuerName}</Text> : null}
+          {issuerAddress ? (
+            <View style={s.row}>
+              <Text style={s.labelGray}>Domicilio:</Text>
+              <Text style={s.valueText}>{issuerAddress}</Text>
+            </View>
+          ) : null}
+          {issuerCuit ? (
+            <View style={s.row}>
+              <Text style={s.labelGray}>CUIT:</Text>
+              <Text style={s.valueText}>{issuerCuit}</Text>
+            </View>
+          ) : null}
+          <View style={s.row}>
+            <Text style={s.labelGray}>Condición frente al IVA:</Text>
+            <Text style={s.valueText}>{issuerTaxCondition}</Text>
+          </View>
+        </View>
+
+        {/* Center: type letter */}
+        <View style={s.headerCenter}>
+          <Text style={[s.typeLabel, { marginBottom: 4 }]}>{typeShort}</Text>
+          <View style={s.typeBox}>
+            <Text style={s.typeLetter}>{typeLetter}</Text>
+          </View>
+          <Text style={[s.typeLabel, { marginTop: 4 }]}>Cód. {typeLetter}</Text>
+        </View>
+
+        {/* Right: invoice info */}
+        <View style={s.headerRight}>
+          <Text style={s.invoiceTitle}>Comprobante</Text>
+          <Text style={s.invoiceNumber}>{invoiceNumber(invoice)}</Text>
+          <View style={s.row}>
+            <Text style={s.labelGray}>Fecha de emisión:</Text>
+            <Text style={s.valueText}>{fmtDate(invoice.date)}</Text>
+          </View>
+          {invoice.dueDate && (
+            <View style={s.row}>
+              <Text style={s.labelGray}>Fecha de vencimiento:</Text>
+              <Text style={s.valueText}>{fmtDate(invoice.dueDate)}</Text>
+            </View>
+          )}
+          {invoice.currency === 'USD' && (
+            <View style={s.row}>
+              <Text style={s.labelGray}>Moneda:</Text>
+              <Text style={s.valueText}>USD (TC: {invoice.exchangeRate})</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* ── CUSTOMER ─────────────────────────────────────────── */}
+      <View style={s.customerSection}>
+        <View style={s.customerRow}>
+          <View style={s.customerFieldFull}>
+            <Text style={s.labelGray}>Razón Social / Nombre: </Text>
+            <Text style={[s.valueText, { fontFamily: 'Helvetica-Bold' }]}>
+              {invoice.customer?.name ?? ''}
+            </Text>
+          </View>
+        </View>
+        <View style={s.customerRow}>
+          {invoice.customer?.taxId && (
+            <View style={s.customerField}>
+              <Text style={s.labelGray}>CUIT: </Text>
+              <Text style={s.valueText}>{fmtCuit(invoice.customer.taxId)}</Text>
+            </View>
+          )}
+          {invoice.customer?.taxCondition && (
+            <View style={s.customerField}>
+              <Text style={s.labelGray}>Condición IVA: </Text>
+              <Text style={s.valueText}>
+                {invoice.customer.taxCondition.replace(/_/g, ' ')}
+              </Text>
+            </View>
+          )}
+        </View>
+        {(invoice.customer?.address || invoice.customer?.city) && (
+          <View style={s.customerRow}>
+            <View style={s.customerFieldFull}>
+              <Text style={s.labelGray}>Domicilio: </Text>
+              <Text style={s.valueText}>
+                {[invoice.customer.address, invoice.customer.city, invoice.customer.province]
+                  .filter(Boolean)
+                  .join(', ')}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* ── ITEMS TABLE ──────────────────────────────────────── */}
+      <View style={s.table}>
+        <View style={s.tableHeader}>
+          <Text style={[s.thCell, s.colDesc]}>Descripción</Text>
+          <Text style={[s.thCell, s.colQty]}>Cant.</Text>
+          <Text style={[s.thCell, s.colPrice]}>Precio Unit.</Text>
+          <Text style={[s.thCell, s.colTaxRate]}>IVA %</Text>
+          <Text style={[s.thCell, s.colTaxAmt]}>IVA $</Text>
+          <Text style={[s.thCell, s.colTotal]}>Total</Text>
+        </View>
+
+        {invoice.items.map((item, idx) => (
+          <View key={item.id} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
+            <Text style={[s.tdCell, s.colDesc]}>
+              {item.product?.name ?? 'Producto'}
+              {item.product?.sku ? ` (${item.product.sku})` : ''}
+            </Text>
+            <Text style={[s.tdCell, s.colQty]}>{item.quantity}</Text>
+            <Text style={[s.tdCell, s.colPrice]}>
+              {fmtCurrency(item.unitPrice, invoice.currency)}
+            </Text>
+            <Text style={[s.tdCell, s.colTaxRate]}>{item.taxRate}%</Text>
+            <Text style={[s.tdCell, s.colTaxAmt]}>
+              {fmtCurrency(item.taxAmount, invoice.currency)}
+            </Text>
+            <Text style={[s.tdCell, s.colTotal]}>
+              {fmtCurrency(item.total, invoice.currency)}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* ── TOTALS ───────────────────────────────────────────── */}
+      <View style={s.totalsWrapper}>
+        <View style={s.totalsBox}>
+          {Object.entries(taxBreakdown).map(([rate, { base }], i) => (
+            <View key={rate} style={[s.totalsRow, i === 0 ? s.totalsFirstRow : {}]}>
+              <Text style={s.totalsLabel}>Neto gravado ({rate}%)</Text>
+              <Text style={s.totalsValue}>{fmtCurrency(base, invoice.currency)}</Text>
+            </View>
+          ))}
+          {Object.entries(taxBreakdown).map(([rate, { tax }]) => (
+            <View key={`iva-${rate}`} style={s.totalsRow}>
+              <Text style={s.totalsLabel}>IVA {rate}%</Text>
+              <Text style={s.totalsValue}>{fmtCurrency(tax, invoice.currency)}</Text>
+            </View>
+          ))}
+          <View style={s.totalsRow}>
+            <Text style={s.totalsLabel}>Subtotal</Text>
+            <Text style={s.totalsValue}>{fmtCurrency(invoice.subtotal, invoice.currency)}</Text>
+          </View>
+          <View style={s.totalsRow}>
+            <Text style={s.totalsLabel}>Total IVA</Text>
+            <Text style={s.totalsValue}>{fmtCurrency(invoice.taxAmount, invoice.currency)}</Text>
+          </View>
+          <View style={s.totalFinalRow}>
+            <Text style={s.totalFinalLabel}>TOTAL</Text>
+            <Text style={s.totalFinalValue}>{fmtCurrency(invoice.total, invoice.currency)}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── NOTES ────────────────────────────────────────────── */}
+      {invoice.notes && (
+        <View style={s.notes}>
+          <Text style={s.notesLabel}>Observaciones</Text>
+          <Text style={s.notesText}>{invoice.notes}</Text>
+        </View>
+      )}
+
+      {/* ── FOOTER: CAE + QR ─────────────────────────────────── */}
+      {invoice.cae && (
+        <View style={s.footer}>
+          <View style={s.footerInfo}>
+            <Text style={s.caeTitle}>Comprobante Autorizado por ARCA</Text>
+            <View style={s.caeRow}>
+              <Text style={s.caeLabel}>CAE N°:</Text>
+              <Text style={s.caeValue}>{invoice.cae}</Text>
+            </View>
+            {invoice.caeExpiry && (
+              <View style={s.caeRow}>
+                <Text style={s.caeLabel}>Fecha de Vto. CAE:</Text>
+                <Text style={s.caeValue}>{fmtDate(invoice.caeExpiry)}</Text>
+              </View>
+            )}
+            {invoice.afipPtVenta && (
+              <View style={s.caeRow}>
+                <Text style={s.caeLabel}>Punto de Venta:</Text>
+                <Text style={s.caeValue}>{String(invoice.afipPtVenta).padStart(4, '0')}</Text>
+              </View>
+            )}
+          </View>
+          {qrCodeDataUrl && (
+            <View style={s.footerQr}>
+              <Image src={qrCodeDataUrl} style={{ width: 70, height: 70 }} />
+              <Text style={s.qrLabel}>Verificar en ARCA</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* No CAE notice */}
+      {!invoice.cae && !isDraft && (
+        <View style={[s.footer, { backgroundColor: '#fff8e1' }]}>
+          <Text style={{ fontSize: 7.5, color: '#8a6d00' }}>
+            Este comprobante no fue autorizado por ARCA (sin CAE). No tiene validez fiscal.
+          </Text>
+        </View>
+      )}
+    </Page>
+  );
+}
+
 export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: InvoicePDFProps) {
   const typeLetter = getTypeLetter(invoice.type);
   const typeShort = getTypeShortName(invoice.type);
   const isDraft = invoice.status === 'DRAFT';
 
-  // IVA breakdown by rate
   const taxBreakdown = invoice.items.reduce<Record<number, { base: number; tax: number }>>(
     (acc, item) => {
       if (!acc[item.taxRate]) acc[item.taxRate] = { base: 0, tax: 0 };
@@ -322,239 +555,19 @@ export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: Invoi
   const issuerCuit = afipConfig?.cuit ? fmtCuit(afipConfig.cuit) : '';
   const issuerTaxCondition = afipConfig?.taxCondition ?? 'Responsable Inscripto';
 
+  const pageProps = {
+    invoice, qrCodeDataUrl, typeLetter, typeShort, isDraft,
+    taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
+  };
+
   return (
     <Document
       title={`${INVOICE_TYPE_LABELS[invoice.type]} ${invoiceNumber(invoice)}`}
       author={issuerName || 'Cloud-Bill'}
     >
-      <Page size="A4" style={s.page}>
-        {/* Draft watermark */}
-        {isDraft && <Text style={s.draftWatermark}>BORRADOR</Text>}
-
-        {/* ORIGINAL stamp */}
-        <Text style={s.original}>ORIGINAL</Text>
-
-        {/* ── HEADER ──────────────────────────────────────────── */}
-        <View style={s.header}>
-          {/* Left: issuer */}
-          <View style={s.headerLeft}>
-            {issuerName ? (
-              <Text style={s.companyName}>{issuerName}</Text>
-            ) : null}
-            {issuerAddress ? (
-              <View style={s.row}>
-                <Text style={s.labelGray}>Domicilio:</Text>
-                <Text style={s.valueText}>{issuerAddress}</Text>
-              </View>
-            ) : null}
-            {issuerCuit ? (
-              <View style={s.row}>
-                <Text style={s.labelGray}>CUIT:</Text>
-                <Text style={s.valueText}>{issuerCuit}</Text>
-              </View>
-            ) : null}
-            <View style={s.row}>
-              <Text style={s.labelGray}>Condición frente al IVA:</Text>
-              <Text style={s.valueText}>{issuerTaxCondition}</Text>
-            </View>
-          </View>
-
-          {/* Center: type letter */}
-          <View style={s.headerCenter}>
-            <Text style={[s.typeLabel, { marginBottom: 4 }]}>{typeShort}</Text>
-            <View style={s.typeBox}>
-              <Text style={s.typeLetter}>{typeLetter}</Text>
-            </View>
-            <Text style={[s.typeLabel, { marginTop: 4 }]}>Cód. {typeLetter}</Text>
-          </View>
-
-          {/* Right: invoice info */}
-          <View style={s.headerRight}>
-            <Text style={s.invoiceTitle}>Comprobante</Text>
-            <Text style={s.invoiceNumber}>{invoiceNumber(invoice)}</Text>
-            <View style={s.row}>
-              <Text style={s.labelGray}>Fecha de emisión:</Text>
-              <Text style={s.valueText}>{fmtDate(invoice.date)}</Text>
-            </View>
-            {invoice.dueDate && (
-              <View style={s.row}>
-                <Text style={s.labelGray}>Fecha de vencimiento:</Text>
-                <Text style={s.valueText}>{fmtDate(invoice.dueDate)}</Text>
-              </View>
-            )}
-            {invoice.currency === 'USD' && (
-              <View style={s.row}>
-                <Text style={s.labelGray}>Moneda:</Text>
-                <Text style={s.valueText}>
-                  USD (TC: {invoice.exchangeRate})
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* ── CUSTOMER ─────────────────────────────────────────── */}
-        <View style={s.customerSection}>
-          <View style={s.customerRow}>
-            <View style={s.customerFieldFull}>
-              <Text style={s.labelGray}>Razón Social / Nombre: </Text>
-              <Text style={[s.valueText, { fontFamily: 'Helvetica-Bold' }]}>
-                {invoice.customer?.name ?? ''}
-              </Text>
-            </View>
-          </View>
-          <View style={s.customerRow}>
-            {invoice.customer?.taxId && (
-              <View style={s.customerField}>
-                <Text style={s.labelGray}>CUIT: </Text>
-                <Text style={s.valueText}>{fmtCuit(invoice.customer.taxId)}</Text>
-              </View>
-            )}
-            {invoice.customer?.taxCondition && (
-              <View style={s.customerField}>
-                <Text style={s.labelGray}>Condición IVA: </Text>
-                <Text style={s.valueText}>
-                  {invoice.customer.taxCondition.replace(/_/g, ' ')}
-                </Text>
-              </View>
-            )}
-          </View>
-          {(invoice.customer?.address || invoice.customer?.city) && (
-            <View style={s.customerRow}>
-              <View style={s.customerFieldFull}>
-                <Text style={s.labelGray}>Domicilio: </Text>
-                <Text style={s.valueText}>
-                  {[invoice.customer.address, invoice.customer.city, invoice.customer.province]
-                    .filter(Boolean)
-                    .join(', ')}
-                </Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* ── ITEMS TABLE ──────────────────────────────────────── */}
-        <View style={s.table}>
-          <View style={s.tableHeader}>
-            <Text style={[s.thCell, s.colDesc]}>Descripción</Text>
-            <Text style={[s.thCell, s.colQty]}>Cant.</Text>
-            <Text style={[s.thCell, s.colPrice]}>Precio Unit.</Text>
-            <Text style={[s.thCell, s.colTaxRate]}>IVA %</Text>
-            <Text style={[s.thCell, s.colTaxAmt]}>IVA $</Text>
-            <Text style={[s.thCell, s.colTotal]}>Total</Text>
-          </View>
-
-          {invoice.items.map((item, idx) => (
-            <View key={item.id} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
-              <Text style={[s.tdCell, s.colDesc]}>
-                {item.product?.name ?? 'Producto'}
-                {item.product?.sku ? ` (${item.product.sku})` : ''}
-              </Text>
-              <Text style={[s.tdCell, s.colQty]}>{item.quantity}</Text>
-              <Text style={[s.tdCell, s.colPrice]}>
-                {fmtCurrency(item.unitPrice, invoice.currency)}
-              </Text>
-              <Text style={[s.tdCell, s.colTaxRate]}>{item.taxRate}%</Text>
-              <Text style={[s.tdCell, s.colTaxAmt]}>
-                {fmtCurrency(item.taxAmount, invoice.currency)}
-              </Text>
-              <Text style={[s.tdCell, s.colTotal]}>
-                {fmtCurrency(item.total, invoice.currency)}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ── TOTALS ───────────────────────────────────────────── */}
-        <View style={s.totalsWrapper}>
-          <View style={s.totalsBox}>
-            {/* Neto gravado by rate */}
-            {Object.entries(taxBreakdown).map(([rate, { base, tax }], i) => (
-              <View key={rate} style={[s.totalsRow, i === 0 ? s.totalsFirstRow : {}]}>
-                <Text style={s.totalsLabel}>Neto gravado ({rate}%)</Text>
-                <Text style={s.totalsValue}>{fmtCurrency(base, invoice.currency)}</Text>
-              </View>
-            ))}
-
-            {/* IVA by rate */}
-            {Object.entries(taxBreakdown).map(([rate, { tax }]) => (
-              <View key={`iva-${rate}`} style={s.totalsRow}>
-                <Text style={s.totalsLabel}>IVA {rate}%</Text>
-                <Text style={s.totalsValue}>{fmtCurrency(tax, invoice.currency)}</Text>
-              </View>
-            ))}
-
-            {/* Subtotal */}
-            <View style={s.totalsRow}>
-              <Text style={s.totalsLabel}>Subtotal</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(invoice.subtotal, invoice.currency)}</Text>
-            </View>
-            <View style={s.totalsRow}>
-              <Text style={s.totalsLabel}>Total IVA</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(invoice.taxAmount, invoice.currency)}</Text>
-            </View>
-
-            {/* TOTAL */}
-            <View style={s.totalFinalRow}>
-              <Text style={s.totalFinalLabel}>TOTAL</Text>
-              <Text style={s.totalFinalValue}>
-                {fmtCurrency(invoice.total, invoice.currency)}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── NOTES ────────────────────────────────────────────── */}
-        {invoice.notes && (
-          <View style={s.notes}>
-            <Text style={s.notesLabel}>Observaciones</Text>
-            <Text style={s.notesText}>{invoice.notes}</Text>
-          </View>
-        )}
-
-        {/* ── FOOTER: CAE + QR ─────────────────────────────────── */}
-        {invoice.cae && (
-          <View style={s.footer}>
-            <View style={s.footerInfo}>
-              <Text style={s.caeTitle}>Comprobante Autorizado por ARCA</Text>
-              <View style={s.caeRow}>
-                <Text style={s.caeLabel}>CAE N°:</Text>
-                <Text style={s.caeValue}>{invoice.cae}</Text>
-              </View>
-              {invoice.caeExpiry && (
-                <View style={s.caeRow}>
-                  <Text style={s.caeLabel}>Fecha de Vto. CAE:</Text>
-                  <Text style={s.caeValue}>{fmtDate(invoice.caeExpiry)}</Text>
-                </View>
-              )}
-              {invoice.afipPtVenta && (
-                <View style={s.caeRow}>
-                  <Text style={s.caeLabel}>Punto de Venta:</Text>
-                  <Text style={s.caeValue}>
-                    {String(invoice.afipPtVenta).padStart(4, '0')}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {qrCodeDataUrl && (
-              <View style={s.footerQr}>
-                <Image src={qrCodeDataUrl} style={{ width: 70, height: 70 }} />
-                <Text style={s.qrLabel}>Verificar en ARCA</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* No CAE notice */}
-        {!invoice.cae && !isDraft && (
-          <View style={[s.footer, { backgroundColor: '#fff8e1' }]}>
-            <Text style={{ fontSize: 7.5, color: '#8a6d00' }}>
-              Este comprobante no fue autorizado por ARCA (sin CAE). No tiene validez fiscal.
-            </Text>
-          </View>
-        )}
-      </Page>
+      {COPY_LABELS.map((label) => (
+        <InvoicePage key={label} {...pageProps} copyLabel={label} />
+      ))}
     </Document>
   );
 }

@@ -22,7 +22,7 @@ export default function Card({
   return (
     <div
       className={clsx(
-        'bg-white rounded-xl shadow-sm border border-gray-200/80',
+        'bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200/80 dark:border-slate-700',
         paddings[padding],
         className
       )}
@@ -48,13 +48,13 @@ export function CardHeader({
   return (
     <div
       className={clsx(
-        'flex items-center justify-between pb-4 border-b border-gray-100',
+        'flex items-center justify-between pb-4 border-b border-gray-100 dark:border-slate-700',
         className
       )}
     >
       <div>
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-        {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
+        {subtitle && <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
       {action && <div>{action}</div>}
     </div>

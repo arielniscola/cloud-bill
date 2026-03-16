@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Truck, Mail, Phone, MapPin } from 'lucide-react';
+import { Plus, Edit, Trash2, Truck, Mail, Phone, MapPin, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, SearchInput, ConfirmDialog, DataTable } from '../../components/shared';
@@ -111,8 +111,8 @@ export default function SuppliersPage() {
       header: 'CUIT',
       render: (s) =>
         s.cuit
-          ? <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{s.cuit}</span>
-          : <span className="text-gray-300">—</span>,
+          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{s.cuit}</span>
+          : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
       key: 'taxCondition',
@@ -132,12 +132,12 @@ export default function SuppliersPage() {
       render: (s) =>
         s.city
           ? (
-            <span className="flex items-center gap-1.5 text-sm text-gray-600">
-              <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300">
+              <MapPin className="w-3 h-3 text-gray-400 dark:text-slate-500 flex-shrink-0" />
               {s.city}
             </span>
           )
-          : <span className="text-gray-300">—</span>,
+          : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
       key: 'phone',
@@ -145,12 +145,12 @@ export default function SuppliersPage() {
       render: (s) =>
         s.phone
           ? (
-            <span className="flex items-center gap-1.5 text-sm text-gray-600">
-              <Phone className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300">
+              <Phone className="w-3 h-3 text-gray-400 dark:text-slate-500 flex-shrink-0" />
               {s.phone}
             </span>
           )
-          : <span className="text-gray-300">—</span>,
+          : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
       key: 'isActive',
@@ -167,6 +167,13 @@ export default function SuppliersPage() {
       header: '',
       render: (s) => (
         <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          <button
+            title="Ver detalle"
+            onClick={(e) => { e.stopPropagation(); navigate(`/suppliers/${s.id}`); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-[background-color,color] duration-150"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
           <button
             title="Editar"
             onClick={(e) => { e.stopPropagation(); navigate(`/suppliers/${s.id}/edit`); }}
@@ -211,17 +218,17 @@ export default function SuppliersPage() {
 
       <Card padding="none">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                   tab === t.id
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white'
                 }`}
               >
                 {t.label}
@@ -244,7 +251,7 @@ export default function SuppliersPage() {
           data={suppliers}
           isLoading={isLoading}
           keyExtractor={(s) => s.id}
-          onRowClick={(s) => navigate(`/suppliers/${s.id}/edit`)}
+          onRowClick={(s) => navigate(`/suppliers/${s.id}`)}
           emptyMessage={
             search
               ? `Sin resultados para "${search}"`
@@ -259,11 +266,11 @@ export default function SuppliersPage() {
         {/* Empty state — no data, no filters */}
         {!isLoading && suppliers.length === 0 && !search && tab === 'all' && (
           <div className="flex flex-col items-center justify-center text-center py-16">
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-              <Truck className="w-7 h-7 text-gray-300" />
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+              <Truck className="w-7 h-7 text-gray-300 dark:text-slate-500" />
             </div>
-            <p className="text-sm font-semibold text-gray-700 mb-1">Sin proveedores</p>
-            <p className="text-sm text-gray-400 max-w-xs leading-relaxed mb-5">
+            <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin proveedores</p>
+            <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
               Registrá tus proveedores para asociarlos a compras y llevar un historial de abastecimiento.
             </p>
             <Button onClick={() => navigate('/suppliers/new')}>

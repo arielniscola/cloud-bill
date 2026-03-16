@@ -19,3 +19,5 @@ export * from './budget.types';
 export * from './app-settings.types';
 export * from './stock-intelligence.types';
 export * from './recibo.types';
+export * from './orden-pedido.types';
+export * from './orden-compra.types';

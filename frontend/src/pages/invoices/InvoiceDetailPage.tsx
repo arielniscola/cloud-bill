@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList,
+  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import QRCode from 'qrcode';
 import { Badge, Button } from '../../components/ui';
-import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
 import { invoicesService, recibosService, afipService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
@@ -40,16 +40,16 @@ function SkeletonDetail() {
   return (
     <div className="animate-pulse space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-          <div className="h-5 bg-gray-100 rounded w-16" />
-          {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 space-y-4">
+          <div className="h-5 bg-gray-100 dark:bg-slate-700 rounded w-16" />
+          {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />)}
         </div>
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-3">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex justify-between">
-                <div className="h-4 bg-gray-100 rounded w-20" />
-                <div className="h-4 bg-gray-100 rounded w-24" />
+                <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-20" />
+                <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-24" />
               </div>
             ))}
           </div>
@@ -76,6 +76,7 @@ export default function InvoiceDetailPage() {
   const [recibos, setRecibos] = useState<Recibo[]>([]);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -102,10 +103,10 @@ export default function InvoiceDetailPage() {
     if (!id) return;
     setIsCanceling(true);
     try {
-      const updated = await invoicesService.cancel(id);
-      setInvoice(updated);
+      await invoicesService.cancel(id);
       toast.success('Factura cancelada');
       setShowCancelDialog(false);
+      await loadData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar factura');
@@ -150,10 +151,10 @@ export default function InvoiceDetailPage() {
     if (!id) return;
     setIsUpdating(true);
     try {
-      const updated = await invoicesService.updateStatus(id, { status: 'ISSUED' });
-      setInvoice(updated);
+      await invoicesService.updateStatus(id, { status: 'ISSUED' });
       toast.success('Factura emitida');
       setShowIssueDialog(false);
+      await loadData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al emitir factura');
@@ -167,9 +168,9 @@ export default function InvoiceDetailPage() {
     setIsEmitting(true);
     try {
       const updated = await afipService.emitInvoice(id);
-      setInvoice(updated);
       toast.success(`Factura emitida ante ARCA. CAE: ${updated.cae}`);
       setShowEmitDialog(false);
+      await loadData();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al emitir ante ARCA');
@@ -236,7 +237,11 @@ export default function InvoiceDetailPage() {
   const isDraft = invoice.status === 'DRAFT';
   const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
   const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
-  const canEmitArca = isDraft && !invoice.cae;
+  const isFactura = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'].includes(invoice.type);
+  const isNcNdStatus = ['ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status);
+  const canGenerateNC = isFactura && isNcNdStatus;
+  const canGenerateND = isFactura && isNcNdStatus;
+  const canEmitArca = (isDraft || invoice.status === 'ISSUED') && !invoice.cae;
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(invoice.total) - paidAmount);
@@ -268,7 +273,7 @@ export default function InvoiceDetailPage() {
                 Emitir a ARCA
               </Button>
             )}
-            {canMarkAsPaid && remaining > 0 && (
+            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && (
               <Button variant="outline" onClick={() => setShowPayModal(true)}>
                 <Banknote className="w-4 h-4 mr-2" />
                 Registrar pago
@@ -287,6 +292,32 @@ export default function InvoiceDetailPage() {
               <FileDown className="w-4 h-4 mr-2" />
               PDF
             </Button>
+            <Button variant="outline" onClick={() => window.open(`/print/invoice/${invoice.id}`, '_blank', 'width=420,height=700,scrollbars=yes')}>
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir
+            </Button>
+            <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+              <Mail className="w-4 h-4 mr-2" />
+              Enviar
+            </Button>
+            {canGenerateNC && (
+              <Button
+                variant="outline"
+                onClick={() => navigate('/invoices/new', { state: { creditNoteFrom: invoice } })}
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Generar NC
+              </Button>
+            )}
+            {canGenerateND && (
+              <Button
+                variant="outline"
+                onClick={() => navigate('/invoices/new', { state: { debitNoteFrom: invoice } })}
+              >
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Generar ND
+              </Button>
+            )}
             {canCancel && (
               <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
                 <XCircle className="w-4 h-4 mr-2" />
@@ -311,14 +342,14 @@ export default function InvoiceDetailPage() {
               <div key={step} className="flex items-center gap-2">
                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors duration-200 ${
                   isCurrent ? 'bg-indigo-600 text-white' :
-                  isDone ? 'bg-emerald-100 text-emerald-700' :
-                  'bg-gray-100 text-gray-400'
+                  isDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
+                  'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500'
                 }`}>
                   {isDone && <CheckCircle className="w-3.5 h-3.5" />}
                   {labels[step]}
                 </div>
                 {i < arr.length - 1 && (
-                  <ArrowRight className={`w-3 h-3 flex-shrink-0 ${stepIdx < currentIdx ? 'text-emerald-400' : 'text-gray-300'}`} />
+                  <ArrowRight className={`w-3 h-3 flex-shrink-0 ${stepIdx < currentIdx ? 'text-emerald-400 dark:text-emerald-500' : 'text-gray-300 dark:text-slate-600'}`} />
                 )}
               </div>
             );
@@ -331,16 +362,24 @@ export default function InvoiceDetailPage() {
 
       {/* Cancelled banner */}
       {isCancelled && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
-          <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-800 dark:text-red-300">
+          <XCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" />
           Esta factura fue cancelada.
+        </div>
+      )}
+
+      {/* OP banner when invoice was created from an OrdenPedido */}
+      {invoice.ordenPedidoId && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-xl text-sm text-indigo-800 dark:text-indigo-300">
+          <CheckCircle className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
+          <span>Esta factura fue generada desde una Orden de Pedido. Los pagos se gestionan desde la orden.</span>
         </div>
       )}
 
       {/* CAE banner when issued via ARCA */}
       {invoice.cae && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
-          <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-sm text-emerald-800 dark:text-emerald-300">
+          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
           <span>Emitida ante ARCA.</span>
           <span className="font-mono font-semibold ml-1">CAE: {invoice.cae}</span>
         </div>
@@ -350,55 +389,55 @@ export default function InvoiceDetailPage() {
 
         {/* ── Left: items table + notes ── */}
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Ítems</h3>
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full">
-                <thead className="bg-gray-50/80">
+                <thead className="bg-gray-50/80 dark:bg-slate-700/50">
                   <tr>
-                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Producto</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Cantidad</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Precio unit.</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">IVA</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Producto</th>
+                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Cantidad</th>
+                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Precio unit.</th>
+                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
+                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                   {invoice.items.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50/60 transition-colors duration-100">
+                    <tr key={item.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors duration-100">
                       <td className="px-5 py-3.5">
-                        <p className="text-sm font-medium text-gray-900">
-                          {item.product?.name ?? <span className="text-gray-400 italic">Producto eliminado</span>}
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {item.product?.name ?? <span className="text-gray-400 dark:text-slate-500 italic">Producto eliminado</span>}
                         </p>
                         {item.product?.sku && (
-                          <p className="text-xs text-gray-400 mt-0.5">{item.product.sku}</p>
+                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.product.sku}</p>
                         )}
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-700 text-right tabular-nums">{Number(item.quantity)}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-700 text-right tabular-nums">
+                      <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">{Number(item.quantity)}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">
                         {formatCurrency(Number(item.unitPrice), invoice.currency)}
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-500 text-right tabular-nums">{Number(item.taxRate)}%</td>
-                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right tabular-nums">
+                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white text-right tabular-nums">
                         {formatCurrency(Number(item.total), invoice.currency)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-gray-50/50 border-t border-gray-200">
+                <tfoot className="bg-gray-50/50 dark:bg-slate-700/30 border-t border-gray-200 dark:border-slate-700">
                   <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-xs text-gray-500 uppercase tracking-wider font-semibold">Subtotal</td>
-                    <td className="px-5 py-3 text-right text-sm font-medium text-gray-700 tabular-nums">{formatCurrency(Number(invoice.subtotal), invoice.currency)}</td>
+                    <td colSpan={4} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
+                    <td className="px-5 py-3 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(invoice.subtotal), invoice.currency)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={4} className="px-5 py-2 text-right text-xs text-gray-500 uppercase tracking-wider font-semibold">IVA</td>
-                    <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 tabular-nums">{formatCurrency(Number(invoice.taxAmount), invoice.currency)}</td>
+                    <td colSpan={4} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
+                    <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(invoice.taxAmount), invoice.currency)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-sm text-gray-900 font-bold uppercase tracking-wider">Total</td>
-                    <td className="px-5 py-3 text-right text-base font-bold text-indigo-600 tabular-nums">{formatCurrency(Number(invoice.total), invoice.currency)}</td>
+                    <td colSpan={4} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
+                    <td className="px-5 py-3 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{formatCurrency(Number(invoice.total), invoice.currency)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -406,9 +445,9 @@ export default function InvoiceDetailPage() {
           </div>
 
           {invoice.notes && (
-            <div className="bg-white border border-gray-200 rounded-xl px-5 py-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Notas</p>
-              <p className="text-sm text-gray-600 leading-relaxed">{invoice.notes}</p>
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-5 py-4">
+              <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">Notas</p>
+              <p className="text-sm text-gray-600 dark:text-slate-400 leading-relaxed">{invoice.notes}</p>
             </div>
           )}
 
@@ -426,40 +465,40 @@ export default function InvoiceDetailPage() {
         {/* ── Right: info sidebar ── */}
         <div className="space-y-4">
           {/* Main info */}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Información</p>
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+              <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Información</p>
             </div>
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 dark:divide-slate-700">
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Tipo</span>
-                <span className="text-sm font-medium text-gray-900">{INVOICE_TYPES[invoice.type]}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Tipo</span>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">{INVOICE_TYPES[invoice.type]}</span>
               </div>
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Estado</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Estado</span>
                 <Badge variant={STATUS_VARIANT[invoice.status] ?? 'default'} dot>
                   {INVOICE_STATUSES[invoice.status]}
                 </Badge>
               </div>
               <div className="flex justify-between items-center px-5 py-3">
-                <span className="text-sm text-gray-500">Fecha</span>
-                <span className="text-sm text-gray-900 tabular-nums">{formatDate(invoice.date)}</span>
+                <span className="text-sm text-gray-500 dark:text-slate-400">Fecha</span>
+                <span className="text-sm text-gray-900 dark:text-white tabular-nums">{formatDate(invoice.date)}</span>
               </div>
               {invoice.dueDate && (
                 <div className="flex justify-between items-center px-5 py-3">
-                  <span className="text-sm text-gray-500">Vencimiento</span>
-                  <span className="text-sm text-gray-900 tabular-nums">{formatDate(invoice.dueDate)}</span>
+                  <span className="text-sm text-gray-500 dark:text-slate-400">Vencimiento</span>
+                  <span className="text-sm text-gray-900 dark:text-white tabular-nums">{formatDate(invoice.dueDate)}</span>
                 </div>
               )}
               {invoice.paymentTerms && (
                 <div className="flex justify-between items-center px-5 py-3">
-                  <span className="text-sm text-gray-500">Cond. de venta</span>
-                  <span className="text-sm font-medium text-gray-900">{invoice.paymentTerms}</span>
+                  <span className="text-sm text-gray-500 dark:text-slate-400">Cond. de venta</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{invoice.paymentTerms}</span>
                 </div>
               )}
               {invoice.deliveryStatus && (
                 <div className="flex justify-between items-center px-5 py-3">
-                  <span className="text-sm text-gray-500">Entrega</span>
+                  <span className="text-sm text-gray-500 dark:text-slate-400">Entrega</span>
                   <Badge variant={DELIVERY_STATUS_VARIANT[invoice.deliveryStatus] ?? 'default'} dot>
                     {DELIVERY_STATUS_LABEL[invoice.deliveryStatus]}
                   </Badge>
@@ -470,33 +509,33 @@ export default function InvoiceDetailPage() {
 
           {/* ARCA / CAE */}
           {invoice.cae && (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ARCA / AFIP</p>
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+                <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">ARCA / AFIP</p>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
                 <div className="flex justify-between items-center px-5 py-3">
-                  <span className="text-sm text-gray-500">CAE</span>
-                  <span className="text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                  <span className="text-sm text-gray-500 dark:text-slate-400">CAE</span>
+                  <span className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md">
                     {invoice.cae}
                   </span>
                 </div>
                 {invoice.caeExpiry && (
                   <div className="flex justify-between items-center px-5 py-3">
-                    <span className="text-sm text-gray-500">Vto. CAE</span>
-                    <span className="text-sm text-gray-900 tabular-nums">{formatDate(invoice.caeExpiry)}</span>
+                    <span className="text-sm text-gray-500 dark:text-slate-400">Vto. CAE</span>
+                    <span className="text-sm text-gray-900 dark:text-white tabular-nums">{formatDate(invoice.caeExpiry)}</span>
                   </div>
                 )}
                 {invoice.afipPtVenta && (
                   <div className="flex justify-between items-center px-5 py-3">
-                    <span className="text-sm text-gray-500">Punto de venta</span>
-                    <span className="text-sm text-gray-900 tabular-nums">{invoice.afipPtVenta}</span>
+                    <span className="text-sm text-gray-500 dark:text-slate-400">Punto de venta</span>
+                    <span className="text-sm text-gray-900 dark:text-white tabular-nums">{invoice.afipPtVenta}</span>
                   </div>
                 )}
                 {invoice.afipCbtNum && (
                   <div className="flex justify-between items-center px-5 py-3">
-                    <span className="text-sm text-gray-500">N° AFIP</span>
-                    <span className="text-sm text-gray-900 tabular-nums">{invoice.afipCbtNum}</span>
+                    <span className="text-sm text-gray-500 dark:text-slate-400">N° AFIP</span>
+                    <span className="text-sm text-gray-900 dark:text-white tabular-nums">{invoice.afipCbtNum}</span>
                   </div>
                 )}
               </div>
@@ -504,20 +543,20 @@ export default function InvoiceDetailPage() {
           )}
 
           {/* Client */}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</p>
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+              <p className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Cliente</p>
             </div>
             <div className="px-5 py-4 space-y-1">
-              <p className="text-sm font-semibold text-gray-900">{invoice.customer?.name ?? '—'}</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{invoice.customer?.name ?? '—'}</p>
               {invoice.customer?.taxId && (
-                <p className="text-xs text-gray-500">CUIT: {invoice.customer.taxId}</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {invoice.customer.taxId}</p>
               )}
               {invoice.customer?.email && (
-                <p className="text-xs text-gray-500">{invoice.customer.email}</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400">{invoice.customer.email}</p>
               )}
               {invoice.customer?.address && (
-                <p className="text-xs text-gray-400">{invoice.customer.address}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500">{invoice.customer.address}</p>
               )}
             </div>
           </div>
@@ -573,6 +612,17 @@ export default function InvoiceDetailPage() {
         message="¿Estás seguro de que deseas cancelar este recibo? Se revertirá el movimiento de cuenta corriente y el estado de la factura se actualizará."
         confirmText="Cancelar recibo"
         isLoading={isCancellingRecibo}
+      />
+
+      <SendEmailModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        defaultEmail={(invoice as any)?.customer?.email ?? ''}
+        documentLabel={invoice ? `${INVOICE_TYPES[invoice.type]} ${invoice.number}` : ''}
+        onSend={async (to) => {
+          await invoicesService.sendEmail(invoice!.id, to);
+          toast.success('Correo enviado correctamente');
+        }}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import type { Currency, InvoiceType, DeliveryStatus } from './invoice.types';
 import type { Customer } from './customer.types';
 
-export type BudgetStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'CONVERTED' | 'EXPIRED' | 'PARTIALLY_PAID' | 'PAID';
+export type BudgetStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'CONVERTED' | 'EXPIRED';
 
 export interface BudgetItem {
   id: string;
@@ -33,15 +33,12 @@ export interface Budget {
   status: BudgetStatus;
   notes: string | null;
   paymentTerms: string | null;
-  saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
-  invoiceId: string | null;
   deliveryStatus?: DeliveryStatus;
   createdAt: string;
   updatedAt: string;
   items: BudgetItem[];
   customer?: Pick<Customer, 'id' | 'name' | 'taxId' | 'email' | 'address'> | null;
   user?: { id: string; name: string } | null;
-  invoice?: { id: string; number: string; status: string } | null;
 }
 
 export interface CreateBudgetItemDTO {
@@ -63,25 +60,9 @@ export interface CreateBudgetDTO {
   exchangeRate: number;
   notes?: string | null;
   paymentTerms?: string | null;
-  saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   items: CreateBudgetItemDTO[];
 }
 
 export interface UpdateBudgetStatusDTO {
   status: BudgetStatus;
-}
-
-export interface ConvertBudgetDTO {
-  invoiceType?: string;
-}
-
-export interface PayBudgetDTO {
-  amount: number;
-  paymentMethod: string;
-  cashRegisterId?: string | null;
-  reference?: string | null;
-  bank?: string | null;
-  checkDueDate?: string | null;
-  installments?: number | null;
-  notes?: string | null;
 }

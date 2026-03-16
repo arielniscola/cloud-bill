@@ -53,9 +53,26 @@ export interface DashboardStats {
   }>;
 }
 
+export interface ChartDataPoint {
+  label: string;
+  shortLabel: string;
+  year: number;
+  month: number;
+  ventas: number;
+  compras: number;
+  cobros: number;
+  ganancia: number;
+  margen: number;
+}
+
 export const dashboardService = {
   async getStats(): Promise<DashboardStats> {
     const response = await api.get<ApiResponse<DashboardStats>>('/dashboard/stats');
+    return response.data.data;
+  },
+
+  async getCharts(): Promise<ChartDataPoint[]> {
+    const response = await api.get<ApiResponse<ChartDataPoint[]>>('/dashboard/charts');
     return response.data.data;
   },
 };

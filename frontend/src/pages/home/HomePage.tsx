@@ -84,29 +84,29 @@ export default function HomePage() {
     <div className="space-y-8">
       {/* Welcome */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Bienvenido, {firstName}
         </h1>
-        <p className="text-sm text-gray-500 mt-1">¿Qué querés hacer hoy?</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">¿Qué querés hacer hoy?</p>
       </div>
 
       {/* Quick actions */}
       <section>
         <div className="flex items-center gap-2 mb-3">
-          <Plus className="w-4 h-4 text-gray-400" />
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Acciones rápidas</h2>
+          <Plus className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+          <h2 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Acciones rápidas</h2>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
           {quickActions.map((action) => (
             <Link
               key={action.to}
               to={action.to}
-              className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm transition-all duration-150 group text-center"
+              className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-200 dark:hover:border-slate-600 hover:shadow-sm transition-all duration-150 group text-center"
             >
               <div className={`p-2.5 rounded-xl ${action.bg} group-hover:scale-105 transition-transform duration-150`}>
                 <action.icon className={`w-5 h-5 ${action.color}`} />
               </div>
-              <span className="text-xs font-medium text-gray-600 group-hover:text-gray-900 leading-tight">
+              <span className="text-xs font-medium text-gray-600 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white leading-tight">
                 {action.label}
               </span>
             </Link>
@@ -118,7 +118,7 @@ export default function HomePage() {
       <div className="space-y-6">
         {moduleGroups.map((group) => (
           <section key={group.label}>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            <h2 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-3">
               {group.label}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -126,18 +126,18 @@ export default function HomePage() {
                 <Link
                   key={mod.href}
                   to={mod.href}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white hover:border-indigo-100 hover:shadow-sm transition-all duration-150 group"
+                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-100 dark:hover:border-indigo-500 hover:shadow-sm transition-all duration-150 group"
                 >
                   <div className={`p-3 rounded-xl ${mod.iconBg} flex-shrink-0`}>
                     <mod.icon className={`w-5 h-5 ${mod.iconColor}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">
                       {mod.name}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5 leading-tight">{mod.description}</p>
+                    <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 leading-tight">{mod.description}</p>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-gray-200 group-hover:text-indigo-400 flex-shrink-0 transition-colors duration-150" />
+                  <ArrowRight className="w-4 h-4 text-gray-200 dark:text-slate-600 group-hover:text-indigo-400 flex-shrink-0 transition-colors duration-150" />
                 </Link>
               ))}
             </div>

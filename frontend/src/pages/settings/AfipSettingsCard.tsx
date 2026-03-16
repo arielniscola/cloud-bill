@@ -95,8 +95,8 @@ export default function AfipSettingsCard() {
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Configuración ARCA (AFIP)</h3>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Configuración ARCA (AFIP)</h3>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
             Configuración para emisión de facturas electrónicas
           </p>
         </div>
@@ -168,11 +168,11 @@ export default function AfipSettingsCard() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
             Certificado (.crt) — pegue el contenido completo
           </label>
           <textarea
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             rows={5}
             placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
             value={form.cert}

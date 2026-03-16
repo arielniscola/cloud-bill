@@ -15,7 +15,9 @@ export interface Product {
   internalNotes: string | null;
   cost: number;
   price: number;
+  salePriceUSD: number | null;
   taxRate: number;
+  priceUpdatedAt: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -32,6 +34,7 @@ export interface CreateProductDTO {
   internalNotes?: string | null;
   cost: number;
   price: number;
+  salePriceUSD?: number | null;
   taxRate?: number;
   isActive?: boolean;
 }

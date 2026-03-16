@@ -43,6 +43,7 @@ const productSchema = z.object({
   internalNotes: z.string().optional().nullable(),
   cost: z.coerce.number().min(0, 'El costo debe ser ≥ 0'),
   price: z.coerce.number().min(0, 'El precio debe ser ≥ 0'),
+  salePriceUSD: z.coerce.number().min(0).optional().nullable(),
   taxRate: z.coerce.number().min(0).max(100).default(21),
   isActive: z.boolean(),
 });
@@ -52,7 +53,7 @@ type ProductFormData = z.output<typeof productSchema>;
 // ── Section header ───────────────────────────────────────────────
 function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
       {icon}
       {label}
     </div>
@@ -73,7 +74,7 @@ function IvaSelector({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">IVA</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">IVA</label>
       <div className="flex flex-wrap gap-2 mb-2">
         {COMMON_IVA.map((rate) => (
           <button
@@ -83,7 +84,7 @@ function IvaSelector({
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-150 ${
               value === rate && !isCustom
                 ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600'
+                : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-600 dark:hover:border-indigo-500 dark:hover:text-indigo-400'
             }`}
           >
             {rate}%
@@ -94,8 +95,8 @@ function IvaSelector({
           onClick={() => { if (!isCustom) onChange(0); }}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-150 ${
             isCustom
-              ? 'bg-amber-50 border-amber-300 text-amber-700'
-              : 'bg-white border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
+              ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400'
+              : 'bg-white dark:bg-slate-700 border-dashed border-gray-300 dark:border-slate-600 text-gray-400 dark:text-slate-500 hover:border-gray-400 dark:hover:border-slate-500'
           }`}
         >
           Otro
@@ -110,13 +111,13 @@ function IvaSelector({
             max="100"
             value={value}
             onChange={(e) => onChange(Number(e.target.value))}
-            className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+            className="w-full px-3 py-2 text-sm border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
             placeholder="Ej: 5"
           />
-          <span className="text-sm text-gray-500 flex-shrink-0">%</span>
+          <span className="text-sm text-gray-500 dark:text-slate-400 flex-shrink-0">%</span>
         </div>
       )}
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{error}</p>}
     </div>
   );
 }
@@ -128,31 +129,31 @@ function PricePreview({ cost, price, taxRate }: { cost: number; price: number; t
   const pvpFinal = price * (1 + taxRate / 100);
 
   const marginColor =
-    marginPct === null ? 'text-gray-400'
-    : marginPct < 0 ? 'text-red-600'
-    : marginPct < 20 ? 'text-amber-600'
-    : marginPct < 40 ? 'text-blue-600'
-    : 'text-emerald-600';
+    marginPct === null ? 'text-gray-400 dark:text-slate-500'
+    : marginPct < 0 ? 'text-red-600 dark:text-red-400'
+    : marginPct < 20 ? 'text-amber-600 dark:text-amber-400'
+    : marginPct < 40 ? 'text-blue-600 dark:text-blue-400'
+    : 'text-emerald-600 dark:text-emerald-400';
 
   if (!price && !cost) return null;
 
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 grid grid-cols-3 gap-4 text-center">
+    <div className="bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl p-4 grid grid-cols-3 gap-4 text-center">
       <div>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Margen $</p>
+        <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Margen $</p>
         <p className={`text-sm font-bold ${marginColor}`}>
           {margin !== null ? formatCurrency(margin) : '—'}
         </p>
       </div>
       <div>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Margen %</p>
+        <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Margen %</p>
         <p className={`text-sm font-bold ${marginColor}`}>
           {marginPct !== null ? `${marginPct.toFixed(1)}%` : '—'}
         </p>
       </div>
       <div>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">PVP + IVA</p>
-        <p className="text-sm font-bold text-gray-800">
+        <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">PVP + IVA</p>
+        <p className="text-sm font-bold text-gray-800 dark:text-slate-200">
           {price > 0 ? formatCurrency(pvpFinal) : '—'}
         </p>
       </div>
@@ -164,23 +165,23 @@ function PricePreview({ cost, price, taxRate }: { cost: number; price: number; t
 function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
-      checked ? 'bg-emerald-50/70 border-emerald-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+      checked ? 'bg-emerald-50/70 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
     }`}>
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white border border-gray-200 text-gray-400'
+        checked ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
       }`}>
         <Power className="w-4 h-4" />
       </div>
       <div className="flex-1">
-        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600'}`}>
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800 dark:text-emerald-300' : 'text-gray-600 dark:text-slate-300'}`}>
           Producto activo
         </p>
-        <p className="text-xs text-gray-400 mt-1 leading-none">
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
           Solo los productos activos aparecen en facturas, remitos y compras.
         </p>
       </div>
       <div
-        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200'}`}
+        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-slate-600'}`}
         style={{ width: 40, height: 22 }}
       >
         <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
@@ -199,17 +200,17 @@ function FormSkeleton() {
       <div className="space-y-8">
         {[1, 2, 3].map((s) => (
           <div key={s} className="space-y-4">
-            <div className="h-3 w-32 bg-gray-100 rounded" />
+            <div className="h-3 w-32 bg-gray-100 dark:bg-slate-700 rounded" />
             <div className="grid grid-cols-2 gap-4">
-              <div className="h-10 bg-gray-100 rounded-lg" />
-              <div className="h-10 bg-gray-100 rounded-lg" />
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
             </div>
           </div>
         ))}
-        <div className="h-28 bg-gray-100 rounded-xl" />
+        <div className="h-28 bg-gray-100 dark:bg-slate-700 rounded-xl" />
         <div className="flex gap-3">
-          <div className="h-9 w-36 bg-gray-100 rounded-lg" />
-          <div className="h-9 w-24 bg-gray-100 rounded-lg" />
+          <div className="h-9 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+          <div className="h-9 w-24 bg-gray-100 dark:bg-slate-700 rounded-lg" />
         </div>
       </div>
     </Card>
@@ -241,8 +242,9 @@ export default function ProductFormPage() {
   const brandId    = watch('brandId')    || '';
   const unit       = watch('unit')       || '';
   const taxRate    = watch('taxRate')    ?? 21;
-  const cost       = watch('cost')       ?? 0;
-  const price      = watch('price')      ?? 0;
+  const cost       = watch('cost')        ?? 0;
+  const price      = watch('price')       ?? 0;
+  const salePriceUSD = watch('salePriceUSD') ?? 0;
   const isActiveVal = watch('isActive');
 
   // Load dropdowns
@@ -271,6 +273,7 @@ export default function ProductFormPage() {
         setValue('internalNotes', p.internalNotes);
         setValue('cost',          p.cost);
         setValue('price',         p.price);
+        setValue('salePriceUSD',  p.salePriceUSD ?? null);
         setValue('taxRate',       p.taxRate);
         setValue('isActive',      p.isActive);
       } catch {
@@ -293,6 +296,7 @@ export default function ProductFormPage() {
         barcode:       data.barcode       || null,
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
+        salePriceUSD:  data.salePriceUSD  != null && data.salePriceUSD > 0 ? data.salePriceUSD : null,
       };
       if (isEditing) {
         await productsService.update(id, payload);
@@ -352,15 +356,15 @@ export default function ProductFormPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">SKU *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">SKU *</label>
                 <input
                   type="text"
                   placeholder="Ej: PROD-001"
                   {...register('sku')}
                   autoFocus={!isEditing}
-                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
                 />
-                {errors.sku && <p className="mt-1 text-xs text-red-500">{errors.sku.message}</p>}
+                {errors.sku && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.sku.message}</p>}
               </div>
               <Input
                 label="Nombre *"
@@ -372,15 +376,15 @@ export default function ProductFormPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
-                  <Barcode className="w-3.5 h-3.5 text-gray-400" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Barcode className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
                   Código de barras
                 </label>
                 <input
                   type="text"
                   placeholder="7790001234567"
                   {...register('barcode')}
-                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
                 />
               </div>
               <Select
@@ -438,6 +442,19 @@ export default function ProductFormPage() {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Precio en USD (opcional)"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                {...register('salePriceUSD')}
+                error={errors.salePriceUSD?.message}
+                hint="Se usa en presupuestos en dólares"
+              />
+            </div>
+
             <IvaSelector
               value={Number(taxRate)}
               onChange={(v) => setValue('taxRate', v)}
@@ -473,7 +490,7 @@ export default function ProductFormPage() {
           />
 
           {/* ── Actions ── */}
-          <div className="flex gap-3 pt-2 border-t border-gray-100">
+          <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
             <Button type="submit" isLoading={isLoading}>
               {isEditing ? 'Guardar cambios' : 'Crear producto'}
             </Button>

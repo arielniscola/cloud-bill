@@ -9,6 +9,7 @@ export interface Customer {
   name: string;
   taxId: string | null;
   taxCondition: TaxCondition;
+  saleCondition: string;
   address: string | null;
   city: string | null;
   province: string | null;
@@ -25,6 +26,7 @@ export interface CreateCustomerDTO {
   name: string;
   taxId?: string | null;
   taxCondition: TaxCondition;
+  saleCondition?: string;
   address?: string | null;
   city?: string | null;
   province?: string | null;

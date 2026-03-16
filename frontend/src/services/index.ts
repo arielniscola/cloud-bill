@@ -21,3 +21,7 @@ export { default as budgetsService } from './budgets.service';
 export { default as appSettingsService } from './app-settings.service';
 export { default as stockIntelligenceService } from './stock-intelligence.service';
 export { default as recibosService } from './recibos.service';
+export { default as ordenPedidosService } from './orden-pedidos.service';
+export { default as ordenComprasService } from './orden-compras.service';
+export { default as usersService } from './users.service';
+export type { UserDTO, CreateUserDTO, UpdateUserDTO } from './users.service';

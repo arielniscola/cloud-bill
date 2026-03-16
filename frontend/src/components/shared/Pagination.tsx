@@ -23,15 +23,15 @@ export default function Pagination({
   const end = Math.min(page * limit, total);
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-100">
+    <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-800 border-t border-gray-100 dark:border-slate-700">
       <div className="flex items-center gap-4">
-        <span className="text-xs text-gray-500">
-          Mostrando <span className="font-medium text-gray-700">{start}</span> a{' '}
-          <span className="font-medium text-gray-700">{end}</span> de{' '}
-          <span className="font-medium text-gray-700">{total}</span> resultados
+        <span className="text-xs text-gray-500 dark:text-slate-400">
+          Mostrando <span className="font-medium text-gray-700 dark:text-slate-300">{start}</span> a{' '}
+          <span className="font-medium text-gray-700 dark:text-slate-300">{end}</span> de{' '}
+          <span className="font-medium text-gray-700 dark:text-slate-300">{total}</span> resultados
         </span>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Por página:</span>
+          <span className="text-xs text-gray-500 dark:text-slate-400">Por página:</span>
           <Select
             options={PAGE_SIZE_OPTIONS.map((size) => ({
               value: size.toString(),
@@ -52,9 +52,9 @@ export default function Pagination({
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        <span className="text-xs text-gray-500">
-          Página <span className="font-medium text-gray-700">{page}</span> de{' '}
-          <span className="font-medium text-gray-700">{totalPages}</span>
+        <span className="text-xs text-gray-500 dark:text-slate-400">
+          Página <span className="font-medium text-gray-700 dark:text-slate-300">{page}</span> de{' '}
+          <span className="font-medium text-gray-700 dark:text-slate-300">{totalPages}</span>
         </span>
         <Button
           variant="outline"

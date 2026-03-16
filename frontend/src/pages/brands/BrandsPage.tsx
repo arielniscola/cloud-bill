@@ -51,7 +51,7 @@ function BrandCard({
   return (
     <div
       onClick={onEdit}
-      className="group relative bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-md rounded-xl p-4 cursor-pointer transition-all duration-150 select-none flex items-center gap-3"
+      className="group relative bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md rounded-xl p-4 cursor-pointer transition-all duration-150 select-none flex items-center gap-3"
     >
       {/* Avatar */}
       <div
@@ -62,10 +62,10 @@ function BrandCard({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 group-hover:text-indigo-700 truncate leading-tight transition-colors duration-150">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400 truncate leading-tight transition-colors duration-150">
           {brand.name}
         </p>
-        <p className={`text-[11px] mt-0.5 leading-none font-medium ${brand.isActive ? 'text-emerald-600' : 'text-gray-400'}`}>
+        <p className={`text-[11px] mt-0.5 leading-none font-medium ${brand.isActive ? 'text-emerald-600' : 'text-gray-400 dark:text-slate-500'}`}>
           {brand.isActive ? 'Activa' : 'Inactiva'}
         </p>
       </div>
@@ -75,14 +75,14 @@ function BrandCard({
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
           title="Editar"
-          className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-[background-color,color] duration-150 active:scale-[0.92]"
+          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.92]"
         >
           <Edit className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           title="Eliminar"
-          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-[background-color,color] duration-150 active:scale-[0.92]"
+          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 active:scale-[0.92]"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -94,11 +94,11 @@ function BrandCard({
 // ── Skeleton ─────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 animate-pulse">
-      <div className="w-10 h-10 bg-gray-100 rounded-xl flex-shrink-0" />
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex items-center gap-3 animate-pulse">
+      <div className="w-10 h-10 bg-gray-100 dark:bg-slate-700 rounded-xl flex-shrink-0" />
       <div className="flex-1">
-        <div className="h-3.5 w-24 bg-gray-100 rounded mb-2" />
-        <div className="h-2.5 w-12 bg-gray-100 rounded" />
+        <div className="h-3.5 w-24 bg-gray-100 dark:bg-slate-700 rounded mb-2" />
+        <div className="h-2.5 w-12 bg-gray-100 dark:bg-slate-700 rounded" />
       </div>
     </div>
   );
@@ -117,25 +117,25 @@ function ModalToggle({
       className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
         checked
           ? 'bg-emerald-50/70 border-emerald-200'
-          : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+          : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
       }`}
     >
       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white border border-gray-200 text-gray-400'
+        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
       }`}>
         <Power className="w-3.5 h-3.5" />
       </div>
       <div className="flex-1">
-        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600'}`}>
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600 dark:text-slate-300'}`}>
           Marca activa
         </p>
-        <p className="text-xs text-gray-400 mt-1 leading-none">
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
           Solo las marcas activas aparecen al cargar productos.
         </p>
       </div>
       {/* Pill */}
       <div
-        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200'}`}
+        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-slate-600'}`}
         style={{ width: 36, height: 20 }}
       >
         <span
@@ -294,21 +294,21 @@ export default function BrandsPage() {
       {!isFirstLoad && brands.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                   activeTab === tab.id
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
                 }`}
               >
                 {tab.label}
                 {tab.count > 0 && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                    activeTab === tab.id ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500'
+                    activeTab === tab.id ? 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300' : 'bg-gray-200 dark:bg-slate-600 text-gray-500 dark:text-slate-400'
                   }`}>
                     {tab.count}
                   </span>
@@ -319,13 +319,13 @@ export default function BrandsPage() {
 
           {/* Search */}
           <div className="relative w-52">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-slate-500 pointer-events-none" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar marcas..."
-              className="w-full pl-8 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+              className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg placeholder-gray-400 dark:placeholder-slate-500 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
             />
           </div>
         </div>
@@ -338,13 +338,13 @@ export default function BrandsPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-20">
-          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-            <Tag className="w-7 h-7 text-gray-300" />
+          <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+            <Tag className="w-7 h-7 text-gray-300 dark:text-slate-500" />
           </div>
-          <p className="text-sm font-semibold text-gray-700 mb-1">
+          <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
             {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin marcas en esta categoría' : 'Sin marcas'}
           </p>
-          <p className="text-sm text-gray-400 max-w-xs leading-relaxed mb-5">
+          <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
             {search
               ? `No se encontraron marcas para "${search}".`
               : activeTab !== 'all'
@@ -372,7 +372,7 @@ export default function BrandsPage() {
           {activeTab === 'all' && !search && (
             <button
               onClick={() => openModal()}
-              className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl py-4 px-4 text-gray-400 hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all duration-150 active:scale-[0.98]"
+              className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl py-4 px-4 text-gray-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all duration-150 active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
               <span className="text-xs font-medium">Nueva marca</span>

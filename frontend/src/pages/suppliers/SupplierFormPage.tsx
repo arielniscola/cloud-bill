@@ -82,7 +82,7 @@ function TaxConditionSelector({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
         Condición IVA *
       </label>
       <div className="grid grid-cols-2 gap-2">
@@ -94,19 +94,19 @@ function TaxConditionSelector({
               type="button"
               onClick={() => onChange(opt.value)}
               className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all duration-150 ${
-                isSelected ? opt.activeColor : opt.hoverColor
+                isSelected ? opt.activeColor : opt.hoverColor + ' dark:bg-slate-700 dark:border-slate-600'
               }`}
             >
               <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-                isSelected ? 'border-current bg-current' : 'border-gray-300'
+                isSelected ? 'border-current bg-current' : 'border-gray-300 dark:border-slate-500'
               }`}>
                 {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
               </div>
               <div className="min-w-0">
-                <p className={`text-xs font-semibold leading-tight ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
+                <p className={`text-xs font-semibold leading-tight ${isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-slate-300'}`}>
                   {opt.label}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">{opt.desc}</p>
+                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5 leading-snug">{opt.desc}</p>
               </div>
             </button>
           );
@@ -120,7 +120,7 @@ function TaxConditionSelector({
 // ── Section header ───────────────────────────────────────────────
 function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider pt-1">
+    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider pt-1">
       {icon}
       {label}
     </div>
@@ -131,18 +131,18 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
 function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
-      checked ? 'bg-emerald-50/70 border-emerald-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+      checked ? 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
     }`}>
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white border border-gray-200 text-gray-400'
+        checked ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : 'bg-white dark:bg-slate-600 border border-gray-200 dark:border-slate-500 text-gray-400 dark:text-slate-400'
       }`}>
         <Power className="w-4 h-4" />
       </div>
       <div className="flex-1">
-        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600'}`}>
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800 dark:text-emerald-400' : 'text-gray-600 dark:text-slate-400'}`}>
           Proveedor activo
         </p>
-        <p className="text-xs text-gray-400 mt-1 leading-none">
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
           Solo los proveedores activos aparecen al registrar compras.
         </p>
       </div>
@@ -166,17 +166,17 @@ function FormSkeleton() {
       <div className="space-y-6">
         {[1, 2, 3].map((s) => (
           <div key={s} className="space-y-3">
-            <div className="h-3 w-28 bg-gray-100 rounded" />
+            <div className="h-3 w-28 bg-gray-100 dark:bg-slate-700 rounded" />
             <div className="grid grid-cols-2 gap-4">
-              <div className="h-10 bg-gray-100 rounded-lg" />
-              <div className="h-10 bg-gray-100 rounded-lg" />
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
             </div>
           </div>
         ))}
-        <div className="h-20 bg-gray-100 rounded-xl" />
+        <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-xl" />
         <div className="flex gap-3 pt-2">
-          <div className="h-9 w-36 bg-gray-100 rounded-lg" />
-          <div className="h-9 w-24 bg-gray-100 rounded-lg" />
+          <div className="h-9 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+          <div className="h-9 w-24 bg-gray-100 dark:bg-slate-700 rounded-lg" />
         </div>
       </div>
     </Card>
@@ -185,7 +185,7 @@ function FormSkeleton() {
 
 // ── Shared input style ───────────────────────────────────────────
 const inputCls =
-  'w-full px-3 py-2 text-sm border border-gray-300 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150';
+  'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150';
 
 // ── Main component ───────────────────────────────────────────────
 export default function SupplierFormPage() {
@@ -286,7 +286,7 @@ export default function SupplierFormPage() {
             <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} label="Identificación" />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
                 Nombre / Razón Social *
               </label>
               <input
@@ -301,8 +301,8 @@ export default function SupplierFormPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
-                  <Hash className="w-3.5 h-3.5 text-gray-400" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Hash className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
                   CUIT
                 </label>
                 <input
@@ -328,8 +328,8 @@ export default function SupplierFormPage() {
             <SectionHeader icon={<Phone className="w-3.5 h-3.5" />} label="Contacto" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-gray-400" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
                   Email
                 </label>
                 <input
@@ -341,8 +341,8 @@ export default function SupplierFormPage() {
                 {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-gray-400" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
                   Teléfono
                 </label>
                 <input
@@ -360,7 +360,7 @@ export default function SupplierFormPage() {
           <div className="space-y-4">
             <SectionHeader icon={<MapPin className="w-3.5 h-3.5" />} label="Ubicación" />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Dirección</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Dirección</label>
               <input
                 type="text"
                 placeholder="Av. San Martín 2500"
@@ -369,8 +369,8 @@ export default function SupplierFormPage() {
               />
             </div>
             <div className="max-w-xs">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-gray-400" />
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
                 Ciudad
               </label>
               <input
@@ -400,7 +400,7 @@ export default function SupplierFormPage() {
           />
 
           {/* ── Actions ── */}
-          <div className="flex gap-3 pt-2 border-t border-gray-100">
+          <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
             <Button type="submit" isLoading={isLoading}>
               {isEditing ? 'Guardar cambios' : 'Crear proveedor'}
             </Button>

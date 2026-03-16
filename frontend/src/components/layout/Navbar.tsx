@@ -142,7 +142,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+    <nav className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 shadow-sm">
       <div className="max-w-full mx-auto px-4">
         <div className="flex items-center justify-between h-14">
 
@@ -152,7 +152,7 @@ export default function Navbar() {
               <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shadow-sm">
                 <span className="text-white text-[11px] font-bold leading-none">CB</span>
               </div>
-              <span className="text-sm font-bold text-gray-900 tracking-tight">CloudBill</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">CloudBill</span>
             </div>
 
             {/* Navigation */}
@@ -167,8 +167,8 @@ export default function Navbar() {
                       clsx(
                         'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
                         isActive
-                          ? 'bg-indigo-50 text-indigo-700'
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                          ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                          : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
                       )
                     }
                   >
@@ -183,8 +183,8 @@ export default function Navbar() {
                           className={clsx(
                             'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
                             open
-                              ? 'bg-gray-100 text-gray-900'
-                              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                              ? 'bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-200'
+                              : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
                           )}
                         >
                           <entry.icon className="w-4 h-4" />
@@ -206,12 +206,12 @@ export default function Navbar() {
                           leaveFrom="transform opacity-100 scale-100"
                           leaveTo="transform opacity-0 scale-95"
                         >
-                          <Menu.Items className="absolute left-0 mt-1 w-52 origin-top-left rounded-xl bg-white shadow-lg ring-1 ring-black/5 focus:outline-none py-1.5 z-50">
+                          <Menu.Items className="absolute left-0 mt-1 w-52 origin-top-left rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-slate-700 focus:outline-none py-1.5 z-50">
                             {entry.sections.map((section, si) => (
                               <div key={si}>
-                                {si > 0 && <div className="my-1.5 border-t border-gray-100" />}
+                                {si > 0 && <div className="my-1.5 border-t border-gray-100 dark:border-slate-700" />}
                                 {section.heading && (
-                                  <p className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                                  <p className="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
                                     {section.heading}
                                   </p>
                                 )}
@@ -225,14 +225,14 @@ export default function Navbar() {
                                           clsx(
                                             'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
                                             isActive
-                                              ? 'bg-indigo-50 text-indigo-700 font-medium'
+                                              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
                                               : active
-                                              ? 'bg-gray-50 text-gray-900'
-                                              : 'text-gray-700'
+                                              ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200'
+                                              : 'text-gray-700 dark:text-slate-300'
                                           )
                                         }
                                       >
-                                        <item.icon className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                                        <item.icon className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-slate-500" />
                                         {item.name}
                                       </NavLink>
                                     )}
@@ -260,16 +260,16 @@ export default function Navbar() {
                   <Menu.Button
                     className={clsx(
                       'flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors duration-150',
-                      open ? 'bg-gray-100' : 'hover:bg-gray-100'
+                      open ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-100 dark:hover:bg-slate-800'
                     )}
                   >
-                    <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                      <User className="w-4 h-4 text-indigo-600" />
+                    <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     </div>
-                    <span className="hidden md:block text-sm font-medium text-gray-700 max-w-[120px] truncate">
+                    <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-slate-300 max-w-[120px] truncate">
                       {user?.name}
                     </span>
-                    <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 transition-transform duration-150', open && 'rotate-180')} />
+                    <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 dark:text-slate-500 transition-transform duration-150', open && 'rotate-180')} />
                   </Menu.Button>
 
                   <Transition
@@ -281,10 +281,10 @@ export default function Navbar() {
                     leaveFrom="transform opacity-100 scale-100"
                     leaveTo="transform opacity-0 scale-95"
                   >
-                    <Menu.Items className="absolute right-0 mt-1 w-56 origin-top-right rounded-xl bg-white shadow-lg ring-1 ring-black/5 focus:outline-none py-1.5 z-50">
-                      <div className="px-3 py-2 border-b border-gray-100 mb-1">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                    <Menu.Items className="absolute right-0 mt-1 w-56 origin-top-right rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-slate-700 focus:outline-none py-1.5 z-50">
+                      <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 mb-1">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user?.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{user?.email}</p>
                       </div>
 
                       <Menu.Item>
@@ -293,10 +293,10 @@ export default function Navbar() {
                             to="/settings"
                             className={clsx(
                               'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
-                              active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                              active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
                             )}
                           >
-                            <Settings className="w-4 h-4 text-gray-400" />
+                            <Settings className="w-4 h-4 text-gray-400 dark:text-slate-500" />
                             Configuración
                           </NavLink>
                         )}
@@ -307,16 +307,16 @@ export default function Navbar() {
                             to="/activity"
                             className={clsx(
                               'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
-                              active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'
+                              active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
                             )}
                           >
-                            <History className="w-4 h-4 text-gray-400" />
+                            <History className="w-4 h-4 text-gray-400 dark:text-slate-500" />
                             Historial
                           </NavLink>
                         )}
                       </Menu.Item>
 
-                      <div className="my-1 border-t border-gray-100" />
+                      <div className="my-1 border-t border-gray-100 dark:border-slate-700" />
 
                       <Menu.Item>
                         {({ active }) => (
@@ -324,7 +324,7 @@ export default function Navbar() {
                             onClick={handleLogout}
                             className={clsx(
                               'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg w-full transition-colors duration-100',
-                              active ? 'bg-red-50 text-red-700' : 'text-red-600'
+                              active ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'text-red-600 dark:text-red-400'
                             )}
                           >
                             <LogOut className="w-4 h-4" />

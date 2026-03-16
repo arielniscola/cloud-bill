@@ -114,19 +114,19 @@ export default function CustomerSearchSelect({
         <div
           ref={dropdownRef}
           style={dropdownStyle}
-          className="bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden"
+          className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden"
         >
           {/* Search input inside dropdown */}
-          <div className="px-3 py-2 border-b border-gray-100">
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
-              <Search className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+              <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar por nombre o CUIT…"
-                className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 min-w-0"
+                className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
               />
               {query && (
                 <button
@@ -147,8 +147,8 @@ export default function CustomerSearchSelect({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleClear}
-              className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm border-b border-gray-100 transition-colors ${
-                !value ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-400 hover:bg-gray-50'
+              className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-slate-700 transition-colors ${
+                !value ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-700'
               }`}
             >
               <X className="w-3.5 h-3.5 flex-shrink-0" />
@@ -159,8 +159,8 @@ export default function CustomerSearchSelect({
           <div className="max-h-56 overflow-y-auto [scrollbar-width:thin]">
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center">
-                <User className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">
+                <User className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
+                <p className="text-sm text-gray-400 dark:text-slate-500">
                   {query ? `Sin resultados para "${query}"` : 'Sin clientes'}
                 </p>
               </div>
@@ -174,15 +174,15 @@ export default function CustomerSearchSelect({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelect(c)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 ${
-                      isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'
+                      isSelected ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
                     }`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate leading-tight ${isSelected ? 'text-indigo-700' : 'text-gray-800'}`}>
+                      <p className={`text-sm font-medium truncate leading-tight ${isSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-800 dark:text-slate-200'}`}>
                         {c.name}
                       </p>
                       {c.taxId && (
-                        <p className="text-xs text-gray-400 truncate leading-none mt-0.5">
+                        <p className="text-xs text-gray-400 dark:text-slate-500 truncate leading-none mt-0.5">
                           CUIT: {c.taxId}
                         </p>
                       )}
@@ -197,8 +197,8 @@ export default function CustomerSearchSelect({
           </div>
 
           {filtered.length === 50 && (
-            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
-              <p className="text-[11px] text-gray-400 text-center">
+            <div className="px-3 py-2 border-t border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 text-center">
                 Mostrando 50 resultados · refiná la búsqueda para ver más
               </p>
             </div>
@@ -211,7 +211,7 @@ export default function CustomerSearchSelect({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">{label}</label>
       )}
       <div ref={containerRef} className="relative w-full">
         {/* Trigger */}
@@ -221,21 +221,21 @@ export default function CustomerSearchSelect({
           disabled={disabled}
           className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg border text-left transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
             error
-              ? 'border-red-300 bg-red-50/30 focus:border-red-400'
+              ? 'border-red-300 dark:border-red-700 bg-red-50/30 dark:bg-red-900/10 focus:border-red-400'
               : isOpen
               ? 'border-indigo-400 ring-2 ring-indigo-500/20'
-              : 'border-gray-200 bg-white focus:border-indigo-400 hover:border-gray-300'
-          } ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'}`}
+              : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:border-indigo-400 hover:border-gray-300 dark:hover:border-slate-500'
+          } ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-50 dark:bg-slate-800' : 'cursor-pointer'}`}
         >
           {selected ? (
             <>
               <User className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <span className="block truncate text-gray-900 font-medium text-sm leading-tight">
+                <span className="block truncate text-gray-900 dark:text-slate-200 font-medium text-sm leading-tight">
                   {selected.name}
                 </span>
                 {selected.taxId && (
-                  <span className="block text-xs text-gray-400 truncate leading-none">
+                  <span className="block text-xs text-gray-400 dark:text-slate-500 truncate leading-none">
                     {selected.taxId}
                   </span>
                 )}
@@ -243,7 +243,7 @@ export default function CustomerSearchSelect({
               {clearLabel && (
                 <span
                   onClick={handleClear}
-                  className="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+                  className="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </span>
@@ -251,9 +251,9 @@ export default function CustomerSearchSelect({
             </>
           ) : (
             <>
-              <User className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
-              <span className="flex-1 text-gray-400">{clearLabel ?? placeholder}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-gray-300 flex-shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
+              <User className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0" />
+              <span className="flex-1 text-gray-400 dark:text-slate-500">{clearLabel ?? placeholder}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-300 dark:text-slate-600 flex-shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
             </>
           )}
         </button>

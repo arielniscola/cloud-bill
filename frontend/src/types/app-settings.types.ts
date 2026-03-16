@@ -1,18 +1,35 @@
 export interface AppSettings {
   id: string;
-  defaultBudgetCashRegisterId:  string | null;
   defaultInvoiceCashRegisterId: string | null;
   deadStockDays:                number;
   safetyStockDays:              number;
-  defaultBudgetCashRegister?:   { id: string; name: string } | null;
+  stalePriceWarnDays1:          number;
+  stalePriceWarnDays2:          number;
+  companyTaxCondition:          string;
+  printFormat:                  string;
+  smtpHost:                     string | null;
+  smtpPort:                     number;
+  smtpUser:                     string | null;
+  smtpPass:                     string | null;
+  smtpFrom:                     string | null;
+  smtpSecure:                   boolean;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface UpdateAppSettingsDTO {
-  defaultBudgetCashRegisterId?:  string | null;
   defaultInvoiceCashRegisterId?: string | null;
   deadStockDays?:                number;
   safetyStockDays?:              number;
+  stalePriceWarnDays1?:          number;
+  stalePriceWarnDays2?:          number;
+  companyTaxCondition?:          string;
+  printFormat?:                  string;
+  smtpHost?:                     string | null;
+  smtpPort?:                     number;
+  smtpUser?:                     string | null;
+  smtpPass?:                     string | null;
+  smtpFrom?:                     string | null;
+  smtpSecure?:                   boolean;
 }

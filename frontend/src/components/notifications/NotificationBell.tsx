@@ -58,7 +58,7 @@ export default function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
-        className="relative p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        className="relative p-1.5 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-white transition-colors"
         aria-label="Notificaciones"
       >
         <Bell className="w-4 h-4" />
@@ -72,12 +72,12 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          className="absolute left-0 top-full mt-2 w-80 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden"
+          className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden"
           style={{ maxHeight: '420px' }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-            <span className="text-sm font-semibold text-white">Notificaciones</span>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">Notificaciones</span>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
@@ -96,7 +96,7 @@ export default function NotificationBell() {
                 <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : notifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-8 text-gray-400 dark:text-slate-500">
                 <Bell className="w-8 h-8 mb-2 opacity-40" />
                 <p className="text-sm">Sin notificaciones</p>
               </div>
@@ -110,16 +110,16 @@ export default function NotificationBell() {
                       <button
                         onClick={() => handleNotificationClick(n.id, n.href)}
                         className={clsx(
-                          'w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-700/60 transition-colors border-b border-slate-700/40 last:border-0',
-                          !read && 'bg-slate-700/20'
+                          'w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-slate-700/60 transition-colors border-b border-gray-100 dark:border-slate-700/40 last:border-0',
+                          !read && 'bg-gray-50/60 dark:bg-slate-700/20'
                         )}
                       >
                         <Icon className={clsx('w-4 h-4 mt-0.5 flex-shrink-0', typeColor[n.type])} />
                         <div className="min-w-0 flex-1">
-                          <p className={clsx('text-xs font-semibold', read ? 'text-slate-400' : 'text-white')}>
+                          <p className={clsx('text-xs font-semibold', read ? 'text-gray-400 dark:text-slate-400' : 'text-gray-800 dark:text-white')}>
                             {n.title}
                           </p>
-                          <p className="text-xs text-slate-400 truncate mt-0.5">{n.message}</p>
+                          <p className="text-xs text-gray-400 dark:text-slate-400 truncate mt-0.5">{n.message}</p>
                         </div>
                         {!read && (
                           <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0 mt-1.5" />

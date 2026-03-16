@@ -1,5 +1,5 @@
 import api from './api';
-import type { Supplier, CreateSupplierDTO, SupplierFilters, ApiResponse, PaginatedResponse } from '../types';
+import type { Supplier, SupplierProductStat, CreateSupplierDTO, SupplierFilters, ApiResponse, PaginatedResponse } from '../types';
 
 export const suppliersService = {
   async getAll(filters?: SupplierFilters): Promise<PaginatedResponse<Supplier>> {
@@ -24,6 +24,11 @@ export const suppliersService = {
 
   async delete(id: string): Promise<void> {
     await api.delete(`/suppliers/${id}`);
+  },
+
+  async getProducts(id: string): Promise<SupplierProductStat[]> {
+    const response = await api.get<ApiResponse<SupplierProductStat[]>>(`/suppliers/${id}/products`);
+    return response.data.data;
   },
 };
 

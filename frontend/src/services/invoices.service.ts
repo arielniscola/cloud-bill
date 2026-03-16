@@ -54,6 +54,10 @@ export const invoicesService = {
     );
     return response.data.data;
   },
+
+  async sendEmail(id: string, to: string): Promise<void> {
+    await api.post(`/invoices/${id}/send-email`, { to });
+  },
 };
 
 export default invoicesService;

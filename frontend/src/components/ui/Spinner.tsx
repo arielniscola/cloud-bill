@@ -46,7 +46,7 @@ export function LoadingScreen() {
 
 export function LoadingOverlay() {
   return (
-    <div className="absolute inset-0 bg-white/75 flex items-center justify-center z-10">
+    <div className="absolute inset-0 bg-white/75 dark:bg-slate-800/75 flex items-center justify-center z-10">
       <Spinner size="lg" />
     </div>
   );

@@ -9,18 +9,18 @@ export interface TableProps {
 export function Table({ children, className }: TableProps) {
   return (
     <div className={clsx('overflow-x-auto', className)}>
-      <table className="min-w-full divide-y divide-gray-100">{children}</table>
+      <table className="min-w-full divide-y divide-gray-100 dark:divide-slate-700">{children}</table>
     </div>
   );
 }
 
 export function TableHead({ children }: { children: ReactNode }) {
-  return <thead className="bg-gray-50/80">{children}</thead>;
+  return <thead className="bg-gray-50/80 dark:bg-slate-700/50">{children}</thead>;
 }
 
 export function TableBody({ children }: { children: ReactNode }) {
   return (
-    <tbody className="bg-white divide-y divide-gray-100">{children}</tbody>
+    <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">{children}</tbody>
   );
 }
 
@@ -37,7 +37,7 @@ export function TableRow({
     <tr
       className={clsx(
         'transition-colors',
-        onClick && 'cursor-pointer hover:bg-gray-50/80',
+        onClick && 'cursor-pointer hover:bg-gray-50/80 dark:hover:bg-slate-700/50',
         className
       )}
       onClick={onClick}
@@ -58,7 +58,7 @@ export function TableHeader({
     <th
       scope="col"
       className={clsx(
-        'px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider',
+        'px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider',
         className
       )}
     >
@@ -76,7 +76,7 @@ export function TableCell({
 }) {
   return (
     <td
-      className={clsx('px-4 py-3.5 text-sm text-gray-700 whitespace-nowrap', className)}
+      className={clsx('px-4 py-3.5 text-sm text-gray-700 dark:text-slate-300 whitespace-nowrap', className)}
     >
       {children}
     </td>
@@ -88,7 +88,7 @@ export function TableEmpty({ message = 'No hay datos para mostrar' }: { message?
     <tr>
       <td
         colSpan={100}
-        className="px-4 py-10 text-center text-sm text-gray-400"
+        className="px-4 py-10 text-center text-sm text-gray-400 dark:text-slate-500"
       >
         {message}
       </td>

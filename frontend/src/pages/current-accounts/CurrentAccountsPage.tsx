@@ -84,13 +84,13 @@ export default function CurrentAccountsPage() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{c.name}</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight truncate">{c.name}</p>
                 <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${tax.className}`}>
                   {tax.label}
                 </span>
               </div>
               {c.email && (
-                <p className="text-xs text-gray-400 truncate mt-0.5">{c.email}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{c.email}</p>
               )}
             </div>
           </div>
@@ -101,18 +101,18 @@ export default function CurrentAccountsPage() {
       key: 'taxId',
       header: 'CUIT/CUIL',
       render: (c) => c.taxId
-        ? <span className="font-mono text-xs text-gray-600 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded">{c.taxId}</span>
-        : <span className="text-gray-300 text-sm">—</span>,
+        ? <span className="font-mono text-xs text-gray-600 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 px-2 py-0.5 rounded">{c.taxId}</span>
+        : <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>,
     },
     {
       key: 'balanceARS',
       header: 'Saldo ARS',
       render: (c) => {
         const acc = getAccount(c.id, 'ARS');
-        if (!acc || acc.balance === 0) return <span className="text-gray-300 text-sm">—</span>;
+        if (!acc || acc.balance === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
         const owes = acc.balance > 0;
         return (
-          <span className={`text-sm font-semibold tabular-nums ${owes ? 'text-red-600' : 'text-emerald-600'}`}>
+          <span className={`text-sm font-semibold tabular-nums ${owes ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {owes ? '' : '+'}{formatCurrency(Math.abs(acc.balance), 'ARS')}
           </span>
         );
@@ -123,10 +123,10 @@ export default function CurrentAccountsPage() {
       header: 'Saldo USD',
       render: (c) => {
         const acc = getAccount(c.id, 'USD');
-        if (!acc || acc.balance === 0) return <span className="text-gray-300 text-sm">—</span>;
+        if (!acc || acc.balance === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
         const owes = acc.balance > 0;
         return (
-          <span className={`text-sm font-semibold tabular-nums ${owes ? 'text-red-600' : 'text-emerald-600'}`}>
+          <span className={`text-sm font-semibold tabular-nums ${owes ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {owes ? '' : '+'}{formatCurrency(Math.abs(acc.balance), 'USD')}
           </span>
         );
@@ -136,8 +136,8 @@ export default function CurrentAccountsPage() {
       key: 'isActive',
       header: 'Estado',
       render: (c) => (
-        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${c.isActive ? 'text-emerald-700' : 'text-gray-400'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${c.isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.isActive ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'}`} />
           {c.isActive ? 'Activo' : 'Inactivo'}
         </span>
       ),
@@ -146,7 +146,7 @@ export default function CurrentAccountsPage() {
       key: 'actions',
       header: '',
       render: () => (
-        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-400 transition-colors duration-150" />
+        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-slate-600 group-hover:text-indigo-400 transition-colors duration-150" />
       ),
     },
   ];
@@ -159,7 +159,7 @@ export default function CurrentAccountsPage() {
       />
 
       <Card padding="none">
-        <div className="flex items-center px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1); }}

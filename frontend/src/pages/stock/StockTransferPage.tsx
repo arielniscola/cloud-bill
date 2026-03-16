@@ -26,8 +26,8 @@ type TransferFormData = z.output<typeof transferSchema>;
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">{title}</h3>
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+      <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-4">{title}</h3>
       {children}
     </div>
   );
@@ -132,12 +132,12 @@ export default function StockTransferPage() {
                 {productId && fromWarehouseId && (
                   <div>
                     {isFetchingStock ? (
-                      <div className="h-7 w-36 bg-gray-100 rounded-lg animate-pulse" />
+                      <div className="h-7 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
                     ) : stockLevel !== null ? (
                       <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium ${
-                        stockLevel === 'empty' ? 'bg-red-50 text-red-600' :
-                        stockLevel === 'low'   ? 'bg-amber-50 text-amber-700' :
-                                                 'bg-emerald-50 text-emerald-700'
+                        stockLevel === 'empty' ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                        stockLevel === 'low'   ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
+                                                 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
                       }`}>
                         {stockLevel === 'empty'
                           ? <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -153,8 +153,8 @@ export default function StockTransferPage() {
 
               {/* Arrow — oculta en mobile, visible en sm+ */}
               <div className="hidden sm:flex items-center justify-center pt-7">
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                  <ArrowRight className="w-4 h-4 text-gray-400" />
+                <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center">
+                  <ArrowRight className="w-4 h-4 text-gray-400 dark:text-slate-500" />
                 </div>
               </div>
 
@@ -170,18 +170,18 @@ export default function StockTransferPage() {
 
             {/* Route summary pill */}
             {fromWarehouse && toWarehouse && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 px-3 py-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-sm min-w-0">
+              <div className="mt-4 flex flex-wrap items-center gap-2 px-3 py-2.5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-xl text-sm min-w-0">
                 <Building2 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-                <span className="font-semibold text-indigo-800 truncate max-w-[120px] sm:max-w-none">{fromWarehouse.name}</span>
+                <span className="font-semibold text-indigo-800 dark:text-indigo-300 truncate max-w-[120px] sm:max-w-none">{fromWarehouse.name}</span>
                 <ArrowRight className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-                <span className="font-semibold text-indigo-800 truncate max-w-[120px] sm:max-w-none">{toWarehouse.name}</span>
+                <span className="font-semibold text-indigo-800 dark:text-indigo-300 truncate max-w-[120px] sm:max-w-none">{toWarehouse.name}</span>
                 {selectedProduct && (
                   <>
-                    <span className="text-indigo-300 mx-0.5">·</span>
-                    <span className="font-mono text-[10px] font-bold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0">
+                    <span className="text-indigo-300 dark:text-indigo-600 mx-0.5">·</span>
+                    <span className="font-mono text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded flex-shrink-0">
                       {selectedProduct.sku}
                     </span>
-                    <span className="text-indigo-700 truncate">{selectedProduct.name}</span>
+                    <span className="text-indigo-700 dark:text-indigo-300 truncate">{selectedProduct.name}</span>
                   </>
                 )}
               </div>
@@ -202,7 +202,7 @@ export default function StockTransferPage() {
                   error={errors.quantity?.message}
                 />
                 {stockInsufficient && (
-                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-500">
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                     Stock insuficiente · disponibles: {formatNumber(currentStock!, 0)} unidades
                   </p>

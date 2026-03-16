@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Indigo — más profesional que el azul puro */
   --color-primary-50: #eef2ff;
@@ -17,7 +19,7 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-gray-900 antialiased;
+    @apply bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-white antialiased;
   }
 
   /* Scrollbar sutil */
@@ -29,10 +31,10 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded-full;
+    @apply bg-gray-300 dark:bg-slate-600 rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400;
+    @apply bg-gray-400 dark:bg-slate-500;
   }
 }
 
@@ -46,7 +48,7 @@
   }
 
   .btn-secondary {
-    @apply bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-400 border border-gray-200 shadow-sm;
+    @apply bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-600 focus:ring-gray-400 border border-gray-200 dark:border-slate-600 shadow-sm;
   }
 
   .btn-danger {
@@ -54,7 +56,7 @@
   }
 
   .btn-outline {
-    @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-primary-500 shadow-sm;
+    @apply border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-600 focus:ring-primary-500 shadow-sm;
   }
 
   .input {
@@ -70,6 +72,6 @@
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200/80;
+    @apply bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200/80 dark:border-slate-700;
   }
 }

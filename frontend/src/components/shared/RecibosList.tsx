@@ -28,9 +28,9 @@ export function RecibosList({
   const remaining = Math.max(0, total - paid);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Pagos / Recibos</h3>
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Pagos / Recibos</h3>
         {canPay && remaining > 0.001 && onPay && (
           <Button size="sm" onClick={onPay}>
             <Banknote className="w-3.5 h-3.5 mr-1.5" />
@@ -40,27 +40,27 @@ export function RecibosList({
       </div>
 
       {recibos.length === 0 ? (
-        <div className="px-5 py-6 text-sm text-gray-400 text-center">
+        <div className="px-5 py-6 text-sm text-gray-400 dark:text-slate-500 text-center">
           Sin pagos registrados
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full">
-            <thead className="bg-gray-50/80">
+            <thead className="bg-gray-50/80 dark:bg-slate-700/50">
               <tr>
-                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">N°</th>
-                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Método</th>
-                <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-400 uppercase tracking-wider">Monto</th>
-                <th className="px-5 py-2.5 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado</th>
+                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">N°</th>
+                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Fecha</th>
+                <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Método</th>
+                <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Monto</th>
+                <th className="px-5 py-2.5 text-center text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Estado</th>
                 <th className="px-5 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
               {recibos.map((recibo) => (
                 <tr
                   key={recibo.id}
-                  className={`hover:bg-gray-50/60 transition-colors duration-100 ${recibo.status === 'CANCELLED' ? 'opacity-50' : ''}`}
+                  className={`hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors duration-100 ${recibo.status === 'CANCELLED' ? 'opacity-50' : ''}`}
                 >
                   <td className="px-5 py-3">
                     <button
@@ -70,16 +70,16 @@ export function RecibosList({
                       {recibo.number}
                     </button>
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600 tabular-nums">
+                  <td className="px-5 py-3 text-sm text-gray-600 dark:text-slate-400 tabular-nums">
                     {formatDate(recibo.date)}
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600">
+                  <td className="px-5 py-3 text-sm text-gray-600 dark:text-slate-400">
                     {PAYMENT_METHODS[recibo.paymentMethod] ?? recibo.paymentMethod}
                     {recibo.reference && (
-                      <span className="ml-1 text-xs text-gray-400">({recibo.reference})</span>
+                      <span className="ml-1 text-xs text-gray-400 dark:text-slate-500">({recibo.reference})</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">
+                  <td className="px-5 py-3 text-sm font-semibold text-gray-900 dark:text-white text-right tabular-nums">
                     {formatCurrency(Number(recibo.amount), currency)}
                   </td>
                   <td className="px-5 py-3 text-center">
@@ -106,16 +106,16 @@ export function RecibosList({
       )}
 
       {/* Footer totals */}
-      <div className="px-5 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
+      <div className="px-5 py-3 bg-gray-50/50 dark:bg-slate-700/30 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-6 text-sm">
-          <span className="text-gray-500">
-            Cobrado: <span className="font-semibold text-emerald-700 tabular-nums">{formatCurrency(paid, currency)}</span>
+          <span className="text-gray-500 dark:text-slate-400">
+            Cobrado: <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">{formatCurrency(paid, currency)}</span>
           </span>
-          <span className="text-gray-500">
-            Pendiente: <span className="font-semibold text-gray-900 tabular-nums">{formatCurrency(remaining, currency)}</span>
+          <span className="text-gray-500 dark:text-slate-400">
+            Pendiente: <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{formatCurrency(remaining, currency)}</span>
           </span>
         </div>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-gray-500 dark:text-slate-400">
           Total: <span className="font-semibold tabular-nums">{formatCurrency(total, currency)}</span>
         </span>
       </div>

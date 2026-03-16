@@ -89,13 +89,13 @@ export default function IvaPage() {
       />
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-6 bg-gray-100 dark:bg-slate-700 p-1 rounded-lg w-fit">
         <button
           onClick={() => setTab('ventas')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             tab === 'ventas'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white dark:bg-slate-600 text-gray-900 dark:text-white shadow-sm'
+              : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
           }`}
         >
           IVA Ventas
@@ -104,8 +104,8 @@ export default function IvaPage() {
           onClick={() => setTab('compras')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             tab === 'compras'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white dark:bg-slate-600 text-gray-900 dark:text-white shadow-sm'
+              : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
           }`}
         >
           IVA Compras
@@ -115,7 +115,7 @@ export default function IvaPage() {
       {/* Period Selector */}
       <div className="flex items-center gap-4 mb-6">
         <select
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
         >
@@ -124,7 +124,7 @@ export default function IvaPage() {
           ))}
         </select>
         <select
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
         >
@@ -135,7 +135,7 @@ export default function IvaPage() {
         <button
           onClick={fetchData}
           disabled={isLoading}
-          className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          className="p-2 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 disabled:opacity-50"
           title="Actualizar"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -145,61 +145,61 @@ export default function IvaPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <Card>
-          <p className="text-sm text-gray-500">Neto Gravado</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totalNeto)}</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Neto Gravado</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formatCurrency(totalNeto)}</p>
         </Card>
         <Card>
-          <p className="text-sm text-gray-500">IVA</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">IVA</p>
           <p className="text-2xl font-bold text-blue-600 mt-1">{formatCurrency(totalIva)}</p>
         </Card>
         <Card>
-          <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totalTotal)}</p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Total</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formatCurrency(totalTotal)}</p>
         </Card>
       </div>
 
       {/* Table */}
       <Card>
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">Cargando...</div>
+          <div className="text-center py-8 text-gray-500 dark:text-slate-400">Cargando...</div>
         ) : tab === 'ventas' ? (
           ventasRows.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
+            <div className="text-center py-8 text-gray-400 dark:text-slate-500">
               No hay comprobantes de ventas en este período
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+                <thead className="bg-gray-50 dark:bg-slate-700/50">
                   <tr>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Fecha</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Número</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">N° AFIP</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Tipo</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Cliente</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">CUIT</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">Neto</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">IVA</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">Total</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">CAE</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Fecha</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Número</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">N° AFIP</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Tipo</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Cliente</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">CUIT</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Neto</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">IVA</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Total</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">CAE</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                   {ventasRows.map((row, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-600">{formatDate(row.fecha)}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{row.numero}</td>
-                      <td className="px-3 py-2 text-gray-500">{row.afipCbtNum || '-'}</td>
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                      <td className="px-3 py-2 text-gray-600 dark:text-slate-400">{formatDate(row.fecha)}</td>
+                      <td className="px-3 py-2 font-mono text-xs dark:text-slate-300">{row.numero}</td>
+                      <td className="px-3 py-2 text-gray-500 dark:text-slate-400">{row.afipCbtNum || '-'}</td>
                       <td className="px-3 py-2">
                         <Badge className="bg-blue-50 text-blue-700 text-xs">
                           {INVOICE_TYPES[row.tipo as keyof typeof INVOICE_TYPES] || row.tipo}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2 text-gray-900">{row.cliente}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">{row.cuitCliente || '-'}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(row.neto)}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(row.iva)}</td>
-                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(row.total)}</td>
+                      <td className="px-3 py-2 text-gray-900 dark:text-white">{row.cliente}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{row.cuitCliente || '-'}</td>
+                      <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.neto)}</td>
+                      <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.iva)}</td>
+                      <td className="px-3 py-2 text-right font-medium dark:text-slate-200">{formatCurrency(row.total)}</td>
                       <td className="px-3 py-2 font-mono text-xs text-green-700">{row.cae || '-'}</td>
                     </tr>
                   ))}
@@ -209,39 +209,39 @@ export default function IvaPage() {
           )
         ) : (
           comprasRows.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
+            <div className="text-center py-8 text-gray-400 dark:text-slate-500">
               No hay comprobantes de compras en este período
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+                <thead className="bg-gray-50 dark:bg-slate-700/50">
                   <tr>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Fecha</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Número</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Tipo</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">Proveedor</th>
-                    <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase text-xs">CUIT</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">Neto</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">IVA</th>
-                    <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase text-xs">Total</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Fecha</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Número</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Tipo</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Proveedor</th>
+                    <th className="px-3 py-3 text-left font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">CUIT</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Neto</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">IVA</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500 dark:text-slate-400 uppercase text-xs">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                   {comprasRows.map((row, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-600">{formatDate(row.fecha)}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{row.numero}</td>
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                      <td className="px-3 py-2 text-gray-600 dark:text-slate-400">{formatDate(row.fecha)}</td>
+                      <td className="px-3 py-2 font-mono text-xs dark:text-slate-300">{row.numero}</td>
                       <td className="px-3 py-2">
                         <Badge className="bg-purple-50 text-purple-700 text-xs">
                           {INVOICE_TYPES[row.tipo as keyof typeof INVOICE_TYPES] || row.tipo}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2 text-gray-900">{row.proveedor}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500">{row.cuitProveedor || '-'}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(row.neto)}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(row.iva)}</td>
-                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(row.total)}</td>
+                      <td className="px-3 py-2 text-gray-900 dark:text-white">{row.proveedor}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{row.cuitProveedor || '-'}</td>
+                      <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.neto)}</td>
+                      <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.iva)}</td>
+                      <td className="px-3 py-2 text-right font-medium dark:text-slate-200">{formatCurrency(row.total)}</td>
                     </tr>
                   ))}
                 </tbody>

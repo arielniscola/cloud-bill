@@ -115,8 +115,8 @@ export default function CustomersPage() {
       header: 'CUIT / CUIL',
       render: (c) =>
         c.taxId
-          ? <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{c.taxId}</span>
-          : <span className="text-gray-300">—</span>,
+          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{c.taxId}</span>
+          : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
       key: 'taxCondition',
@@ -136,12 +136,12 @@ export default function CustomersPage() {
       render: (c) =>
         c.phone
           ? (
-            <span className="flex items-center gap-1.5 text-sm text-gray-600">
-              <Phone className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300">
+              <Phone className="w-3 h-3 text-gray-400 dark:text-slate-500 flex-shrink-0" />
               {c.phone}
             </span>
           )
-          : <span className="text-gray-300">—</span>,
+          : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
       key: 'isActive',
@@ -200,17 +200,17 @@ export default function CustomersPage() {
 
       <Card padding="none">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => { setTab(t.id); setPage(1); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                   tab === t.id
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white'
                 }`}
               >
                 {t.label}
@@ -260,11 +260,11 @@ export default function CustomersPage() {
         {/* Empty state (no data + no search) */}
         {!isLoading && customers.length === 0 && !search && tab === 'all' && (
           <div className="flex flex-col items-center justify-center text-center py-16">
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-              <Users className="w-7 h-7 text-gray-300" />
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+              <Users className="w-7 h-7 text-gray-300 dark:text-slate-500" />
             </div>
-            <p className="text-sm font-semibold text-gray-700 mb-1">Sin clientes</p>
-            <p className="text-sm text-gray-400 max-w-xs leading-relaxed mb-5">
+            <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin clientes</p>
+            <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
               Registrá tu primer cliente para poder emitirle facturas y remitos.
             </p>
             <Button onClick={() => navigate('/customers/new')}>

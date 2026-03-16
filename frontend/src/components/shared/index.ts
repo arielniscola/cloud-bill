@@ -14,7 +14,7 @@ export { default as DataTable } from './DataTable';
 export type { DataTableProps, Column } from './DataTable';
 
 export { default as BarcodeProductInput } from './BarcodeProductInput';
-export type { BarcodeProductInputProps } from './BarcodeProductInput';
+export type { BarcodeProductInputProps, BarcodeProductInputHandle } from './BarcodeProductInput';
 
 export { default as ProductSearchSelect } from './ProductSearchSelect';
 export type { ProductSearchSelectProps } from './ProductSearchSelect';
@@ -24,3 +24,5 @@ export { RecibosList } from './RecibosList';
 
 export { default as CustomerSearchSelect } from './CustomerSearchSelect';
 export type { CustomerSearchSelectProps } from './CustomerSearchSelect';
+
+export { default as SendEmailModal } from './SendEmailModal';

@@ -11,7 +11,7 @@ export default function MainLayout() {
 
   if (menuType === 'navbar') {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
         <Navbar />
         <main className="pt-16">
           <div className="max-w-7xl mx-auto px-6 py-6">
@@ -23,12 +23,12 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* ── Mobile top bar (hidden on md+) ── */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white border-b border-gray-200 flex items-center gap-3 px-4">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 flex items-center gap-3 px-4">
         <button
           onClick={toggleMobileMenu}
-          className="p-2 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+          className="p-2 -ml-1 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
           aria-label="Abrir menú"
         >
           <Menu className="w-5 h-5" />
@@ -38,7 +38,7 @@ export default function MainLayout() {
           <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shadow-sm flex-shrink-0">
             <span className="text-white text-[11px] font-bold leading-none">CB</span>
           </div>
-          <span className="text-sm font-bold text-gray-900 tracking-tight">CloudBill</span>
+          <span className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">CloudBill</span>
         </div>
 
         <div className="ml-auto">

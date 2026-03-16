@@ -3,8 +3,6 @@ import type {
   Budget,
   CreateBudgetDTO,
   UpdateBudgetStatusDTO,
-  ConvertBudgetDTO,
-  PayBudgetDTO,
   ApiResponse,
   PaginatedResponse,
 } from '../types';
@@ -46,18 +44,12 @@ export const budgetsService = {
     return response.data.data;
   },
 
-  async convertToInvoice(id: string, data?: ConvertBudgetDTO): Promise<{ id: string; number: string; status: string }> {
-    const response = await api.post<ApiResponse<any>>(`/budgets/${id}/convert`, data ?? {});
-    return response.data.data;
-  },
-
-  async pay(id: string, data: PayBudgetDTO): Promise<Budget> {
-    const response = await api.post<ApiResponse<Budget>>(`/budgets/${id}/pay`, data);
-    return response.data.data;
-  },
-
   async delete(id: string): Promise<void> {
     await api.delete(`/budgets/${id}`);
+  },
+
+  async sendEmail(id: string, to: string): Promise<void> {
+    await api.post(`/budgets/${id}/send-email`, { to });
   },
 };
 

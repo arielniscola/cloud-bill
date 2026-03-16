@@ -27,6 +27,18 @@ export interface CreateSupplierDTO {
   isActive?: boolean;
 }
 
+export interface SupplierProductStat {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  isActive: boolean;
+  purchaseCount: number;
+  totalQuantity: number;
+  lastPurchaseDate: string;
+  lastUnitPrice: number;
+}
+
 export interface SupplierFilters {
   page?: number;
   limit?: number;

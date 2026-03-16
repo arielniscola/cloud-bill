@@ -36,7 +36,6 @@ export interface Remito {
 
 export interface CreateRemitoDTO {
   customerId: string;
-  stockBehavior: StockBehavior;
   notes?: string;
   invoiceId?: string;
   budgetId?: string;

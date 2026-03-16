@@ -23,12 +23,12 @@ const STATUS_CFG = {
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-gray-400">
+      <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5 text-gray-400 dark:text-slate-400">
         {icon}
       </div>
       <div>
-        <p className="text-xs text-gray-400 leading-none mb-0.5">{label}</p>
-        <div className="text-sm font-medium text-gray-800">{value}</div>
+        <p className="text-xs text-gray-400 dark:text-slate-500 leading-none mb-0.5">{label}</p>
+        <div className="text-sm font-medium text-gray-800 dark:text-slate-200">{value}</div>
       </div>
     </div>
   );
@@ -38,19 +38,19 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 function PageSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
-      <div className="h-10 bg-gray-100 rounded-xl w-full" />
+      <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-xl w-full" />
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5">
         <div className="space-y-5">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="h-12 bg-gray-50 border-b border-gray-100" />
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="h-12 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700" />
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-14 border-b border-gray-100 mx-5 my-2 bg-gray-100 rounded-lg" />
+              <div key={i} className="h-14 border-b border-gray-100 dark:border-slate-700 mx-5 my-2 bg-gray-100 dark:bg-slate-700 rounded-lg" />
             ))}
-            <div className="h-20 bg-gray-50/60 mx-0" />
+            <div className="h-20 bg-gray-50/60 dark:bg-slate-700/30 mx-0" />
           </div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />)}
         </div>
       </div>
     </div>
@@ -141,19 +141,19 @@ export default function PurchaseDetailPage() {
       />
 
       {/* ── Identity bar ── */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm">
         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${statusCfg.className}`}>
           <StatusIcon className="w-3.5 h-3.5" />
           {statusCfg.label}
         </span>
-        <span className="hidden sm:block w-px h-4 bg-gray-200" />
-        <span className="flex items-center gap-1.5 text-gray-600">
-          <Building2 className="w-3.5 h-3.5 text-gray-400" />
+        <span className="hidden sm:block w-px h-4 bg-gray-200 dark:bg-slate-600" />
+        <span className="flex items-center gap-1.5 text-gray-600 dark:text-slate-300">
+          <Building2 className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
           {purchase.supplier?.name ?? '—'}
         </span>
-        <span className="hidden sm:block w-px h-4 bg-gray-200" />
-        <span className="flex items-center gap-1.5 text-gray-500">
-          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+        <span className="hidden sm:block w-px h-4 bg-gray-200 dark:bg-slate-600" />
+        <span className="flex items-center gap-1.5 text-gray-500 dark:text-slate-400">
+          <Calendar className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
           {formatDate(purchase.date)}
         </span>
         {purchase.currency !== 'ARS' && (
@@ -181,16 +181,16 @@ export default function PurchaseDetailPage() {
         <div className="space-y-4">
           <Card padding="none">
             {/* Card header */}
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-              <Package className="w-4 h-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-700">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+              <Package className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                 Ítems
-                <span className="ml-1.5 text-xs font-normal text-gray-400">· {purchase.items.length}</span>
+                <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-slate-500">· {purchase.items.length}</span>
               </h3>
             </div>
 
             {/* Column headers */}
-            <div className="hidden md:grid grid-cols-[3fr_56px_108px_56px_108px] gap-3 px-5 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            <div className="hidden md:grid grid-cols-[3fr_56px_108px_56px_108px] gap-3 px-5 py-2.5 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
               <span>Descripción</span>
               <span className="text-right">Cant.</span>
               <span className="text-right">Precio unit.</span>
@@ -199,14 +199,14 @@ export default function PurchaseDetailPage() {
             </div>
 
             {/* Rows */}
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-gray-50 dark:divide-slate-700">
               {purchase.items.map((item) => (
                 <div
                   key={item.id}
                   className="grid grid-cols-1 md:grid-cols-[3fr_56px_108px_56px_108px] gap-3 px-5 py-3.5 items-center"
                 >
                   <div>
-                    <p className="text-sm font-medium text-gray-800 leading-tight">{item.description}</p>
+                    <p className="text-sm font-medium text-gray-800 dark:text-slate-200 leading-tight">{item.description}</p>
                     {item.productId && (
                       <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full">
                         <Link2 className="w-2.5 h-2.5" />
@@ -216,28 +216,28 @@ export default function PurchaseDetailPage() {
                   </div>
                   <div className="md:text-right">
                     <span className="text-xs text-gray-400 md:hidden">Cant. </span>
-                    <span className="text-sm text-gray-700 tabular-nums">{item.quantity}</span>
+                    <span className="text-sm text-gray-700 dark:text-slate-300 tabular-nums">{item.quantity}</span>
                   </div>
                   <div className="md:text-right">
-                    <span className="text-xs text-gray-400 md:hidden">Precio unit. </span>
-                    <span className="text-sm text-gray-600 tabular-nums">{formatCurrency(Number(item.unitPrice), purchase.currency)}</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500 md:hidden">Precio unit. </span>
+                    <span className="text-sm text-gray-600 dark:text-slate-400 tabular-nums">{formatCurrency(Number(item.unitPrice), purchase.currency)}</span>
                   </div>
                   <div className="md:text-right">
-                    <span className="text-xs text-gray-400 md:hidden">IVA </span>
-                    <span className="text-xs font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{item.taxRate}%</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500 md:hidden">IVA </span>
+                    <span className="text-xs font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full">{item.taxRate}%</span>
                   </div>
                   <div className="md:text-right">
-                    <span className="text-xs text-gray-400 md:hidden">Total </span>
-                    <span className="text-sm font-semibold text-gray-900 tabular-nums">{formatCurrency(Number(item.total), purchase.currency)}</span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500 md:hidden">Total </span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">{formatCurrency(Number(item.total), purchase.currency)}</span>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Totals footer */}
-            <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/60 flex justify-end">
+            <div className="px-5 py-4 border-t border-gray-100 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-700/30 flex justify-end">
               <div className="space-y-2 text-sm w-60">
-                <div className="flex justify-between text-gray-500">
+                <div className="flex justify-between text-gray-500 dark:text-slate-400">
                   <span>Subtotal</span>
                   <span className="tabular-nums">{formatCurrency(Number(purchase.subtotal), purchase.currency)}</span>
                 </div>
@@ -245,19 +245,19 @@ export default function PurchaseDetailPage() {
                 {/* Tax breakdown */}
                 {hasMultipleRates ? (
                   taxRates.map((rate) => (
-                    <div key={rate} className="flex justify-between text-gray-400 text-xs">
+                    <div key={rate} className="flex justify-between text-gray-400 dark:text-slate-500 text-xs">
                       <span>IVA {rate}%</span>
                       <span className="tabular-nums">{formatCurrency(taxByRate[String(rate)], purchase.currency)}</span>
                     </div>
                   ))
                 ) : (
-                  <div className="flex justify-between text-gray-500">
+                  <div className="flex justify-between text-gray-500 dark:text-slate-400">
                     <span>IVA{taxRates.length === 1 ? ` ${taxRates[0]}%` : ''}</span>
                     <span className="tabular-nums">{formatCurrency(Number(purchase.taxAmount), purchase.currency)}</span>
                   </div>
                 )}
 
-                <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-2.5 text-gray-900">
+                <div className="flex justify-between font-bold text-base border-t border-gray-200 dark:border-slate-600 pt-2.5 text-gray-900 dark:text-white">
                   <span>Total</span>
                   <span className="tabular-nums text-indigo-600">{formatCurrency(Number(purchase.total), purchase.currency)}</span>
                 </div>
@@ -269,10 +269,10 @@ export default function PurchaseDetailPage() {
           {purchase.notes && (
             <Card>
               <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-semibold text-gray-600">Notas</span>
+                <FileText className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+                <span className="text-sm font-semibold text-gray-600 dark:text-slate-400">Notas</span>
               </div>
-              <p className="text-sm text-gray-600 leading-relaxed">{purchase.notes}</p>
+              <p className="text-sm text-gray-600 dark:text-slate-400 leading-relaxed">{purchase.notes}</p>
             </Card>
           )}
         </div>
@@ -280,7 +280,7 @@ export default function PurchaseDetailPage() {
         {/* ── Right: metadata ── */}
         <div className="space-y-4">
           <Card>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-4">
               Información del comprobante
             </h3>
             <div className="space-y-4">

@@ -17,7 +17,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1"
           >
             {label}
           </label>
@@ -29,17 +29,17 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             'block w-full rounded-lg border shadow-sm sm:text-sm',
             'focus:ring-2 focus:ring-offset-0',
             error
-              ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-              : 'border-gray-300 focus:border-primary-500 focus:ring-primary-500',
-            'disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed',
-            'px-3 py-2',
+              ? 'border-red-300 dark:border-red-700 focus:border-red-500 focus:ring-red-500'
+              : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-slate-200 focus:border-primary-500 focus:ring-primary-500',
+            'disabled:bg-gray-50 dark:disabled:bg-slate-800 disabled:text-gray-500 dark:disabled:text-slate-500 disabled:cursor-not-allowed',
+            'px-3 py-2 placeholder:text-gray-400 dark:placeholder:text-slate-500',
             className
           )}
           rows={4}
           {...props}
         />
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
-        {hint && !error && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+        {error && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {hint && !error && <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">{hint}</p>}
       </div>
     );
   }

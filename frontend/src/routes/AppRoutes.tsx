@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '../components/layout';
 import ProtectedRoute from './ProtectedRoute';
+import RoleGuard from './RoleGuard';
 
 // Pages
 import LoginPage from '../pages/auth/LoginPage';
@@ -10,6 +11,7 @@ import CustomersPage from '../pages/customers/CustomersPage';
 import CustomerFormPage from '../pages/customers/CustomerFormPage';
 import ProductsPage from '../pages/products/ProductsPage';
 import ProductFormPage from '../pages/products/ProductFormPage';
+import BulkPriceUpdatePage from '../pages/products/BulkPriceUpdatePage';
 import CategoriesPage from '../pages/categories/CategoriesPage';
 import WarehousesPage from '../pages/warehouses/WarehousesPage';
 import WarehouseFormPage from '../pages/warehouses/WarehouseFormPage';
@@ -35,6 +37,7 @@ import ActivityPage from '../pages/activity/ActivityPage';
 import IvaPage from '../pages/iva/IvaPage';
 import SuppliersPage from '../pages/suppliers/SuppliersPage';
 import SupplierFormPage from '../pages/suppliers/SupplierFormPage';
+import SupplierDetailPage from '../pages/suppliers/SupplierDetailPage';
 import PurchasesPage from '../pages/purchases/PurchasesPage';
 import PurchaseFormPage from '../pages/purchases/PurchaseFormPage';
 import PurchaseDetailPage from '../pages/purchases/PurchaseDetailPage';
@@ -44,12 +47,26 @@ import BudgetFormPage from '../pages/budgets/BudgetFormPage';
 import BudgetDetailPage from '../pages/budgets/BudgetDetailPage';
 import RecibosPage from '../pages/recibos/RecibosPage';
 import ReciboDetailPage from '../pages/recibos/ReciboDetailPage';
+import SalesReportPage from '../pages/reports/SalesReportPage';
+import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
+import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
+import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
+import OrdenComprasPage from '../pages/orden-compras/OrdenComprasPage';
+import OrdenCompraFormPage from '../pages/orden-compras/OrdenCompraFormPage';
+import OrdenCompraDetailPage from '../pages/orden-compras/OrdenCompraDetailPage';
+import BancoCheques from '../pages/banco-cheques/BancoCheques';
+import ThermalInvoicePrintPage from '../pages/print/ThermalInvoicePrintPage';
+import ThermalOrdenPedidoPrintPage from '../pages/print/ThermalOrdenPedidoPrintPage';
 
 export default function AppRoutes() {
   return (
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
+
+      {/* Print routes — authenticated, no layout */}
+      <Route path="/print/invoice/:id" element={<ProtectedRoute><ThermalInvoicePrintPage /></ProtectedRoute>} />
+      <Route path="/print/orden-pedido/:id" element={<ProtectedRoute><ThermalOrdenPedidoPrintPage /></ProtectedRoute>} />
 
       {/* Protected routes */}
       <Route
@@ -62,84 +79,92 @@ export default function AppRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
 
-        {/* Customers */}
+        {/* Read-only sections — all authenticated roles */}
         <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/customers/new" element={<CustomerFormPage />} />
-        <Route path="/customers/:id/edit" element={<CustomerFormPage />} />
-
-        {/* Products */}
         <Route path="/products" element={<ProductsPage />} />
-        <Route path="/products/new" element={<ProductFormPage />} />
-        <Route path="/products/:id/edit" element={<ProductFormPage />} />
-
-        {/* Categories */}
         <Route path="/categories" element={<CategoriesPage />} />
-
-        {/* Brands */}
         <Route path="/brands" element={<BrandsPage />} />
-
-        {/* Warehouses */}
         <Route path="/warehouses" element={<WarehousesPage />} />
-        <Route path="/warehouses/new" element={<WarehouseFormPage />} />
-        <Route path="/warehouses/:id/edit" element={<WarehouseFormPage />} />
         <Route path="/warehouses/:id" element={<WarehouseDetailPage />} />
-
-        {/* Stock */}
         <Route path="/stock" element={<StockPage />} />
         <Route path="/stock/movements" element={<StockMovementsPage />} />
         <Route path="/stock/transfer" element={<StockTransferPage />} />
         <Route path="/stock/physical-count" element={<StockPhysicalCountPage />} />
         <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
-
-        {/* Invoices */}
         <Route path="/invoices" element={<InvoicesPage />} />
-        <Route path="/invoices/new" element={<InvoiceFormPage />} />
-        <Route path="/invoices/:id/edit" element={<InvoiceFormPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
-
-        {/* Remitos */}
         <Route path="/remitos" element={<RemitosPage />} />
-        <Route path="/remitos/new" element={<RemitoFormPage />} />
         <Route path="/remitos/:id" element={<RemitoDetailPage />} />
-
-        {/* Current Accounts */}
         <Route path="/current-accounts" element={<CurrentAccountsPage />} />
         <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
 
-        {/* Cash Registers */}
-        <Route path="/cash-registers" element={<CashRegistersPage />} />
-        <Route path="/cash-registers/new" element={<CashRegisterFormPage />} />
-        <Route path="/cash-registers/:id/edit" element={<CashRegisterFormPage />} />
-        <Route path="/cash-registers/:id" element={<CashRegisterDetailPage />} />
+        {/* Write routes — ADMIN + SELLER only */}
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
+          <Route path="/customers/new" element={<CustomerFormPage />} />
+          <Route path="/customers/:id/edit" element={<CustomerFormPage />} />
+          <Route path="/products/new" element={<ProductFormPage />} />
+          <Route path="/products/bulk-price-update" element={<BulkPriceUpdatePage />} />
+          <Route path="/products/:id/edit" element={<ProductFormPage />} />
+          <Route path="/warehouses/new" element={<WarehouseFormPage />} />
+          <Route path="/warehouses/:id/edit" element={<WarehouseFormPage />} />
+          <Route path="/invoices/new" element={<InvoiceFormPage />} />
+          <Route path="/invoices/:id/edit" element={<InvoiceFormPage />} />
+          <Route path="/remitos/new" element={<RemitoFormPage />} />
+        </Route>
 
-        {/* Activity */}
-        <Route path="/activity" element={<ActivityPage />} />
+        {/* Finances & System — ADMIN only */}
+        <Route element={<RoleGuard allowed={['ADMIN']} />}>
+          <Route path="/cash-registers" element={<CashRegistersPage />} />
+          <Route path="/cash-registers/new" element={<CashRegisterFormPage />} />
+          <Route path="/cash-registers/:id/edit" element={<CashRegisterFormPage />} />
+          <Route path="/cash-registers/:id" element={<CashRegisterDetailPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/iva" element={<IvaPage />} />
+          <Route path="/reports/sales" element={<SalesReportPage />} />
+        </Route>
 
-        {/* Settings */}
-        <Route path="/settings" element={<SettingsPage />} />
+        {/* Suppliers & Purchases — ADMIN only */}
+        <Route element={<RoleGuard allowed={['ADMIN']} />}>
+          <Route path="/suppliers" element={<SuppliersPage />} />
+          <Route path="/suppliers/new" element={<SupplierFormPage />} />
+          <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
+          <Route path="/suppliers/:id/edit" element={<SupplierFormPage />} />
 
-        {/* Libro IVA */}
-        <Route path="/iva" element={<IvaPage />} />
+          <Route path="/purchases" element={<PurchasesPage />} />
+          <Route path="/purchases/new" element={<PurchaseFormPage />} />
+          <Route path="/purchases/:id" element={<PurchaseDetailPage />} />
 
-        {/* Suppliers */}
-        <Route path="/suppliers" element={<SuppliersPage />} />
-        <Route path="/suppliers/new" element={<SupplierFormPage />} />
-        <Route path="/suppliers/:id/edit" element={<SupplierFormPage />} />
-
-        {/* Purchases */}
-        <Route path="/purchases" element={<PurchasesPage />} />
-        <Route path="/purchases/new" element={<PurchaseFormPage />} />
-        <Route path="/purchases/:id" element={<PurchaseDetailPage />} />
+          {/* Órdenes de Compra — ADMIN only */}
+          <Route path="/orden-compras" element={<OrdenComprasPage />} />
+          <Route path="/orden-compras/new" element={<OrdenCompraFormPage />} />
+          <Route path="/orden-compras/:id" element={<OrdenCompraDetailPage />} />
+          <Route path="/orden-compras/:id/edit" element={<OrdenCompraFormPage />} />
+        </Route>
 
         {/* Budgets */}
         <Route path="/budgets" element={<BudgetsPage />} />
-        <Route path="/budgets/new" element={<BudgetFormPage />} />
-        <Route path="/budgets/:id/edit" element={<BudgetFormPage />} />
         <Route path="/budgets/:id" element={<BudgetDetailPage />} />
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
+          <Route path="/budgets/new" element={<BudgetFormPage />} />
+          <Route path="/budgets/:id/edit" element={<BudgetFormPage />} />
+        </Route>
 
         {/* Recibos */}
         <Route path="/recibos" element={<RecibosPage />} />
         <Route path="/recibos/:id" element={<ReciboDetailPage />} />
+
+        {/* Banco de Cheques */}
+        <Route path="/banco-cheques" element={<BancoCheques />} />
+
+        {/* Órdenes de Pedido */}
+        <Route path="/orden-pedidos" element={<OrdenPedidosPage />} />
+        <Route path="/orden-pedidos/:id" element={<OrdenPedidoDetailPage />} />
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
+          <Route path="/orden-pedidos/new" element={<OrdenPedidoFormPage />} />
+          <Route path="/orden-pedidos/:id/edit" element={<OrdenPedidoFormPage />} />
+        </Route>
+
       </Route>
 
       {/* Catch all */}

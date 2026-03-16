@@ -1,5 +1,6 @@
 import type { Customer } from './customer.types';
 import type { Invoice, Currency } from './invoice.types';
+import type { Budget } from './budget.types';
 
 export type MovementType = 'DEBIT' | 'CREDIT';
 
@@ -12,6 +13,8 @@ export interface AccountMovement {
   description: string;
   invoiceId: string | null;
   invoice?: Invoice;
+  budgetId: string | null;
+  budget?: Budget;
   createdAt: string;
 }
 

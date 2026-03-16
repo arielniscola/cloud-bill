@@ -21,25 +21,25 @@ function CashRegisterCard({
   return (
     <div
       onClick={onClick}
-      className="group bg-white border border-gray-200 rounded-xl p-5 hover:border-indigo-200 hover:shadow-sm transition-all duration-150 cursor-pointer"
+      className="group bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 hover:border-indigo-200 dark:hover:border-indigo-600 hover:shadow-sm transition-all duration-150 cursor-pointer"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div
             className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              cr.isActive ? 'bg-indigo-50' : 'bg-gray-100'
+              cr.isActive ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'bg-gray-100 dark:bg-slate-700'
             }`}
           >
             <Landmark
-              className={`w-5 h-5 ${cr.isActive ? 'text-indigo-600' : 'text-gray-400'}`}
+              className={`w-5 h-5 ${cr.isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-500'}`}
             />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{cr.name}</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{cr.name}</p>
             {cr.description ? (
-              <p className="text-xs text-gray-400 mt-0.5 truncate">{cr.description}</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate">{cr.description}</p>
             ) : (
-              <p className="text-xs text-gray-300 mt-0.5 italic">Sin descripción</p>
+              <p className="text-xs text-gray-300 dark:text-slate-600 mt-0.5 italic">Sin descripción</p>
             )}
           </div>
         </div>
@@ -47,14 +47,14 @@ function CashRegisterCard({
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(); }}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-colors"
             title="Editar"
           >
             <Edit className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
             title="Eliminar"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -66,8 +66,8 @@ function CashRegisterCard({
         <span
           className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
             cr.isActive
-              ? 'bg-emerald-50 text-emerald-700'
-              : 'bg-gray-100 text-gray-500'
+              ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+              : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'
           }`}
         >
           {cr.isActive ? (
@@ -83,15 +83,15 @@ function CashRegisterCard({
 
 function CardSkeleton() {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 animate-pulse">
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 animate-pulse">
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+        <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-slate-700 flex-shrink-0" />
         <div className="flex-1 space-y-2">
-          <div className="h-4 bg-gray-100 rounded w-32" />
-          <div className="h-3 bg-gray-100 rounded w-48" />
+          <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-32" />
+          <div className="h-3 bg-gray-100 dark:bg-slate-700 rounded w-48" />
         </div>
       </div>
-      <div className="mt-4 h-5 bg-gray-100 rounded-full w-16" />
+      <div className="mt-4 h-5 bg-gray-100 dark:bg-slate-700 rounded-full w-16" />
     </div>
   );
 }
@@ -152,12 +152,12 @@ export default function CashRegistersPage() {
       {/* Summary pills */}
       {!isLoading && cashRegisters.length > 0 && (
         <div className="flex items-center gap-3 mb-6">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
             <CheckCircle className="w-3.5 h-3.5" />
             {activeCount} activa{activeCount !== 1 ? 's' : ''}
           </span>
           {inactiveCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 border border-gray-200 dark:border-slate-600">
               <XCircle className="w-3.5 h-3.5" />
               {inactiveCount} inactiva{inactiveCount !== 1 ? 's' : ''}
             </span>
@@ -171,11 +171,11 @@ export default function CashRegistersPage() {
         </div>
       ) : cashRegisters.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-            <Landmark className="w-7 h-7 text-gray-400" />
+          <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+            <Landmark className="w-7 h-7 text-gray-400 dark:text-slate-500" />
           </div>
-          <p className="text-sm font-semibold text-gray-700 mb-1">No hay cajas registradas</p>
-          <p className="text-xs text-gray-400 mb-6 max-w-xs">
+          <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">No hay cajas registradas</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mb-6 max-w-xs">
             Creá cajas para organizar los cobros de facturas y presupuestos.
           </p>
           <Button onClick={() => navigate('/cash-registers/new')}>

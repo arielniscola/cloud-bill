@@ -46,10 +46,10 @@ function CompactSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`appearance-none pl-3 pr-7 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+        className={`appearance-none pl-3 pr-7 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:placeholder:text-slate-500 ${
           value
-            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 text-indigo-700 dark:text-indigo-400'
+            : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-500'
         }`}
       >
         <option value="">{placeholder}</option>
@@ -57,7 +57,7 @@ function CompactSelect({
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 dark:text-slate-500 pointer-events-none" />
     </div>
   );
 }
@@ -170,8 +170,8 @@ export default function StockMovementsPage() {
         const d = new Date(mov.createdAt);
         return (
           <div className="whitespace-nowrap">
-            <p className="text-sm text-gray-800">{d.toLocaleDateString('es-AR')}</p>
-            <p className="text-xs text-gray-400">{d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</p>
+            <p className="text-sm text-gray-800 dark:text-slate-200">{d.toLocaleDateString('es-AR')}</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500">{d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</p>
           </div>
         );
       },
@@ -182,11 +182,11 @@ export default function StockMovementsPage() {
       render: (mov) => (
         <div className="min-w-0">
           {mov.product?.sku && (
-            <span className="font-mono text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+            <span className="font-mono text-[10px] font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded">
               {mov.product.sku}
             </span>
           )}
-          <p className="text-sm text-gray-800 mt-0.5 leading-tight truncate max-w-[200px]">
+          <p className="text-sm text-gray-800 dark:text-slate-200 mt-0.5 leading-tight truncate max-w-[200px]">
             {mov.product?.name ?? '—'}
           </p>
         </div>
@@ -196,7 +196,7 @@ export default function StockMovementsPage() {
       key: 'warehouse.name',
       header: 'Almacén',
       render: (mov) => (
-        <span className="text-sm text-gray-600 whitespace-nowrap">{mov.warehouse?.name ?? '—'}</span>
+        <span className="text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">{mov.warehouse?.name ?? '—'}</span>
       ),
     },
     {
@@ -218,7 +218,7 @@ export default function StockMovementsPage() {
         const isIn = IS_IN[mov.type] ?? false;
         return (
           <span className={`inline-flex items-center text-sm font-bold tabular-nums px-2 py-0.5 rounded-full ${
-            isIn ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'
+            isIn ? 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30'
           }`}>
             {isIn ? '+' : '−'}{formatNumber(mov.quantity, 0)}
           </span>
@@ -229,15 +229,15 @@ export default function StockMovementsPage() {
       key: 'newQuantity',
       header: 'Stock final',
       render: (mov) => (
-        <span className="text-sm tabular-nums text-gray-500">{formatNumber(mov.newQuantity, 0)}</span>
+        <span className="text-sm tabular-nums text-gray-500 dark:text-slate-400">{formatNumber(mov.newQuantity, 0)}</span>
       ),
     },
     {
       key: 'reason',
       header: 'Motivo',
       render: (mov) => mov.reason
-        ? <span className="text-xs text-gray-500 block max-w-[160px] truncate">{mov.reason}</span>
-        : <span className="text-gray-300 text-sm">—</span>,
+        ? <span className="text-xs text-gray-500 dark:text-slate-400 block max-w-[160px] truncate">{mov.reason}</span>
+        : <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>,
     },
   ];
 
@@ -259,7 +259,7 @@ export default function StockMovementsPage() {
 
       <Card padding="none">
         {/* ── Filter bar ── */}
-        <div className="px-4 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex flex-wrap items-center gap-2">
 
             {/* Date range */}
@@ -268,14 +268,14 @@ export default function StockMovementsPage() {
                 type="date"
                 value={filterStartDate}
                 onChange={(e) => { setFilterStartDate(e.target.value); setPage(1); }}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all w-full xs:w-auto"
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all w-full xs:w-auto"
               />
-              <span className="text-gray-300 text-xs">→</span>
+              <span className="text-gray-300 dark:text-slate-600 text-xs">→</span>
               <input
                 type="date"
                 value={filterEndDate}
                 onChange={(e) => { setFilterEndDate(e.target.value); setPage(1); }}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all w-full xs:w-auto"
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all w-full xs:w-auto"
               />
             </div>
 
@@ -310,7 +310,7 @@ export default function StockMovementsPage() {
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100"
+                className="flex items-center gap-1 text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700"
               >
                 <X className="w-3 h-3" />
                 Limpiar
@@ -346,7 +346,7 @@ export default function StockMovementsPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
               Producto <span className="text-red-400">*</span>
             </label>
             <ProductSearchSelect
@@ -376,7 +376,7 @@ export default function StockMovementsPage() {
           {/* Type preview chip */}
           {type && MOVEMENT_CFG[type as StockMovementType] && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Vista previa:</span>
+              <span className="text-xs text-gray-400 dark:text-slate-500">Vista previa:</span>
               <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border ${MOVEMENT_CFG[type as StockMovementType].className}`}>
                 {MOVEMENT_CFG[type as StockMovementType].label}
               </span>

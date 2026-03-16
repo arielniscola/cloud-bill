@@ -27,12 +27,12 @@ function CompactDateInput({ label, value, onChange }: {
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-gray-400 whitespace-nowrap">{label}</span>
+      <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">{label}</span>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="text-xs rounded-lg border border-gray-200 px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:outline-none"
+        className="text-xs rounded-lg border border-gray-200 dark:border-slate-600 px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:outline-none"
       />
     </div>
   );
@@ -47,7 +47,7 @@ function CompactSelect({ value, onChange, options }: {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="text-xs rounded-lg border border-gray-200 px-2 py-1.5 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:outline-none"
+      className="text-xs rounded-lg border border-gray-200 dark:border-slate-600 px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:outline-none"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -65,21 +65,24 @@ function StatCard({ icon, label, value, color = 'gray', isLoading }: {
   isLoading?: boolean;
 }) {
   const bg: Record<string, string> = {
-    gray: 'bg-gray-100', green: 'bg-emerald-50',
-    red: 'bg-red-50', indigo: 'bg-indigo-50', blue: 'bg-blue-50',
+    gray:  'bg-gray-100 dark:bg-slate-700',
+    green: 'bg-emerald-50 dark:bg-emerald-900/30',
+    red:   'bg-red-50 dark:bg-red-900/30',
+    indigo:'bg-indigo-50 dark:bg-indigo-900/30',
+    blue:  'bg-blue-50 dark:bg-blue-900/30',
   };
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4">
       <div className="flex items-center gap-3">
         <div className={`w-9 h-9 rounded-lg ${bg[color]} flex items-center justify-center flex-shrink-0`}>
           {icon}
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-gray-400">{label}</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500">{label}</p>
           {isLoading ? (
-            <div className="h-4 bg-gray-100 rounded w-20 mt-1 animate-pulse" />
+            <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded w-20 mt-1 animate-pulse" />
           ) : (
-            <p className="text-sm font-semibold text-gray-900 mt-0.5">{value}</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{value}</p>
           )}
         </div>
       </div>
@@ -93,10 +96,10 @@ function PageSkeleton() {
     <div className="animate-pulse space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 h-20" />
+          <div key={i} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 h-20" />
         ))}
       </div>
-      <div className="bg-white border border-gray-200 rounded-xl h-64" />
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl h-64" />
     </div>
   );
 }
@@ -253,10 +256,10 @@ export default function CashRegisterDetailPage() {
         const dt = new Date(mov.createdAt);
         return (
           <div>
-            <p className="text-sm text-gray-800 tabular-nums">
+            <p className="text-sm text-gray-800 dark:text-slate-200 tabular-nums">
               {dt.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
             </p>
-            <p className="text-xs text-gray-400 tabular-nums">
+            <p className="text-xs text-gray-400 dark:text-slate-500 tabular-nums">
               {dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
             </p>
           </div>
@@ -269,9 +272,9 @@ export default function CashRegisterDetailPage() {
       render: (mov) => (
         <div>
           {mov.currentAccount?.customer?.name && (
-            <p className="text-sm font-medium text-gray-800">{mov.currentAccount.customer.name}</p>
+            <p className="text-sm font-medium text-gray-800 dark:text-slate-200">{mov.currentAccount.customer.name}</p>
           )}
-          <p className={`text-xs ${mov.currentAccount?.customer?.name ? 'text-gray-400' : 'text-sm text-gray-700'}`}>
+          <p className={`text-xs ${mov.currentAccount?.customer?.name ? 'text-gray-400 dark:text-slate-500' : 'text-sm text-gray-700 dark:text-slate-300'}`}>
             {mov.description}
           </p>
         </div>
@@ -282,11 +285,11 @@ export default function CashRegisterDetailPage() {
       header: 'Comprobante',
       render: (mov) =>
         mov.invoice ? (
-          <span className="text-xs font-mono font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
+          <span className="text-xs font-mono font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 px-2 py-0.5 rounded-md">
             {mov.invoice.number}
           </span>
         ) : (
-          <span className="text-gray-300">—</span>
+          <span className="text-gray-300 dark:text-slate-600">—</span>
         ),
     },
     {
@@ -296,8 +299,8 @@ export default function CashRegisterDetailPage() {
         <span
           className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
             mov.type === 'CREDIT'
-              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-              : 'text-red-600 bg-red-50 border-red-200'
+              ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800'
+              : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'
           }`}
         >
           {mov.type === 'CREDIT' ? 'Ingreso' : 'Egreso'}
@@ -310,7 +313,7 @@ export default function CashRegisterDetailPage() {
       render: (mov) => (
         <span
           className={`text-sm font-semibold tabular-nums ${
-            mov.type === 'CREDIT' ? 'text-emerald-700' : 'text-red-600'
+            mov.type === 'CREDIT' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
           }`}
         >
           {mov.type === 'CREDIT' ? '+' : '−'}
@@ -329,10 +332,10 @@ export default function CashRegisterDetailPage() {
         const dt = new Date(c.closedAt);
         return (
           <div>
-            <p className="text-sm text-gray-800 tabular-nums">
+            <p className="text-sm text-gray-800 dark:text-slate-200 tabular-nums">
               {dt.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
             </p>
-            <p className="text-xs text-gray-400 tabular-nums">
+            <p className="text-xs text-gray-400 dark:text-slate-500 tabular-nums">
               {dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
             </p>
           </div>
@@ -343,7 +346,7 @@ export default function CashRegisterDetailPage() {
       key: 'period',
       header: 'Período',
       render: (c) => (
-        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md whitespace-nowrap">
+        <span className="text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 px-2 py-0.5 rounded-md whitespace-nowrap">
           {c.fromDate ? formatDate(c.fromDate) : 'Inicio'} → {formatDate(c.closedAt)}
         </span>
       ),
@@ -352,7 +355,7 @@ export default function CashRegisterDetailPage() {
       key: 'movementsCount',
       header: 'Movimientos',
       render: (c) => (
-        <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">
+        <span className="text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-2.5 py-0.5 rounded-full">
           {c.movementsCount}
         </span>
       ),
@@ -361,7 +364,7 @@ export default function CashRegisterDetailPage() {
       key: 'totalIn',
       header: 'Ingresos',
       render: (c) => (
-        <span className="text-sm font-semibold text-emerald-700 tabular-nums">
+        <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
           +{formatCurrency(c.totalIn)}
         </span>
       ),
@@ -371,11 +374,11 @@ export default function CashRegisterDetailPage() {
       header: 'Egresos',
       render: (c) =>
         c.totalOut > 0 ? (
-          <span className="text-sm font-semibold text-red-600 tabular-nums">
+          <span className="text-sm font-semibold text-red-600 dark:text-red-400 tabular-nums">
             −{formatCurrency(c.totalOut)}
           </span>
         ) : (
-          <span className="text-gray-300">—</span>
+          <span className="text-gray-300 dark:text-slate-600">—</span>
         ),
     },
     {
@@ -384,7 +387,7 @@ export default function CashRegisterDetailPage() {
       render: (c) => (
         <span
           className={`text-sm font-bold tabular-nums ${
-            c.netTotal >= 0 ? 'text-emerald-700' : 'text-red-600'
+            c.netTotal >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
           }`}
         >
           {formatCurrency(c.netTotal)}
@@ -396,9 +399,9 @@ export default function CashRegisterDetailPage() {
       header: 'Realizado por',
       render: (c) =>
         c.user?.name ? (
-          <span className="text-sm text-gray-700">{c.user.name}</span>
+          <span className="text-sm text-gray-700 dark:text-slate-300">{c.user.name}</span>
         ) : (
-          <span className="text-gray-300">—</span>
+          <span className="text-gray-300 dark:text-slate-600">—</span>
         ),
     },
     {
@@ -406,9 +409,9 @@ export default function CashRegisterDetailPage() {
       header: 'Observaciones',
       render: (c) =>
         c.notes ? (
-          <span className="text-xs text-gray-500">{c.notes}</span>
+          <span className="text-xs text-gray-500 dark:text-slate-400">{c.notes}</span>
         ) : (
-          <span className="text-gray-300">—</span>
+          <span className="text-gray-300 dark:text-slate-600">—</span>
         ),
     },
   ];
@@ -447,34 +450,34 @@ export default function CashRegisterDetailPage() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
-          icon={<Activity className="w-4 h-4 text-blue-500" />}
+          icon={<Activity className="w-4 h-4 text-blue-500 dark:text-blue-400" />}
           label="Último cierre"
           color="blue"
           isLoading={isLoadingCloses}
           value={lastClose ? formatDate(lastClose.closedAt) : 'Sin cierres'}
         />
         <StatCard
-          icon={<ArrowUpCircle className="w-4 h-4 text-emerald-600" />}
+          icon={<ArrowUpCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
           label="Ingresos (período)"
           color="green"
           isLoading={isLoadingPreview}
           value={preview ? formatCurrency(preview.totalIn) : '—'}
         />
         <StatCard
-          icon={<ArrowDownCircle className="w-4 h-4 text-red-500" />}
+          icon={<ArrowDownCircle className="w-4 h-4 text-red-500 dark:text-red-400" />}
           label="Egresos (período)"
           color="red"
           isLoading={isLoadingPreview}
           value={preview ? formatCurrency(preview.totalOut) : '—'}
         />
         <StatCard
-          icon={<TrendingUp className="w-4 h-4 text-indigo-600" />}
+          icon={<TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
           label="Neto (período)"
           color="indigo"
           isLoading={isLoadingPreview}
           value={
             preview ? (
-              <span className={preview.netTotal >= 0 ? 'text-emerald-700' : 'text-red-600'}>
+              <span className={preview.netTotal >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
                 {formatCurrency(preview.netTotal)}
               </span>
             ) : '—'
@@ -483,10 +486,10 @@ export default function CashRegisterDetailPage() {
       </div>
 
       {/* Movimientos */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
-        <div className="px-5 py-4 border-b border-gray-100">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden mb-6">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h3 className="text-sm font-semibold text-gray-900">Movimientos</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Movimientos</h3>
             <div className="flex items-center gap-2 flex-wrap">
               <CompactDateInput
                 label="Desde"
@@ -511,7 +514,7 @@ export default function CashRegisterDetailPage() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium transition-colors"
                 >
                   Limpiar
                 </button>
@@ -538,9 +541,9 @@ export default function CashRegisterDetailPage() {
       </div>
 
       {/* Historial de cierres */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-900">Historial de cierres</h3>
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Historial de cierres</h3>
         </div>
         <DataTable
           columns={closeColumns}
@@ -568,15 +571,15 @@ export default function CashRegisterDetailPage() {
       >
         {isLoadingModalPreview ? (
           <div className="py-10 flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-            <p className="text-sm text-gray-500">Calculando totales...</p>
+            <div className="w-8 h-8 border-2 border-indigo-200 dark:border-indigo-800 border-t-indigo-600 dark:border-t-indigo-400 rounded-full animate-spin" />
+            <p className="text-sm text-gray-500 dark:text-slate-400">Calculando totales...</p>
           </div>
         ) : closeModalPreview ? (
           <div className="space-y-4">
             {/* Period label */}
-            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+            <div className="text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-700/50 rounded-lg px-3 py-2 border border-gray-100 dark:border-slate-600">
               Período:{' '}
-              <span className="font-medium text-gray-700">
+              <span className="font-medium text-gray-700 dark:text-slate-300">
                 {closeModalPreview.fromDate
                   ? `desde ${formatDateTime(closeModalPreview.fromDate)}`
                   : 'desde el inicio'}
@@ -586,33 +589,33 @@ export default function CashRegisterDetailPage() {
 
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">Movimientos</p>
-                <p className="text-2xl font-bold text-blue-700">{closeModalPreview.movementsCount}</p>
+              <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">Movimientos</p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{closeModalPreview.movementsCount}</p>
               </div>
-              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">Ingresos</p>
-                <p className="text-lg font-bold text-emerald-700 tabular-nums">
+              <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">Ingresos</p>
+                <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
                   {formatCurrency(closeModalPreview.totalIn)}
                 </p>
               </div>
-              <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">Egresos</p>
-                <p className="text-lg font-bold text-red-700 tabular-nums">
+              <div className="bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">Egresos</p>
+                <p className="text-lg font-bold text-red-700 dark:text-red-400 tabular-nums">
                   {formatCurrency(closeModalPreview.totalOut)}
                 </p>
               </div>
               <div
                 className={`border rounded-xl p-3 text-center ${
                   closeModalPreview.netTotal >= 0
-                    ? 'bg-emerald-100 border-emerald-200'
-                    : 'bg-red-100 border-red-200'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-red-100 dark:bg-red-900/40 border-red-200 dark:border-red-800'
                 }`}
               >
-                <p className="text-xs text-gray-500 mb-1">Neto</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">Neto</p>
                 <p
                   className={`text-lg font-bold tabular-nums ${
-                    closeModalPreview.netTotal >= 0 ? 'text-emerald-800' : 'text-red-800'
+                    closeModalPreview.netTotal >= 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-red-800 dark:text-red-300'
                   }`}
                 >
                   {formatCurrency(closeModalPreview.netTotal)}

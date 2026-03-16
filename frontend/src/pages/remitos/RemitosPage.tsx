@@ -43,10 +43,10 @@ function CompactSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`appearance-none pl-3 pr-7 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+        className={`appearance-none pl-3 pr-7 py-1.5 text-xs font-medium rounded-lg border cursor-pointer transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600 dark:placeholder:text-slate-500 ${
           value
-            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400'
+            : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-500'
         }`}
       >
         <option value="">{placeholder}</option>
@@ -54,7 +54,7 @@ function CompactSelect({
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 text-[10px]">▾</span>
     </div>
   );
 }
@@ -64,12 +64,12 @@ function SkeletonRows({ count }: { count: number }) {
   return (
     <>
       {Array.from({ length: count }).map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-100 last:border-0">
-          <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-28" /></td>
-          <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-20" /></td>
-          <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-44" /></td>
-          <td className="px-4 py-4"><div className="h-4 bg-gray-100 rounded-md w-20" /></td>
-          <td className="px-4 py-4"><div className="h-5 bg-gray-100 rounded-full w-24 mx-auto" /></td>
+        <tr key={i} className="animate-pulse border-b border-gray-100 dark:border-slate-700 last:border-0">
+          <td className="px-4 py-4"><div className="h-4 bg-gray-100 dark:bg-slate-700 rounded-md w-28" /></td>
+          <td className="px-4 py-4"><div className="h-5 bg-gray-100 dark:bg-slate-700 rounded-full w-20" /></td>
+          <td className="px-4 py-4"><div className="h-4 bg-gray-100 dark:bg-slate-700 rounded-md w-44" /></td>
+          <td className="px-4 py-4"><div className="h-4 bg-gray-100 dark:bg-slate-700 rounded-md w-20" /></td>
+          <td className="px-4 py-4"><div className="h-5 bg-gray-100 dark:bg-slate-700 rounded-full w-24 mx-auto" /></td>
           <td className="px-4 py-4" />
         </tr>
       ))}
@@ -156,9 +156,9 @@ export default function RemitosPage() {
         }
       />
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
         {/* ── Filter bar ── */}
-        <div className="px-4 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <div className="flex flex-wrap items-center gap-2">
 
             {/* Estado */}
@@ -175,14 +175,14 @@ export default function RemitosPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all dark:placeholder:text-slate-500"
               />
-              <span className="text-gray-300 text-xs">→</span>
+              <span className="text-gray-300 dark:text-slate-600 text-xs">→</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-                className="h-7 px-2 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                className="h-7 px-2 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all dark:placeholder:text-slate-500"
               />
             </div>
 
@@ -200,7 +200,7 @@ export default function RemitosPage() {
             {hasFilters && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                className="flex items-center gap-1 text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700"
               >
                 <X className="w-3 h-3" />
                 Limpiar
@@ -212,7 +212,7 @@ export default function RemitosPage() {
           {hasFilters && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {statusFilter && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700">
                   {REMITO_STATUSES[statusFilter as RemitoStatus]}
                   <button onClick={() => { setStatusFilter(''); setPage(1); }}>
                     <X className="w-2.5 h-2.5" />
@@ -220,7 +220,7 @@ export default function RemitosPage() {
                 </span>
               )}
               {customerFilter && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700">
                   {customers.find(c => c.id === customerFilter)?.name ?? 'Cliente'}
                   <button onClick={() => { setCustomerFilter(''); setPage(1); }}>
                     <X className="w-2.5 h-2.5" />
@@ -228,7 +228,7 @@ export default function RemitosPage() {
                 </span>
               )}
               {(dateFrom || dateTo) && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700">
                   {dateFrom && dateTo
                     ? `${dateFrom} → ${dateTo}`
                     : dateFrom
@@ -247,14 +247,14 @@ export default function RemitosPage() {
         {showSkeleton && (
           <div className="overflow-x-auto">
             <table className="min-w-full min-w-[600px]">
-              <thead className="bg-gray-50/80">
+              <thead className="bg-gray-50/80 dark:bg-slate-700/50">
                 <tr>
                   {['Número', 'Tipo', 'Cliente', 'Fecha', 'Estado', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="bg-white">
+              <tbody className="bg-white dark:bg-slate-800">
                 <SkeletonRows count={8} />
               </tbody>
             </table>
@@ -264,13 +264,13 @@ export default function RemitosPage() {
         {/* ── Empty state ── */}
         {showEmpty && (
           <div className="py-20 flex flex-col items-center text-center px-4">
-            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center mb-4">
-              <ClipboardList className="w-5 h-5 text-gray-400" />
+            <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+              <ClipboardList className="w-5 h-5 text-gray-400 dark:text-slate-500" />
             </div>
-            <p className="text-sm font-semibold text-gray-800 mb-1">
+            <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">
               {hasFilters ? 'Sin resultados' : 'Sin remitos todavía'}
             </p>
-            <p className="text-sm text-gray-400 mb-5 max-w-xs">
+            <p className="text-sm text-gray-400 dark:text-slate-500 mb-5 max-w-xs">
               {hasFilters
                 ? 'Probá ajustando los filtros para encontrar lo que buscás.'
                 : 'Creá tu primer remito para registrar entregas de mercadería.'}
@@ -278,7 +278,7 @@ export default function RemitosPage() {
             {hasFilters ? (
               <button
                 onClick={clearFilters}
-                className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline"
+                className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
               >
                 Limpiar filtros
               </button>
@@ -296,26 +296,26 @@ export default function RemitosPage() {
           <div className={`transition-opacity duration-200 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
             <div className="overflow-x-auto">
               <table className="min-w-full min-w-[600px]">
-                <thead className="bg-gray-50/80">
+                <thead className="bg-gray-50/80 dark:bg-slate-700/50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Número</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Tipo entrega</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Fecha</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">Estado</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Número</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Tipo entrega</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Cliente</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Estado</th>
                     <th className="px-4 py-3 w-10" />
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
+                <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">
                   {remitos.map((rem) => {
                     const chip = BEHAVIOR_CHIP[rem.stockBehavior];
                     return (
                       <tr
                         key={rem.id}
-                        className="cursor-pointer hover:bg-gray-50/80 transition-colors duration-150 group"
+                        className="cursor-pointer hover:bg-gray-50/80 dark:hover:bg-slate-700 transition-colors duration-150 group"
                         onClick={() => navigate(`/remitos/${rem.id}`)}
                       >
-                        <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+                        <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">
                           {rem.number}
                         </td>
                         <td className="px-4 py-3.5">
@@ -323,10 +323,10 @@ export default function RemitosPage() {
                             {chip.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-sm text-gray-700 max-w-[200px] truncate">
-                          {rem.customer?.name ?? <span className="text-gray-400 italic text-xs">—</span>}
+                        <td className="px-4 py-3.5 text-sm text-gray-700 dark:text-slate-300 max-w-[200px] truncate">
+                          {rem.customer?.name ?? <span className="text-gray-400 dark:text-slate-500 italic text-xs">—</span>}
                         </td>
-                        <td className="px-4 py-3.5 text-sm text-gray-500 tabular-nums whitespace-nowrap">
+                        <td className="px-4 py-3.5 text-sm text-gray-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
                           {formatDate(rem.date)}
                         </td>
                         <td className="px-4 py-3.5 text-center">
@@ -337,7 +337,7 @@ export default function RemitosPage() {
                         <td className="px-4 py-3.5 text-right">
                           <button
                             onClick={(e) => { e.stopPropagation(); navigate(`/remitos/${rem.id}`); }}
-                            className="p-1.5 rounded-lg text-gray-300 group-hover:text-gray-500 hover:bg-gray-100 transition-colors duration-150"
+                            className="p-1.5 rounded-lg text-gray-300 dark:text-slate-600 group-hover:text-gray-500 dark:group-hover:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150"
                           >
                             <Eye className="w-4 h-4" />
                           </button>

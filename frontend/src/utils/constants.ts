@@ -104,8 +104,6 @@ export const BUDGET_STATUSES = {
   REJECTED: 'Rechazado',
   CONVERTED: 'Convertido',
   EXPIRED: 'Vencido',
-  PARTIALLY_PAID: 'Pago parcial',
-  PAID: 'Pagado',
 } as const;
 
 export const BUDGET_STATUS_OPTIONS = Object.entries(BUDGET_STATUSES).map(
@@ -119,16 +117,40 @@ export const BUDGET_STATUS_COLORS: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-800',
   CONVERTED: 'bg-purple-100 text-purple-800',
   EXPIRED: 'bg-orange-100 text-orange-800',
+};
+
+export const ORDEN_PEDIDO_STATUSES = {
+  DRAFT: 'Borrador',
+  CONFIRMED: 'Confirmada',
+  PARTIALLY_PAID: 'Pago parcial',
+  PAID: 'Pagada',
+  CANCELLED: 'Cancelada',
+  CONVERTED: 'Convertida',
+} as const;
+
+export const ORDEN_PEDIDO_STATUS_OPTIONS = Object.entries(ORDEN_PEDIDO_STATUSES).map(
+  ([value, label]) => ({ value, label })
+);
+
+export const ORDEN_PEDIDO_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-800',
+  CONFIRMED: 'bg-blue-100 text-blue-800',
   PARTIALLY_PAID: 'bg-yellow-100 text-yellow-800',
   PAID: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+  CONVERTED: 'bg-purple-100 text-purple-800',
 };
 
 export const PAYMENT_METHODS = {
   CASH: 'Efectivo',
   BANK_TRANSFER: 'Transferencia bancaria',
+  MERCADO_PAGO: 'Mercado Pago',
   CHECK: 'Cheque',
   CARD: 'Tarjeta',
 } as const;
+
+/** AFIP: ventas en efectivo > este monto requieren identificar al cliente */
+export const CASH_ID_THRESHOLD = 30767;
 
 export const PAYMENT_METHOD_OPTIONS = Object.entries(PAYMENT_METHODS).map(
   ([value, label]) => ({ value, label })
@@ -138,6 +160,24 @@ export const RECIBO_STATUSES = {
   EMITTED: 'Emitido',
   CANCELLED: 'Cancelado',
 } as const;
+
+export const CHECK_STATUSES = {
+  PENDING: 'En cartera',
+  DEPOSITED: 'Depositado',
+  CLEARED: 'Acreditado',
+  BOUNCED: 'Rechazado',
+  RETURNED: 'Devuelto',
+} as const;
+
+export const CHECK_STATUS_COLORS: Record<string, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+  DEPOSITED: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+  CLEARED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  BOUNCED: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  RETURNED: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300',
+};
+
+export const CHECK_STATUS_OPTIONS = Object.entries(CHECK_STATUSES).map(([value, label]) => ({ value, label }));
 
 export const RECIBO_STATUS_OPTIONS = Object.entries(RECIBO_STATUSES).map(
   ([value, label]) => ({ value, label })
@@ -157,12 +197,24 @@ export const PAYMENT_TERMS_OPTIONS = [
   { value: 'Contado', label: 'Contado' },
   { value: '15 días', label: '15 días' },
   { value: '30 días', label: '30 días' },
+  { value: '45 días', label: '45 días' },
   { value: '60 días', label: '60 días' },
   { value: '90 días', label: '90 días' },
   { value: '120 días', label: '120 días' },
   { value: 'Contra entrega', label: 'Contra entrega' },
   { value: 'A convenir', label: 'A convenir' },
+  { value: 'CUENTA_CORRIENTE', label: 'Cuenta Corriente' },
 ];
+
+/** Términos que implican pago diferido → generan movimiento en cuenta corriente */
+export const DEFERRED_PAYMENT_DAYS: Record<string, number> = {
+  '15 días': 15,
+  '30 días': 30,
+  '45 días': 45,
+  '60 días': 60,
+  '90 días': 90,
+  '120 días': 120,
+};
 
 export const DELIVERY_STATUSES = {
   NOT_DELIVERED: 'Sin entregar',

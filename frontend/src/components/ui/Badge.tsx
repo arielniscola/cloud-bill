@@ -16,11 +16,11 @@ export default function Badge({
   className,
 }: BadgeProps) {
   const variants = {
-    default: 'bg-gray-100 text-gray-600 ring-gray-200',
-    success: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    warning: 'bg-amber-50 text-amber-700 ring-amber-200',
-    error: 'bg-red-50 text-red-700 ring-red-200',
-    info: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    default: 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 ring-gray-200 dark:ring-slate-600',
+    success: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-800',
+    warning: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-amber-200 dark:ring-amber-800',
+    error: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 ring-red-200 dark:ring-red-800',
+    info: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 ring-indigo-200 dark:ring-indigo-800',
   };
 
   const dotColors = {
