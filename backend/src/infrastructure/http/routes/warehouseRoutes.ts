@@ -14,7 +14,7 @@ router.use(authMiddleware);
 
 router.post(
   '/',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: createWarehouseSchema }),
   warehouseController.create
 );
@@ -22,10 +22,10 @@ router.get('/', warehouseController.findAll);
 router.get('/:id', warehouseController.findById);
 router.put(
   '/:id',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: updateWarehouseSchema }),
   warehouseController.update
 );
-router.delete('/:id', requireRoles('ADMIN'), warehouseController.delete);
+router.delete('/:id', requireRoles('SUPER_ADMIN', 'ADMIN'), warehouseController.delete);
 
 export { router as warehouseRoutes };

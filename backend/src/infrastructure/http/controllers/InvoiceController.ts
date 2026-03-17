@@ -43,6 +43,7 @@ export class InvoiceController {
         type: req.body.type,
         customerId: req.body.customerId,
         userId: req.user!.userId,
+        companyId: req.companyId,
         date: req.body.date ? new Date(req.body.date) : undefined,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
@@ -154,6 +155,7 @@ export class InvoiceController {
           type: filters.type as string as 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C',
           currency: filters.currency as Currency | undefined,
           saleCondition: filters.saleCondition as string | undefined,
+          companyId: req.companyId,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
         }
@@ -300,6 +302,7 @@ export class InvoiceController {
         checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
         installments: paymentData.installments ?? null,
         notes: paymentData.notes ?? null,
+        companyId: req.companyId,
       });
 
       // Record payment in current account only for cuenta corriente

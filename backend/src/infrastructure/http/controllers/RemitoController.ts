@@ -75,8 +75,9 @@ export class RemitoController {
         notes: req.body.notes,
         invoiceId: invoiceId || undefined,
         budgetId: budgetId || undefined,
+        companyId: req.companyId,
         items: req.body.items,
-      });
+      } as any);
 
       // Stock movements only for standalone remitos (linked docs handled stock at creation)
       if (!isLinked) {
@@ -134,6 +135,7 @@ export class RemitoController {
         {
           customerId: filters.customerId as string,
           status: filters.status as RemitoStatus | undefined,
+          companyId: req.companyId,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
         }

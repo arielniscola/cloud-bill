@@ -30,7 +30,7 @@ router.put(
 );
 router.patch(
   '/:id/status',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: updateInvoiceStatusSchema }),
   invoiceController.updateStatus
 );
@@ -40,7 +40,7 @@ router.post(
   validate({ body: payInvoiceSchema }),
   invoiceController.pay
 );
-router.post('/:id/cancel', requireRoles('ADMIN'), invoiceController.cancel);
+router.post('/:id/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), invoiceController.cancel);
 router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), invoiceController.emit);
 router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), invoiceController.sendEmail);
 

@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
 
 export type TaxCondition =
   | 'RESPONSABLE_INSCRIPTO'
@@ -53,6 +53,7 @@ export interface PaginatedResult<T> {
 
 export interface JwtPayload {
   userId: string;
-  email: string;
+  username: string;
   role: UserRole;
+  companyId?: string;
 }

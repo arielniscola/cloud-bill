@@ -13,6 +13,7 @@ export interface InvoiceFilters {
   type?: InvoiceType;
   currency?: Currency;
   saleCondition?: string;
+  companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

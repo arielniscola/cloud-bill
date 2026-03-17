@@ -23,7 +23,7 @@ export interface UpdateCashRegisterInput {
 
 export interface CashRegisterMovement {
   id: string;
-  currentAccountId: string;
+  currentAccountId?: string | null;
   type: 'DEBIT' | 'CREDIT';
   amount: Decimal;
   balance: Decimal;

@@ -5,6 +5,7 @@ export interface AfipConfig {
   businessName: string | null;
   businessAddress: string | null;
   taxCondition: string | null;
+  activityStartDate: Date | null;
   cert: string;
   privateKey: string;
   isProduction: boolean;
@@ -19,6 +20,7 @@ export interface CreateAfipConfigInput {
   businessName?: string | null;
   businessAddress?: string | null;
   taxCondition?: string | null;
+  activityStartDate?: Date | null;
   cert: string;
   privateKey: string;
   isProduction: boolean;

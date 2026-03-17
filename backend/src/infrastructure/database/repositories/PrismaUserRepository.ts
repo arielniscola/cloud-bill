@@ -1,43 +1,44 @@
 import { injectable } from 'tsyringe';
-import { PrismaClient } from '@prisma/client';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { User, CreateUserInput, UpdateUserInput } from '../../../domain/entities/User';
 import prisma from '../prisma';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = (prisma as any);
+
 @injectable()
 export class PrismaUserRepository implements IUserRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = prisma;
+  async findById(id: string): Promise<User | null> {
+    return prisma.user.findUnique({ where: { id } }) as Promise<User | null>;
   }
 
-  async findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+  async findByUsername(username: string): Promise<User | null> {
+    return db.user.findUnique({ where: { username } }) as Promise<User | null>;
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    if (!email) return null;
+    return prisma.user.findFirst({ where: { email } }) as Promise<User | null>;
   }
 
-  async findAll(): Promise<User[]> {
-    return this.prisma.user.findMany({
+  async findAll(filters?: { companyId?: string }): Promise<User[]> {
+    const where: Record<string, unknown> = {};
+    if (filters?.companyId) where.companyId = filters.companyId;
+    return prisma.user.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-    });
+    }) as Promise<User[]>;
   }
 
   async create(data: CreateUserInput): Promise<User> {
-    return this.prisma.user.create({ data });
+    return db.user.create({ data }) as Promise<User>;
   }
 
   async update(id: string, data: UpdateUserInput): Promise<User> {
-    return this.prisma.user.update({
-      where: { id },
-      data,
-    });
+    return db.user.update({ where: { id }, data }) as Promise<User>;
   }
 
   async delete(id: string): Promise<void> {
-    await this.prisma.user.delete({ where: { id } });
+    await prisma.user.delete({ where: { id } });
   }
 }

@@ -17,6 +17,7 @@ export class ProductController {
       const product = await productRepository.create({
         sku: req.body.sku,
         name: req.body.name,
+        companyId: req.companyId,
         description: req.body.description ?? null,
         categoryId: req.body.categoryId ?? null,
         brandId: req.body.brandId ?? null,
@@ -64,7 +65,7 @@ export class ProductController {
 
       const result = await productRepository.findAll(
         { page: Number(page) || 1, limit: Number(limit) || 10 },
-        filters as Record<string, string>
+        { ...(filters as Record<string, string>), companyId: req.companyId }
       );
 
       res.json({

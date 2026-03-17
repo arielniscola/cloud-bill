@@ -26,6 +26,7 @@ export class BudgetController {
           status: query.status,
           type: query.type,
           currency: query.currency,
+          companyId: req.companyId,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
         }
@@ -89,6 +90,7 @@ export class BudgetController {
         type: data.type,
         customerId: data.customerId ?? null,
         userId: req.user!.userId,
+        companyId: req.companyId,
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
         currency: data.currency,
         exchangeRate: data.exchangeRate,

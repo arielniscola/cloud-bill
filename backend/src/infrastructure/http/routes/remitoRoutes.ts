@@ -27,7 +27,7 @@ router.post(
   validate({ body: deliverRemitoSchema }),
   remitoController.deliver
 );
-router.post('/:id/cancel', requireRoles('ADMIN'), remitoController.cancel);
+router.post('/:id/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), remitoController.cancel);
 router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), remitoController.sendEmail);
 
 export { router as remitoRoutes };

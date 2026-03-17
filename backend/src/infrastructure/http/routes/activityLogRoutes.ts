@@ -6,7 +6,7 @@ const router = Router();
 const activityLogController = new ActivityLogController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN'));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
 router.get('/', activityLogController.findAll);
 

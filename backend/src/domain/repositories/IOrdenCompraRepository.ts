@@ -6,6 +6,7 @@ export interface OrdenCompraFilters {
   status?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  companyId?: string;
 }
 
 export interface IOrdenCompraRepository {

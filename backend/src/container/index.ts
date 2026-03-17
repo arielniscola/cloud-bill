@@ -21,6 +21,8 @@ import { IStockIntelligenceRepository } from '../domain/repositories/IStockIntel
 import { IReciboRepository } from '../domain/repositories/IReciboRepository';
 import { IOrdenPedidoRepository } from '../domain/repositories/IOrdenPedidoRepository';
 import { IOrdenCompraRepository } from '../domain/repositories/IOrdenCompraRepository';
+import { ICompanyRepository } from '../domain/repositories/ICompanyRepository';
+import { IOrdenPagoRepository } from '../domain/repositories/IOrdenPagoRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -43,6 +45,8 @@ import { PrismaStockIntelligenceRepository } from '../infrastructure/database/re
 import { PrismaReciboRepository } from '../infrastructure/database/repositories/PrismaReciboRepository';
 import { PrismaOrdenPedidoRepository } from '../infrastructure/database/repositories/PrismaOrdenPedidoRepository';
 import { PrismaOrdenCompraRepository } from '../infrastructure/database/repositories/PrismaOrdenCompraRepository';
+import { PrismaCompanyRepository } from '../infrastructure/database/repositories/PrismaCompanyRepository';
+import { PrismaOrdenPagoRepository } from '../infrastructure/database/repositories/PrismaOrdenPagoRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -69,5 +73,7 @@ container.registerSingleton<IStockIntelligenceRepository>('StockIntelligenceRepo
 container.registerSingleton<IReciboRepository>('ReciboRepository', PrismaReciboRepository);
 container.registerSingleton<IOrdenPedidoRepository>('OrdenPedidoRepository', PrismaOrdenPedidoRepository);
 container.registerSingleton<IOrdenCompraRepository>('OrdenCompraRepository', PrismaOrdenCompraRepository);
+container.registerSingleton<ICompanyRepository>('CompanyRepository', PrismaCompanyRepository);
+container.registerSingleton<IOrdenPagoRepository>('OrdenPagoRepository', PrismaOrdenPagoRepository);
 
 export { container };

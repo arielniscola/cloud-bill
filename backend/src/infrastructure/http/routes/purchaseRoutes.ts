@@ -6,7 +6,7 @@ const router = Router();
 const purchaseController = new PurchaseController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN'));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
 router.get('/', purchaseController.findAll);
 router.get('/:id', purchaseController.findById);

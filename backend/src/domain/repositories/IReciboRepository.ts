@@ -8,6 +8,7 @@ export interface ReciboFilters {
   customerId?: string;
   status?: string;
   paymentMethod?: string;
+  companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

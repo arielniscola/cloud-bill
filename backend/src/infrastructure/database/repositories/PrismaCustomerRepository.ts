@@ -64,6 +64,10 @@ export class PrismaCustomerRepository implements ICustomerRepository {
       where.isActive = filters.isActive;
     }
 
+    if (filters.companyId) {
+      (where as any).companyId = filters.companyId;
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.customer.findMany({
         where,
@@ -93,12 +97,13 @@ export class PrismaCustomerRepository implements ICustomerRepository {
   }
 
   async create(data: CreateCustomerInput): Promise<Customer> {
-    const { saleCondition = 'CONTADO', ...rest } = data as any;
+    const { saleCondition = 'CONTADO', companyId, ...rest } = data as any;
     const created = await this.prisma.customer.create({ data: rest });
+    const resolvedCompanyId = companyId ?? '00000000-0000-0000-0000-000000000001';
     await this.prisma.$executeRaw(
-      Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition} WHERE id = ${created.id}`
+      Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition}, "companyId" = ${resolvedCompanyId} WHERE id = ${created.id}`
     );
-    return { ...(created as any), saleCondition } as Customer;
+    return { ...(created as any), saleCondition, companyId: resolvedCompanyId } as Customer;
   }
 
   async update(id: string, data: UpdateCustomerInput): Promise<Customer> {

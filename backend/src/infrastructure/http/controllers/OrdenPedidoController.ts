@@ -31,6 +31,7 @@ export class OrdenPedidoController {
           customerId: query.customerId,
           status: query.status,
           currency: query.currency,
+          companyId: req.companyId,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
         }
@@ -90,6 +91,7 @@ export class OrdenPedidoController {
         stockBehavior: data.stockBehavior ?? 'DISCOUNT',
         cashRegisterId: data.cashRegisterId ?? null,
         invoiceCashRegisterId: data.invoiceCashRegisterId ?? null,
+        companyId: req.companyId,
         subtotal,
         taxAmount,
         total: subtotal + taxAmount,
@@ -298,6 +300,28 @@ export class OrdenPedidoController {
       // Mark OP as CONVERTED and link to invoice
       await opRepo.update(req.params.id, { status: 'CONVERTED', invoiceId: invoice.id });
 
+      // Inherit payment from OP: link existing recibos and set invoice status
+      const opRecibos = await (prisma as any).recibo.findMany({
+        where: { ordenPedidoId: op.id, status: 'EMITTED' },
+      });
+
+      if (opRecibos.length > 0) {
+        const totalPaid = opRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+        const invoiceTotal = Number(invoice.total);
+        const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
+
+        // Link each recibo to the invoice
+        for (const recibo of opRecibos) {
+          await (prisma as any).recibo.update({
+            where: { id: recibo.id },
+            data: { invoiceId: invoice.id },
+          });
+        }
+
+        await invoiceRepo.update(invoice.id, { status: newStatus });
+        invoice.status = newStatus as any;
+      }
+
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'CREATE',
@@ -367,6 +391,7 @@ export class OrdenPedidoController {
         checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
         installments: paymentData.installments ?? null,
         notes: paymentData.notes ?? null,
+        companyId: req.companyId,
       } as any);
 
       const exchangeRate = paymentData.exchangeRate ?? 1;

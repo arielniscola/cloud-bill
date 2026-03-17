@@ -3,31 +3,58 @@ import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigR
 import { AfipConfig, CreateAfipConfigInput } from '../../../domain/entities/AfipConfig';
 import prisma from '../prisma';
 
+async function withActivityDate(config: any): Promise<AfipConfig> {
+  if (!config) return config;
+  const rows = await prisma.$queryRaw<{ activityStartDate: Date | null }[]>`
+    SELECT "activityStartDate" FROM afip_config WHERE id = ${config.id}
+  `;
+  return { ...config, activityStartDate: rows[0]?.activityStartDate ?? null };
+}
+
 @injectable()
 export class PrismaAfipConfigRepository implements IAfipConfigRepository {
   async getActive(): Promise<AfipConfig | null> {
-    return prisma.afipConfig.findFirst({ where: { isActive: true } });
+    const config = await prisma.afipConfig.findFirst({ where: { isActive: true } });
+    if (!config) return null;
+    return withActivityDate(config);
   }
 
   async upsert(data: CreateAfipConfigInput): Promise<AfipConfig> {
     const existing = await prisma.afipConfig.findFirst({ where: { isActive: true } });
 
+    let config: any;
     if (existing) {
-      return prisma.afipConfig.update({
+      config = await prisma.afipConfig.update({
         where: { id: existing.id },
         data: {
-          cuit: data.cuit,
-          salePoint: data.salePoint,
-          businessName: data.businessName,
+          cuit:           data.cuit,
+          salePoint:      data.salePoint,
+          businessName:   data.businessName,
           businessAddress: data.businessAddress,
-          taxCondition: data.taxCondition,
-          cert: data.cert,
-          privateKey: data.privateKey,
-          isProduction: data.isProduction,
+          taxCondition:   data.taxCondition,
+          cert:           data.cert,
+          privateKey:     data.privateKey,
+          isProduction:   data.isProduction,
         },
       });
+    } else {
+      const { activityStartDate: _asd, ...rest } = data as any;
+      config = await prisma.afipConfig.create({ data: rest });
     }
 
-    return prisma.afipConfig.create({ data });
+    // Set activityStartDate via raw SQL (stale Prisma client workaround)
+    if (data.activityStartDate !== undefined) {
+      if (data.activityStartDate) {
+        await prisma.$executeRaw`
+          UPDATE afip_config SET "activityStartDate" = ${data.activityStartDate} WHERE id = ${config.id}
+        `;
+      } else {
+        await prisma.$executeRaw`
+          UPDATE afip_config SET "activityStartDate" = NULL WHERE id = ${config.id}
+        `;
+      }
+    }
+
+    return withActivityDate(config);
   }
 }

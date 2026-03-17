@@ -20,8 +20,9 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
     return this.prisma.warehouse.findUnique({ where: { id } });
   }
 
-  async findAll(): Promise<Warehouse[]> {
+  async findAll(companyId?: string): Promise<Warehouse[]> {
     return this.prisma.warehouse.findMany({
+      where: companyId ? ({ companyId } as any) : undefined,
       orderBy: { name: 'asc' },
     });
   }
@@ -40,7 +41,12 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
       });
     }
 
-    return this.prisma.warehouse.create({ data });
+    return this.prisma.warehouse.create({
+      data: {
+        ...data,
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+      } as any,
+    });
   }
 
   async update(id: string, data: UpdateWarehouseInput): Promise<Warehouse> {

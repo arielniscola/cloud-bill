@@ -8,6 +8,7 @@ export interface ProductFilters {
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
+  companyId?: string;
 }
 
 export interface IProductRepository {

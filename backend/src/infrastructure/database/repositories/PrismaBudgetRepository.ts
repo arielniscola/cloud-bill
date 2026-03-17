@@ -37,6 +37,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     if (filters.status) where.status = filters.status as any;
     if (filters.type) where.type = filters.type as any;
     if (filters.currency) where.currency = filters.currency as any;
+    if (filters.companyId) (where as any).companyId = filters.companyId;
 
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
@@ -95,6 +96,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),

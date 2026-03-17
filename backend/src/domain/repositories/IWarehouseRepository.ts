@@ -10,7 +10,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface IWarehouseRepository {
   findById(id: string): Promise<Warehouse | null>;
-  findAll(): Promise<Warehouse[]>;
+  findAll(companyId?: string): Promise<Warehouse[]>;
   findDefault(): Promise<Warehouse | null>;
   create(data: CreateWarehouseInput): Promise<Warehouse>;
   update(id: string, data: UpdateWarehouseInput): Promise<Warehouse>;

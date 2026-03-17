@@ -7,7 +7,7 @@ export class CashRegisterController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const cashRegister = await repo.create(req.body);
+      const cashRegister = await repo.create({ ...req.body, companyId: req.companyId });
       res.status(201).json({ status: 'success', data: cashRegister });
     } catch (error) {
       next(error);
@@ -18,7 +18,7 @@ export class CashRegisterController {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
       const onlyActive = req.query.active === 'true';
-      const cashRegisters = await repo.findAll(onlyActive);
+      const cashRegisters = await repo.findAll(onlyActive, req.companyId);
       res.json({ status: 'success', data: cashRegisters });
     } catch (error) {
       next(error);

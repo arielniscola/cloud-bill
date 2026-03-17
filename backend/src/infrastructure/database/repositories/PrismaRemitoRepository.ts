@@ -51,6 +51,10 @@ export class PrismaRemitoRepository implements IRemitoRepository {
       where.status = filters.status;
     }
 
+    if (filters.companyId) {
+      (where as any).companyId = filters.companyId;
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -100,6 +104,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         invoiceId: data.invoiceId ?? null,
         budgetId: data.budgetId ?? null,
         ordenPedidoId: data.ordenPedidoId ?? null,
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         items: {
           create: data.items.map((item) => ({
             productId: item.productId,

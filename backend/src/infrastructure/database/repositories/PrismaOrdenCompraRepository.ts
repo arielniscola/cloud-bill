@@ -37,6 +37,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
     const where: any = {};
     if (filters.supplierId) where.supplierId = filters.supplierId;
     if (filters.status)     where.status     = filters.status;
+    if (filters.companyId)  where.companyId  = filters.companyId;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -93,6 +94,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
         exchangeRate: new Decimal(data.exchangeRate ?? 1),
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
+        companyId:    (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         subtotal:     new Decimal(data.subtotal),
         taxAmount:    new Decimal(data.taxAmount),
         total:        new Decimal(data.total),

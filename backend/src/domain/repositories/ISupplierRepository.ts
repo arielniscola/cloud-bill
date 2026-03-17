@@ -4,6 +4,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 export interface SupplierFilters {
   search?: string;
   isActive?: boolean;
+  companyId?: string;
 }
 
 export interface ISupplierRepository {

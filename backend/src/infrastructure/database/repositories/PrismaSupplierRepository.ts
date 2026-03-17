@@ -27,6 +27,10 @@ export class PrismaSupplierRepository implements ISupplierRepository {
       where.isActive = filters.isActive;
     }
 
+    if (filters.companyId) {
+      (where as any).companyId = filters.companyId;
+    }
+
     const [data, total] = await Promise.all([
       prisma.supplier.findMany({ where, skip, take: limit, orderBy: { name: 'asc' } }),
       prisma.supplier.count({ where }),
@@ -40,7 +44,12 @@ export class PrismaSupplierRepository implements ISupplierRepository {
   }
 
   async create(data: CreateSupplierInput): Promise<Supplier> {
-    return prisma.supplier.create({ data });
+    return prisma.supplier.create({
+      data: {
+        ...data,
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+      } as any,
+    });
   }
 
   async update(id: string, data: UpdateSupplierInput): Promise<Supplier> {

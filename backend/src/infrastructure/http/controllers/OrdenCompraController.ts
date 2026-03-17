@@ -27,6 +27,7 @@ export class OrdenCompraController {
         {
           supplierId: query.supplierId,
           status:     query.status,
+          companyId:  req.companyId,
           dateFrom:   query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo:     query.dateTo   ? new Date(query.dateTo)   : undefined,
         }
@@ -75,11 +76,12 @@ export class OrdenCompraController {
         exchangeRate: data.exchangeRate,
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
+        companyId:    req.companyId,
         subtotal,
         taxAmount,
         total:        subtotal + taxAmount,
         items,
-      });
+      } as any);
 
       await activityRepo.create({
         userId:      req.user!.userId,

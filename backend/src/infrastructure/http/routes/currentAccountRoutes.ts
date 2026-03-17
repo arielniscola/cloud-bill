@@ -29,7 +29,7 @@ router.post(
 );
 router.put(
   '/customer/:customerId/credit-limit',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: setCreditLimitSchema }),
   currentAccountController.setCreditLimit
 );

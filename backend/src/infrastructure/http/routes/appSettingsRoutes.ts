@@ -8,6 +8,6 @@ const appSettingsController = new AppSettingsController();
 router.use(authMiddleware);
 
 router.get('/', appSettingsController.get);
-router.put('/', requireRoles('ADMIN'), appSettingsController.upsert);
+router.put('/', requireRoles('SUPER_ADMIN', 'ADMIN'), appSettingsController.upsert);
 
 export { router as appSettingsRoutes };

@@ -6,7 +6,7 @@ const router = Router();
 const supplierController = new SupplierController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN'));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
 router.get('/', supplierController.findAll);
 router.get('/:id/products', supplierController.findProducts);

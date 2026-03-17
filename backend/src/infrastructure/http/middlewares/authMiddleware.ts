@@ -8,6 +8,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: JwtPayload;
+      companyId?: string;
     }
   }
 }
@@ -34,6 +35,17 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
     req.user = decoded;
+
+    // Resolve active company:
+    // 1. If user has a company in JWT → always use that
+    // 2. If super-admin (no companyId in JWT) → use X-Company-Id header
+    if (decoded.companyId) {
+      req.companyId = decoded.companyId;
+    } else {
+      const headerCompany = req.headers['x-company-id'] as string | undefined;
+      req.companyId = headerCompany || '00000000-0000-0000-0000-000000000001';
+    }
+
     next();
   } catch {
     throw new UnauthorizedError('Invalid token');

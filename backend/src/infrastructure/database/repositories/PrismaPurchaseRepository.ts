@@ -30,6 +30,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
 
     if (filters.supplierId) where.supplierId = filters.supplierId;
     if (filters.status) where.status = filters.status;
+    if (filters.companyId) (where as any).companyId = filters.companyId;
 
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
@@ -105,6 +106,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
         subtotal,
         taxAmount,
         total,
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         items: { create: items },
       },
       include: includeRelations,

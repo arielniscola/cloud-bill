@@ -15,27 +15,27 @@ router.use(authMiddleware);
 
 router.post(
   '/',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: createCashRegisterSchema }),
   cashRegisterController.create
 );
 router.get('/', cashRegisterController.findAll);
-router.get('/:id/movements', requireRoles('ADMIN'), cashRegisterController.getMovements);
-router.get('/:id/close-preview', requireRoles('ADMIN'), cashRegisterController.getClosePreview);
-router.get('/:id/closes', requireRoles('ADMIN'), cashRegisterController.getCloses);
+router.get('/:id/movements', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getMovements);
+router.get('/:id/close-preview', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getClosePreview);
+router.get('/:id/closes', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getCloses);
 router.post(
   '/:id/close',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: createCashRegisterCloseSchema }),
   cashRegisterController.createClose
 );
 router.get('/:id', cashRegisterController.findById);
 router.put(
   '/:id',
-  requireRoles('ADMIN'),
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
   validate({ body: updateCashRegisterSchema }),
   cashRegisterController.update
 );
-router.delete('/:id', requireRoles('ADMIN'), cashRegisterController.delete);
+router.delete('/:id', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.delete);
 
 export { router as cashRegisterRoutes };

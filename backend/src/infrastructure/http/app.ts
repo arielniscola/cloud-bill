@@ -26,6 +26,8 @@ import { reciboRoutes } from './routes/reciboRoutes';
 import { ordenPedidoRoutes } from './routes/ordenPedidoRoutes';
 import { ordenCompraRoutes } from './routes/ordenCompraRoutes';
 import { userRoutes } from './routes/userRoutes';
+import { companyRoutes } from './routes/companyRoutes';
+import { ordenPagoRoutes } from './routes/ordenPagoRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -65,6 +67,8 @@ export function createApp(): Application {
   app.use('/api/orden-pedidos', ordenPedidoRoutes);
   app.use('/api/orden-compras', ordenCompraRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/companies', companyRoutes);
+  app.use('/api/orden-pagos', ordenPagoRoutes);
 
   // 404 handler
   app.use((_req, res) => {

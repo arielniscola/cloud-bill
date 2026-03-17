@@ -9,6 +9,7 @@ import { PaginationParams, PaginatedResult, RemitoStatus } from '../../shared/ty
 export interface RemitoFilters {
   customerId?: string;
   status?: RemitoStatus;
+  companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

@@ -11,7 +11,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface ICashRegisterRepository {
   findById(id: string): Promise<CashRegister | null>;
-  findAll(onlyActive?: boolean): Promise<CashRegister[]>;
+  findAll(onlyActive?: boolean, companyId?: string): Promise<CashRegister[]>;
   create(data: CreateCashRegisterInput): Promise<CashRegister>;
   update(id: string, data: UpdateCashRegisterInput): Promise<CashRegister>;
   delete(id: string): Promise<void>;

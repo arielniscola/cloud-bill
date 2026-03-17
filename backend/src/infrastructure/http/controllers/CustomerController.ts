@@ -11,7 +11,7 @@ export class CustomerController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const useCase = container.resolve(CreateCustomerUseCase);
-      const customer = await useCase.execute(req.body);
+      const customer = await useCase.execute({ ...req.body, companyId: req.companyId });
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
@@ -52,7 +52,7 @@ export class CustomerController {
 
       const result = await useCase.execute(
         { page: Number(page) || 1, limit: Number(limit) || 10 },
-        filters
+        { ...filters, companyId: req.companyId } as any
       );
 
       res.json({

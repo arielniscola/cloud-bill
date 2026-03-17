@@ -39,7 +39,12 @@ export class PrismaProductRepository implements IProductRepository {
     }
 
     if (filters.categoryId) {
-      where.categoryId = filters.categoryId;
+      const children = await this.prisma.category.findMany({
+        where: { parentId: filters.categoryId },
+        select: { id: true },
+      });
+      const categoryIds = [filters.categoryId, ...children.map((c) => c.id)];
+      (where as any).categoryId = { in: categoryIds };
     }
 
     if (filters.brandId) {
@@ -58,6 +63,10 @@ export class PrismaProductRepository implements IProductRepository {
       if (filters.maxPrice !== undefined) {
         where.price.lte = filters.maxPrice;
       }
+    }
+
+    if (filters.companyId) {
+      (where as any).companyId = filters.companyId;
     }
 
     const [data, total] = await Promise.all([
@@ -81,18 +90,55 @@ export class PrismaProductRepository implements IProductRepository {
   }
 
   async create(data: CreateProductInput): Promise<Product> {
-    return (this.prisma as any).product.create({ data: { ...data, priceUpdatedAt: new Date() } });
+    const d = data as any;
+    const companyId = d.companyId ?? '00000000-0000-0000-0000-000000000001';
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO products (
+        id, sku, name, description, barcode, unit, "internalNotes",
+        cost, price, "salePriceUSD", "taxRate", "isActive",
+        "priceUpdatedAt", "categoryId", "brandId", "companyId",
+        "createdAt", "updatedAt"
+      ) VALUES (
+        gen_random_uuid(),
+        ${d.sku}, ${d.name}, ${d.description ?? null}, ${d.barcode ?? null},
+        ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
+        ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
+        ${d.isActive ?? true}, NOW(),
+        ${d.categoryId ?? null}, ${d.brandId ?? null}, ${companyId},
+        NOW(), NOW()
+      )
+      RETURNING id
+    `;
+    return this.findById(rows[0].id) as Promise<Product>;
   }
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
-    const priceChanged = data.price !== undefined || data.salePriceUSD !== undefined;
-    return (this.prisma as any).product.update({
-      where: { id },
-      data: {
-        ...data,
-        ...(priceChanged && { priceUpdatedAt: new Date() }),
-      },
-    });
+    const d = data as any;
+    const priceChanged = d.price !== undefined || d.salePriceUSD !== undefined;
+    const setClauses: Prisma.Sql[] = [];
+
+    if (d.sku           !== undefined) setClauses.push(Prisma.sql`sku = ${d.sku}`);
+    if (d.name          !== undefined) setClauses.push(Prisma.sql`name = ${d.name}`);
+    if (d.description   !== undefined) setClauses.push(Prisma.sql`description = ${d.description}`);
+    if (d.barcode       !== undefined) setClauses.push(Prisma.sql`barcode = ${d.barcode}`);
+    if (d.unit          !== undefined) setClauses.push(Prisma.sql`unit = ${d.unit}`);
+    if (d.internalNotes !== undefined) setClauses.push(Prisma.sql`"internalNotes" = ${d.internalNotes}`);
+    if (d.cost          !== undefined) setClauses.push(Prisma.sql`cost = ${d.cost}`);
+    if (d.price         !== undefined) setClauses.push(Prisma.sql`price = ${d.price}`);
+    if (d.salePriceUSD  !== undefined) setClauses.push(Prisma.sql`"salePriceUSD" = ${d.salePriceUSD}`);
+    if (d.taxRate       !== undefined) setClauses.push(Prisma.sql`"taxRate" = ${d.taxRate}`);
+    if (d.isActive      !== undefined) setClauses.push(Prisma.sql`"isActive" = ${d.isActive}`);
+    if (d.leadTimeDays  !== undefined) setClauses.push(Prisma.sql`"leadTimeDays" = ${d.leadTimeDays}`);
+    if (d.categoryId    !== undefined) setClauses.push(Prisma.sql`"categoryId" = ${d.categoryId}`);
+    if (d.brandId       !== undefined) setClauses.push(Prisma.sql`"brandId" = ${d.brandId}`);
+    if (priceChanged)                  setClauses.push(Prisma.sql`"priceUpdatedAt" = NOW()`);
+
+    setClauses.push(Prisma.sql`"updatedAt" = NOW()`);
+
+    await this.prisma.$executeRaw`
+      UPDATE products SET ${Prisma.join(setClauses)} WHERE id = ${id}
+    `;
+    return this.findById(id) as Promise<Product>;
   }
 
   async delete(id: string): Promise<void> {

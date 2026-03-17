@@ -37,6 +37,9 @@ export class PrismaReciboRepository implements IReciboRepository {
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.status) where.status = filters.status;
     if (filters.paymentMethod) where.paymentMethod = filters.paymentMethod;
+    // Workaround: Prisma client stale — companyId not yet in generated types for Recibo.
+    // Filter via customer relation (semantically equivalent: recibo.customer.companyId === companyId).
+    if (filters.companyId) where.customer = { companyId: filters.companyId };
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -82,9 +85,10 @@ export class PrismaReciboRepository implements IReciboRepository {
       },
     });
 
-    // Set exchangeRate via raw SQL (bypasses stale Prisma client types)
+    // Set exchangeRate + companyId via raw SQL (bypasses stale Prisma client types)
     const rate = new Decimal(data.exchangeRate ?? 1);
-    await prisma.$executeRaw`UPDATE "recibos" SET "exchangeRate" = ${rate} WHERE id = ${recibo.id}`;
+    const companyId = (data as any).companyId ?? '00000000-0000-0000-0000-000000000001';
+    await prisma.$executeRaw`UPDATE "recibos" SET "exchangeRate" = ${rate}, "companyId" = ${companyId} WHERE id = ${recibo.id}`;
 
     // Return with relations
     return prisma.recibo.findUnique({

@@ -3,7 +3,9 @@ import { container } from 'tsyringe';
 import { IPurchaseRepository } from '../../../domain/repositories/IPurchaseRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
+import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
+import prisma from '../../database/prisma';
 
 export class PurchaseController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -16,6 +18,7 @@ export class PurchaseController {
         {
           supplierId: supplierId as string | undefined,
           status: status as 'REGISTERED' | 'CANCELLED' | undefined,
+          companyId: req.companyId,
           dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
           dateTo: dateTo ? new Date(dateTo as string) : undefined,
         }
@@ -44,17 +47,39 @@ export class PurchaseController {
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       const stockRepo = container.resolve<IStockRepository>('StockRepository');
 
+      const saleCondition: string = req.body.saleCondition ?? 'CONTADO';
+
       const purchase = await repo.create({
         type: req.body.type,
         number: req.body.number,
         supplierId: req.body.supplierId,
         userId: req.user!.userId,
+        companyId: req.companyId,
         warehouseId: req.body.warehouseId || undefined,
         date: req.body.date ? new Date(req.body.date) : undefined,
         currency: req.body.currency,
         notes: req.body.notes,
         items: req.body.items,
       });
+
+      // Persist saleCondition via raw SQL (stale Prisma client workaround)
+      await prisma.$executeRaw`
+        UPDATE "purchases" SET "saleCondition" = ${saleCondition} WHERE id = ${purchase.id}
+      `;
+
+      // If Cuenta Corriente: create DEBIT supplier account movement
+      if (saleCondition === 'CUENTA_CORRIENTE') {
+        const opRepo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
+        await opRepo.createSupplierMovement({
+          supplierId: purchase.supplierId,
+          purchaseId: purchase.id,
+          type: 'DEBIT',
+          amount: Number(purchase.total),
+          currency: purchase.currency,
+          description: `Compra en CC: ${purchase.number}`,
+          companyId: req.companyId,
+        });
+      }
 
       // Auto-stock: create PURCHASE movements for items linked to products
       if (purchase.warehouseId) {

@@ -6,7 +6,7 @@ const router = Router();
 const ctrl   = new OrdenCompraController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN'));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
 router.get('/',             ctrl.findAll);
 router.get('/:id',          ctrl.findById);

@@ -69,6 +69,10 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       (where as any).saleCondition = filters.saleCondition;
     }
 
+    if (filters.companyId) {
+      (where as any).companyId = filters.companyId;
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -140,6 +144,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
         originInvoiceId: (data as any).originInvoiceId ?? null,
         ordenPedidoId: (data as any).ordenPedidoId ?? null,
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         subtotal,
         taxAmount,
         total,

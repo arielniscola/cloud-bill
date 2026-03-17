@@ -6,6 +6,7 @@ export interface PurchaseFilters {
   status?: 'REGISTERED' | 'CANCELLED';
   dateFrom?: Date;
   dateTo?: Date;
+  companyId?: string;
 }
 
 export interface IPurchaseRepository {

@@ -36,6 +36,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.status) where.status = filters.status;
     if (filters.currency) where.currency = filters.currency;
+    if (filters.companyId) where.companyId = filters.companyId;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -92,6 +93,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: data.stockBehavior ?? 'DISCOUNT',
+        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
         cashRegisterId: (data as any).cashRegisterId ?? null,
         invoiceCashRegisterId: (data as any).invoiceCashRegisterId ?? null,
         subtotal: new Decimal(data.subtotal),

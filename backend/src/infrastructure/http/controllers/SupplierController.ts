@@ -15,6 +15,7 @@ export class SupplierController {
         {
           search: search as string | undefined,
           isActive: isActive !== undefined ? isActive === 'true' : undefined,
+          companyId: req.companyId,
         }
       );
 
@@ -38,7 +39,7 @@ export class SupplierController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const supplier = await repo.create(req.body);
+      const supplier = await repo.create({ ...req.body, companyId: req.companyId });
       res.status(201).json({ status: 'success', data: supplier });
     } catch (error) {
       next(error);

@@ -53,4 +53,5 @@ export interface CreateReciboInput {
   checkDueDate?: Date | null;
   installments?: number | null;
   notes?: string | null;
+  companyId?: string;
 }

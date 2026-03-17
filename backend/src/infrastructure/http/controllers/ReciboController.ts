@@ -25,6 +25,7 @@ export class ReciboController {
           customerId: query.customerId,
           status: query.status,
           paymentMethod: query.paymentMethod,
+          companyId: req.companyId,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
         }

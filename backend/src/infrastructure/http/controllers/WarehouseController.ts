@@ -13,7 +13,8 @@ export class WarehouseController {
         address: req.body.address ?? null,
         isDefault: req.body.isDefault ?? false,
         isActive: req.body.isActive ?? true,
-      });
+        companyId: req.companyId,
+      } as any);
 
       res.status(201).json({
         status: 'success',
@@ -42,10 +43,10 @@ export class WarehouseController {
     }
   }
 
-  async findAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
-      const warehouses = await warehouseRepository.findAll();
+      const warehouses = await warehouseRepository.findAll(req.companyId);
 
       res.json({
         status: 'success',

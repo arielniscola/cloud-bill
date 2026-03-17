@@ -5,6 +5,7 @@ export interface CustomerFilters {
   search?: string;
   taxCondition?: string;
   isActive?: boolean;
+  companyId?: string;
 }
 
 export interface ICustomerRepository {

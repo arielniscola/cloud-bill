@@ -6,6 +6,7 @@ export interface BudgetFilters {
   status?: string;
   type?: string;
   currency?: string;
+  companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

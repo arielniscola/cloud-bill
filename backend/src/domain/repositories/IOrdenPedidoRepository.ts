@@ -5,6 +5,7 @@ export interface OrdenPedidoFilters {
   customerId?: string;
   status?: string;
   currency?: string;
+  companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }
