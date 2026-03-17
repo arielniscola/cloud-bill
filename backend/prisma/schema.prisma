@@ -10,6 +10,7 @@ datasource db {
 // ==================== ENUMS ====================
 
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   SELLER
   WAREHOUSE_CLERK
@@ -106,11 +107,13 @@ enum BudgetStatus {
 
 model User {
   id        String   @id @default(uuid())
-  email     String   @unique
+  username  String   @unique
+  email     String?
   password  String
   name      String
   role      UserRole @default(SELLER)
   isActive  Boolean  @default(true)
+  companyId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -124,6 +127,7 @@ model User {
   recibos             Recibo[]
   ordenPedidos        OrdenPedido[]
   ordenCompras        OrdenCompra[]
+  ordenPagos          OrdenPago[]
 
   @@map("users")
 }
@@ -142,6 +146,7 @@ model Customer {
   email          String?
   notes          String?
   isActive       Boolean      @default(true)
+  companyId      String       @default("00000000-0000-0000-0000-000000000001")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -197,6 +202,7 @@ model Product {
   taxRate       Decimal  @default(21) @db.Decimal(5, 2)
   leadTimeDays  Int?                          // Días de reposición para predicción de quiebre
   isActive      Boolean  @default(true)
+  companyId     String   @default("00000000-0000-0000-0000-000000000001")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -238,6 +244,7 @@ model Invoice {
   caeExpiry    DateTime?
   afipPtVenta  Int?
   afipCbtNum   Int?
+  companyId    String        @default("00000000-0000-0000-0000-000000000001")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -317,6 +324,7 @@ model CashRegister {
   name        String
   description String?
   isActive    Boolean  @default(true)
+  companyId   String   @default("00000000-0000-0000-0000-000000000001")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -327,6 +335,7 @@ model CashRegister {
   recibos                  Recibo[]
   ordenPedidosCashReg      OrdenPedido[]       @relation("OrdenPedidoCashRegister")
   ordenPedidosInvoiceCR    OrdenPedido[]       @relation("OrdenPedidoInvoiceCashRegister")
+  ordenPagos               OrdenPago[]
 
   @@map("cash_registers")
 }
@@ -356,6 +365,7 @@ model Warehouse {
   address   String?
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)
+  companyId String   @default("00000000-0000-0000-0000-000000000001")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -416,6 +426,7 @@ model Remito {
   status        RemitoStatus  @default(PENDING)
   stockBehavior StockBehavior
   notes         String?
+  companyId     String        @default("00000000-0000-0000-0000-000000000001")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -461,18 +472,19 @@ model ActivityLog {
 }
 
 model AfipConfig {
-  id              String   @id @default(uuid())
-  cuit            String
-  salePoint       Int
-  businessName    String?
-  businessAddress String?
-  taxCondition    String?
-  cert            String   @db.Text
-  privateKey      String   @db.Text
-  isProduction    Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  String    @id @default(uuid())
+  cuit                String
+  salePoint           Int
+  businessName        String?
+  businessAddress     String?
+  taxCondition        String?
+  activityStartDate   DateTime?
+  cert                String    @db.Text
+  privateKey          String    @db.Text
+  isProduction        Boolean   @default(false)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@map("afip_config")
 }
@@ -488,11 +500,14 @@ model Supplier {
   email        String?
   notes        String?
   isActive     Boolean      @default(true)
+  companyId    String       @default("00000000-0000-0000-0000-000000000001")
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   purchases    Purchase[]
   ordenCompras OrdenCompra[]
+  ordenPagos   OrdenPago[]
+  supplierAccountMovements SupplierAccountMovement[]
 
   @@map("suppliers")
 }
@@ -511,14 +526,21 @@ model Purchase {
   currency    Currency       @default(ARS)
   status      PurchaseStatus @default(REGISTERED)
   notes       String?
+  companyId   String         @default("00000000-0000-0000-0000-000000000001")
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  paymentStatus String  @default("PENDING")   // PENDING | PARTIALLY_PAID | PAID
+  paidAmount    Decimal @default(0) @db.Decimal(12, 2)
+  saleCondition String  @default("CONTADO")   // CONTADO | CUENTA_CORRIENTE
 
   supplier     Supplier       @relation(fields: [supplierId], references: [id])
   user         User           @relation(fields: [userId], references: [id])
   warehouse    Warehouse?     @relation(fields: [warehouseId], references: [id])
   items        PurchaseItem[]
   ordenCompra  OrdenCompra?
+  ordenPagoItems        OrdenPagoItem[]
+  supplierAccountMovements SupplierAccountMovement[]
 
   @@map("purchases")
 }
@@ -542,6 +564,7 @@ model Budget {
   saleCondition  String  @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
   stockBehavior  String  @default("DISCOUNT") // DISCOUNT | RESERVE
   invoiceId      String?      // Set when converted to invoice
+  companyId    String       @default("00000000-0000-0000-0000-000000000001")
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -641,6 +664,7 @@ model Recibo {
   notes          String?
   status         String        @default("EMITTED")       // EMITTED | CANCELLED
   checkStatus    String?                                  // PENDING | DEPOSITED | CLEARED | BOUNCED | RETURNED (only for CHECK)
+  companyId      String        @default("00000000-0000-0000-0000-000000000001")
 
   accountMovement AccountMovement?
 
@@ -670,6 +694,7 @@ model OrdenPedido {
   invoiceId           String?
   cashRegisterId      String?
   invoiceCashRegisterId String?
+  companyId           String   @default("00000000-0000-0000-0000-000000000001")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -702,6 +727,7 @@ model OrdenCompra {
   warehouseId    String?                                 // Almacén destino al recibir
   notes          String?
   purchaseId     String?  @unique                        // Set when converted to Purchase
+  companyId      String   @default("00000000-0000-0000-0000-000000000001")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -748,4 +774,86 @@ model OrdenPedidoItem {
   product     Product?    @relation(fields: [productId], references: [id])
 
   @@map("orden_pedido_items")
+}
+
+model Company {
+  id           String   @id @default(uuid())
+  name         String
+  cuit         String?
+  address      String?
+  city         String?
+  phone        String?
+  email        String?
+  taxCondition   String   @default("RESPONSABLE_INSCRIPTO")
+  isActive       Boolean  @default(true)
+  logoUrl        String?
+  enabledModules String   @default("ALL") // "ALL" or comma-separated: "ventas,catalogo,compras,finanzas"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("companies")
+}
+
+// ── Orden de Pago (supplier payments) ──────────────────────────────────────
+
+model OrdenPago {
+  id             String    @id @default(uuid())
+  number         String    @unique
+  supplierId     String
+  userId         String
+  cashRegisterId String?
+  companyId      String    @default("00000000-0000-0000-0000-000000000001")
+  date           DateTime  @default(now())
+  amount         Decimal   @db.Decimal(12, 2)
+  currency       String    @default("ARS")
+  exchangeRate   Decimal   @default(1) @db.Decimal(12, 6)
+  paymentMethod  String
+  reference      String?
+  bank           String?
+  checkDueDate   DateTime?
+  notes          String?
+  status         String    @default("EMITTED") // EMITTED | CANCELLED
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  items        OrdenPagoItem[]
+  supplierAccountMovement SupplierAccountMovement?
+
+  @@map("orden_pagos")
+}
+
+model OrdenPagoItem {
+  id          String    @id @default(uuid())
+  ordenPagoId String
+  purchaseId  String
+  amount      Decimal   @db.Decimal(12, 2)
+
+  ordenPago OrdenPago @relation(fields: [ordenPagoId], references: [id], onDelete: Cascade)
+  purchase  Purchase  @relation(fields: [purchaseId], references: [id])
+
+  @@map("orden_pago_items")
+}
+
+model SupplierAccountMovement {
+  id          String   @id @default(uuid())
+  supplierId  String
+  ordenPagoId String?  @unique
+  purchaseId  String?
+  type        String   // DEBIT | CREDIT
+  amount      Decimal  @db.Decimal(12, 2)
+  currency    String   @default("ARS")
+  balance     Decimal  @db.Decimal(12, 2) @default(0)
+  description String?
+  companyId   String   @default("00000000-0000-0000-0000-000000000001")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  supplier  Supplier   @relation(fields: [supplierId], references: [id])
+  ordenPago OrdenPago? @relation(fields: [ordenPagoId], references: [id])
+  purchase  Purchase?  @relation(fields: [purchaseId], references: [id])
+
+  @@map("supplier_account_movements")
 }
