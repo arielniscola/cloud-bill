@@ -25,3 +25,5 @@ export { default as ordenPedidosService } from './orden-pedidos.service';
 export { default as ordenComprasService } from './orden-compras.service';
 export { default as usersService } from './users.service';
 export type { UserDTO, CreateUserDTO, UpdateUserDTO } from './users.service';
+export { default as companiesService } from './companies.service';
+export { default as ordenPagosService } from './orden-pagos.service';

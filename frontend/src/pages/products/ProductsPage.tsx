@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, DataTable, SearchInput, ConfirmDialog } from '../../components/shared';
@@ -53,6 +53,108 @@ function FilterSelect({
         ))}
       </select>
       <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 dark:text-slate-500 pointer-events-none" />
+    </div>
+  );
+}
+
+// ── Brand searchable select ──────────────────────────────────────
+function BrandSearchSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = query
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  const selectedLabel = options.find((o) => o.value === value)?.label;
+  const isActive = !!value;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setQuery(''); }}
+        className={`inline-flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+          isActive
+            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 text-indigo-700 dark:text-indigo-400'
+            : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-500'
+        }`}
+      >
+        {selectedLabel ?? 'Marca'}
+        {isActive ? (
+          <X
+            className="w-3 h-3 ml-0.5 opacity-60 hover:opacity-100"
+            onClick={(e) => { e.stopPropagation(); onChange(''); setOpen(false); }}
+          />
+        ) : (
+          <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-52 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl shadow-lg overflow-hidden">
+          {/* Search input */}
+          <div className="flex items-center gap-2 px-2.5 py-2 border-b border-gray-100 dark:border-slate-700">
+            <Search className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar marca…"
+              className="flex-1 text-xs bg-transparent outline-none text-gray-700 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Options list */}
+          <ul className="max-h-52 overflow-y-auto py-1 [scrollbar-width:thin]">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-3 text-xs text-center text-gray-400 dark:text-slate-500">Sin resultados</li>
+            ) : (
+              filtered.map((o) => (
+                <li key={o.value}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+                    className={`w-full text-left px-3 py-2 text-xs transition-colors duration-100 ${
+                      o.value === value
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-semibold'
+                        : 'text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -305,8 +407,7 @@ export default function ProductsPage() {
 
             {/* Brand filter */}
             {brandOptions.length > 0 && (
-              <FilterSelect
-                label="Marca"
+              <BrandSearchSelect
                 value={brandFilter}
                 onChange={(v) => { setBrandFilter(v); resetPage(); }}
                 options={brandOptions}

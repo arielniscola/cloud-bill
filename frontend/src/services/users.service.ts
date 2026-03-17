@@ -3,21 +3,25 @@ import api from './api';
 export interface UserDTO {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
   isActive: boolean;
+  companyId: string | null;
   createdAt: string;
 }
 
 export interface CreateUserDTO {
   name: string;
-  email: string;
+  username: string;
   password: string;
   role: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+  companyId: string;
+  email?: string;
 }
 
 export interface UpdateUserDTO {
   name?: string;
+  username?: string;
   email?: string;
   role?: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
   isActive?: boolean;

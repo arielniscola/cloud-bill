@@ -57,6 +57,13 @@ import OrdenCompraDetailPage from '../pages/orden-compras/OrdenCompraDetailPage'
 import BancoCheques from '../pages/banco-cheques/BancoCheques';
 import ThermalInvoicePrintPage from '../pages/print/ThermalInvoicePrintPage';
 import ThermalOrdenPedidoPrintPage from '../pages/print/ThermalOrdenPedidoPrintPage';
+import CompaniesPage from '../pages/companies/CompaniesPage';
+import CompanyFormPage from '../pages/companies/CompanyFormPage';
+import CompanyDetailPage from '../pages/companies/CompanyDetailPage';
+import UsersPage from '../pages/users/UsersPage';
+import OrdenPagosPage from '../pages/orden-pagos/OrdenPagosPage';
+import OrdenPagoFormPage from '../pages/orden-pagos/OrdenPagoFormPage';
+import OrdenPagoDetailPage from '../pages/orden-pagos/OrdenPagoDetailPage';
 
 export default function AppRoutes() {
   return (
@@ -76,6 +83,15 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       >
+        {/* Super admin — companies & users management only */}
+        <Route element={<RoleGuard allowed={['SUPER_ADMIN']} />}>
+          <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/companies/new" element={<CompanyFormPage />} />
+          <Route path="/companies/:id" element={<CompanyDetailPage />} />
+          <Route path="/companies/:id/edit" element={<CompanyFormPage />} />
+          <Route path="/users" element={<UsersPage />} />
+        </Route>
+
         <Route path="/" element={<HomePage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
 
@@ -140,6 +156,11 @@ export default function AppRoutes() {
           <Route path="/orden-compras/new" element={<OrdenCompraFormPage />} />
           <Route path="/orden-compras/:id" element={<OrdenCompraDetailPage />} />
           <Route path="/orden-compras/:id/edit" element={<OrdenCompraFormPage />} />
+
+          {/* Órdenes de Pago — ADMIN only */}
+          <Route path="/orden-pagos" element={<OrdenPagosPage />} />
+          <Route path="/orden-pagos/new" element={<OrdenPagoFormPage />} />
+          <Route path="/orden-pagos/:id" element={<OrdenPagoDetailPage />} />
         </Route>
 
         {/* Budgets */}

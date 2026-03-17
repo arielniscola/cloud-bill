@@ -61,6 +61,9 @@ export default function ThermalOrdenPedidoPrintPage() {
       {afip?.businessName && <p className="c b lg">{afip.businessName}</p>}
       {afip?.businessAddress && <p className="c sm">{afip.businessAddress}</p>}
       {afip?.cuit && <p className="c sm">CUIT: {afip.cuit}</p>}
+      {(afip as any)?.activityStartDate && (
+        <p className="c sm">Inicio actividades: {fmtDate((afip as any).activityStartDate)}</p>
+      )}
 
       <div className="div" />
 
@@ -121,7 +124,12 @@ export default function ThermalOrdenPedidoPrintPage() {
 
       {/* ── Footer ── */}
       <div className="div" />
-      {op.paymentTerms && <p className="sm">Condición: {op.paymentTerms}</p>}
+      {op.saleCondition && (
+        <p className="sm">
+          Cond. cobro: {op.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado'}
+        </p>
+      )}
+      {op.paymentTerms && <p className="sm">Cond. venta: {op.paymentTerms}</p>}
       {op.notes && (
         <>
           <div className="div" />

@@ -1,7 +1,9 @@
 import type { InvoiceType, Currency } from './invoice.types';
 import type { Supplier } from './supplier.types';
 
-export type PurchaseStatus = 'REGISTERED' | 'CANCELLED';
+export type PurchaseStatus        = 'REGISTERED' | 'CANCELLED';
+export type PurchasePaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
+export type PurchaseSaleCondition = 'CONTADO' | 'CUENTA_CORRIENTE';
 
 export interface PurchaseItem {
   id: string;
@@ -31,6 +33,9 @@ export interface Purchase {
   total: number;
   currency: Currency;
   status: PurchaseStatus;
+  paymentStatus: PurchasePaymentStatus;
+  paidAmount: number;
+  saleCondition: PurchaseSaleCondition;
   notes: string | null;
   items: PurchaseItem[];
   createdAt: string;
@@ -52,6 +57,7 @@ export interface CreatePurchaseDTO {
   warehouseId?: string | null;
   date?: string;
   currency?: Currency;
+  saleCondition?: PurchaseSaleCondition;
   notes?: string;
   items: CreatePurchaseItemDTO[];
 }

@@ -10,8 +10,8 @@ import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, PaymentModal } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, cashRegistersService, budgetsService } from '../../services';
-import type { CreateReciboDTO, CashRegister, Budget, AppSettings } from '../../types';
+import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService } from '../../services';
+import type { CreateReciboDTO, Budget, AppSettings } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import type { Customer, Product, Currency } from '../../types';
@@ -32,8 +32,6 @@ const ordenPedidoSchema = z.object({
   saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
-  cashRegisterId: z.string().optional().nullable(),
-  invoiceCashRegisterId: z.string().optional().nullable(),
   items: z.array(ordenPedidoItemSchema).min(1, 'Agrega al menos un ítem'),
 });
 
@@ -69,7 +67,6 @@ export default function OrdenPedidoFormPage() {
   const isEditing = !!id;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
   const [priceSettings, setPriceSettings] = useState<Pick<AppSettings, 'stalePriceWarnDays1' | 'stalePriceWarnDays2'>>({ stalePriceWarnDays1: 10, stalePriceWarnDays2: 20 });
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
@@ -88,8 +85,6 @@ export default function OrdenPedidoFormPage() {
       currency: 'ARS',
       saleCondition: 'CONTADO',
       stockBehavior: 'DISCOUNT',
-      cashRegisterId: null,
-      invoiceCashRegisterId: null,
       items: [{ productId: null, description: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
     },
   });
@@ -147,15 +142,13 @@ export default function OrdenPedidoFormPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [customersData, productsData, cashRegistersData, settingsData] = await Promise.all([
+        const [customersData, productsData, settingsData] = await Promise.all([
           customersService.getAll({ limit: 1000, isActive: true }),
           productsService.getAll({ limit: 1000 }),
-          cashRegistersService.getAll(true),
           appSettingsService.get().catch(() => null),
         ]);
         setCustomers(customersData.data);
         setProducts(productsData.data);
-        setCashRegisters(cashRegistersData);
         if (settingsData) {
           setPriceSettings({
             stalePriceWarnDays1: settingsData.stalePriceWarnDays1 ?? 10,
@@ -172,8 +165,6 @@ export default function OrdenPedidoFormPage() {
             saleCondition: 'CONTADO',
             stockBehavior: 'DISCOUNT',
             currency: fromBudget.currency,
-            cashRegisterId: null,
-            invoiceCashRegisterId: null,
             items: fromBudget.items.map((item) => ({
               productId: item.productId,
               description: item.description,
@@ -208,8 +199,6 @@ export default function OrdenPedidoFormPage() {
           saleCondition: op.saleCondition ?? 'CONTADO',
           stockBehavior: (op.stockBehavior as 'DISCOUNT' | 'RESERVE') ?? 'DISCOUNT',
           currency: op.currency,
-          cashRegisterId: op.cashRegisterId,
-          invoiceCashRegisterId: op.invoiceCashRegisterId,
           items: op.items.map((item) => ({
             productId: item.productId,
             description: item.description,
@@ -334,8 +323,6 @@ export default function OrdenPedidoFormPage() {
         stockBehavior: data.stockBehavior,
         currency: data.currency,
         exchangeRate: 1,
-        cashRegisterId: data.cashRegisterId || null,
-        invoiceCashRegisterId: data.invoiceCashRegisterId || null,
         items: data.items.map(buildItemDTO),
       };
       if (isEditing) {
@@ -630,25 +617,6 @@ export default function OrdenPedidoFormPage() {
                 </span>
               </label>
 
-              <Select
-                label="Caja de cobro (opcional)"
-                options={[
-                  { value: '', label: 'Sin caja predeterminada' },
-                  ...cashRegisters.map((cr) => ({ value: cr.id, label: cr.name })),
-                ]}
-                value={watch('cashRegisterId') ?? ''}
-                onChange={(v) => setValue('cashRegisterId', v || null)}
-              />
-
-              <Select
-                label="Caja al facturar (opcional)"
-                options={[
-                  { value: '', label: 'Sin caja predeterminada' },
-                  ...cashRegisters.map((cr) => ({ value: cr.id, label: cr.name })),
-                ]}
-                value={watch('invoiceCashRegisterId') ?? ''}
-                onChange={(v) => setValue('invoiceCashRegisterId', v || null)}
-              />
             </div>
 
             {/* Totals */}

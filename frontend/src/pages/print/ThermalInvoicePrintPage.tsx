@@ -74,6 +74,9 @@ export default function ThermalInvoicePrintPage() {
       {afip?.taxCondition && (
         <p className="c sm">{afip.taxCondition.replace(/_/g, ' ')}</p>
       )}
+      {afip?.activityStartDate && (
+        <p className="c sm">Inicio actividades: {fmtDate(afip.activityStartDate)}</p>
+      )}
 
       <div className="div" />
 
@@ -133,8 +136,13 @@ export default function ThermalInvoicePrintPage() {
 
       {/* ── Footer ── */}
       <div className="div" />
+      {invoice.saleCondition && (
+        <p className="sm">
+          Cond. cobro: {invoice.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado'}
+        </p>
+      )}
       {invoice.paymentTerms && (
-        <p className="sm">Condición: {invoice.paymentTerms}</p>
+        <p className="sm">Cond. venta: {invoice.paymentTerms}</p>
       )}
       {invoice.cae && (
         <>

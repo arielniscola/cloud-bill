@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   FileText, Users, Calculator, ClipboardList, Receipt,
   Truck, ShoppingCart, Package, PackageSearch, CreditCard,
@@ -79,6 +79,10 @@ const moduleGroups: ModuleGroup[] = [
 export default function HomePage() {
   const { user } = useAuthStore();
   const firstName = user?.name?.split(' ')[0] ?? 'usuario';
+
+  if (user?.role === 'SUPER_ADMIN') {
+    return <Navigate to="/companies" replace />;
+  }
 
   return (
     <div className="space-y-8">

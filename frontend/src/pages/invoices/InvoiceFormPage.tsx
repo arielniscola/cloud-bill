@@ -3,10 +3,11 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Calculator, AlertTriangle, Info } from 'lucide-react';
+import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
+import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { invoicesService, customersService, productsService, appSettingsService, stockService } from '../../services';
@@ -101,6 +102,7 @@ export default function InvoiceFormPage() {
   const [isPaymentLoading, setIsPaymentLoading] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<Array<{ productName: string; requested: number; available: number }>>([]);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const {
     register, control, handleSubmit, setValue, watch, reset,
@@ -281,6 +283,26 @@ export default function InvoiceFormPage() {
     }
   };
 
+  const handleImportFromOP = (importedItems: ImportedItem[], skippedCount: number) => {
+    // Replace empty placeholder item if form only has one empty item
+    const currentItems = items;
+    const onlyEmpty = currentItems.length === 1 && !currentItems[0].productId && !currentItems[0].quantity;
+    if (onlyEmpty) remove(0);
+    importedItems.forEach((item) => {
+      const existingIndex = (onlyEmpty ? [] : currentItems).findIndex((i) => i.productId === item.productId);
+      if (existingIndex >= 0) {
+        setValue(`items.${existingIndex}.quantity`, Number(currentItems[existingIndex].quantity) + item.quantity);
+      } else {
+        append({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: item.taxRate });
+      }
+    });
+    if (skippedCount > 0) {
+      toast(`${importedItems.length} ítem${importedItems.length !== 1 ? 's' : ''} importado${importedItems.length !== 1 ? 's' : ''}. ${skippedCount} omitido${skippedCount !== 1 ? 's' : ''} por no tener producto.`, { icon: '⚠️' });
+    } else {
+      toast.success(`${importedItems.length} ítem${importedItems.length !== 1 ? 's' : ''} importado${importedItems.length !== 1 ? 's' : ''}`);
+    }
+  };
+
   const calcItemTotal = (item: typeof items[0]) => {
     const sub = item.quantity * item.unitPrice;
     return sub + sub * (item.taxRate / 100);
@@ -408,7 +430,19 @@ export default function InvoiceFormPage() {
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h2>
-                <BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />
+                <div className="flex items-center gap-2">
+                  {!isEditing && !isNcNd && customerId && (
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(true)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      Importar desde OP
+                    </button>
+                  )}
+                  <BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />
+                </div>
               </div>
 
               <div className="px-5 py-3">
@@ -761,6 +795,13 @@ export default function InvoiceFormPage() {
         currency="ARS"
         isLoading={isPaymentLoading}
         title="Registrar pago"
+      />
+
+      <ImportFromOPModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        customerId={customerId}
+        onImport={handleImportFromOP}
       />
 
       <ConfirmDialog

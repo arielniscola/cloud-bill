@@ -25,7 +25,7 @@ export interface UpdateCashRegisterDTO {
 
 export interface CashRegisterMovement {
   id: string;
-  currentAccountId: string;
+  currentAccountId?: string | null;
   type: CashRegisterMovementType;
   amount: number;
   balance: number;

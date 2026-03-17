@@ -503,7 +503,6 @@ export default function OrdenPedidoDetailPage() {
         remaining={remaining}
         currency={op.currency}
         isLoading={isPayLoading}
-        defaultCashRegisterId={op.cashRegisterId ?? undefined}
       />
 
       <ConfirmDialog

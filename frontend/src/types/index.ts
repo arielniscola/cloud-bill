@@ -1,4 +1,5 @@
 export * from './api.types';
+export * from './company.types';
 export * from './auth.types';
 export * from './customer.types';
 export * from './product.types';
@@ -21,3 +22,4 @@ export * from './stock-intelligence.types';
 export * from './recibo.types';
 export * from './orden-pedido.types';
 export * from './orden-compra.types';
+export * from './ordenPago.types';

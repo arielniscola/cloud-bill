@@ -1,17 +1,19 @@
-export type UserRole = 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
 
 export interface User {
   id: string;
-  email: string;
+  username: string;
   name: string;
   role: UserRole;
   isActive: boolean;
+  companyId?: string | null;
+  enabledModules?: string[]; // ['ALL'] or ['ventas','catalogo','compras','finanzas']
   createdAt: string;
   updatedAt: string;
 }
 
 export interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 

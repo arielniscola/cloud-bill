@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -59,6 +59,8 @@ export default function BancoCheques() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -323,15 +325,34 @@ export default function BancoCheques() {
                               variant="outline"
                               size="sm"
                               isLoading={isUpdating}
-                              onClick={() => setOpenMenuId(openMenuId === check.id ? null : check.id)}
+                              ref={(el) => {
+                                if (el) buttonRefs.current.set(check.id, el);
+                                else buttonRefs.current.delete(check.id);
+                              }}
+                              onClick={() => {
+                                if (openMenuId === check.id) {
+                                  setOpenMenuId(null);
+                                  setMenuPos(null);
+                                } else {
+                                  const btn = buttonRefs.current.get(check.id);
+                                  if (btn) {
+                                    const rect = btn.getBoundingClientRect();
+                                    setMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+                                  }
+                                  setOpenMenuId(check.id);
+                                }
+                              }}
                             >
                               Acción
                               <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60" />
                             </Button>
-                            {openMenuId === check.id && (
+                            {openMenuId === check.id && menuPos && (
                               <>
-                                <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                                <div className="absolute right-0 top-full mt-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-20 min-w-52 py-1 overflow-hidden">
+                                <div className="fixed inset-0 z-40" onClick={() => { setOpenMenuId(null); setMenuPos(null); }} />
+                                <div
+                                  style={{ top: menuPos.top, right: menuPos.right }}
+                                  className="fixed bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-50 min-w-52 py-1 overflow-hidden"
+                                >
                                   {nextActions.map((action) => (
                                     <button
                                       key={action.value}

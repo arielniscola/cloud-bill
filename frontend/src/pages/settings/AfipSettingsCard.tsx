@@ -16,6 +16,7 @@ export default function AfipSettingsCard() {
     businessName: '',
     businessAddress: '',
     taxCondition: 'Responsable Inscripto',
+    activityStartDate: '',
     cert: '',
     privateKey: '',
     isProduction: false,
@@ -34,6 +35,7 @@ export default function AfipSettingsCard() {
             businessName: data.businessName ?? '',
             businessAddress: data.businessAddress ?? '',
             taxCondition: data.taxCondition ?? 'Responsable Inscripto',
+            activityStartDate: data.activityStartDate ? data.activityStartDate.slice(0, 10) : '',
             isProduction: data.isProduction,
           }));
         }
@@ -148,6 +150,12 @@ export default function AfipSettingsCard() {
             placeholder="Responsable Inscripto"
             value={form.taxCondition ?? ''}
             onChange={(e) => setForm((f) => ({ ...f, taxCondition: e.target.value }))}
+          />
+          <Input
+            label="Inicio de Actividades"
+            type="date"
+            value={form.activityStartDate ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, activityStartDate: e.target.value }))}
           />
         </div>
 

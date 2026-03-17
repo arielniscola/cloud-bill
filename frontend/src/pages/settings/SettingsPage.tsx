@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users } from 'lucide-react';
+import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users, Store } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 import { Card } from '../../components/ui';
 import { useUIStore } from '../../stores';
+import { usePermissions } from '../../hooks/usePermissions';
 import AfipSettingsCard from './AfipSettingsCard';
 import SmtpSettingsCard from './SmtpSettingsCard';
 import BudgetSettingsCard from './BudgetSettingsCard';
@@ -11,17 +12,19 @@ import StockSettingsCard from './StockSettingsCard';
 import PriceSettingsCard from './PriceSettingsCard';
 import PrintSettingsCard from './PrintSettingsCard';
 import UsersSettingsCard from './UsersSettingsCard';
+import CompanySettingsCard from './CompanySettingsCard';
 
 // ── Types ──────────────────────────────────────────────────────────
-type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios';
+type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios' | 'empresas';
 
-const TABS: { id: Tab; label: string; icon: React.ElementType; description: string }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: string; superAdminOnly?: boolean }[] = [
   { id: 'general',     label: 'General',     icon: Monitor,       description: 'Apariencia y preferencias' },
   { id: 'empresa',     label: 'Empresa',     icon: Building2,     description: 'Datos fiscales y ARCA/AFIP' },
   { id: 'operaciones', label: 'Operaciones', icon: Landmark,      description: 'Cajas predeterminadas' },
   { id: 'stock',       label: 'Stock',       icon: PackageSearch, description: 'Análisis inteligente' },
   { id: 'correo',      label: 'Correo',      icon: Mail,          description: 'Configuración SMTP para envío de emails' },
   { id: 'usuarios',    label: 'Usuarios',    icon: Users,         description: 'Gestión de usuarios y roles de acceso' },
+  { id: 'empresas',    label: 'Empresas',    icon: Store,         description: 'Gestión de empresas y puntos de venta', superAdminOnly: true },
 ];
 
 // ── Sub-components ─────────────────────────────────────────────────
@@ -153,8 +156,10 @@ function DarkModeCard() {
 
 // ── Main page ──────────────────────────────────────────────────────
 export default function SettingsPage() {
+  const { isSuperAdmin } = usePermissions();
+  const TABS = ALL_TABS.filter(t => !t.superAdminOnly || isSuperAdmin);
   const [activeTab, setActiveTab] = useState<Tab>('general');
-  const active = TABS.find(t => t.id === activeTab)!;
+  const active = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   return (
     <div>
@@ -190,7 +195,7 @@ export default function SettingsPage() {
       <p className="text-xs text-gray-400 dark:text-slate-500 mb-4 ml-0.5">{active.description}</p>
 
       {/* ── Tab content ── */}
-      <div className={clsx('space-y-6', activeTab !== 'usuarios' && 'max-w-3xl')}>
+      <div className={clsx('space-y-6', activeTab !== 'usuarios' && activeTab !== 'empresas' && 'max-w-3xl')}>
         {activeTab === 'general'     && <MenuTypeCard />}
         {activeTab === 'general'     && <DarkModeCard />}
         {activeTab === 'empresa'     && <AfipSettingsCard />}
@@ -200,6 +205,7 @@ export default function SettingsPage() {
         {activeTab === 'operaciones' && <PrintSettingsCard />}
         {activeTab === 'stock'       && <StockSettingsCard />}
         {activeTab === 'usuarios'    && <UsersSettingsCard />}
+        {activeTab === 'empresas'   && <CompanySettingsCard />}
       </div>
     </div>
   );

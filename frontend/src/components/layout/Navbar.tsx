@@ -284,7 +284,7 @@ export default function Navbar() {
                     <Menu.Items className="absolute right-0 mt-1 w-56 origin-top-right rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-slate-700 focus:outline-none py-1.5 z-50">
                       <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 mb-1">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user?.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{user?.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 truncate">@{user?.username}</p>
                       </div>
 
                       <Menu.Item>

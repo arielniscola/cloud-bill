@@ -9,7 +9,7 @@ import { authService } from '../../services';
 import { Button, Input, Card } from '../../components/ui';
 
 const loginSchema = z.object({
-  email: z.string().email('Email inválido'),
+  username: z.string().min(1, 'El usuario es requerido'),
   password: z.string().min(1, 'La contraseña es requerida'),
 });
 
@@ -58,11 +58,11 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <Input
-            label="Email"
-            type="email"
-            autoComplete="email"
-            {...register('email')}
-            error={errors.email?.message}
+            label="Usuario"
+            type="text"
+            autoComplete="username"
+            {...register('username')}
+            error={errors.username?.message}
           />
 
           <Input
