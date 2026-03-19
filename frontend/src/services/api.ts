@@ -3,7 +3,7 @@ import { useAuthStore } from "../stores/auth.store";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "https://cloud-bill-kltk5ljqm-arielniscolas-projects.vercel.app/api";
+  "http://localhost:3000/api";
 
 export const api = axios.create({
   baseURL: API_URL,
