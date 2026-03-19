@@ -1,12 +1,14 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { useAuthStore } from '../stores/auth.store';
+import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import { useAuthStore } from "../stores/auth.store";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://cloud-bill-kltk5ljqm-arielniscolas-projects.vercel.app/api";
 
 export const api = axios.create({
   baseURL: API_URL,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
@@ -19,19 +21,19 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 // Request interceptor - add active company header (for super-admins)
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     try {
-      const companyData = localStorage.getItem('cloud-bill-company');
+      const companyData = localStorage.getItem("cloud-bill-company");
       if (companyData) {
         const parsed = JSON.parse(companyData);
         const companyId = parsed?.state?.activeCompanyId;
         if (companyId) {
-          config.headers['X-Company-Id'] = companyId;
+          config.headers["X-Company-Id"] = companyId;
         }
       }
     } catch {
@@ -39,7 +41,7 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 // Response interceptor - handle errors
@@ -49,10 +51,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Token expired or invalid
       useAuthStore.getState().logout();
-      window.location.href = '/login';
+      window.location.href = "/login";
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;
