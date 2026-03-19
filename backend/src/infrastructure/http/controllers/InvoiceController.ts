@@ -130,6 +130,38 @@ export class InvoiceController {
         throw new NotFoundError('Invoice');
       }
 
+      // Auto-heal: if invoice came from an OP and is still DRAFT, recalculate status from recibos
+      const opId = (invoice as any).ordenPedidoId;
+      if (opId && invoice.status === 'DRAFT') {
+        // Find recibos linked directly to this invoice
+        const linked = await (prisma as any).recibo.findMany({
+          where: { invoiceId: invoice.id, status: 'EMITTED' },
+        });
+        // Also find recibos still linked only to the OP (not yet migrated to the invoice)
+        const opOnly = await (prisma as any).recibo.findMany({
+          where: { ordenPedidoId: opId, invoiceId: null, status: 'EMITTED' },
+        });
+
+        // Link any OP-only recibos to this invoice
+        if (opOnly.length > 0) {
+          for (const r of opOnly) {
+            await (prisma as any).recibo.update({
+              where: { id: r.id },
+              data: { invoiceId: invoice.id },
+            });
+          }
+        }
+
+        const allRecibos = [...linked, ...opOnly];
+        if (allRecibos.length > 0) {
+          const totalPaid = allRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+          const invoiceTotal = Number(invoice.total);
+          const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
+          await invoiceRepository.update(invoice.id, { status: newStatus as any });
+          (invoice as any).status = newStatus;
+        }
+      }
+
       const deliveryStatus = await computeDeliveryStatus('invoiceId', invoice.id, invoice.items);
 
       res.json({
@@ -163,6 +195,34 @@ export class InvoiceController {
 
       const ids = result.data.map((i: any) => i.id);
       const deliveryStatuses = await computeDeliveryStatusBatch('invoiceId', ids);
+
+      // Auto-heal: recalculate status for any DRAFT invoices that came from a paid OP
+      const draftOpInvoices = result.data.filter((i: any) => i.status === 'DRAFT' && (i as any).ordenPedidoId);
+      if (draftOpInvoices.length > 0) {
+        for (const inv of draftOpInvoices) {
+          const opId = (inv as any).ordenPedidoId;
+          const linked = await (prisma as any).recibo.findMany({
+            where: { invoiceId: inv.id, status: 'EMITTED' },
+          });
+          const opOnly = await (prisma as any).recibo.findMany({
+            where: { ordenPedidoId: opId, invoiceId: null, status: 'EMITTED' },
+          });
+          if (opOnly.length > 0) {
+            for (const r of opOnly) {
+              await (prisma as any).recibo.update({ where: { id: r.id }, data: { invoiceId: inv.id } });
+            }
+          }
+          const allRecibos = [...linked, ...opOnly];
+          if (allRecibos.length > 0) {
+            const totalPaid = allRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+            const invoiceTotal = Number(inv.total);
+            const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
+            await invoiceRepository.update(inv.id, { status: newStatus as any });
+            (inv as any).status = newStatus;
+          }
+        }
+      }
+
       const data = result.data.map((i: any) => ({ ...i, deliveryStatus: deliveryStatuses[i.id] }));
 
       res.json({
@@ -288,12 +348,18 @@ export class InvoiceController {
         throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
       }
 
+      // CHECK and BANK_TRANSFER don't use a cash register
+      const isCheck = paymentData.paymentMethod === 'CHECK';
+      const isBankTransfer = paymentData.paymentMethod === 'BANK_TRANSFER';
+      const usesCaja = !isCheck && !isBankTransfer;
+
       // Create recibo
       const recibo = await reciboRepository.create({
         invoiceId: invoice.id,
         customerId: invoice.customerId,
         userId: req.user!.userId,
-        cashRegisterId: paymentData.cashRegisterId ?? null,
+        cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
+        bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
         amount: paymentData.amount,
         currency: invoice.currency,
         paymentMethod: paymentData.paymentMethod,
@@ -303,7 +369,26 @@ export class InvoiceController {
         installments: paymentData.installments ?? null,
         notes: paymentData.notes ?? null,
         companyId: req.companyId,
-      });
+      } as any);
+
+      // For BANK_TRANSFER with a bankAccountId, create a bank movement
+      if (isBankTransfer && (paymentData as any).bankAccountId) {
+        await (prisma as any).bankMovement.create({
+          data: {
+            bankAccountId: (paymentData as any).bankAccountId,
+            type: 'CREDIT',
+            amount: paymentData.amount,
+            description: `Cobro ${invoice.type} ${invoice.number} (${recibo.number})`,
+            reciboId: recibo.id,
+            companyId: req.companyId,
+          },
+        });
+        // Update bank account balance
+        await (prisma as any).$executeRaw`
+          UPDATE "bank_accounts" SET balance = balance + ${paymentData.amount}, "updatedAt" = NOW()
+          WHERE id = ${(paymentData as any).bankAccountId}
+        `;
+      }
 
       // Record payment in current account only for cuenta corriente
       if ((invoice as any).saleCondition === 'CUENTA_CORRIENTE') {
@@ -318,7 +403,7 @@ export class InvoiceController {
             amount: paymentData.amount,
             description: `Pago ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
             invoiceId: invoice.id,
-            cashRegisterId: paymentData.cashRegisterId ?? undefined,
+            cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
           });
           // Link movement to recibo
           if (movement?.id) {

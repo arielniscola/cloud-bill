@@ -178,7 +178,7 @@ export default function OrdenPagosPage() {
         </div>
         {totalPages > 1 && (
           <div className="px-5 py-4 border-t border-gray-100 dark:border-slate-700">
-            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+            <Pagination page={page} totalPages={totalPages} limit={LIMIT} total={total} onPageChange={setPage} onLimitChange={() => {}} />
           </div>
         )}
       </div>

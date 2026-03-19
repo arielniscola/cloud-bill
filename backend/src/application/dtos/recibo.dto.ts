@@ -5,6 +5,7 @@ export const createReciboSchema = z.object({
   exchangeRate: z.coerce.number().positive().default(1),
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
   cashRegisterId: z.string().optional().nullable(),
+  bankAccountId: z.string().optional().nullable(),
   reference: z.string().optional().nullable(),
   bank: z.string().optional().nullable(),
   checkDueDate: z.string().optional().nullable(),

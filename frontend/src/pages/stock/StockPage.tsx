@@ -16,7 +16,7 @@ type Tab = 'list' | 'by_warehouse';
 type StockStatus = 'out_of_stock' | 'low_stock' | 'with_reserves' | 'normal' | 'no_minimum';
 
 // ── Helpers ────────────────────────────────────────────────────────
-function getStatus(stock: Stock): Omit<StockStatus, 'no_minimum'> {
+function getStatus(stock: Stock): 'out_of_stock' | 'low_stock' | 'with_reserves' | 'normal' {
   const avail = Number(stock.quantity) - Number(stock.reservedQuantity);
   if (avail <= 0) return 'out_of_stock';
   if (stock.minQuantity !== null && avail < Number(stock.minQuantity)) return 'low_stock';

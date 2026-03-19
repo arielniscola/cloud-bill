@@ -23,6 +23,24 @@ function marginColor(pct: number | null) {
   return 'text-red-500 dark:text-red-400';
 }
 
+function priceAgeLabel(dateStr: string | null): string {
+  if (!dateStr) return 'Nunca';
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (diff === 0) return 'Hoy';
+  if (diff === 1) return 'Ayer';
+  if (diff < 30) return `Hace ${diff}d`;
+  if (diff < 365) return `Hace ${Math.floor(diff / 30)}m`;
+  return `Hace ${Math.floor(diff / 365)}a`;
+}
+
+function priceAgeColor(dateStr: string | null): string {
+  if (!dateStr) return 'text-gray-400 dark:text-slate-500';
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (diff <= 10) return 'text-emerald-600 dark:text-emerald-400';
+  if (diff <= 20) return 'text-amber-600 dark:text-amber-400';
+  return 'text-red-500 dark:text-red-400';
+}
+
 // ── Compact filter select ────────────────────────────────────────
 function FilterSelect({
   label,
@@ -294,6 +312,18 @@ export default function ProductsPage() {
       header: 'Precio venta',
       render: (p) => (
         <span className="text-sm font-semibold text-gray-800 dark:text-slate-200">{formatCurrency(p.price)}</span>
+      ),
+    },
+    {
+      key: 'priceUpdatedAt',
+      header: 'Últ. precio',
+      render: (p) => (
+        <span
+          className={`text-xs font-medium ${priceAgeColor(p.priceUpdatedAt)}`}
+          title={p.priceUpdatedAt ? new Date(p.priceUpdatedAt).toLocaleString('es-AR') : 'Sin actualización registrada'}
+        >
+          {priceAgeLabel(p.priceUpdatedAt)}
+        </span>
       ),
     },
     {

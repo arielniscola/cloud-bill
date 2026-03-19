@@ -199,6 +199,18 @@ export default function ReciboDetailPage() {
                 </button>
               </div>
             )}
+            {recibo.ordenPedido && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Orden de pedido</span>
+                <button
+                  onClick={() => navigate(`/orden-pedidos/${recibo.ordenPedidoId}`)}
+                  className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+                >
+                  {recibo.ordenPedido.number}
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {recibo.notes && (
               <div className="px-5 py-3">

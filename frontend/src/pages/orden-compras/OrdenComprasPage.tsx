@@ -17,6 +17,12 @@ const STATUS_CFG: Record<OrdenCompraStatus, { label: string; className: string }
   CANCELLED: { label: 'Cancelada',  className: 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/30 dark:border-red-800' },
 };
 
+const PAYMENT_STATUS_CFG: Record<string, { label: string; className: string }> = {
+  PENDING:        { label: 'Sin pagar',    className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/30 dark:border-amber-800' },
+  PARTIALLY_PAID: { label: 'Pago parcial', className: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800' },
+  PAID:           { label: 'Pagado',       className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/30 dark:border-emerald-800' },
+};
+
 function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <input
@@ -147,12 +153,13 @@ export default function OrdenComprasPage() {
 
       {/* Table */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-[auto_1fr_140px_100px_110px_80px] gap-x-4 px-4 py-2.5 border-b border-gray-100 dark:border-slate-700 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+        <div className="grid grid-cols-[auto_1fr_140px_100px_110px_110px_60px] gap-x-4 px-4 py-2.5 border-b border-gray-100 dark:border-slate-700 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
           <span>Número</span>
           <span>Proveedor</span>
           <span>Fecha</span>
           <span>Total</span>
           <span>Estado</span>
+          <span>Pago</span>
           <span></span>
         </div>
 
@@ -178,11 +185,12 @@ export default function OrdenComprasPage() {
           <div className="divide-y divide-gray-50 dark:divide-slate-700/50">
             {ocs.map((oc) => {
               const cfg = STATUS_CFG[oc.status];
+              const pcfg = oc.purchase ? PAYMENT_STATUS_CFG[oc.purchase.paymentStatus] : null;
               return (
                 <div
                   key={oc.id}
                   onClick={() => navigate(`/orden-compras/${oc.id}`)}
-                  className="grid grid-cols-[auto_1fr_140px_100px_110px_80px] gap-x-4 px-4 py-3 items-center hover:bg-gray-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors"
+                  className="grid grid-cols-[auto_1fr_140px_100px_110px_110px_60px] gap-x-4 px-4 py-3 items-center hover:bg-gray-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors"
                 >
                   <span className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{oc.number}</span>
                   <span className="text-sm text-gray-700 dark:text-slate-300 truncate">{oc.supplier?.name ?? '—'}</span>
@@ -192,6 +200,15 @@ export default function OrdenComprasPage() {
                   </span>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cfg.className}`}>
                     {cfg.label}
+                  </span>
+                  <span>
+                    {pcfg ? (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${pcfg.className}`}>
+                        {pcfg.label}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300 dark:text-slate-600">—</span>
+                    )}
                   </span>
                   <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Ver →</span>
                 </div>

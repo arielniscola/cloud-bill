@@ -113,8 +113,8 @@ function CompanyFormModal({ isOpen, onClose, onSave, editing }: CompanyFormModal
           <Input label="CUIT" value={form.cuit ?? ''} onChange={f('cuit')} />
           <Select
             label="Condición fiscal"
-            value={form.taxCondition}
-            onChange={(e) => setForm((p) => ({ ...p, taxCondition: e.target.value }))}
+            value={form.taxCondition ?? ''}
+            onChange={(value) => setForm((p) => ({ ...p, taxCondition: value }))}
             options={TAX_CONDITION_OPTIONS}
           />
         </div>

@@ -23,6 +23,7 @@ import { IOrdenPedidoRepository } from '../domain/repositories/IOrdenPedidoRepos
 import { IOrdenCompraRepository } from '../domain/repositories/IOrdenCompraRepository';
 import { ICompanyRepository } from '../domain/repositories/ICompanyRepository';
 import { IOrdenPagoRepository } from '../domain/repositories/IOrdenPagoRepository';
+import { IBankRepository } from '../domain/repositories/IBankRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -47,6 +48,7 @@ import { PrismaOrdenPedidoRepository } from '../infrastructure/database/reposito
 import { PrismaOrdenCompraRepository } from '../infrastructure/database/repositories/PrismaOrdenCompraRepository';
 import { PrismaCompanyRepository } from '../infrastructure/database/repositories/PrismaCompanyRepository';
 import { PrismaOrdenPagoRepository } from '../infrastructure/database/repositories/PrismaOrdenPagoRepository';
+import { PrismaBankRepository } from '../infrastructure/database/repositories/PrismaBankRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -75,5 +77,6 @@ container.registerSingleton<IOrdenPedidoRepository>('OrdenPedidoRepository', Pri
 container.registerSingleton<IOrdenCompraRepository>('OrdenCompraRepository', PrismaOrdenCompraRepository);
 container.registerSingleton<ICompanyRepository>('CompanyRepository', PrismaCompanyRepository);
 container.registerSingleton<IOrdenPagoRepository>('OrdenPagoRepository', PrismaOrdenPagoRepository);
+container.registerSingleton<IBankRepository>('BankRepository', PrismaBankRepository);
 
 export { container };

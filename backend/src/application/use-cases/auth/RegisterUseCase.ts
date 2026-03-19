@@ -13,7 +13,7 @@ export class RegisterUseCase {
   ) {}
 
   async execute(data: RegisterDTO): Promise<Omit<User, 'password'>> {
-    const existingUser = await this.userRepository.findByEmail(data.email);
+    const existingUser = await this.userRepository.findByEmail(data.email ?? '');
 
     if (existingUser) {
       throw new ConflictError('Email already registered');
@@ -22,6 +22,7 @@ export class RegisterUseCase {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     const user = await this.userRepository.create({
+      username: data.username,
       email: data.email,
       password: hashedPassword,
       name: data.name,

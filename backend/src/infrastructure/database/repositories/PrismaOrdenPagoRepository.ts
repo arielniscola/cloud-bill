@@ -181,6 +181,9 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const date = data.date ?? new Date();
 
     // 1. Insert orden_pago
+    // CHECK payments go to bank/cartera — never linked to a cash register
+    const effectiveCashRegisterId = data.paymentMethod === 'CHECK' ? null : (data.cashRegisterId ?? null);
+
     await prisma.$executeRaw`
       INSERT INTO "orden_pagos" (
         "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
@@ -188,7 +191,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         "reference", "bank", "checkDueDate", "notes", "status"
       ) VALUES (
         ${opId}, ${number}, ${data.supplierId}, ${data.userId},
-        ${data.cashRegisterId ?? null}, ${companyId}, ${date},
+        ${effectiveCashRegisterId}, ${companyId}, ${date},
         ${data.items.reduce((s, i) => s + i.amount, 0)},
         ${currency}, ${exchangeRate}, ${data.paymentMethod},
         ${data.reference ?? null}, ${data.bank ?? null},

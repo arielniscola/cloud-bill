@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users, Store } from 'lucide-react';
+import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users, Store, Check } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 import { Card } from '../../components/ui';
 import { useUIStore } from '../../stores';
+import { NAV_THEMES } from '../../utils/navThemes';
 import { usePermissions } from '../../hooks/usePermissions';
 import AfipSettingsCard from './AfipSettingsCard';
 import SmtpSettingsCard from './SmtpSettingsCard';
@@ -86,6 +87,53 @@ function MenuTypeCard() {
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Barra horizontal fija en la parte de arriba</p>
           </div>
         </button>
+      </div>
+    </Card>
+  );
+}
+
+function NavColorCard() {
+  const { navTheme, setNavTheme } = useUIStore();
+
+  return (
+    <Card>
+      <div className="mb-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Color de la navegación</h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+          Elegí el color del sidebar y la barra superior.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {NAV_THEMES.map((t) => {
+          const isActive = navTheme === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setNavTheme(t.key)}
+              className={clsx(
+                'flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-150',
+                isActive
+                  ? 'border-indigo-400 ring-1 ring-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                  : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500 bg-white dark:bg-slate-700'
+              )}
+            >
+              {/* Swatch */}
+              <span
+                className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 shadow-inner"
+                style={{ backgroundColor: t.bg }}
+              >
+                {isActive && <Check className="w-3.5 h-3.5 text-white" />}
+              </span>
+              <span className={clsx(
+                'text-sm font-medium',
+                isActive ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300'
+              )}>
+                {t.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </Card>
   );
@@ -197,6 +245,7 @@ export default function SettingsPage() {
       {/* ── Tab content ── */}
       <div className={clsx('space-y-6', activeTab !== 'usuarios' && activeTab !== 'empresas' && 'max-w-3xl')}>
         {activeTab === 'general'     && <MenuTypeCard />}
+        {activeTab === 'general'     && <NavColorCard />}
         {activeTab === 'general'     && <DarkModeCard />}
         {activeTab === 'empresa'     && <AfipSettingsCard />}
         {activeTab === 'correo'      && <SmtpSettingsCard />}

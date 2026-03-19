@@ -5,8 +5,10 @@ export interface DashboardStats {
   ventasMes: { total: number; count: number };
   cobrosPendientes: { total: number; count: number };
   cobrosDelMes: { total: number; count: number };
-  presupuestosMes: { total: number; count: number };
+  pagosMes: { total: number; count: number };
   comprasMes: { total: number; count: number };
+  comprasPendientesPago: { total: number; count: number };
+  ocPendientes: { total: number; count: number };
   facturasBorrador: number;
   totalClientes: number;
   totalProductos: number;
@@ -22,14 +24,14 @@ export interface DashboardStats {
     currency: string;
     customer: { id: string; name: string };
   }>;
-  recentBudgets: Array<{
+  recentOrdenPagos: Array<{
     id: string;
     number: string;
     date: string;
-    status: string;
-    total: number;
+    amount: number;
     currency: string;
-    customer: { id: string; name: string } | null;
+    status: string;
+    supplier: { name: string };
   }>;
   pendingRemitos: Array<{
     id: string;
@@ -61,6 +63,7 @@ export interface ChartDataPoint {
   ventas: number;
   compras: number;
   cobros: number;
+  pagos: number;
   ganancia: number;
   margen: number;
 }

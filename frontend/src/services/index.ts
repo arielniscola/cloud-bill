@@ -27,3 +27,4 @@ export { default as usersService } from './users.service';
 export type { UserDTO, CreateUserDTO, UpdateUserDTO } from './users.service';
 export { default as companiesService } from './companies.service';
 export { default as ordenPagosService } from './orden-pagos.service';
+export { default as bankService } from './bank.service';

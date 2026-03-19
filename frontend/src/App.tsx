@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import AppRoutes from './routes/AppRoutes';
 import { useUIStore } from './stores';
+import { GlobalSearch } from './components/shared/GlobalSearch';
 
 function App() {
   const { isDarkMode } = useUIStore();
@@ -14,6 +15,7 @@ function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <GlobalSearch />
       <Toaster
         position="top-right"
         gutter={8}

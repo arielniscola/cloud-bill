@@ -114,7 +114,7 @@ export class PrismaProductRepository implements IProductRepository {
 
   async update(id: string, data: UpdateProductInput): Promise<Product> {
     const d = data as any;
-    const priceChanged = d.price !== undefined || d.salePriceUSD !== undefined;
+    const priceChanged = d.price !== undefined || d.salePriceUSD !== undefined || d.cost !== undefined;
     const setClauses: Prisma.Sql[] = [];
 
     if (d.sku           !== undefined) setClauses.push(Prisma.sql`sku = ${d.sku}`);

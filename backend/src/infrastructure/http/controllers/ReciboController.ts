@@ -6,6 +6,7 @@ import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceReposit
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
 import { IOrdenPedidoRepository } from '../../../domain/repositories/IOrdenPedidoRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
+import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
@@ -97,6 +98,79 @@ export class ReciboController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Deposit a check to a cash register: link cashRegisterId + set DEPOSITED + create cash movement */
+  async depositCheckToCash(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const reciboRepo  = container.resolve<IReciboRepository>('ReciboRepository');
+      const cashRepo    = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
+      const logRepo     = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+
+      const recibo = await reciboRepo.findById(req.params.id);
+      if (!recibo) throw new NotFoundError('Recibo');
+      if ((recibo as any).paymentMethod !== 'CHECK') throw new AppError('El recibo no es de tipo cheque', 400);
+      if ((recibo as any).status === 'CANCELLED')    throw new AppError('El recibo está cancelado', 400);
+      if ((recibo as any).checkStatus === 'CLEARED') throw new AppError('El cheque ya fue acreditado', 400);
+
+      const { cashRegisterId } = req.body as { cashRegisterId: string };
+      if (!cashRegisterId) throw new AppError('cashRegisterId requerido', 400);
+      const cashRegister = await cashRepo.findById(cashRegisterId);
+      if (!cashRegister) throw new NotFoundError('Caja');
+
+      // Link recibo to cash register + set DEPOSITED
+      await prisma.$executeRaw`
+        UPDATE recibos SET "cashRegisterId" = ${cashRegisterId}, "checkStatus" = 'DEPOSITED', "updatedAt" = NOW()
+        WHERE id = ${req.params.id}
+      `;
+
+      // Create or update the cash register AccountMovement
+      const existingMovement = await prisma.accountMovement.findFirst({
+        where: { reciboId: recibo.id },
+      });
+
+      if (existingMovement) {
+        // Movement already exists (CUENTA_CORRIENTE): just attach the cashRegisterId
+        await prisma.accountMovement.update({
+          where: { id: existingMovement.id },
+          data: { cashRegisterId },
+        });
+      } else {
+        // No movement yet (CONTADO): find or create current account and create CREDIT movement
+        const customerId = (recibo as any).customerId;
+        const currency   = (recibo as any).currency ?? 'ARS';
+        let currentAccount = await currentAccountRepo.findByCustomerId(customerId, currency);
+        if (!currentAccount) {
+          currentAccount = await currentAccountRepo.createForCustomer(customerId, currency);
+        }
+        const movement = await currentAccountRepo.addMovement({
+          currentAccountId: currentAccount.id,
+          type: 'CREDIT',
+          amount: Number((recibo as any).amount),
+          description: `Depósito cheque ${(recibo as any).number} en caja ${cashRegister.name}`,
+          invoiceId: (recibo as any).invoiceId ?? undefined,
+          cashRegisterId,
+        });
+        if (movement?.id) {
+          await prisma.accountMovement.update({
+            where: { id: movement.id },
+            data: { reciboId: recibo.id },
+          });
+        }
+      }
+
+      await logRepo.create({
+        userId:      req.user!.userId,
+        action:      'UPDATE',
+        entity:      'Recibo',
+        entityId:    recibo.id,
+        description: `Cheque ${(recibo as any).number} depositado en caja ${cashRegister.name}`,
+      });
+
+      const updated = await reciboRepo.findById(req.params.id);
+      res.json({ status: 'success', data: updated });
+    } catch (error) { next(error); }
   }
 
   async cancel(req: Request, res: Response, next: NextFunction): Promise<void> {

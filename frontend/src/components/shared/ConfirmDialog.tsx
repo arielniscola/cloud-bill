@@ -3,11 +3,13 @@ import { Modal, Button } from '../ui';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  onCancel?: () => void;
   onConfirm: () => void;
   title?: string;
   message: string;
   confirmText?: string;
+  confirmLabel?: string;
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info';
   isLoading?: boolean;
@@ -16,14 +18,18 @@ export interface ConfirmDialogProps {
 export default function ConfirmDialog({
   isOpen,
   onClose,
+  onCancel,
   onConfirm,
   title = 'Confirmar acción',
   message,
-  confirmText = 'Confirmar',
+  confirmText,
+  confirmLabel,
   cancelText = 'Cancelar',
   variant = 'danger',
   isLoading = false,
 }: ConfirmDialogProps) {
+  const resolvedConfirmText = confirmLabel ?? confirmText ?? 'Confirmar';
+  const resolvedClose = onClose ?? onCancel ?? (() => {});
   const iconColors = {
     danger: 'text-red-600 bg-red-100',
     warning: 'text-yellow-600 bg-yellow-100',
@@ -37,7 +43,7 @@ export default function ConfirmDialog({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="sm">
+    <Modal isOpen={isOpen} onClose={resolvedClose} size="sm">
       <div className="flex flex-col items-center text-center">
         <div
           className={`p-3 rounded-full ${iconColors[variant]} mb-4`}
@@ -50,7 +56,7 @@ export default function ConfirmDialog({
           <Button
             variant="outline"
             className="flex-1"
-            onClick={onClose}
+            onClick={resolvedClose}
             disabled={isLoading}
           >
             {cancelText}
@@ -61,7 +67,7 @@ export default function ConfirmDialog({
             onClick={onConfirm}
             isLoading={isLoading}
           >
-            {confirmText}
+            {resolvedConfirmText}
           </Button>
         </div>
       </div>

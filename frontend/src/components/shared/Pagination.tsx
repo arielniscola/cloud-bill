@@ -40,6 +40,7 @@ export default function Pagination({
             value={limit.toString()}
             onChange={(value) => onLimitChange(parseInt(value))}
             className="w-20"
+            placement="top"
           />
         </div>
       </div>

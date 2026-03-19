@@ -8,14 +8,17 @@ import {
 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '../ui';
 import { cashRegistersService, appSettingsService } from '../../services';
+import bankService from '../../services/bank.service';
 import { formatCurrency } from '../../utils/formatters';
 import type { CreateReciboDTO, CashRegister } from '../../types';
+import type { BankAccount } from '../../types/bank.types';
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
   exchangeRate: z.coerce.number().positive('La cotización debe ser mayor a 0').default(1),
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
   cashRegisterId: z.string().optional().nullable(),
+  bankAccountId: z.string().optional().nullable(),
   reference: z.string().optional().nullable(),
   bank: z.string().optional().nullable(),
   checkDueDate: z.string().optional().nullable(),
@@ -36,6 +39,9 @@ const METHODS: Array<{
   { value: 'MERCADO_PAGO',  label: 'Mercado Pago',   icon: <Smartphone className="w-4 h-4" /> },
   { value: 'CHECK',         label: 'Cheque',         icon: <FileText className="w-4 h-4" /> },
 ];
+
+// Methods that need a cash register destination
+const CAJA_METHODS = ['CASH', 'CARD', 'MERCADO_PAGO'];
 
 interface PaymentModalProps {
   open: boolean;
@@ -60,6 +66,7 @@ export function PaymentModal({
 }: PaymentModalProps) {
   const isUSD = currency === 'USD';
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loadingCR, setLoadingCR] = useState(false);
   const [loadingRate, setLoadingRate] = useState(false);
 
@@ -77,6 +84,7 @@ export function PaymentModal({
       exchangeRate: 1,
       paymentMethod: 'CASH',
       cashRegisterId: null,
+      bankAccountId: null,
     },
   });
 
@@ -86,6 +94,9 @@ export function PaymentModal({
   const arsEquivalent = isUSD ? amount * exchangeRate : 0;
   const afterPayment = Math.max(0, remaining - amount);
   const isFullPayment = amount > 0 && afterPayment === 0;
+
+  const needsCaja = CAJA_METHODS.includes(paymentMethod);
+  const needsBanco = paymentMethod === 'BANK_TRANSFER';
 
   const fetchBNARate = async () => {
     setLoadingRate(true);
@@ -107,6 +118,7 @@ export function PaymentModal({
       exchangeRate: 1,
       paymentMethod: 'CASH',
       cashRegisterId: null,
+      bankAccountId: null,
       reference: null,
       bank: null,
       checkDueDate: null,
@@ -114,25 +126,43 @@ export function PaymentModal({
       notes: null,
     });
     setLoadingCR(true);
-    Promise.all([cashRegistersService.getAll(true), appSettingsService.get().catch(() => null)])
-      .then(([crs, settings]) => {
+    Promise.all([
+      cashRegistersService.getAll(true),
+      appSettingsService.get().catch(() => null),
+      bankService.getAll().catch(() => []),
+    ])
+      .then(([crs, settings, banks]) => {
         setCashRegisters(crs);
+        setBankAccounts((banks as BankAccount[]).filter((b) => b.isActive));
         const preferred = defaultCashRegisterId
           || settings?.defaultInvoiceCashRegisterId
           || settings?.defaultBudgetCashRegisterId;
         const found = preferred ? crs.find((c: CashRegister) => c.id === preferred) : null;
         setValue('cashRegisterId', found ? found.id : crs[0]?.id ?? null);
+        const firstBank = (banks as BankAccount[]).find((b) => b.isActive);
+        setValue('bankAccountId', firstBank?.id ?? null);
       })
       .finally(() => setLoadingCR(false));
     if (isUSD) fetchBNARate();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When switching method, pre-select the first available destination
+  useEffect(() => {
+    if (needsBanco && bankAccounts.length > 0 && !watch('bankAccountId')) {
+      setValue('bankAccountId', bankAccounts[0].id);
+    }
+    if (needsCaja && cashRegisters.length > 0 && !watch('cashRegisterId')) {
+      setValue('cashRegisterId', cashRegisters[0].id);
+    }
+  }, [paymentMethod]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFormSubmit = async (data: PaymentFormData) => {
     await onSubmit({
       amount: data.amount,
       exchangeRate: isUSD ? data.exchangeRate : undefined,
       paymentMethod: data.paymentMethod,
-      cashRegisterId: data.cashRegisterId || null,
+      cashRegisterId: needsCaja ? (data.cashRegisterId || null) : null,
+      bankAccountId: needsBanco ? (data.bankAccountId || null) : null,
       reference: data.reference || null,
       bank: data.bank || null,
       checkDueDate: data.checkDueDate || null,
@@ -140,6 +170,11 @@ export function PaymentModal({
       notes: data.notes || null,
     });
   };
+
+  // Determine if submit should be disabled
+  const submitDisabled =
+    (needsCaja && cashRegisters.length === 0) ||
+    (needsBanco && bankAccounts.length === 0);
 
   return (
     <Modal isOpen={open} onClose={onClose} title={title} size="md">
@@ -266,24 +301,48 @@ export function PaymentModal({
           </div>
         </div>
 
-        {/* ── Cash register ── */}
-        {loadingCR ? (
-          <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
-        ) : cashRegisters.length === 0 ? (
-          <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
-            <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800 dark:text-amber-400">
-              No hay cajas activas.{' '}
-              <a href="/cash-registers" className="underline font-medium">Creá una caja</a>.
-            </p>
-          </div>
-        ) : (
-          <Select
-            label="Caja destino"
-            options={cashRegisters.map((cr) => ({ value: cr.id, label: cr.name }))}
-            value={watch('cashRegisterId') ?? ''}
-            onChange={(val) => setValue('cashRegisterId', val || null)}
-          />
+        {/* ── Cash register — only for CASH / CARD / MERCADO_PAGO ── */}
+        {needsCaja && (
+          loadingCR ? (
+            <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
+          ) : cashRegisters.length === 0 ? (
+            <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+              <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-400">
+                No hay cajas activas.{' '}
+                <a href="/cash-registers" className="underline font-medium">Creá una caja</a>.
+              </p>
+            </div>
+          ) : (
+            <Select
+              label="Caja destino"
+              options={cashRegisters.map((cr) => ({ value: cr.id, label: cr.name }))}
+              value={watch('cashRegisterId') ?? ''}
+              onChange={(val) => setValue('cashRegisterId', val || null)}
+            />
+          )
+        )}
+
+        {/* ── Bank account — only for BANK_TRANSFER ── */}
+        {needsBanco && (
+          loadingCR ? (
+            <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
+          ) : bankAccounts.length === 0 ? (
+            <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+              <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-400">
+                No hay cuentas bancarias activas.{' '}
+                <a href="/banks" className="underline font-medium">Creá una cuenta</a>.
+              </p>
+            </div>
+          ) : (
+            <Select
+              label="Cuenta bancaria destino"
+              options={bankAccounts.map((b) => ({ value: b.id, label: `${b.name} — ${b.bank}` }))}
+              value={watch('bankAccountId') ?? ''}
+              onChange={(val) => setValue('bankAccountId', val || null)}
+            />
+          )
         )}
 
         {/* ── Mercado Pago notice ── */}
@@ -306,7 +365,7 @@ export function PaymentModal({
             />
             {paymentMethod === 'BANK_TRANSFER' && (
               <Input
-                label="Banco"
+                label="Banco origen"
                 placeholder="Opcional"
                 {...register('bank')}
               />
@@ -365,7 +424,7 @@ export function PaymentModal({
           <Button type="button" variant="outline" onClick={onClose} disabled={isLoading} className="flex-1 justify-center">
             Cancelar
           </Button>
-          <Button type="submit" isLoading={isLoading} disabled={cashRegisters.length === 0} className="flex-2 justify-center flex-1">
+          <Button type="submit" isLoading={isLoading} disabled={submitDisabled} className="flex-2 justify-center flex-1">
             <Banknote className="w-4 h-4 mr-2" />
             Confirmar pago
           </Button>

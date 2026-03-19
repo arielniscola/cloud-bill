@@ -34,6 +34,7 @@ export default function RecibosPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -43,8 +44,6 @@ export default function RecibosPage() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-
-  const LIMIT = 20;
 
   const hasFilters = !!(statusFilter || paymentMethodFilter || customerFilter || dateFrom || dateTo);
 
@@ -62,7 +61,7 @@ export default function RecibosPage() {
     try {
       const result = await recibosService.getAll({
         page,
-        limit: LIMIT,
+        limit,
         status: (statusFilter as ReciboStatus) || undefined,
         paymentMethod: (paymentMethodFilter as PaymentMethod) || undefined,
         customerId: customerFilter || undefined,
@@ -87,7 +86,7 @@ export default function RecibosPage() {
 
   useEffect(() => {
     fetchRecibos();
-  }, [page, statusFilter, paymentMethodFilter, customerFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, limit, statusFilter, paymentMethodFilter, customerFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterChange = (setter: (v: string) => void) => (v: string) => {
     setter(v);
@@ -220,6 +219,8 @@ export default function RecibosPage() {
                         ? <span className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium">Factura {recibo.invoice.number}</span>
                         : recibo.budget
                         ? <span className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full font-medium">Presupuesto {recibo.budget.number}</span>
+                        : recibo.ordenPedido
+                        ? <span className="text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium">Orden {recibo.ordenPedido.number}</span>
                         : <span className="text-gray-400 dark:text-slate-500">—</span>
                       }
                     </td>
@@ -247,14 +248,15 @@ export default function RecibosPage() {
           </table>
         </div>
 
-        {totalPages > 1 && (
-          <div className="px-5 py-4 border-t border-gray-100 dark:border-slate-700">
-            <Pagination
-              currentPage={page}
-              totalPages={totalPages}
-              onPageChange={setPage}
-            />
-          </div>
+        {(totalPages > 1 || total > 0) && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            limit={limit}
+            total={total}
+            onPageChange={setPage}
+            onLimitChange={(newLimit) => { setLimit(newLimit); setPage(1); }}
+          />
         )}
       </div>
     </div>

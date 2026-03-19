@@ -115,7 +115,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
       await prisma.budget.update({
         where: { id },
         data: {
-          ...rest,
+          ...(rest as any),
           items: {
             create: items.map((item) => ({
               productId: item.productId ?? null,

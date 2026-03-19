@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown, Landmark } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Badge, Button } from '../../components/ui';
+import { Badge, Button, Select } from '../../components/ui';
 import { PageHeader, SearchInput, Pagination } from '../../components/shared';
-import { recibosService, customersService } from '../../services';
+import { recibosService, customersService, cashRegistersService, bankService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { CHECK_STATUSES, CHECK_STATUS_COLORS, CHECK_STATUS_OPTIONS } from '../../utils/constants';
 import type { Recibo, CheckStatus, Customer } from '../../types';
+import type { BankAccount } from '../../types/bank.types';
 
 type StatusFilter = CheckStatus | 'ALL' | 'OVERDUE';
 
@@ -46,12 +47,108 @@ function isOverdue(recibo: Recibo): boolean {
   return new Date(recibo.checkDueDate) < new Date();
 }
 
+// ── Deposit modal ────────────────────────────────────────────────
+function DepositModal({
+  recibo,
+  bankAccounts,
+  cashRegisters,
+  onClose,
+  onDeposited,
+}: {
+  recibo: Recibo;
+  bankAccounts: BankAccount[];
+  cashRegisters: { id: string; name: string }[];
+  onClose: () => void;
+  onDeposited: (updated: Recibo) => void;
+}) {
+  const [dest,     setDest]     = useState<'BANK' | 'CASH'>('BANK');
+  const [bankId,   setBankId]   = useState('');
+  const [cashId,   setCashId]   = useState('');
+  const [saving,   setSaving]   = useState(false);
+
+  const bankOptions = bankAccounts.map(b => ({ value: b.id, label: `${b.name} — ${b.bank}` }));
+  const cashOptions = cashRegisters.map(c => ({ value: c.id, label: c.name }));
+
+  const handleConfirm = async () => {
+    if (dest === 'BANK' && !bankId) { toast.error('Seleccioná una cuenta bancaria'); return; }
+    if (dest === 'CASH' && !cashId) { toast.error('Seleccioná una caja');             return; }
+    setSaving(true);
+    try {
+      if (dest === 'BANK') {
+        await bankService.depositCheck(bankId, recibo.id);
+      } else {
+        // Deposit to cash register — just update check status + cash register via existing endpoint
+        await recibosService.depositCheckToCash(recibo.id, cashId);
+      }
+      const updated = await recibosService.findById(recibo.id);
+      onDeposited(updated);
+      toast.success('Cheque depositado');
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al depositar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-sm p-6">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Depositar cheque</h2>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+          {recibo.number} · {formatCurrency(Number(recibo.amount), recibo.currency as 'ARS' | 'USD')}
+        </p>
+
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setDest('BANK')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+              dest === 'BANK'
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            <Landmark className="w-4 h-4" />Cuenta bancaria
+          </button>
+          <button
+            onClick={() => setDest('CASH')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+              dest === 'CASH'
+                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'
+            }`}
+          >
+            <RefreshCw className="w-4 h-4" />Caja
+          </button>
+        </div>
+
+        {dest === 'BANK' && (
+          bankOptions.length > 0
+            ? <Select label="Cuenta bancaria" value={bankId} onChange={setBankId} options={[{ value: '', label: 'Seleccionar...' }, ...bankOptions]} />
+            : <p className="text-xs text-amber-600 dark:text-amber-400">No hay cuentas bancarias. <a href="/banks" className="underline">Crear una</a></p>
+        )}
+        {dest === 'CASH' && (
+          cashOptions.length > 0
+            ? <Select label="Caja" value={cashId} onChange={setCashId} options={[{ value: '', label: 'Seleccionar...' }, ...cashOptions]} />
+            : <p className="text-xs text-amber-600 dark:text-amber-400">No hay cajas disponibles.</p>
+        )}
+
+        <div className="flex justify-end gap-3 mt-5">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button isLoading={saving} onClick={handleConfirm}>Depositar</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BancoCheques() {
   const navigate = useNavigate();
   const [checks, setChecks] = useState<Recibo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -61,6 +158,9 @@ export default function BancoCheques() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [depositRecibo, setDepositRecibo]   = useState<Recibo | null>(null);
+  const [bankAccounts,  setBankAccounts]    = useState<BankAccount[]>([]);
+  const [cashRegisters, setCashRegisters]   = useState<{ id: string; name: string }[]>([]);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -99,11 +199,21 @@ export default function BancoCheques() {
 
   useEffect(() => {
     customersService.getAll({ limit: 1000, isActive: true }).then((r) => setCustomers(r.data)).catch(() => {});
+    bankService.getAll().then(setBankAccounts).catch(() => {});
+    cashRegistersService.getAll(true).then(r => setCashRegisters(r.map((c: any) => ({ id: c.id, name: c.name })))).catch(() => {});
   }, []);
 
   const handleUpdateStatus = async (id: string, status: CheckStatus) => {
-    setUpdatingId(id);
     setOpenMenuId(null);
+
+    // DEPOSITED requires selecting a destination (bank or cash register)
+    if (status === 'DEPOSITED') {
+      const recibo = checks.find(c => c.id === id);
+      if (recibo) { setDepositRecibo(recibo); }
+      return;
+    }
+
+    setUpdatingId(id);
     try {
       const updated = await recibosService.updateCheckStatus(id, status);
       setChecks((prev) => prev.map((c) => (c.id === id ? updated : c)));
@@ -385,8 +495,21 @@ export default function BancoCheques() {
 
       {totalPages > 1 && (
         <div className="mt-4">
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination page={page} totalPages={totalPages} limit={limit} total={total} onPageChange={setPage} onLimitChange={() => {}} />
         </div>
+      )}
+
+      {depositRecibo && (
+        <DepositModal
+          recibo={depositRecibo}
+          bankAccounts={bankAccounts}
+          cashRegisters={cashRegisters}
+          onClose={() => setDepositRecibo(null)}
+          onDeposited={(updated) => {
+            setChecks(prev => prev.map(c => c.id === updated.id ? updated : c));
+            setDepositRecibo(null);
+          }}
+        />
       )}
     </div>
   );

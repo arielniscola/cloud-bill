@@ -1,6 +1,7 @@
 export interface AppSettings {
   id: string;
   defaultInvoiceCashRegisterId: string | null;
+  defaultBudgetCashRegisterId?: string | null;
   deadStockDays:                number;
   safetyStockDays:              number;
   stalePriceWarnDays1:          number;

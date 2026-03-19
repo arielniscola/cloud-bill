@@ -12,6 +12,7 @@ export interface Recibo {
   customerId: string;
   userId: string;
   cashRegisterId: string | null;
+  bankAccountId: string | null;
   amount: number;
   currency: string;
   exchangeRate: number;
@@ -38,6 +39,7 @@ export interface CreateReciboDTO {
   exchangeRate?: number;
   paymentMethod: PaymentMethod;
   cashRegisterId?: string | null;
+  bankAccountId?: string | null;
   reference?: string | null;
   bank?: string | null;
   checkDueDate?: string | null;

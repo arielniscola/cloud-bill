@@ -42,6 +42,12 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
       if (filters.dateTo) where.date.lte = filters.dateTo;
     }
+    if (filters.search) {
+      where.OR = [
+        { number: { contains: filters.search, mode: 'insensitive' } },
+        { customer: { name: { contains: filters.search, mode: 'insensitive' } } },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       (prisma as any).ordenPedido.findMany({

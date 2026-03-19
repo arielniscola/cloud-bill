@@ -23,3 +23,4 @@ export * from './recibo.types';
 export * from './orden-pedido.types';
 export * from './orden-compra.types';
 export * from './ordenPago.types';
+export * from './bank.types';

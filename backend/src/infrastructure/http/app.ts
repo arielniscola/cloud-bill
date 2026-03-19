@@ -28,6 +28,9 @@ import { ordenCompraRoutes } from './routes/ordenCompraRoutes';
 import { userRoutes } from './routes/userRoutes';
 import { companyRoutes } from './routes/companyRoutes';
 import { ordenPagoRoutes } from './routes/ordenPagoRoutes';
+import { bankRoutes } from './routes/bankRoutes';
+import { searchRoutes } from './routes/searchRoutes';
+import { remindersRoutes } from './routes/remindersRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -69,6 +72,9 @@ export function createApp(): Application {
   app.use('/api/users', userRoutes);
   app.use('/api/companies', companyRoutes);
   app.use('/api/orden-pagos', ordenPagoRoutes);
+  app.use('/api/banks', bankRoutes);
+  app.use('/api/search', searchRoutes);
+  app.use('/api/reminders', remindersRoutes);
 
   // 404 handler
   app.use((_req, res) => {

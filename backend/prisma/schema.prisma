@@ -200,8 +200,9 @@ model Product {
   price         Decimal  @db.Decimal(12, 2)
   salePriceUSD  Decimal? @db.Decimal(12, 2) // Precio de venta en USD (opcional, para presupuestos)
   taxRate       Decimal  @default(21) @db.Decimal(5, 2)
-  leadTimeDays  Int?                          // Días de reposición para predicción de quiebre
-  isActive      Boolean  @default(true)
+  leadTimeDays    Int?                          // Días de reposición para predicción de quiebre
+  priceUpdatedAt  DateTime?                     // Última vez que se actualizó price, cost o salePriceUSD
+  isActive        Boolean  @default(true)
   companyId     String   @default("00000000-0000-0000-0000-000000000001")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -856,4 +857,39 @@ model SupplierAccountMovement {
   purchase  Purchase?  @relation(fields: [purchaseId], references: [id])
 
   @@map("supplier_account_movements")
+}
+
+// ── Banco (cuentas y movimientos bancarios) ─────────────────────────────────
+
+model BankAccount {
+  id            String   @id @default(uuid())
+  name          String
+  bank          String
+  accountNumber String?
+  currency      String   @default("ARS")
+  balance       Decimal  @default(0) @db.Decimal(12, 2)
+  companyId     String   @default("00000000-0000-0000-0000-000000000001")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  movements     BankMovement[]
+
+  @@map("bank_accounts")
+}
+
+model BankMovement {
+  id            String      @id @default(uuid())
+  bankAccountId String
+  type          String      // CREDIT | DEBIT
+  amount        Decimal     @db.Decimal(12, 2)
+  description   String
+  date          DateTime    @default(now())
+  reciboId      String?     @unique
+  ordenPagoId   String?     @unique
+  companyId     String      @default("00000000-0000-0000-0000-000000000001")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@map("bank_movements")
 }

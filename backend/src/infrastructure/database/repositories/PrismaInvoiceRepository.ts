@@ -159,13 +159,13 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         customer: true,
         user: true,
       },
-    } as any);
+    } as any) as unknown as Promise<InvoiceWithItems>;
   }
 
   async update(id: string, data: UpdateInvoiceInput): Promise<Invoice> {
     return this.prisma.invoice.update({
       where: { id },
-      data,
+      data: data as any,
     });
   }
 
@@ -217,8 +217,8 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
           customer: true,
           user: true,
         },
-      } as any);
-    });
+      } as any) as unknown as InvoiceWithItems;
+    }) as unknown as Promise<InvoiceWithItems>;
   }
 
   async delete(id: string): Promise<void> {

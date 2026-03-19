@@ -26,6 +26,7 @@ export class CreateCustomerUseCase {
       name: data.name,
       taxId: data.taxId ?? null,
       taxCondition: data.taxCondition,
+      saleCondition: data.saleCondition ?? 'CONTADO',
       address: data.address ?? null,
       city: data.city ?? null,
       province: data.province ?? null,

@@ -23,7 +23,7 @@ const customerSchema = z.object({
     'EXENTO',
     'CONSUMIDOR_FINAL',
   ]),
-  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
   province: z.string().optional().nullable(),

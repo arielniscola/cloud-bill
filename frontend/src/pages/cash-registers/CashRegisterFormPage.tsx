@@ -60,7 +60,7 @@ export default function CashRegisterFormPage() {
       .getById(id)
       .then((cr) => {
         setValue('name', cr.name);
-        setValue('description', cr.description);
+        setValue('description', cr.description ?? undefined);
         setValue('isActive', cr.isActive);
       })
       .catch(() => {
@@ -72,12 +72,13 @@ export default function CashRegisterFormPage() {
 
   const onSubmit = async (data: CashRegisterFormData) => {
     setIsLoading(true);
+    const payload = { ...data, description: data.description ?? undefined };
     try {
       if (isEditing) {
-        await cashRegistersService.update(id, data);
+        await cashRegistersService.update(id, payload);
         toast.success('Caja actualizada');
       } else {
-        await cashRegistersService.create(data);
+        await cashRegistersService.create(payload);
         toast.success('Caja creada');
       }
       navigate('/cash-registers');

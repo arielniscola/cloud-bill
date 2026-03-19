@@ -39,6 +39,7 @@ export const ordenPedidoQuerySchema = z.object({
   currency: z.enum(['ARS', 'USD']).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
+  search: z.string().optional(),
 });
 
 export type CreateOrdenPedidoDTO = z.infer<typeof createOrdenPedidoSchema>;

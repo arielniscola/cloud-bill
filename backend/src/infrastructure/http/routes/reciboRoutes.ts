@@ -10,7 +10,8 @@ router.use(authMiddleware);
 router.get('/', reciboController.findAll);
 router.get('/checks/list', reciboController.findChecks);
 router.get('/:id', reciboController.findById);
-router.patch('/:id/check-status', requireRoles('ADMIN', 'SELLER'), reciboController.updateCheckStatus);
+router.patch('/:id/check-status',  requireRoles('ADMIN', 'SELLER'), reciboController.updateCheckStatus);
+router.patch('/:id/deposit-cash',  requireRoles('ADMIN', 'SELLER'), reciboController.depositCheckToCash);
 router.delete('/:id', requireRoles('ADMIN', 'SELLER'), reciboController.cancel);
 
 export { router as reciboRoutes };

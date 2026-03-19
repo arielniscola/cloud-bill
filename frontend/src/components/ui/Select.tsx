@@ -17,6 +17,7 @@ export interface SelectProps {
   error?: string;
   disabled?: boolean;
   className?: string;
+  placement?: 'bottom' | 'top';
 }
 
 export default function Select({
@@ -28,6 +29,7 @@ export default function Select({
   error,
   disabled = false,
   className,
+  placement = 'bottom',
 }: SelectProps) {
   const selectedOption = options.find((opt) => opt.value === value);
 
@@ -69,7 +71,10 @@ export default function Select({
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white dark:bg-slate-800 py-1 text-sm shadow-lg ring-1 ring-gray-200 dark:ring-slate-700 focus:outline-none">
+            <Listbox.Options className={clsx(
+              'absolute z-10 max-h-60 w-full overflow-auto rounded-xl bg-white dark:bg-slate-800 py-1 text-sm shadow-lg ring-1 ring-gray-200 dark:ring-slate-700 focus:outline-none',
+              placement === 'top' ? 'bottom-full mb-1' : 'mt-1'
+            )}>
               {options.map((option) => (
                 <Listbox.Option
                   key={option.value}

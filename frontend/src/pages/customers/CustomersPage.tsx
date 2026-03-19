@@ -233,7 +233,7 @@ export default function CustomersPage() {
           data={customers}
           isLoading={isLoading}
           keyExtractor={(c) => c.id}
-          onRowClick={(c) => navigate(`/customers/${c.id}/edit`)}
+          onRowClick={(c) => navigate(`/customers/${c.id}`)}
           emptyMessage={
             search
               ? `Sin resultados para "${search}"`

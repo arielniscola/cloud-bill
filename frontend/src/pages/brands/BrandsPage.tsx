@@ -12,7 +12,7 @@ import type { Brand } from '../../types';
 // ── Schema ───────────────────────────────────────────────────────
 const brandSchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  isActive: z.boolean().default(true),
+  isActive: z.boolean(),
 });
 type BrandFormData = z.infer<typeof brandSchema>;
 
@@ -182,7 +182,7 @@ export default function BrandsPage() {
     defaultValues: { isActive: true },
   });
 
-  const isActiveVal = watch('isActive');
+  const isActiveVal = watch('isActive') ?? true;
 
   // ── Data ─────────────────────────────────────────────────────
   const fetchBrands = useCallback(async () => {

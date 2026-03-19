@@ -19,6 +19,12 @@ const STATUS_CFG: Record<PurchaseStatus, { label: string; className: string }> =
   CANCELLED:  { label: 'Cancelada',  className: 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/30 dark:border-red-800' },
 };
 
+const PAYMENT_STATUS_CFG: Record<string, { label: string; className: string }> = {
+  PENDING:        { label: 'Sin pagar',    className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/30 dark:border-amber-800' },
+  PARTIALLY_PAID: { label: 'Pago parcial', className: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/30 dark:border-blue-800' },
+  PAID:           { label: 'Pagado',       className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/30 dark:border-emerald-800' },
+};
+
 // ── Avatar helper ────────────────────────────────────────────────
 const AVATAR_COLORS = [
   'bg-orange-100 text-orange-700',
@@ -521,9 +527,19 @@ export default function PurchasesPage() {
 
                       {/* Estado */}
                       <td className="px-4 py-3.5 text-center">
-                        <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.className}`}>
-                          {cfg.label}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.className}`}>
+                            {cfg.label}
+                          </span>
+                          {!isCancelled && (() => {
+                            const pcfg = PAYMENT_STATUS_CFG[p.paymentStatus ?? 'PENDING'];
+                            return (
+                              <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${pcfg.className}`}>
+                                {pcfg.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </td>
 
                       {/* Acciones */}

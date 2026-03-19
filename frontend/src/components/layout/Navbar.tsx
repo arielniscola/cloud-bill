@@ -29,9 +29,14 @@ import {
   ChevronDown,
   LogOut,
   User,
+  ShoppingBag,
+  FileStack,
+  Banknote,
+  Store,
 } from 'lucide-react';
-import { useAuthStore } from '../../stores';
+import { useAuthStore, useUIStore } from '../../stores';
 import NotificationBell from '../notifications/NotificationBell';
+import { getNavTheme } from '../../utils/navThemes';
 
 interface NavItem {
   name: string;
@@ -58,7 +63,7 @@ const navigation: NavEntry[] = [
   {
     type: 'dropdown',
     name: 'Ventas',
-    icon: FileText,
+    icon: Store,
     sections: [
       {
         heading: 'Clientes',
@@ -70,10 +75,11 @@ const navigation: NavEntry[] = [
       {
         heading: 'Documentos',
         items: [
-          { name: 'Presupuestos', href: '/budgets',  icon: Calculator },
-          { name: 'Facturas',     href: '/invoices', icon: FileText },
-          { name: 'Remitos',      href: '/remitos',  icon: ClipboardList },
-          { name: 'Recibos',      href: '/recibos',  icon: Receipt },
+          { name: 'Órdenes de Pedido', href: '/orden-pedidos', icon: ShoppingBag },
+          { name: 'Presupuestos',      href: '/budgets',       icon: Calculator },
+          { name: 'Facturas',          href: '/invoices',      icon: FileText },
+          { name: 'Remitos',           href: '/remitos',       icon: ClipboardList },
+          { name: 'Recibos',           href: '/recibos',       icon: Receipt },
         ],
       },
     ],
@@ -85,8 +91,10 @@ const navigation: NavEntry[] = [
     sections: [
       {
         items: [
-          { name: 'Proveedores', href: '/suppliers', icon: Truck },
-          { name: 'Compras',     href: '/purchases', icon: ShoppingCart },
+          { name: 'Proveedores',       href: '/suppliers',     icon: Truck },
+          { name: 'Órdenes de Compra', href: '/orden-compras', icon: FileStack },
+          { name: 'Compras',           href: '/purchases',     icon: ShoppingCart },
+          { name: 'Órdenes de Pago',   href: '/orden-pagos',   icon: Banknote },
         ],
       },
     ],
@@ -124,8 +132,11 @@ const navigation: NavEntry[] = [
     sections: [
       {
         items: [
-          { name: 'Cajas',     href: '/cash-registers', icon: Landmark },
-          { name: 'Libro IVA', href: '/iva',             icon: BookOpen },
+          { name: 'Cajas',             href: '/cash-registers', icon: Landmark },
+          { name: 'Banco de Cheques',  href: '/banco-cheques',  icon: Banknote },
+          { name: 'Cuentas Bancarias', href: '/banks',          icon: Landmark },
+          { name: 'Libro IVA',         href: '/iva',            icon: BookOpen },
+          { name: 'Reporte Ventas',    href: '/reports/sales',  icon: BarChart2 },
         ],
       },
     ],
@@ -134,6 +145,8 @@ const navigation: NavEntry[] = [
 
 export default function Navbar() {
   const { user, logout } = useAuthStore();
+  const { navTheme } = useUIStore();
+  const theme = getNavTheme(navTheme);
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -142,7 +155,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 shadow-sm">
+    <nav className="fixed top-0 left-0 right-0 z-40 border-b border-white/10" style={{ backgroundColor: theme.bg }}>
       <div className="max-w-full mx-auto px-4">
         <div className="flex items-center justify-between h-14">
 
@@ -152,7 +165,7 @@ export default function Navbar() {
               <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shadow-sm">
                 <span className="text-white text-[11px] font-bold leading-none">CB</span>
               </div>
-              <span className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">CloudBill</span>
+              <span className="text-sm font-bold text-white tracking-tight">Cloud Bill</span>
             </div>
 
             {/* Navigation */}
@@ -167,8 +180,8 @@ export default function Navbar() {
                       clsx(
                         'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
                         isActive
-                          ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                          : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
+                          ? 'bg-white/20 text-white'
+                          : 'text-white/70 hover:bg-white/10 hover:text-white'
                       )
                     }
                   >
@@ -183,8 +196,8 @@ export default function Navbar() {
                           className={clsx(
                             'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
                             open
-                              ? 'bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-200'
-                              : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
+                              ? 'bg-white/20 text-white'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white'
                           )}
                         >
                           <entry.icon className="w-4 h-4" />
@@ -227,7 +240,7 @@ export default function Navbar() {
                                             isActive
                                               ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
                                               : active
-                                              ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200'
+                                              ? 'bg-gray-50 dark:bg-slate-700/80 text-gray-900 dark:text-slate-200'
                                               : 'text-gray-700 dark:text-slate-300'
                                           )
                                         }
@@ -260,16 +273,16 @@ export default function Navbar() {
                   <Menu.Button
                     className={clsx(
                       'flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors duration-150',
-                      open ? 'bg-gray-100 dark:bg-slate-800' : 'hover:bg-gray-100 dark:hover:bg-slate-800'
+                      open ? 'bg-white/20' : 'hover:bg-white/10'
                     )}
                   >
-                    <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
-                      <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4 text-white" />
                     </div>
-                    <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-slate-300 max-w-[120px] truncate">
+                    <span className="hidden md:block text-sm font-medium text-white/80 max-w-[120px] truncate">
                       {user?.name}
                     </span>
-                    <ChevronDown className={clsx('w-3.5 h-3.5 text-gray-400 dark:text-slate-500 transition-transform duration-150', open && 'rotate-180')} />
+                    <ChevronDown className={clsx('w-3.5 h-3.5 text-white/40 transition-transform duration-150', open && 'rotate-180')} />
                   </Menu.Button>
 
                   <Transition

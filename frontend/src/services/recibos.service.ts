@@ -26,6 +26,16 @@ export const recibosService = {
     const response = await api.delete<ApiResponse<Recibo>>(`/recibos/${id}`);
     return response.data.data;
   },
+
+  async findById(id: string): Promise<Recibo> {
+    const response = await api.get<ApiResponse<Recibo>>(`/recibos/${id}`);
+    return response.data.data;
+  },
+
+  /** Deposit check to a cash register (updates checkStatus + links cashRegisterId) */
+  async depositCheckToCash(reciboId: string, cashRegisterId: string): Promise<void> {
+    await api.patch(`/recibos/${reciboId}/deposit-cash`, { cashRegisterId });
+  },
 };
 
 export default recibosService;

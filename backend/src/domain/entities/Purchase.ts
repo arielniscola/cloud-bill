@@ -53,6 +53,7 @@ export interface CreatePurchaseInput {
   number: string;
   supplierId: string;
   userId: string;
+  companyId?: string;
   warehouseId?: string;
   date?: Date;
   currency?: Currency;

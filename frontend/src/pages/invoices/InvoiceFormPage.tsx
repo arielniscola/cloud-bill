@@ -674,7 +674,7 @@ export default function InvoiceFormPage() {
                 />
                 <span className="text-sm text-gray-700 dark:text-slate-300">Comprobante de servicios</span>
                 <span className="ml-auto">
-                  <Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" title="Servicios permiten hasta 10 días de anticipación; bienes hasta 5 días." />
+                  <span title="Servicios permiten hasta 10 días de anticipación; bienes hasta 5 días."><Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" /></span>
                 </span>
               </label>
 
@@ -689,7 +689,7 @@ export default function InvoiceFormPage() {
                   />
                   <span className="text-sm text-gray-700 dark:text-slate-300">Descontar stock al crear</span>
                   <span className="ml-auto">
-                    <Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la factura.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'} />
+                    <span title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la factura.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'}><Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" /></span>
                   </span>
                 </label>
               )}

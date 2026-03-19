@@ -8,6 +8,7 @@ export interface OrdenPedidoFilters {
   companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  search?: string;
 }
 
 export interface IOrdenPedidoRepository {

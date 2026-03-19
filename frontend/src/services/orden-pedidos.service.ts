@@ -16,6 +16,7 @@ export interface OrdenPedidoFilters {
   currency?: string;
   dateFrom?: string;
   dateTo?: string;
+  search?: string;
 }
 
 export const ordenPedidosService = {

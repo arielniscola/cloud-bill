@@ -26,6 +26,7 @@ export interface InvoiceItem {
   id: string;
   invoiceId: string;
   productId: string;
+  description?: string;
   product?: Product;
   quantity: number;
   unitPrice: number;

@@ -40,6 +40,7 @@ import {
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
 import { usePermissions } from "../../hooks/usePermissions";
+import { getNavTheme } from "../../utils/navThemes";
 import NotificationBell from "../notifications/NotificationBell";
 import CompanySwitcher from "../shared/CompanySwitcher";
 import { useCompanyStore } from "../../stores/company.store";
@@ -143,7 +144,8 @@ const navigationGroups: NavGroup[] = [
     requiredRoles: ["ADMIN"] as const,
     items: [
       { name: "Cajas",           href: "/cash-registers", icon: Landmark },
-      { name: "Banco de Cheques",href: "/banco-cheques",  icon: Banknote },
+      { name: "Banco de Cheques",  href: "/banco-cheques", icon: Banknote },
+      { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark },
       { name: "Libro IVA",       href: "/iva",            icon: BookOpen },
       { name: "Reporte Ventas",  href: "/reports/sales",  icon: BarChart2 },
     ],
@@ -168,10 +170,11 @@ const navigationGroups: NavGroup[] = [
 const allNavItems = navigationGroups.flatMap((g) => g.items);
 
 export default function Sidebar() {
-  const { sidebarOpen, toggleSidebar, mobileMenuOpen, closeMobileMenu } =
+  const { sidebarOpen, toggleSidebar, mobileMenuOpen, closeMobileMenu, navTheme } =
     useUIStore();
   const { user, logout } = useAuthStore();
   const { role, isModuleEnabled } = usePermissions();
+  const theme = getNavTheme(navTheme);
   const { companies } = useCompanyStore();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -268,8 +271,9 @@ export default function Sidebar() {
       )}
 
       <aside
+        style={{ backgroundColor: theme.bg }}
         className={clsx(
-          "fixed left-0 top-0 z-50 h-screen bg-slate-900 flex flex-col",
+          "fixed left-0 top-0 z-50 h-screen flex flex-col",
           // Width: mobile drawer always wide; desktop controlled by sidebarOpen
           "w-72",
           sidebarOpen ? "md:w-64" : "md:w-[68px]",
@@ -282,7 +286,7 @@ export default function Sidebar() {
         )}
       >
         {/* ── Header ── */}
-        <div className="relative flex items-center h-16 px-3.5 border-b border-slate-800 flex-shrink-0">
+        <div className="relative flex items-center h-16 px-3.5 border-b border-white/10 flex-shrink-0">
           {/* Logo */}
           <div
             className={clsx(
@@ -312,7 +316,7 @@ export default function Sidebar() {
             {/* Desktop collapse/expand */}
             <button
               onClick={toggleSidebar}
-              className="hidden md:block p-1.5 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition-[background-color,color] duration-150"
+              className="hidden md:block p-1.5 rounded-lg text-white/40 hover:bg-white/10 hover:text-white/80 transition-[background-color,color] duration-150"
               title={sidebarOpen ? "Contraer" : "Expandir"}
             >
               {sidebarOpen ? (
@@ -325,7 +329,7 @@ export default function Sidebar() {
             {/* Mobile close button */}
             <button
               onClick={closeMobileMenu}
-              className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition-[background-color,color] duration-150"
+              className="md:hidden p-1.5 rounded-lg text-white/40 hover:bg-white/10 hover:text-white/80 transition-[background-color,color] duration-150"
               aria-label="Cerrar menú"
             >
               <X className="w-4 h-4" />
@@ -355,12 +359,12 @@ export default function Sidebar() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar menú…"
-                  className="w-full bg-slate-800 text-slate-300 placeholder-slate-500 text-xs rounded-lg pl-8 pr-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500/50 transition-shadow"
+                  className="w-full bg-white/[0.08] text-white/80 placeholder-white/30 text-xs rounded-lg pl-8 pr-3 py-2 outline-none focus:ring-1 focus:ring-white/30 transition-shadow"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -388,7 +392,7 @@ export default function Sidebar() {
                           "transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98]",
                           isActive
                             ? "bg-indigo-600 text-white shadow-sm shadow-indigo-900/60"
-                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                            : "text-white/60 hover:bg-white/10 hover:text-white",
                         )
                       }
                     >
@@ -414,12 +418,12 @@ export default function Sidebar() {
                     <div
                       className={clsx("px-2 pb-1.5", gi > 0 ? "pt-5" : "pt-2")}
                     >
-                      <span className="text-[10px] font-semibold text-slate-500/80 uppercase tracking-[0.12em]">
+                      <span className="text-[10px] font-semibold text-white/40 uppercase tracking-[0.12em]">
                         {group.label}
                       </span>
                     </div>
                   ) : (
-                    <div className="mx-2 my-3.5 border-t border-slate-800" />
+                    <div className="mx-2 my-3.5 border-t border-white/10" />
                   ))}
 
                 <ul className="space-y-0.5">
@@ -439,8 +443,8 @@ export default function Sidebar() {
                               item.children.some(
                                 (c) => location.pathname === c.href || location.pathname.startsWith(c.href + "/"),
                               ))
-                              ? "bg-slate-800 text-slate-100"
-                              : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                              ? "bg-white/[0.12] text-white"
+                              : "text-white/60 hover:bg-white/10 hover:text-white",
                           )}
                         >
                           <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
@@ -451,7 +455,7 @@ export default function Sidebar() {
                               </span>
                               <ChevronDown
                                 className={clsx(
-                                  "w-3.5 h-3.5 text-slate-600 flex-shrink-0",
+                                  "w-3.5 h-3.5 text-white/30 flex-shrink-0",
                                   "transition-transform duration-200 ease-out",
                                   openMenus[item.name] && "rotate-180",
                                 )}
@@ -461,7 +465,7 @@ export default function Sidebar() {
                         </button>
 
                         {showText && openMenus[item.name] && (
-                          <ul className="mt-0.5 ml-[14px] pl-3 border-l border-slate-700/40 space-y-0.5 pb-0.5">
+                          <ul className="mt-0.5 ml-[14px] pl-3 border-l border-white/[0.08] space-y-0.5 pb-0.5">
                             {item.children.map((child) => (
                               <li key={child.href}>
                                 <NavLink
@@ -473,8 +477,8 @@ export default function Sidebar() {
                                       "transition-[background-color,color,transform] duration-150 ease-out",
                                       "active:scale-[0.98]",
                                       isActive
-                                        ? "bg-indigo-600/15 text-indigo-300 font-semibold"
-                                        : "text-slate-500 hover:bg-slate-800 hover:text-slate-200 font-medium",
+                                        ? "bg-indigo-500/20 text-indigo-300 font-semibold"
+                                        : "text-white/50 hover:bg-white/10 hover:text-white font-medium",
                                     )
                                   }
                                 >
@@ -521,10 +525,10 @@ export default function Sidebar() {
         </nav>
 
         {/* ── Footer ── */}
-        <div className="border-t border-slate-800 p-2.5 flex-shrink-0">
+        <div className="border-t border-white/10 p-2.5 flex-shrink-0">
           {/* User card — expanded */}
           {showText && user && (
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-slate-800/50 mb-2">
+            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white/[0.06] mb-2">
               <div className="w-7 h-7 rounded-full bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
                 <span className="text-indigo-300 text-[11px] font-bold leading-none">
                   {userInitials}
@@ -534,7 +538,7 @@ export default function Sidebar() {
                 <p className="text-xs font-semibold text-white truncate leading-tight">
                   {user.name}
                 </p>
-                <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
+                <p className="text-[11px] text-white/40 truncate leading-tight mt-0.5">
                   @{user.username}
                 </p>
                 <p className="text-[10px] text-indigo-400/70 truncate leading-tight mt-0.5 font-medium">
@@ -571,7 +575,7 @@ export default function Sidebar() {
               "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full mt-0.5",
               "transition-[background-color,color] duration-150 ease-out",
               !showText && "md:justify-center",
-              "text-slate-500 hover:bg-red-500/10 hover:text-red-400",
+              "text-white/40 hover:bg-red-500/20 hover:text-red-400",
             )}
           >
             <LogOut className="w-[18px] h-[18px] flex-shrink-0" />

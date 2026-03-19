@@ -22,7 +22,7 @@ const includeRelations = {
   supplier: { select: { id: true, name: true, email: true } },
   user:     { select: { id: true, name: true } },
   warehouse: { select: { id: true, name: true } },
-  purchase:  { select: { id: true } },
+  purchase:  { select: { id: true, paymentStatus: true, paidAmount: true, total: true } },
 };
 
 @injectable()

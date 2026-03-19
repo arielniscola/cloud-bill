@@ -24,19 +24,17 @@ export class PrismaAfipConfigRepository implements IAfipConfigRepository {
 
     let config: any;
     if (existing) {
-      config = await prisma.afipConfig.update({
-        where: { id: existing.id },
-        data: {
-          cuit:           data.cuit,
-          salePoint:      data.salePoint,
-          businessName:   data.businessName,
-          businessAddress: data.businessAddress,
-          taxCondition:   data.taxCondition,
-          cert:           data.cert,
-          privateKey:     data.privateKey,
-          isProduction:   data.isProduction,
-        },
-      });
+      const updateData: any = {
+        cuit:            data.cuit,
+        salePoint:       data.salePoint,
+        businessName:    data.businessName,
+        businessAddress: data.businessAddress,
+        taxCondition:    data.taxCondition,
+        isProduction:    data.isProduction,
+      };
+      if (data.cert)       updateData.cert       = data.cert;
+      if (data.privateKey) updateData.privateKey = data.privateKey;
+      config = await prisma.afipConfig.update({ where: { id: existing.id }, data: updateData });
     } else {
       const { activityStartDate: _asd, ...rest } = data as any;
       config = await prisma.afipConfig.create({ data: rest });

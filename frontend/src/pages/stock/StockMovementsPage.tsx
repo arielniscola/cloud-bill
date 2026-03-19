@@ -369,7 +369,7 @@ export default function StockMovementsPage() {
             label="Tipo de movimiento *"
             options={STOCK_MOVEMENT_OPTIONS}
             value={type}
-            onChange={(v) => setValue('type', v as StockMovementType)}
+            onChange={(v) => setValue('type', v as MovementFormData['type'])}
             error={errors.type?.message}
           />
 

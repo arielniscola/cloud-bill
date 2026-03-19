@@ -9,6 +9,7 @@ import HomePage from '../pages/home/HomePage';
 import DashboardPage from '../pages/dashboard/DashboardPage';
 import CustomersPage from '../pages/customers/CustomersPage';
 import CustomerFormPage from '../pages/customers/CustomerFormPage';
+import CustomerDetailPage from '../pages/customers/CustomerDetailPage';
 import ProductsPage from '../pages/products/ProductsPage';
 import ProductFormPage from '../pages/products/ProductFormPage';
 import BulkPriceUpdatePage from '../pages/products/BulkPriceUpdatePage';
@@ -64,6 +65,8 @@ import UsersPage from '../pages/users/UsersPage';
 import OrdenPagosPage from '../pages/orden-pagos/OrdenPagosPage';
 import OrdenPagoFormPage from '../pages/orden-pagos/OrdenPagoFormPage';
 import OrdenPagoDetailPage from '../pages/orden-pagos/OrdenPagoDetailPage';
+import BankAccountsPage from '../pages/banks/BankAccountsPage';
+import BankAccountDetailPage from '../pages/banks/BankAccountDetailPage';
 
 export default function AppRoutes() {
   return (
@@ -97,6 +100,7 @@ export default function AppRoutes() {
 
         {/* Read-only sections — all authenticated roles */}
         <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/brands" element={<BrandsPage />} />
@@ -161,6 +165,10 @@ export default function AppRoutes() {
           <Route path="/orden-pagos" element={<OrdenPagosPage />} />
           <Route path="/orden-pagos/new" element={<OrdenPagoFormPage />} />
           <Route path="/orden-pagos/:id" element={<OrdenPagoDetailPage />} />
+
+          {/* Bancos */}
+          <Route path="/banks" element={<BankAccountsPage />} />
+          <Route path="/banks/:id" element={<BankAccountDetailPage />} />
         </Route>
 
         {/* Budgets */}

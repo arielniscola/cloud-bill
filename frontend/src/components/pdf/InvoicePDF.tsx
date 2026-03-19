@@ -556,7 +556,7 @@ export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: Invoi
   const issuerTaxCondition = afipConfig?.taxCondition ?? 'Responsable Inscripto';
 
   const pageProps = {
-    invoice, qrCodeDataUrl, typeLetter, typeShort, isDraft,
+    invoice, afipConfig, qrCodeDataUrl, typeLetter, typeShort, isDraft,
     taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
   };
 

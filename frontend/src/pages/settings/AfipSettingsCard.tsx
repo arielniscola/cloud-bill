@@ -49,7 +49,9 @@ export default function AfipSettingsCard() {
   }, []);
 
   const handleSave = async () => {
-    if (!form.cuit || !form.cert || !form.privateKey) {
+    const certRequired = !config?.hasCert && !form.cert;
+    const keyRequired  = !config?.hasKey  && !form.privateKey;
+    if (!form.cuit || certRequired || keyRequired) {
       toast.error('CUIT, certificado y clave privada son requeridos');
       return;
     }

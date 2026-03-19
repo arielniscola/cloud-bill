@@ -34,6 +34,7 @@ export class OrdenPedidoController {
           companyId: req.companyId,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+          search: query.search,
         }
       );
 
@@ -354,8 +355,13 @@ export class OrdenPedidoController {
 
       const paymentData = createReciboSchema.parse(req.body);
 
+      // CHECK and BANK_TRANSFER don't use a cash register
+      const isCheck = paymentData.paymentMethod === 'CHECK';
+      const isBankTransfer = paymentData.paymentMethod === 'BANK_TRANSFER';
+      const usesCaja = !isCheck && !isBankTransfer;
+
       let cashRegisterName = '';
-      if (paymentData.cashRegisterId) {
+      if (usesCaja && paymentData.cashRegisterId) {
         const cashRegister = await cashRegisterRepo.findById(paymentData.cashRegisterId);
         if (!cashRegister) throw new AppError('Caja no encontrada', 400);
         if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
@@ -381,7 +387,8 @@ export class OrdenPedidoController {
         ordenPedidoId: op.id,
         customerId: op.customerId,
         userId: req.user!.userId,
-        cashRegisterId: paymentData.cashRegisterId ?? null,
+        cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
+        bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
         amount: paymentData.amount,
         currency: op.currency,
         exchangeRate: paymentData.exchangeRate ?? 1,
@@ -393,6 +400,24 @@ export class OrdenPedidoController {
         notes: paymentData.notes ?? null,
         companyId: req.companyId,
       } as any);
+
+      // For BANK_TRANSFER with a bankAccountId, create a bank movement
+      if (isBankTransfer && (paymentData as any).bankAccountId) {
+        await (prisma as any).bankMovement.create({
+          data: {
+            bankAccountId: (paymentData as any).bankAccountId,
+            type: 'CREDIT',
+            amount: paymentData.amount,
+            description: `Cobro Orden ${op.number} (${recibo.number})`,
+            reciboId: recibo.id,
+            companyId: req.companyId,
+          },
+        });
+        await (prisma as any).$executeRaw`
+          UPDATE "bank_accounts" SET balance = balance + ${paymentData.amount}, "updatedAt" = NOW()
+          WHERE id = ${(paymentData as any).bankAccountId}
+        `;
+      }
 
       const exchangeRate = paymentData.exchangeRate ?? 1;
       const arsAmount = Number(paymentData.amount) * exchangeRate;
@@ -408,7 +433,7 @@ export class OrdenPedidoController {
           type: 'CREDIT',
           amount: paymentData.amount,
           description: `Cobro ${cashRegisterName || paymentData.paymentMethod} - Orden ${op.number} (${recibo.number})`,
-          cashRegisterId: paymentData.cashRegisterId ?? undefined,
+          cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
           ordenPedidoId: op.id,
         } as any);
         if (movement?.id) {
@@ -416,7 +441,7 @@ export class OrdenPedidoController {
         }
       }
 
-      if (paymentData.cashRegisterId && !isCC) {
+      if (usesCaja && paymentData.cashRegisterId && !isCC) {
         let arsAccount = await currentAccountRepo.findByCustomerId(op.customerId, 'ARS');
         if (!arsAccount) {
           arsAccount = await currentAccountRepo.createForCustomer(op.customerId, 'ARS');
@@ -427,7 +452,7 @@ export class OrdenPedidoController {
             type: 'CREDIT',
             amount: arsAmount,
             balance: arsAccount.balance,
-            description: `Cobro ${cashRegisterName || paymentData.paymentMethod} - Orden ${op.number} (${recibo.number})`,
+            description: `Cobro ${cashRegisterName} - Orden ${op.number} (${recibo.number})`,
             cashRegisterId: paymentData.cashRegisterId,
             reciboId: recibo.id,
           },

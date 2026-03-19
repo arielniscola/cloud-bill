@@ -33,6 +33,7 @@ export interface Budget {
   status: BudgetStatus;
   notes: string | null;
   paymentTerms: string | null;
+  saleCondition?: string;
   deliveryStatus?: DeliveryStatus;
   createdAt: string;
   updatedAt: string;

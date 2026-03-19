@@ -35,7 +35,7 @@ export interface OrdenCompra {
   supplier?: { id: string; name: string; email: string | null } | null;
   user?: { id: string; name: string } | null;
   warehouse?: { id: string; name: string } | null;
-  purchase?: { id: string } | null;
+  purchase?: { id: string; paymentStatus: string; paidAmount: number; total: number } | null;
   items?: OrdenCompraItem[];
 }
 

@@ -613,7 +613,7 @@ export default function OrdenPedidoFormPage() {
                 />
                 <span className="text-sm text-gray-700 dark:text-slate-300">Descontar stock al crear</span>
                 <span className="ml-auto">
-                  <Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la orden.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'} />
+                  <span title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la orden.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'}><Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" /></span>
                 </span>
               </label>
 
