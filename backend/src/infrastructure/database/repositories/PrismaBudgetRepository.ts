@@ -96,7 +96,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),

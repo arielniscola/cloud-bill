@@ -94,7 +94,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
         exchangeRate: new Decimal(data.exchangeRate ?? 1),
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
-        companyId:    (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId:    (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         subtotal:     new Decimal(data.subtotal),
         taxAmount:    new Decimal(data.taxAmount),
         total:        new Decimal(data.total),

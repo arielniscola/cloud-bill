@@ -91,7 +91,7 @@ export class PrismaProductRepository implements IProductRepository {
 
   async create(data: CreateProductInput): Promise<Product> {
     const d = data as any;
-    const companyId = d.companyId ?? '00000000-0000-0000-0000-000000000001';
+    const companyId = d.companyId ?? (() => { throw new Error('companyId is required'); })();
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",

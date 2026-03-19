@@ -99,7 +99,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: data.stockBehavior ?? 'DISCOUNT',
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         cashRegisterId: (data as any).cashRegisterId ?? null,
         invoiceCashRegisterId: (data as any).invoiceCashRegisterId ?? null,
         subtotal: new Decimal(data.subtotal),

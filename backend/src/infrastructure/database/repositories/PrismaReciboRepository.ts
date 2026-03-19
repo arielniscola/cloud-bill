@@ -87,7 +87,7 @@ export class PrismaReciboRepository implements IReciboRepository {
 
     // Set exchangeRate + companyId via raw SQL (bypasses stale Prisma client types)
     const rate = new Decimal(data.exchangeRate ?? 1);
-    const companyId = (data as any).companyId ?? '00000000-0000-0000-0000-000000000001';
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
     await prisma.$executeRaw`UPDATE "recibos" SET "exchangeRate" = ${rate}, "companyId" = ${companyId} WHERE id = ${recibo.id}`;
 
     // Return with relations

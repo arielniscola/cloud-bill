@@ -44,7 +44,7 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
     return this.prisma.warehouse.create({
       data: {
         ...data,
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
       } as any,
     });
   }

@@ -104,7 +104,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         invoiceId: data.invoiceId ?? null,
         budgetId: data.budgetId ?? null,
         ordenPedidoId: data.ordenPedidoId ?? null,
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         items: {
           create: data.items.map((item) => ({
             productId: item.productId,

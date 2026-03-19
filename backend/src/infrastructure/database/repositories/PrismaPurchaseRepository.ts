@@ -106,7 +106,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
         subtotal,
         taxAmount,
         total,
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         items: { create: items },
       },
       include: includeRelations,

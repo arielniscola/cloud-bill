@@ -144,7 +144,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
         originInvoiceId: (data as any).originInvoiceId ?? null,
         ordenPedidoId: (data as any).ordenPedidoId ?? null,
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
         subtotal,
         taxAmount,
         total,

@@ -99,7 +99,7 @@ export class PrismaCustomerRepository implements ICustomerRepository {
   async create(data: CreateCustomerInput): Promise<Customer> {
     const { saleCondition = 'CONTADO', companyId, ...rest } = data as any;
     const created = await this.prisma.customer.create({ data: rest });
-    const resolvedCompanyId = companyId ?? '00000000-0000-0000-0000-000000000001';
+    const resolvedCompanyId = companyId;
     await this.prisma.$executeRaw(
       Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition}, "companyId" = ${resolvedCompanyId} WHERE id = ${created.id}`
     );

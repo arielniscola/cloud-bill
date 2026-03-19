@@ -175,7 +175,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const number = await this.getNextNumber();
     const id = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
     const opId = id[0].id;
-    const companyId = data.companyId ?? '00000000-0000-0000-0000-000000000001';
+    const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
     const exchangeRate = data.exchangeRate ?? 1;
     const date = data.date ?? new Date();
@@ -326,7 +326,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   }
 
   async createSupplierMovement(data: CreateSupplierMovementInput): Promise<SupplierAccountMovement> {
-    const companyId = data.companyId ?? '00000000-0000-0000-0000-000000000001';
+    const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
 
     // Compute running balance

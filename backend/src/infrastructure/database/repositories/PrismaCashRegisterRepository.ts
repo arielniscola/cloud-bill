@@ -40,7 +40,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     return this.prisma.cashRegister.create({
       data: {
         ...data,
-        companyId: (data as any).companyId ?? '00000000-0000-0000-0000-000000000001',
+        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
       } as any,
     });
   }
