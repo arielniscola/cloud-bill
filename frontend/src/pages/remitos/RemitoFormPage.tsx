@@ -221,7 +221,7 @@ export default function RemitoFormPage() {
 
           {/* ── Left: items ── */}
           <div>
-            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl">
               <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
                   Ítems a entregar

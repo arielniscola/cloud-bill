@@ -255,9 +255,9 @@ export default function SalesReportPage() {
   const invoiceFilters = {
     dateFrom:   dateFrom ? `${dateFrom}T00:00:00.000Z` : undefined,
     dateTo:     dateTo   ? `${dateTo}T23:59:59.999Z`   : undefined,
-    type:       typeFilter     || undefined,
-    status:     statusFilter   || undefined,
-    currency:   currencyFilter || undefined,
+    type:       (typeFilter || undefined) as InvoiceType | undefined,
+    status:     (statusFilter || undefined) as InvoiceStatus | undefined,
+    currency:   (currencyFilter || undefined) as Currency | undefined,
     customerId: customerId     || undefined,
     userId:     userId         || undefined,
   };

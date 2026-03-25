@@ -10,6 +10,7 @@ export interface BudgetItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountPct?: number;
   taxRate: number;
   subtotal: number;
   taxAmount: number;

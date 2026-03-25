@@ -547,7 +547,7 @@ export default function ProductsPage() {
         <CsvImportModal
           entity="products"
           onClose={() => setShowImport(false)}
-          onSuccess={() => { setShowImport(false); loadProducts(); }}
+          onSuccess={() => { setShowImport(false); fetchProducts(); }}
         />
       )}
     </div>

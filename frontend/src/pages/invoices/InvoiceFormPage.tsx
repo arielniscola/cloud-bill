@@ -298,7 +298,7 @@ export default function InvoiceFormPage() {
       if (existingIndex >= 0) {
         setValue(`items.${existingIndex}.quantity`, Number(currentItems[existingIndex].quantity) + item.quantity);
       } else {
-        append({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: item.taxRate });
+        append({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: 0, taxRate: item.taxRate });
       }
     });
     if (skippedCount > 0) {
