@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer } from 'lucide-react';
+import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
-import { ordenPedidosService, recibosService } from '../../services';
+import { ordenPedidosService, recibosService, remitosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import {
   ORDEN_PEDIDO_STATUSES,
   INVOICE_TYPE_OPTIONS,
+  REMITO_STATUSES,
 } from '../../utils/constants';
-import type { OrdenPedido, OrdenPedidoStatus, Recibo, CreateReciboDTO } from '../../types';
+import type { OrdenPedido, OrdenPedidoStatus, Recibo, CreateReciboDTO, Remito } from '../../types';
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -61,6 +62,7 @@ export default function OrdenPedidoDetailPage() {
   const [selectedInvoiceType, setSelectedInvoiceType] = useState('FACTURA_B');
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [recibos, setRecibos] = useState<Recibo[]>([]);
+  const [remitos, setRemitos] = useState<Remito[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
   const [isPayLoading, setIsPayLoading] = useState(false);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
@@ -69,12 +71,14 @@ export default function OrdenPedidoDetailPage() {
   const loadData = async () => {
     if (!id) return;
     try {
-      const [opData, recibosData] = await Promise.all([
+      const [opData, recibosData, remitosData] = await Promise.all([
         ordenPedidosService.getById(id),
         recibosService.getAll({ ordenPedidoId: id }),
+        remitosService.getAll({ ordenPedidoId: id, limit: 100 }),
       ]);
       setOp(opData);
       setRecibos(recibosData.data);
+      setRemitos(remitosData.data);
     } catch {
       toast.error('Error al cargar orden de pedido');
       navigate('/orden-pedidos');
@@ -413,6 +417,64 @@ export default function OrdenPedidoDetailPage() {
               <p className="text-sm text-gray-600 dark:text-slate-400 leading-relaxed">{op.notes}</p>
             </div>
           )}
+
+          {/* Remitos / Entregas */}
+          <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Remitos / Entregas</h3>
+            </div>
+            {remitos.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-gray-400 dark:text-slate-500 text-center">
+                Sin remitos asociados
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50/80 dark:bg-slate-700/50">
+                    <tr>
+                      <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">N°</th>
+                      <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Fecha</th>
+                      <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Ítems</th>
+                      <th className="px-5 py-2.5 text-center text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                    {remitos.map((remito) => {
+                      const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'info' | 'error'> = {
+                        PENDING: 'warning',
+                        PARTIALLY_DELIVERED: 'info',
+                        DELIVERED: 'success',
+                        CANCELLED: 'error',
+                      };
+                      return (
+                        <tr
+                          key={remito.id}
+                          onClick={() => navigate(`/remitos/${remito.id}`)}
+                          className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100"
+                        >
+                          <td className="px-5 py-3 text-sm font-mono font-medium text-indigo-600 dark:text-indigo-400">
+                            {remito.number}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-gray-600 dark:text-slate-400 tabular-nums">
+                            {formatDate(remito.date)}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-gray-600 dark:text-slate-400">
+                            {remito.items?.length ?? '—'}{remito.items?.length != null ? ` ítem${remito.items.length !== 1 ? 's' : ''}` : ''}
+                          </td>
+                          <td className="px-5 py-3 text-center">
+                            <Badge variant={statusVariant[remito.status] ?? 'default'} dot>
+                              {REMITO_STATUSES[remito.status as keyof typeof REMITO_STATUSES] ?? remito.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Recibos */}
           <RecibosList

@@ -33,6 +33,7 @@ export const remitoQuerySchema = z.object({
     emptyToUndefined,
     z.enum(['PENDING', 'PARTIALLY_DELIVERED', 'DELIVERED', 'CANCELLED']).optional()
   ),
+  ordenPedidoId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 
 export type CreateRemitoDTO = z.infer<typeof createRemitoSchema>;

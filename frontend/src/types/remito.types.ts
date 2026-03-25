@@ -23,6 +23,7 @@ export interface Remito {
   user?: User;
   invoiceId: string | null;
   budgetId: string | null;
+  ordenPedidoId: string | null;
   invoice?: { id: string; number: string; type: string } | null;
   budget?: { id: string; number: string } | null;
   date: string;
@@ -53,4 +54,5 @@ export interface RemitoFilters {
   status?: RemitoStatus;
   dateFrom?: string;
   dateTo?: string;
+  ordenPedidoId?: string;
 }

@@ -12,6 +12,7 @@ export interface RemitoFilters {
   companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  ordenPedidoId?: string;
 }
 
 export interface IRemitoRepository {

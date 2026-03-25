@@ -44,6 +44,7 @@ export interface OrdenPedido {
   customer?: Pick<Customer, 'id' | 'name' | 'taxId' | 'email' | 'address'> | null;
   user?: { id: string; name: string } | null;
   invoice?: { id: string; number: string; status: string } | null;
+  remitos?: { id: string; number: string; status: string }[];
 }
 
 export interface CreateOrdenPedidoItemDTO {

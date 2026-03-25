@@ -138,6 +138,7 @@ export class RemitoController {
           companyId: req.companyId,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
+          ordenPedidoId: filters.ordenPedidoId as string | undefined,
         }
       );
 

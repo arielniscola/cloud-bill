@@ -54,6 +54,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
         include: {
           customer: { select: { id: true, name: true, taxId: true } },
           user: { select: { id: true, name: true } },
+          remitos: { select: { id: true, number: true, status: true } },
         },
       }),
       (prisma as any).ordenPedido.count({ where }),

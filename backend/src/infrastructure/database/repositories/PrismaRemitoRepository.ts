@@ -55,6 +55,44 @@ export class PrismaRemitoRepository implements IRemitoRepository {
       (where as any).companyId = filters.companyId;
     }
 
+    if (filters.ordenPedidoId) {
+      // Raw SQL to filter by ordenPedidoId (bypasses stale Prisma client types),
+      // then fetch full objects with Prisma to get customer/user relations
+      const oid = filters.ordenPedidoId;
+      const cid = filters.companyId ?? null;
+
+      const [idRows, countResult] = await Promise.all([
+        prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM remitos
+          WHERE "ordenPedidoId" = ${oid}
+            ${cid ? Prisma.sql`AND "companyId" = ${cid}` : Prisma.empty}
+          ORDER BY date DESC
+          LIMIT ${limit} OFFSET ${skip}
+        `,
+        prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(*)::int AS count FROM remitos
+          WHERE "ordenPedidoId" = ${oid}
+            ${cid ? Prisma.sql`AND "companyId" = ${cid}` : Prisma.empty}
+        `,
+      ]);
+
+      const total = Number(countResult[0]?.count ?? 0);
+      const ids = idRows.map((r) => r.id);
+
+      const data = ids.length > 0
+        ? await (this.prisma as any).remito.findMany({
+            where: { id: { in: ids } },
+            orderBy: { date: 'desc' },
+            include: {
+              customer: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          })
+        : [];
+
+      return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -66,7 +104,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     }
 
     const [data, total] = await Promise.all([
-      this.prisma.remito.findMany({
+      (this.prisma as any).remito.findMany({
         where,
         skip,
         take: limit,
@@ -76,7 +114,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
           user: { select: { id: true, name: true, email: true } },
         },
       }),
-      this.prisma.remito.count({ where }),
+      (this.prisma as any).remito.count({ where }),
     ]);
 
     return {

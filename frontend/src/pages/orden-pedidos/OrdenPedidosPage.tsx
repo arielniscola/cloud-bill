@@ -6,7 +6,7 @@ import { Badge, Button } from '../../components/ui';
 import { PageHeader, Pagination, SearchInput, CustomerSearchSelect } from '../../components/shared';
 import { ordenPedidosService, customersService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { ORDEN_PEDIDO_STATUSES, ORDEN_PEDIDO_STATUS_OPTIONS } from '../../utils/constants';
+import { ORDEN_PEDIDO_STATUSES, ORDEN_PEDIDO_STATUS_OPTIONS, REMITO_STATUSES } from '../../utils/constants';
 import type { OrdenPedido, OrdenPedidoStatus, Customer } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 
@@ -23,10 +23,26 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
 
 const selectCls = 'px-3 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30';
 
+const REMITO_DELIVERY_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
+  PENDING: 'warning',
+  PARTIALLY_DELIVERED: 'info',
+  DELIVERED: 'success',
+  CANCELLED: 'error',
+};
+
+function getDeliveryBadge(remitos?: { id: string; number: string; status: string }[]) {
+  if (!remitos || remitos.length === 0) return null;
+  const active = remitos.filter((r) => r.status !== 'CANCELLED');
+  if (active.length === 0) return { status: 'CANCELLED', label: REMITO_STATUSES.CANCELLED };
+  if (active.every((r) => r.status === 'DELIVERED')) return { status: 'DELIVERED', label: REMITO_STATUSES.DELIVERED };
+  if (active.some((r) => r.status === 'PARTIALLY_DELIVERED')) return { status: 'PARTIALLY_DELIVERED', label: REMITO_STATUSES.PARTIALLY_DELIVERED };
+  return { status: 'PENDING', label: REMITO_STATUSES.PENDING };
+}
+
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
-      {[1, 2, 3, 4, 5, 6].map((i) => (
+      {[1, 2, 3, 4, 5, 6, 7].map((i) => (
         <td key={i} className="px-5 py-3.5">
           <div className="h-4 bg-gray-100 dark:bg-slate-700 rounded" />
         </td>
@@ -206,7 +222,7 @@ export default function OrdenPedidosPage() {
           <table className="min-w-full">
             <thead className="bg-gray-50/80 dark:bg-slate-700/50">
               <tr>
-                {['Número', 'Cliente', 'Fecha', 'Vencimiento', 'Total', 'Estado'].map((h) => (
+                {['Número', 'Cliente', 'Fecha', 'Vencimiento', 'Total', 'Estado', 'Entrega'].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -219,39 +235,51 @@ export default function OrdenPedidosPage() {
                 : orders.length === 0
                 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400 dark:text-slate-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-gray-400 dark:text-slate-500">
                       {hasFilters ? 'Sin resultados para los filtros aplicados' : 'No hay órdenes de pedido'}
                     </td>
                   </tr>
                 )
-                : orders.map((op) => (
-                  <tr
-                    key={op.id}
-                    onClick={() => navigate(`/orden-pedidos/${op.id}`)}
-                    className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100"
-                  >
-                    <td className="px-5 py-3.5">
-                      <span className="text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400">{op.number}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300">
-                      {op.customer?.name ?? <span className="text-gray-400 italic">Sin cliente</span>}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 tabular-nums">
-                      {formatDate(op.date)}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 tabular-nums">
-                      {op.dueDate ? formatDate(op.dueDate) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                      {formatCurrency(Number(op.total), op.currency)}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Badge variant={STATUS_VARIANT[op.status] ?? 'default'} dot>
-                        {ORDEN_PEDIDO_STATUSES[op.status as OrdenPedidoStatus] ?? op.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))
+                : orders.map((op) => {
+                  const deliveryBadge = getDeliveryBadge(op.remitos);
+                  return (
+                    <tr
+                      key={op.id}
+                      onClick={() => navigate(`/orden-pedidos/${op.id}`)}
+                      className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100"
+                    >
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400">{op.number}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300">
+                        {op.customer?.name ?? <span className="text-gray-400 italic">Sin cliente</span>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 tabular-nums">
+                        {formatDate(op.date)}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 tabular-nums">
+                        {op.dueDate ? formatDate(op.dueDate) : '—'}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                        {formatCurrency(Number(op.total), op.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <Badge variant={STATUS_VARIANT[op.status] ?? 'default'} dot>
+                          {ORDEN_PEDIDO_STATUSES[op.status as OrdenPedidoStatus] ?? op.status}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {deliveryBadge ? (
+                          <Badge variant={REMITO_DELIVERY_VARIANT[deliveryBadge.status] ?? 'default'} dot>
+                            {deliveryBadge.label}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-slate-500">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               }
             </tbody>
           </table>
