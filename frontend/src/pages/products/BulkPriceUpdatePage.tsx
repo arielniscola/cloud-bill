@@ -329,6 +329,7 @@ export default function BulkPriceUpdatePage() {
     const pct = parseFloat(adjustPct);
     if (!pct || pct <= 0) { toast.error('Ingresá un porcentaje válido'); return; }
     const factor = 1 + (direction * pct / 100);
+    if (adjustTarget === 'cost' || adjustTarget === 'both') setShowCost(true);
     setRows((prev) => {
       const updated = { ...prev };
       selectedIds.forEach((id) => {

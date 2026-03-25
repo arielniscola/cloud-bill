@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
-import { PageHeader, DataTable, SearchInput, ConfirmDialog } from '../../components/shared';
+import { PageHeader, DataTable, SearchInput, ConfirmDialog, CsvImportModal } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { productsService, categoriesService, brandsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
@@ -204,6 +204,7 @@ export default function ProductsPage() {
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
 
@@ -392,6 +393,10 @@ export default function ProductsPage() {
         subtitle={`${total} ${total === 1 ? 'producto' : 'productos'}${activeFilterCount > 0 ? ' · filtros activos' : ''}`}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Importar CSV
+            </Button>
             <Button variant="outline" onClick={() => navigate('/products/bulk-price-update')}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Actualizar precios
@@ -537,6 +542,14 @@ export default function ProductsPage() {
         confirmText="Eliminar"
         isLoading={isDeleting}
       />
+
+      {showImport && (
+        <CsvImportModal
+          entity="products"
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); loadProducts(); }}
+        />
+      )}
     </div>
   );
 }

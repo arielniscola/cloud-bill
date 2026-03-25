@@ -10,6 +10,7 @@ export interface OrdenPedidoItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountPct: number;
   taxRate: number;
   subtotal: number;
   taxAmount: number;
@@ -50,6 +51,7 @@ export interface CreateOrdenPedidoItemDTO {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountPct?: number;
   taxRate: number;
   subtotal: number;
   taxAmount: number;

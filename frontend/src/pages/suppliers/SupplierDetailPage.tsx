@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { suppliersService } from '../../services';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { TAX_CONDITION_OPTIONS } from '../../utils/constants';
 import type { Supplier, SupplierProductStat } from '../../types';
 
@@ -98,7 +98,7 @@ export default function SupplierDetailPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           icon={Package}
-          label="Productos proveídos"
+          label="Productos provistos"
           value={products.length}
           color="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400"
         />
@@ -128,7 +128,7 @@ export default function SupplierDetailPage() {
         <Card padding="none">
           <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
             <Package className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Productos proveídos</h2>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Productos provistos</h2>
             {products.length > 0 && (
               <span className="ml-auto text-xs text-gray-400 dark:text-slate-500">{products.length} productos</span>
             )}
@@ -212,7 +212,7 @@ export default function SupplierDetailPage() {
               {supplier.cuit && (
                 <div className="flex justify-between">
                   <dt className="text-gray-400 dark:text-slate-500">CUIT</dt>
-                  <dd className="font-mono text-gray-700 dark:text-slate-300">{supplier.cuit}</dd>
+                  <dd className="font-mono text-gray-700 dark:text-slate-300">{formatCuit(supplier.cuit)}</dd>
                 </div>
               )}
               {supplier.phone && (

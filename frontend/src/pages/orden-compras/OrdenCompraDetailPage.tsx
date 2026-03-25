@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, ReceiveOrdenCompraModal } from '../../components/shared';
 import { ordenComprasService, purchasesService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import type { OrdenCompra, OrdenCompraStatus } from '../../types';
@@ -53,6 +53,7 @@ export default function OrdenCompraDetailPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
@@ -98,11 +99,11 @@ export default function OrdenCompraDetailPage() {
     }
   };
 
-  const handleConvert = async () => {
+  const handleConvert = async (receivedItems: { itemId: string; receivedQty: number }[]) => {
     if (!oc) return;
     setIsConverting(true);
     try {
-      const result = await ordenComprasService.convert(oc.id);
+      const result = await ordenComprasService.convert(oc.id, receivedItems);
       toast.success('OC convertida a compra');
       navigate(`/purchases/${result.purchase.id}`);
     } catch (err: unknown) {
@@ -110,6 +111,7 @@ export default function OrdenCompraDetailPage() {
       toast.error(e.response?.data?.message || 'Error al convertir');
     } finally {
       setIsConverting(false);
+      setShowReceiveModal(false);
     }
   };
 
@@ -199,16 +201,16 @@ export default function OrdenCompraDetailPage() {
               </div>
             )}
 
-            {/* Convert to purchase */}
+            {/* Convert to purchase — opens receive review modal */}
             {canConvert && (
               <Button
                 size="sm"
-                onClick={handleConvert}
+                onClick={() => setShowReceiveModal(true)}
                 isLoading={isConverting}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
-                Convertir a Compra
+                Recibir mercadería
               </Button>
             )}
 
@@ -442,6 +444,16 @@ export default function OrdenCompraDetailPage() {
         confirmText="Eliminar"
         isLoading={isDeleting}
       />
+
+      {showReceiveModal && (
+        <ReceiveOrdenCompraModal
+          oc={oc}
+          isOpen={showReceiveModal}
+          onClose={() => setShowReceiveModal(false)}
+          onConfirm={handleConvert}
+          isLoading={isConverting}
+        />
+      )}
     </div>
   );
 }

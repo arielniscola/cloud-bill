@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ordenPedidosService, afipService } from '../../services';
+import { formatCuit } from '../../utils/formatters';
 import type { OrdenPedido } from '../../types';
 import type { AfipConfigSummary } from '../../types/afip.types';
 
@@ -60,7 +61,7 @@ export default function ThermalOrdenPedidoPrintPage() {
       {/* ── Company header ── */}
       {afip?.businessName && <p className="c b lg">{afip.businessName}</p>}
       {afip?.businessAddress && <p className="c sm">{afip.businessAddress}</p>}
-      {afip?.cuit && <p className="c sm">CUIT: {afip.cuit}</p>}
+      {afip?.cuit && <p className="c sm">CUIT: {formatCuit(afip.cuit)}</p>}
       {(afip as any)?.activityStartDate && (
         <p className="c sm">Inicio actividades: {fmtDate((afip as any).activityStartDate)}</p>
       )}
@@ -79,7 +80,7 @@ export default function ThermalOrdenPedidoPrintPage() {
           <div className="div" />
           <p className="b">Cliente:</p>
           <p>{op.customer.name}</p>
-          {op.customer.taxId && <p className="sm">CUIT/DNI: {op.customer.taxId}</p>}
+          {op.customer.taxId && <p className="sm">CUIT/DNI: {formatCuit(op.customer.taxId)}</p>}
           {op.customer.address && <p className="sm">{op.customer.address}</p>}
         </>
       )}

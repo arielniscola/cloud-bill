@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
 import { ordenPedidosService, recibosService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import {
   ORDEN_PEDIDO_STATUSES,
   INVOICE_TYPE_OPTIONS,
@@ -176,7 +176,7 @@ export default function OrdenPedidoDetailPage() {
   const isDraft = op.status === 'DRAFT';
   const canConvert = op.status !== 'CONVERTED' && op.status !== 'CANCELLED';
   const isTerminal = op.status === 'CONVERTED' || op.status === 'CANCELLED';
-  const canPay = op.status !== 'CANCELLED' && op.status !== 'CONVERTED' && op.status !== 'PAID' && !!op.customerId;
+  const canPay = (op.status === 'CONFIRMED' || op.status === 'PARTIALLY_PAID') && !!op.customerId;
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(op.total) - paidAmount);
@@ -354,6 +354,9 @@ export default function OrdenPedidoDetailPage() {
                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Descripción</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Cantidad</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Precio unit.</th>
+                    {op.items.some((i) => Number(i.discountPct) > 0) && (
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Desc.%</th>
+                    )}
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Total</th>
                   </tr>
@@ -371,6 +374,14 @@ export default function OrdenPedidoDetailPage() {
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">
                         {formatCurrency(Number(item.unitPrice), op.currency)}
                       </td>
+                      {op.items.some((i) => Number(i.discountPct) > 0) && (
+                        <td className="px-5 py-3.5 text-sm text-right tabular-nums">
+                          {Number(item.discountPct) > 0
+                            ? <span className="text-emerald-600 dark:text-emerald-400 font-medium">{Number(item.discountPct)}%</span>
+                            : <span className="text-gray-300 dark:text-slate-600">—</span>
+                          }
+                        </td>
+                      )}
                       <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
                       <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white text-right tabular-nums">
                         {formatCurrency(Number(item.total), op.currency)}
@@ -380,15 +391,15 @@ export default function OrdenPedidoDetailPage() {
                 </tbody>
                 <tfoot className="bg-gray-50/50 dark:bg-slate-700/30 border-t border-gray-200 dark:border-slate-700">
                   <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
+                    <td colSpan={op.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
                     <td className="px-5 py-3 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(op.subtotal), op.currency)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={4} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
+                    <td colSpan={op.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
                     <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(op.taxAmount), op.currency)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
+                    <td colSpan={op.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
                     <td className="px-5 py-3 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{formatCurrency(Number(op.total), op.currency)}</td>
                   </tr>
                 </tfoot>
@@ -466,7 +477,7 @@ export default function OrdenPedidoDetailPage() {
               <div className="px-5 py-4 space-y-1">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white">{op.customer.name}</p>
                 {op.customer.taxId && (
-                  <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {op.customer.taxId}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {formatCuit(op.customer.taxId)}</p>
                 )}
                 {op.customer.email && (
                   <p className="text-xs text-gray-500 dark:text-slate-400">{op.customer.email}</p>

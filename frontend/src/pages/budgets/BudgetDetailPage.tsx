@@ -6,7 +6,7 @@ import { pdf } from '@react-pdf/renderer';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
 import { budgetsService, afipService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { BUDGET_STATUSES, INVOICE_TYPES } from '../../utils/constants';
 import type { Budget } from '../../types';
 import BudgetPDF from '../../components/pdf/BudgetPDF';
@@ -418,7 +418,7 @@ export default function BudgetDetailPage() {
               <div className="px-5 py-4 space-y-1">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white">{budget.customer.name}</p>
                 {budget.customer.taxId && (
-                  <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {budget.customer.taxId}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {formatCuit(budget.customer.taxId)}</p>
                 )}
                 {budget.customer.email && (
                   <p className="text-xs text-gray-500 dark:text-slate-400">{budget.customer.email}</p>

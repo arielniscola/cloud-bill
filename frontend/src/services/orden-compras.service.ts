@@ -27,8 +27,14 @@ export const ordenComprasService = {
     return response.data.data;
   },
 
-  async convert(id: string): Promise<{ ordenCompra: OrdenCompra; purchase: any }> {
-    const response = await api.post<ApiResponse<{ ordenCompra: OrdenCompra; purchase: any }>>(`/orden-compras/${id}/convert`);
+  async convert(
+    id: string,
+    receivedItems?: { itemId: string; receivedQty: number }[]
+  ): Promise<{ ordenCompra: OrdenCompra; purchase: any }> {
+    const response = await api.post<ApiResponse<{ ordenCompra: OrdenCompra; purchase: any }>>(
+      `/orden-compras/${id}/convert`,
+      { receivedItems: receivedItems ?? [] }
+    );
     return response.data.data;
   },
 

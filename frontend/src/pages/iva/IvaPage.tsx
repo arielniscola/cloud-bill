@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Card, Button, Badge } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { ivaService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES } from '../../utils/constants';
 import type { IvaVentasRow, IvaComprasRow } from '../../types';
 
@@ -196,7 +196,7 @@ export default function IvaPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-2 text-gray-900 dark:text-white">{row.cliente}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{row.cuitCliente || '-'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{formatCuit(row.cuitCliente) || '-'}</td>
                       <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.neto)}</td>
                       <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.iva)}</td>
                       <td className="px-3 py-2 text-right font-medium dark:text-slate-200">{formatCurrency(row.total)}</td>
@@ -238,7 +238,7 @@ export default function IvaPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-2 text-gray-900 dark:text-white">{row.proveedor}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{row.cuitProveedor || '-'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{formatCuit(row.cuitProveedor) || '-'}</td>
                       <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.neto)}</td>
                       <td className="px-3 py-2 text-right dark:text-slate-300">{formatCurrency(row.iva)}</td>
                       <td className="px-3 py-2 text-right font-medium dark:text-slate-200">{formatCurrency(row.total)}</td>

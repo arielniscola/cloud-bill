@@ -7,6 +7,7 @@ import { PageHeader, SearchInput, ConfirmDialog, DataTable } from '../../compone
 import type { Column } from '../../components/shared/DataTable';
 import { suppliersService } from '../../services';
 import { TAX_CONDITIONS } from '../../utils/constants';
+import { formatCuit } from '../../utils/formatters';
 import type { Supplier, TaxCondition } from '../../types';
 
 // ── Tax condition badge config ────────────────────────────────────
@@ -111,7 +112,7 @@ export default function SuppliersPage() {
       header: 'CUIT',
       render: (s) =>
         s.cuit
-          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{s.cuit}</span>
+          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{formatCuit(s.cuit)}</span>
           : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
 import { ordenPagosService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { PAYMENT_METHODS } from '../../utils/constants';
 import type { OrdenPago } from '../../types/ordenPago.types';
 
@@ -122,7 +122,7 @@ export default function OrdenPagoDetailPage() {
               <div>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Proveedor</p>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{op.supplier?.name ?? '—'}</p>
-                {op.supplier?.cuit && <p className="text-xs text-gray-400 dark:text-slate-500">CUIT: {op.supplier.cuit}</p>}
+                {op.supplier?.cuit && <p className="text-xs text-gray-400 dark:text-slate-500">CUIT: {formatCuit(op.supplier.cuit)}</p>}
               </div>
               <div>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Método de pago</p>
@@ -161,14 +161,14 @@ export default function OrdenPagoDetailPage() {
             )}
           </Card>
 
-          {/* Purchases covered */}
+          {/* Invoices paid */}
           <Card>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Compras cubiertas</h3>
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Facturas pagadas</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50/80 dark:bg-slate-700/50">
                   <tr>
-                    {['N° Compra', 'Fecha', 'Total compra', 'Monto aplicado', 'Estado pago'].map((h) => (
+                    {['Factura', 'Compra', 'Total factura', 'Monto aplicado'].map((h) => (
                       <th key={h} className={`px-4 py-2 text-xs font-semibold text-gray-400 uppercase ${h.startsWith('Monto') || h.startsWith('Total') ? 'text-right' : 'text-left'}`}>{h}</th>
                     ))}
                   </tr>
@@ -177,6 +177,16 @@ export default function OrdenPagoDetailPage() {
                   {(op.items ?? []).map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-2.5">
+                        {item.invoice ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-semibold text-gray-800 dark:text-slate-200">{item.invoice.number}</span>
+                            <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800 px-1 py-0.5 rounded-full">
+                              {item.invoice.type.replace('FACTURA_', 'F').replace('NOTA_DEBITO_', 'ND ').replace('NOTA_CREDITO_', 'NC ')}
+                            </span>
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5">
                         <button
                           onClick={() => item.purchaseId && navigate(`/purchases/${item.purchaseId}`)}
                           className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
@@ -184,31 +194,11 @@ export default function OrdenPagoDetailPage() {
                           {item.purchase?.number ?? '—'}
                         </button>
                       </td>
-                      <td className="px-4 py-2.5 text-gray-600 dark:text-slate-400 tabular-nums">
-                        {item.purchase?.date ? formatDate(item.purchase.date as any) : '—'}
-                      </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-medium">
-                        {item.purchase ? formatCurrency(Number(item.purchase.total), op.currency) : '—'}
+                        {item.invoice ? formatCurrency(Number(item.invoice.amount), op.currency) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(Number(item.amount), op.currency)}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {item.purchase && (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            Number(item.purchase.paidAmount) >= Number(item.purchase.total)
-                              ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : Number(item.purchase.paidAmount) > 0
-                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                              : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-400'
-                          }`}>
-                            {Number(item.purchase.paidAmount) >= Number(item.purchase.total)
-                              ? 'Pagado'
-                              : Number(item.purchase.paidAmount) > 0
-                              ? 'Pago parcial'
-                              : 'Pendiente'}
-                          </span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -236,7 +226,7 @@ export default function OrdenPagoDetailPage() {
                 <span className="font-medium text-gray-900 dark:text-white">{op.user?.name ?? '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-slate-400">Compras</span>
+                <span className="text-gray-500 dark:text-slate-400">Facturas</span>
                 <span className="font-medium text-gray-900 dark:text-white">{op.items?.length ?? 0}</span>
               </div>
             </div>

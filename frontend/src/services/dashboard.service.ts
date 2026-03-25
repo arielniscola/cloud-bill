@@ -69,8 +69,11 @@ export interface ChartDataPoint {
 }
 
 export const dashboardService = {
-  async getStats(): Promise<DashboardStats> {
-    const response = await api.get<ApiResponse<DashboardStats>>('/dashboard/stats');
+  async getStats(month?: number, year?: number): Promise<DashboardStats> {
+    const params: Record<string, number> = {};
+    if (month !== undefined) params.month = month;
+    if (year !== undefined) params.year = year;
+    const response = await api.get<ApiResponse<DashboardStats>>('/dashboard/stats', { params });
     return response.data.data;
   },
 

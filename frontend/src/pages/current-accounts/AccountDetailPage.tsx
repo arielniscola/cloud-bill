@@ -12,7 +12,7 @@ import { Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, DataTable } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { currentAccountsService, customersService } from '../../services';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Customer, CurrentAccount, AccountMovement, Currency, TaxCondition } from '../../types';
 
@@ -382,7 +382,7 @@ export default function AccountDetailPage() {
           {customer.taxId && (
             <span className="flex items-center gap-1.5">
               <Hash className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
-              <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{customer.taxId}</span>
+              <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{formatCuit(customer.taxId)}</span>
             </span>
           )}
           {customer.email && (

@@ -103,10 +103,17 @@ const navigationGroups: NavGroup[] = [
     moduleKey: "compras",
     requiredRoles: ["ADMIN"] as const,
     items: [
-      { name: "Proveedores",       href: "/suppliers",     icon: Truck },
-      { name: "Órdenes de Compra", href: "/orden-compras", icon: FileStack },
-      { name: "Compras",           href: "/purchases",     icon: ShoppingCart },
-      { name: "Órdenes de Pago",   href: "/orden-pagos",   icon: Banknote },
+      {
+        name: "Compras",
+        href: "/purchases",
+        icon: ShoppingCart,
+        children: [
+          { name: "Proveedores",       href: "/suppliers",     icon: Truck },
+          { name: "Órdenes de Compra", href: "/orden-compras", icon: FileStack },
+          { name: "Compras",           href: "/purchases",     icon: ShoppingCart },
+          { name: "Órdenes de Pago",   href: "/orden-pagos",   icon: Banknote },
+        ],
+      },
     ],
   },
   {
@@ -309,7 +316,7 @@ export default function Sidebar() {
             {/* Bell — desktop only (mobile has it in the top bar) */}
             {showText && (
               <span className="hidden md:inline-flex">
-                <NotificationBell />
+                <NotificationBell align="left" />
               </span>
             )}
 
@@ -339,7 +346,7 @@ export default function Sidebar() {
           {/* Notification bell — desktop collapsed mode (below header) */}
           {!showText && (
             <div className="hidden md:flex absolute -bottom-10 left-0 w-full justify-center">
-              <NotificationBell />
+              <NotificationBell align="left" />
             </div>
           )}
         </div>

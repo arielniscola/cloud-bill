@@ -30,6 +30,7 @@ export interface InvoiceItem {
   product?: Product;
   quantity: number;
   unitPrice: number;
+  discountPct: number;
   taxRate: number;
   subtotal: number;
   taxAmount: number;

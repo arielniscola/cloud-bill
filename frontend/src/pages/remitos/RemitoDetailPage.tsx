@@ -8,7 +8,7 @@ import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
 import { remitosService, afipService } from '../../services';
-import { formatDate } from '../../utils/formatters';
+import { formatDate, formatCuit } from '../../utils/formatters';
 import { REMITO_STATUSES } from '../../utils/constants';
 import type { Remito } from '../../types';
 import RemitoPDF from '../../components/pdf/RemitoPDF';
@@ -365,7 +365,7 @@ export default function RemitoDetailPage() {
             <div className="px-5 py-4 space-y-1">
               <p className="text-sm font-semibold text-gray-900 dark:text-white">{remito.customer?.name ?? '—'}</p>
               {remito.customer?.taxId && (
-                <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {remito.customer.taxId}</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {formatCuit(remito.customer.taxId)}</p>
               )}
               {remito.customer?.email && (
                 <p className="text-xs text-gray-500 dark:text-slate-400">{remito.customer.email}</p>

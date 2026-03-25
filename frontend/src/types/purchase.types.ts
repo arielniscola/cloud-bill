@@ -1,7 +1,37 @@
 import type { InvoiceType, Currency } from './invoice.types';
 import type { Supplier } from './supplier.types';
 
-export type PurchaseStatus        = 'REGISTERED' | 'CANCELLED';
+export type PurchaseStatus             = 'REGISTERED' | 'CANCELLED';
+export type PurchaseInvoiceStatus      = 'PENDING' | 'PAID';
+
+export interface PurchaseInvoice {
+  id: string;
+  purchaseId: string;
+  number: string;
+  type: string;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  amount: number;          // total
+  dueDate: string | null;
+  paymentMethod: string;
+  status: PurchaseInvoiceStatus;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePurchaseInvoiceDTO {
+  number: string;
+  type: string;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  amount: number;
+  dueDate?: string | null;
+  paymentMethod: string;
+  notes?: string | null;
+}
 export type PurchasePaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 export type PurchaseSaleCondition = 'CONTADO' | 'CUENTA_CORRIENTE';
 
@@ -38,6 +68,7 @@ export interface Purchase {
   saleCondition: PurchaseSaleCondition;
   notes: string | null;
   items: PurchaseItem[];
+  supplierInvoices?: PurchaseInvoice[];
   createdAt: string;
   updatedAt: string;
 }

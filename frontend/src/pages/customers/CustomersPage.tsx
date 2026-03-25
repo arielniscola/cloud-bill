@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Users, Mail, Phone } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Mail, Phone, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
-import { PageHeader, SearchInput, ConfirmDialog } from '../../components/shared';
+import { PageHeader, SearchInput, ConfirmDialog, CsvImportModal } from '../../components/shared';
 import { customersService } from '../../services';
 import { TAX_CONDITIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { formatCuit } from '../../utils/formatters';
 import type { Customer, TaxCondition } from '../../types';
 import type { DataTableProps } from '../../components/shared/DataTable';
 import DataTable from '../../components/shared/DataTable';
@@ -50,6 +51,7 @@ export default function CustomersPage() {
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // Derive isActive filter from tab
   const isActiveFilter = tab === 'all' ? undefined : tab === 'active';
@@ -115,7 +117,7 @@ export default function CustomersPage() {
       header: 'CUIT / CUIL',
       render: (c) =>
         c.taxId
-          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{c.taxId}</span>
+          ? <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 px-2 py-0.5 rounded">{formatCuit(c.taxId)}</span>
           : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {
@@ -191,10 +193,16 @@ export default function CustomersPage() {
         title="Clientes"
         subtitle={`${total} ${total === 1 ? 'cliente' : 'clientes'}${tab !== 'all' ? (tab === 'active' ? ' activos' : ' inactivos') : ''}`}
         actions={
-          <Button onClick={() => navigate('/customers/new')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo cliente
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Importar CSV
+            </Button>
+            <Button onClick={() => navigate('/customers/new')}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo cliente
+            </Button>
+          </div>
         }
       />
 
@@ -284,6 +292,14 @@ export default function CustomersPage() {
         confirmText="Eliminar"
         isLoading={isDeleting}
       />
+
+      {showImport && (
+        <CsvImportModal
+          entity="customers"
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); fetchCustomers(); }}
+        />
+      )}
     </div>
   );
 }

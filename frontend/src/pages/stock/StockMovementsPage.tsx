@@ -212,6 +212,13 @@ export default function StockMovementsPage() {
       },
     },
     {
+      key: 'partyName',
+      header: 'Cliente / Proveedor',
+      render: (mov) => mov.partyName
+        ? <span className="text-sm text-gray-700 dark:text-slate-300 truncate max-w-[160px] block">{mov.partyName}</span>
+        : <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>,
+    },
+    {
       key: 'quantity',
       header: 'Cantidad',
       render: (mov) => {

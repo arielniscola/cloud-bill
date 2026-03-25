@@ -9,7 +9,7 @@ import {
   MapPin, FileText, Power, Check,
 } from 'lucide-react';
 import { Button, Card, Textarea } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, CuitInput } from '../../components/shared';
 import { suppliersService } from '../../services';
 import type { TaxCondition } from '../../types';
 
@@ -300,19 +300,12 @@ export default function SupplierFormPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Hash className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                  CUIT
-                </label>
-                <input
-                  type="text"
-                  placeholder="20-12345678-1"
-                  {...register('cuit')}
-                  className={`${inputCls} font-mono`}
-                />
-                {errors.cuit && <p className="mt-1 text-xs text-red-500">{errors.cuit.message}</p>}
-              </div>
+              <CuitInput
+                label="CUIT"
+                value={watch('cuit')}
+                onChange={(raw) => setValue('cuit', raw || null)}
+                error={errors.cuit?.message}
+              />
               <div />
             </div>
 

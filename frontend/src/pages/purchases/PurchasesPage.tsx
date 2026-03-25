@@ -7,11 +7,11 @@ import {
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { purchasesService, suppliersService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { purchasesService, suppliersService, warehousesService } from '../../services';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Purchase, PurchaseStatus } from '../../types';
-import type { Supplier } from '../../types';
+import type { Supplier, Warehouse as WarehouseType } from '../../types';
 
 // ── Status config ────────────────────────────────────────────────
 const STATUS_CFG: Record<PurchaseStatus, { label: string; className: string }> = {
@@ -131,6 +131,10 @@ export default function PurchasesPage() {
   const [isLoading, setIsLoading]   = useState(true);
   const [cancelId,  setCancelId]    = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>([]);
+  const [assignWarehouseId, setAssignWarehouseId] = useState<string | null>(null); // purchaseId being assigned
+  const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const [statusTab,    setStatusTab]    = useState<StatusTab>('all');
   const [dateFrom,     setDateFrom]     = useState('');
@@ -144,11 +148,10 @@ export default function PurchasesPage() {
 
   const hasFilters = !!(statusTab !== 'all' || dateFrom || dateTo || supplierFilter);
 
-  // Load suppliers for filter
+  // Load suppliers + warehouses for filters / assignment
   useEffect(() => {
-    suppliersService.getAll({ limit: 500 })
-      .then((r) => setSuppliers(r.data))
-      .catch(() => {});
+    suppliersService.getAll({ limit: 500 }).then((r) => setSuppliers(r.data)).catch(() => {});
+    warehousesService.getAll().then(setWarehouses).catch(() => {});
   }, []);
 
   const fetchPurchases = useCallback(async () => {
@@ -191,6 +194,23 @@ export default function PurchasesPage() {
       toast.error(e.response?.data?.message || 'Error al cancelar compra');
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleAssignWarehouse = async () => {
+    if (!assignWarehouseId || !selectedWarehouse) return;
+    setIsAssigning(true);
+    try {
+      await purchasesService.assignWarehouse(assignWarehouseId, selectedWarehouse);
+      toast.success('Almacén asignado y stock actualizado');
+      setAssignWarehouseId(null);
+      setSelectedWarehouse('');
+      fetchPurchases();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || 'Error al asignar almacén');
+    } finally {
+      setIsAssigning(false);
     }
   };
 
@@ -346,7 +366,7 @@ export default function PurchasesPage() {
                           }`}
                         >
                           <div>{s.name}</div>
-                          {s.cuit && <div className="font-mono text-[10px] text-gray-400 mt-0.5">{s.cuit}</div>}
+                          {s.cuit && <div className="font-mono text-[10px] text-gray-400 mt-0.5">{formatCuit(s.cuit)}</div>}
                         </button>
                       ))
                     )}
@@ -456,7 +476,7 @@ export default function PurchasesPage() {
                             </p>
                             {p.supplier?.cuit && (
                               <p className="font-mono text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
-                                {p.supplier.cuit}
+                                {formatCuit(p.supplier.cuit)}
                               </p>
                             )}
                           </div>
@@ -520,6 +540,15 @@ export default function PurchasesPage() {
                             <Warehouse className="w-3 h-3" />
                             Stock
                           </span>
+                        ) : p.status === 'REGISTERED' ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setAssignWarehouseId(p.id); setSelectedWarehouse(warehouses[0]?.id ?? ''); }}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-dashed border-amber-400 text-amber-600 bg-amber-50 hover:bg-amber-100 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-700 dark:hover:bg-amber-900/40 transition-colors"
+                            title="Asignar almacén"
+                          >
+                            <Warehouse className="w-3 h-3" />
+                            Asignar
+                          </button>
                         ) : (
                           <span className="text-gray-300 dark:text-slate-600 text-xs">—</span>
                         )}
@@ -584,6 +613,45 @@ export default function PurchasesPage() {
         confirmText="Cancelar compra"
         isLoading={isCanceling}
       />
+
+      {/* Warehouse assignment modal */}
+      {assignWarehouseId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setAssignWarehouseId(null)} />
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
+                <Warehouse className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Asignar almacén</h2>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-slate-400">
+              Se asignará el almacén y se registrarán los movimientos de stock para los ítems vinculados a productos.
+            </p>
+            <div>
+              <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Almacén destino *</label>
+              <select
+                className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-300"
+                value={selectedWarehouse}
+                onChange={(e) => setSelectedWarehouse(e.target.value)}
+              >
+                <option value="">Seleccionar almacén...</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" size="sm" onClick={() => setAssignWarehouseId(null)} disabled={isAssigning}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={handleAssignWarehouse} isLoading={isAssigning} disabled={!selectedWarehouse}>
+                Asignar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

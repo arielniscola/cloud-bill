@@ -10,7 +10,8 @@ export type NotificationType =
   | 'account'
   | 'invoice-due'
   | 'check-due'
-  | 'ordenpedido-due';
+  | 'ordenpedido-due'
+  | 'purchase-invoice-due';
 
 export interface Notification {
   id: string;

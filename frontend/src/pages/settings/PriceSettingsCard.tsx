@@ -1,20 +1,8 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Save, Tag } from 'lucide-react';
-import { Button, Select } from '../../components/ui';
+import { Button } from '../../components/ui';
 import { appSettingsService } from '../../services';
-
-const DAYS1_OPTIONS = [
-  { value: '7',  label: '7 días' },
-  { value: '10', label: '10 días' },
-  { value: '15', label: '15 días' },
-];
-
-const DAYS2_OPTIONS = [
-  { value: '15', label: '15 días' },
-  { value: '20', label: '20 días' },
-  { value: '30', label: '30 días' },
-];
 
 export default function PriceSettingsCard() {
   const [days1, setDays1] = useState('10');
@@ -90,7 +78,19 @@ export default function PriceSettingsCard() {
             <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
               Precio sin actualizar hace más de este tiempo.
             </p>
-            <Select options={DAYS1_OPTIONS} value={days1} onChange={setDays1} />
+            <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-shadow">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={days1}
+                onChange={(e) => setDays1(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none min-w-0"
+              />
+              <span className="flex items-center px-3 text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-700 border-l border-gray-200 dark:border-slate-600 select-none">
+                días
+              </span>
+            </div>
           </div>
         </div>
 
@@ -107,7 +107,19 @@ export default function PriceSettingsCard() {
             <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
               Precio muy desactualizado, requiere atención urgente.
             </p>
-            <Select options={DAYS2_OPTIONS} value={days2} onChange={setDays2} />
+            <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-shadow">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={days2}
+                onChange={(e) => setDays2(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none min-w-0"
+              />
+              <span className="flex items-center px-3 text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-700 border-l border-gray-200 dark:border-slate-600 select-none">
+                días
+              </span>
+            </div>
           </div>
         </div>
 

@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Building2, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button, Input, Select, Modal } from '../../components/ui';
-import { ConfirmDialog } from '../../components/shared';
+import { ConfirmDialog, CuitInput } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { Company, CreateCompanyDTO, UpdateCompanyDTO } from '../../types/company.types';
 import { useCompanyStore } from '../../stores/company.store';
@@ -110,7 +110,7 @@ function CompanyFormModal({ isOpen, onClose, onSave, editing }: CompanyFormModal
       <div className="space-y-4">
         <Input label="Nombre *" value={form.name} onChange={f('name')} />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="CUIT" value={form.cuit ?? ''} onChange={f('cuit')} />
+          <CuitInput label="CUIT" value={form.cuit} onChange={(raw) => setForm((p) => ({ ...p, cuit: raw || null }))} />
           <Select
             label="Condición fiscal"
             value={form.taxCondition ?? ''}

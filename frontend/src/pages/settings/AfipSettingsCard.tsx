@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCircle, XCircle, Save, Wifi } from 'lucide-react';
+import { CheckCircle, XCircle, Save, Wifi, WifiOff } from 'lucide-react';
 import { Card, Button, Input } from '../../components/ui';
 import { afipService } from '../../services';
 import type { AfipConfigSummary, AfipConfigDTO } from '../../types';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
 export default function AfipSettingsCard() {
+  const { isInternetOnline } = useOnlineStatus();
   const [config, setConfig] = useState<AfipConfigSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -234,10 +236,15 @@ export default function AfipSettingsCard() {
             Guardar configuración
           </Button>
           {config && (
-            <Button variant="outline" onClick={handleTest} isLoading={isTesting}>
-              <Wifi className="w-4 h-4 mr-2" />
-              Test conexión ARCA
-            </Button>
+            <span title={!isInternetOnline ? 'Sin conexión a internet' : undefined}>
+              <Button variant="outline" onClick={handleTest} isLoading={isTesting} disabled={!isInternetOnline}>
+                {isInternetOnline
+                  ? <Wifi className="w-4 h-4 mr-2" />
+                  : <WifiOff className="w-4 h-4 mr-2" />
+                }
+                Test conexión ARCA
+              </Button>
+            </span>
           )}
         </div>
       </div>

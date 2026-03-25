@@ -3,7 +3,7 @@ import { useAuthStore } from "../stores/auth.store";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "http://localhost:3000/api";
+  "/api";
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -48,8 +48,8 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+      // Token expired or invalid (not a login attempt)
       useAuthStore.getState().logout();
       window.location.href = "/login";
     }

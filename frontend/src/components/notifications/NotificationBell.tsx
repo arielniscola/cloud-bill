@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Bell, Package, FileText, CreditCard, Check, AlertCircle, Landmark, ClipboardList } from 'lucide-react';
+import { Bell, Package, FileText, CreditCard, Check, AlertCircle, Landmark, ClipboardList, ShoppingCart } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications, type NotificationType, type Notification } from '../../hooks/useNotifications';
@@ -12,6 +12,7 @@ const typeIcon: Record<NotificationType, React.ElementType> = {
   'invoice-due': AlertCircle,
   'check-due': Landmark,
   'ordenpedido-due': ClipboardList,
+  'purchase-invoice-due': ShoppingCart,
 };
 
 function notificationColor(n: Notification): string {
@@ -24,6 +25,7 @@ function notificationColor(n: Notification): string {
     'invoice-due': 'text-yellow-400',
     'check-due': 'text-yellow-400',
     'ordenpedido-due': 'text-yellow-400',
+    'purchase-invoice-due': 'text-orange-400',
   };
   return base[n.type] ?? 'text-gray-400';
 }
@@ -34,7 +36,7 @@ function urgencyDotColor(urgency?: string): string {
   return 'bg-indigo-400';
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -97,7 +99,7 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden"
+          className={clsx("absolute top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden", align === 'left' ? 'left-0' : 'right-0')}
           style={{ maxHeight: '460px' }}
         >
           {/* Header */}

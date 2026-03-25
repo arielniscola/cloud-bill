@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { customersService, invoicesService, remitosService, ordenPedidosService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_STATUSES, INVOICE_TYPES, REMITO_STATUSES, ORDEN_PEDIDO_STATUSES, TAX_CONDITIONS } from '../../utils/constants';
 import type { Customer, Invoice, InvoiceStatus, InvoiceType } from '../../types';
 import type { Remito } from '../../types';
@@ -152,7 +152,7 @@ export default function CustomerDetailPage() {
         {customer.taxId && (
           <div>
             <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">CUIT / CUIL</p>
-            <p className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{customer.taxId}</p>
+            <p className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{formatCuit(customer.taxId)}</p>
           </div>
         )}
         <div>

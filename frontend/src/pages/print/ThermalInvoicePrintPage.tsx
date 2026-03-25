@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { invoicesService, afipService } from '../../services';
+import { formatCuit } from '../../utils/formatters';
 import type { Invoice } from '../../types';
 import type { AfipConfigSummary } from '../../types/afip.types';
 
@@ -69,7 +70,7 @@ export default function ThermalInvoicePrintPage() {
         <p className="c sm">{afip.businessAddress}</p>
       )}
       {afip?.cuit && (
-        <p className="c sm">CUIT: {afip.cuit}</p>
+        <p className="c sm">CUIT: {formatCuit(afip.cuit)}</p>
       )}
       {afip?.taxCondition && (
         <p className="c sm">{afip.taxCondition.replace(/_/g, ' ')}</p>
@@ -91,7 +92,7 @@ export default function ThermalInvoicePrintPage() {
           <div className="div" />
           <p className="b">Cliente:</p>
           <p>{invoice.customer.name}</p>
-          {invoice.customer.taxId && <p className="sm">CUIT/DNI: {invoice.customer.taxId}</p>}
+          {invoice.customer.taxId && <p className="sm">CUIT/DNI: {formatCuit(invoice.customer.taxId)}</p>}
           {invoice.customer.address && <p className="sm">{invoice.customer.address}</p>}
         </>
       )}

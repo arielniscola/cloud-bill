@@ -16,6 +16,16 @@ import {
   CreditCard,
   ClipboardList,
   Receipt,
+  ChevronLeft,
+  RotateCcw,
+  ShoppingBag,
+  Calculator,
+  Brain,
+  BarChart2,
+  BookOpen,
+  Landmark,
+  ClipboardCheck,
+  Warehouse,
 } from 'lucide-react';
 import {
   BarChart,
@@ -72,20 +82,39 @@ function CurrencyTooltip({ active, payload, label }: {
   );
 }
 
+const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
 export default function DashboardPage() {
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [charts, setCharts] = useState<ChartDataPoint[]>([]);
   const [reminders, setReminders] = useState<RemindersResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingCharts, setIsLoadingCharts] = useState(true);
 
+  const isCurrentMonth = selectedMonth === now.getMonth() + 1 && selectedYear === now.getFullYear();
+
+  function shiftMonth(delta: number) {
+    let m = selectedMonth + delta;
+    let y = selectedYear;
+    if (m > 12) { m = 1; y++; }
+    if (m < 1) { m = 12; y--; }
+    setSelectedMonth(m);
+    setSelectedYear(y);
+  }
+
   useEffect(() => {
+    setIsLoading(true);
     dashboardService
-      .getStats()
+      .getStats(selectedMonth, selectedYear)
       .then(setStats)
       .catch((err) => console.error('Error fetching dashboard stats:', err))
       .finally(() => setIsLoading(false));
+  }, [selectedMonth, selectedYear]);
 
+  useEffect(() => {
     dashboardService
       .getCharts()
       .then(setCharts)
@@ -98,10 +127,12 @@ export default function DashboardPage() {
       .catch(() => null);
   }, []);
 
+  const monthLabel = `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`;
+
   // ── KPI financieros ──────────────────────────────────────────────────────
   const kpiCards = [
     {
-      title: 'Ventas del Mes',
+      title: `Ventas — ${monthLabel}`,
       value: stats?.ventasMes?.total ?? 0,
       subtitle: `${stats?.ventasMes?.count ?? 0} facturas emitidas`,
       icon: TrendingUp,
@@ -112,7 +143,7 @@ export default function DashboardPage() {
       isCurrency: true,
     },
     {
-      title: 'Cobros del Mes',
+      title: `Cobros — ${monthLabel}`,
       value: stats?.cobrosDelMes?.total ?? 0,
       subtitle: `${stats?.cobrosDelMes?.count ?? 0} recibos emitidos`,
       icon: Banknote,
@@ -123,7 +154,7 @@ export default function DashboardPage() {
       isCurrency: true,
     },
     {
-      title: 'Compras del Mes',
+      title: `Compras — ${monthLabel}`,
       value: stats?.comprasMes?.total ?? 0,
       subtitle: `${stats?.comprasMes?.count ?? 0} compras registradas`,
       icon: ShoppingCart,
@@ -134,7 +165,7 @@ export default function DashboardPage() {
       isCurrency: true,
     },
     {
-      title: 'Pagos del Mes',
+      title: `Pagos — ${monthLabel}`,
       value: stats?.pagosMes?.total ?? 0,
       subtitle: `${stats?.pagosMes?.count ?? 0} órdenes de pago`,
       icon: CreditCard,
@@ -188,9 +219,71 @@ export default function DashboardPage() {
     },
   ];
 
+  const yearOptions = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 4 + i).reverse();
+
+  const quickLinks = [
+    { href: '/orden-pedidos',        label: 'Órdenes de Pedido',  icon: ShoppingBag,    bg: 'bg-violet-50 dark:bg-violet-900/30',  color: 'text-violet-500' },
+    { href: '/budgets',              label: 'Presupuestos',        icon: Calculator,     bg: 'bg-sky-50 dark:bg-sky-900/30',        color: 'text-sky-500' },
+    { href: '/recibos',              label: 'Recibos',             icon: Receipt,        bg: 'bg-teal-50 dark:bg-teal-900/30',      color: 'text-teal-500' },
+    { href: '/orden-pagos',          label: 'Órdenes de Pago',    icon: Banknote,       bg: 'bg-purple-50 dark:bg-purple-900/30',  color: 'text-purple-500' },
+    { href: '/stock/intelligence',   label: 'Stock Inteligente',  icon: Brain,          bg: 'bg-orange-50 dark:bg-orange-900/30',  color: 'text-orange-500' },
+    { href: '/stock/physical-count', label: 'Conteo Físico',      icon: ClipboardCheck, bg: 'bg-amber-50 dark:bg-amber-900/30',    color: 'text-amber-500' },
+    { href: '/reports/sales',        label: 'Reporte de Ventas',  icon: BarChart2,      bg: 'bg-emerald-50 dark:bg-emerald-900/30',color: 'text-emerald-500' },
+    { href: '/iva',                  label: 'Libro IVA',          icon: BookOpen,       bg: 'bg-lime-50 dark:bg-lime-900/30',      color: 'text-lime-600' },
+    { href: '/warehouses',           label: 'Almacenes',          icon: Warehouse,      bg: 'bg-blue-50 dark:bg-blue-900/30',      color: 'text-blue-500' },
+    { href: '/banco-cheques',        label: 'Banco de Cheques',   icon: Landmark,       bg: 'bg-slate-50 dark:bg-slate-700',       color: 'text-slate-500' },
+  ];
+
   return (
     <div>
       <PageHeader title="Estadísticas" subtitle="Resumen ejecutivo del negocio" />
+
+      {/* ── Selector mes / año ───────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => shiftMonth(-1)}
+          className="p-1.5 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+          title="Mes anterior"
+        >
+          <ChevronLeft className="w-4 h-4 text-gray-500 dark:text-slate-400" />
+        </button>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(Number(e.target.value))}
+          className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {MONTH_NAMES.map((name, i) => (
+            <option key={i} value={i + 1}>{name}</option>
+          ))}
+        </select>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          className="text-sm border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => shiftMonth(1)}
+          disabled={isCurrentMonth}
+          className="p-1.5 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Mes siguiente"
+        >
+          <ChevronRight className="w-4 h-4 text-gray-500 dark:text-slate-400" />
+        </button>
+        {!isCurrentMonth && (
+          <button
+            onClick={() => { setSelectedMonth(now.getMonth() + 1); setSelectedYear(now.getFullYear()); }}
+            title="Volver al mes actual"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors ml-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Mes actual
+          </button>
+        )}
+      </div>
 
       {/* ── Banner recordatorios de cobro ───────────────────────────────── */}
       {reminders && reminders.counts.total > 0 && (
@@ -595,6 +688,23 @@ export default function DashboardPage() {
             </div>
           </Card>
         </Link>
+      </div>
+
+      {/* ── Accesos Rápidos ──────────────────────────────────────────────── */}
+      <div className="mt-6">
+        <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-3">Accesos rápidos</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3">
+          {quickLinks.map(({ href, label, icon: Icon, bg, color }) => (
+            <Link key={href} to={href}>
+              <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-center h-full">
+                <div className={`p-2 rounded-lg ${bg} flex-shrink-0`}>
+                  <Icon className={`w-4 h-4 ${color}`} />
+                </div>
+                <span className="text-[11px] font-medium text-gray-600 dark:text-slate-400 leading-tight">{label}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* ── Row 6: Ventas vs Compras vs Cobros vs Pagos ──────────────────── */}

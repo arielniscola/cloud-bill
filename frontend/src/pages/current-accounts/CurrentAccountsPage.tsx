@@ -6,7 +6,7 @@ import { Card } from '../../components/ui';
 import { PageHeader, DataTable, SearchInput } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { customersService, currentAccountsService } from '../../services';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Customer, CurrentAccount, TaxCondition } from '../../types';
 
@@ -101,7 +101,7 @@ export default function CurrentAccountsPage() {
       key: 'taxId',
       header: 'CUIT/CUIL',
       render: (c) => c.taxId
-        ? <span className="font-mono text-xs text-gray-600 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 px-2 py-0.5 rounded">{c.taxId}</span>
+        ? <span className="font-mono text-xs text-gray-600 dark:text-slate-400 bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 px-2 py-0.5 rounded">{formatCuit(c.taxId)}</span>
         : <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>,
     },
     {

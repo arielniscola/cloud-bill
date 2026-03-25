@@ -11,8 +11,26 @@ export interface OrdenPagoItem {
   id: string;
   ordenPagoId: string;
   purchaseId: string;
+  purchaseInvoiceId: string | null;
   amount: number;
   purchase?: Pick<Purchase, 'id' | 'number' | 'total' | 'date'> & { paidAmount: number };
+  invoice?: { id: string; number: string; type: string; amount: number; status: string };
+}
+
+export interface PendingPurchaseInvoice {
+  id: string;
+  number: string;
+  type: string;
+  amount: number;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  dueDate: string | null;
+  paymentMethod: string;
+  purchaseId: string;
+  purchaseNumber: string;
+  purchaseDate: string;
+  currency: string;
 }
 
 export interface OrdenPago {
@@ -65,7 +83,7 @@ export interface SupplierAccount {
 }
 
 export interface CreateOrdenPagoItemDTO {
-  purchaseId: string;
+  purchaseInvoiceId: string;
   amount: number;
 }
 

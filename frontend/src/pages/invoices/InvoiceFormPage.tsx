@@ -34,6 +34,7 @@ const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Seleccioná un producto'),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
+  discountPct: z.coerce.number().min(0).max(100).default(0),
   taxRate: z.coerce.number().min(0).max(100),
 });
 
@@ -103,6 +104,8 @@ export default function InvoiceFormPage() {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<Array<{ productName: string; requested: number; available: number }>>([]);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [discountType, setDiscountType] = useState<'%' | '$'>('%');
+  const [discountValue, setDiscountValue] = useState(0);
 
   const {
     register, control, handleSubmit, setValue, watch, reset,
@@ -115,7 +118,7 @@ export default function InvoiceFormPage() {
       isService: false,
       stockBehavior: 'DISCOUNT',
       saleCondition: 'CONTADO',
-      items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
+      items: [{ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 }],
     },
   });
 
@@ -124,7 +127,7 @@ export default function InvoiceFormPage() {
   const barcodeRef = useRef<BarcodeProductInputHandle>(null);
   const prefilledRef = useRef(false);
 
-  const appendItem = () => append({ productId: '', quantity: 1, unitPrice: 0, taxRate: 21 });
+  const appendItem = () => append({ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 });
 
   useFormKeyboardShortcuts({
     onSubmit: () => handleSubmit(onSubmit)(),
@@ -172,6 +175,7 @@ export default function InvoiceFormPage() {
         productId: item.productId,
         quantity: Number(item.quantity),
         unitPrice: Number(item.unitPrice),
+        discountPct: Number(item.discountPct) || 0,
         taxRate: Number(item.taxRate),
       })),
     });
@@ -252,6 +256,7 @@ export default function InvoiceFormPage() {
             productId: item.productId,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
+            discountPct: 0,
             taxRate: Number(item.taxRate),
           })),
         });
@@ -279,7 +284,7 @@ export default function InvoiceFormPage() {
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + 1);
     } else {
-      append({ productId: product.id, quantity: 1, unitPrice: product.price, taxRate: product.taxRate });
+      append({ productId: product.id, quantity: 1, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
     }
   };
 
@@ -304,19 +309,25 @@ export default function InvoiceFormPage() {
   };
 
   const calcItemTotal = (item: typeof items[0]) => {
-    const sub = item.quantity * item.unitPrice;
-    return sub + sub * (item.taxRate / 100);
+    const base = item.quantity * item.unitPrice;
+    return base + base * (item.taxRate / 100);
   };
 
-  const totals = items.reduce(
-    (acc, item) => {
-      const sub = item.quantity * item.unitPrice;
-      const tax = sub * (item.taxRate / 100);
-      return { subtotal: acc.subtotal + sub, taxAmount: acc.taxAmount + tax };
-    },
-    { subtotal: 0, taxAmount: 0 }
-  );
-  const grandTotal = totals.subtotal + totals.taxAmount;
+  const subtotalBase = items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+  const discountAmount = discountType === '%'
+    ? subtotalBase * discountValue / 100
+    : Math.min(discountValue, subtotalBase);
+  const totals = {
+    subtotal: subtotalBase,
+    discountAmount,
+    taxAmount: items.reduce((acc, item) => {
+      const base = item.quantity * item.unitPrice;
+      const proportion = subtotalBase > 0 ? base / subtotalBase : 0;
+      const taxable = base - discountAmount * proportion;
+      return acc + taxable * (item.taxRate / 100);
+    }, 0),
+  };
+  const grandTotal = totals.subtotal - totals.discountAmount + totals.taxAmount;
 
   // ── Derived warnings ────────────────────────────────────────────────────
   const selectedCustomer = customers.find((c) => c.id === customerId);
@@ -367,12 +378,16 @@ export default function InvoiceFormPage() {
     }
     setIsLoading(true);
     try {
+      const discountPct = discountType === '%'
+        ? discountValue
+        : (subtotalBase > 0 ? (discountAmount / subtotalBase) * 100 : 0);
+      const itemsWithDiscount = data.items.map((item) => ({ ...item, discountPct }));
       if (isEditing) {
-        await invoicesService.update(id, { ...data, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
+        await invoicesService.update(id, { ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
         toast.success('Factura actualizada');
         navigate(`/invoices/${id}`);
       } else {
-        const invoice = await invoicesService.create({ ...data, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
+        const invoice = await invoicesService.create({ ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
         toast.success('Factura creada');
         if (registerPayment) {
           setCreatedInvoiceId(invoice.id);
@@ -520,7 +535,7 @@ export default function InvoiceFormPage() {
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(
-                            calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, taxRate: 0 }),
+                            calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, discountPct: 0, taxRate: 0 }),
                             'ARS'
                           )}
                         </span>
@@ -556,6 +571,51 @@ export default function InvoiceFormPage() {
                   {errors.items?.message && (
                     <p className="text-xs text-red-500 mt-1">{errors.items.message}</p>
                   )}
+                </div>
+              </div>
+            </div>
+
+            {/* Discount */}
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Descuento</p>
+                  {discountAmount > 0 && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {discountType === '%' ? `${discountValue}% sobre el subtotal` : `Importe fijo descontado`}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Type toggle */}
+                  <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType('%')}
+                      className={`px-3 py-2 transition-colors ${discountType === '%' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
+                    >%</button>
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType('$')}
+                      className={`px-3 py-2 border-l border-gray-200 dark:border-slate-600 transition-colors ${discountType === '$' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
+                    >$</button>
+                  </div>
+                  {/* Value input */}
+                  <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-shadow w-36">
+                    <input
+                      type="number"
+                      min={0}
+                      max={discountType === '%' ? 100 : undefined}
+                      step={0.01}
+                      value={discountValue || ''}
+                      onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none min-w-0"
+                    />
+                    <span className="flex items-center px-3 text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-700 border-l border-gray-200 dark:border-slate-600 select-none">
+                      {discountType}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -734,6 +794,14 @@ export default function InvoiceFormPage() {
                     {formatCurrency(totals.subtotal, 'ARS')}
                   </span>
                 </div>
+                {totals.discountAmount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-emerald-600 dark:text-emerald-400">Descuento</span>
+                    <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      -{formatCurrency(totals.discountAmount, 'ARS')}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500 dark:text-slate-400">IVA</span>
                   <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select } from '../../components/ui';
+import { CuitInput } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { CreateCompanyDTO, UpdateCompanyDTO } from '../../types/company.types';
 
@@ -97,7 +98,7 @@ export default function CompanyFormPage() {
       <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-6 space-y-5">
         <Input label="Nombre *" value={form.name} onChange={set('name')} required />
         <div className="grid grid-cols-2 gap-4">
-          <Input label="CUIT" value={form.cuit} onChange={set('cuit')} placeholder="20-12345678-9" />
+          <CuitInput label="CUIT" value={form.cuit} onChange={(raw) => setForm(f => ({ ...f, cuit: raw }))} />
           <Select
             label="Condición IVA"
             value={form.taxCondition}

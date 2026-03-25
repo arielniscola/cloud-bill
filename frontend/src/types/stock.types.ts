@@ -40,6 +40,7 @@ export interface StockMovement {
   userId: string | null;
   relatedWarehouseId: string | null;
   createdAt: string;
+  partyName?: string | null;
 }
 
 export interface CreateStockMovementDTO {
