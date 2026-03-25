@@ -59,7 +59,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
     return prisma.purchase.findUnique({ where: { id }, include: includeRelations }) as Promise<PurchaseWithItems | null>;
   }
 
-  async findAllByPeriod(year: number, month: number): Promise<PurchaseWithItems[]> {
+  async findAllByPeriod(year: number, month: number, companyId?: string): Promise<PurchaseWithItems[]> {
     const dateFrom = new Date(year, month - 1, 1);
     const dateTo = new Date(year, month, 0, 23, 59, 59, 999);
 
@@ -67,6 +67,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
       where: {
         date: { gte: dateFrom, lte: dateTo },
         status: { not: 'CANCELLED' },
+        ...(companyId ? { companyId } as any : {}),
       },
       include: includeRelations,
       orderBy: { date: 'asc' },

@@ -68,13 +68,16 @@ export class PrismaStockRepository implements IStockRepository {
     });
   }
 
-  async getLowStockItems(warehouseId?: string): Promise<Stock[]> {
+  async getLowStockItems(warehouseId?: string, companyId?: string): Promise<Stock[]> {
     const where: Prisma.StockWhereInput = {
       minQuantity: { not: null },
     };
 
     if (warehouseId) {
       where.warehouseId = warehouseId;
+    }
+    if (companyId) {
+      where.warehouse = { companyId };
     }
 
     const stocks = await this.prisma.stock.findMany({
@@ -159,31 +162,21 @@ export class PrismaStockRepository implements IStockRepository {
   }
 
   async getMovements(
-    filters: { productId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string },
+    filters: { productId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string; companyId?: string },
     pagination: PaginationParams = { page: 1, limit: 10 }
   ): Promise<PaginatedResult<StockMovement>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
+    // Build WHERE for count (Prisma)
     const where: Prisma.StockMovementWhereInput = {};
-
-    if (filters.productId) {
-      where.productId = filters.productId;
-    }
-
-    if (filters.warehouseId) {
-      where.warehouseId = filters.warehouseId;
-    }
-
-    if (filters.type) {
-      where.type = filters.type as any;
-    }
-
+    if (filters.productId)   where.productId  = filters.productId;
+    if (filters.warehouseId) where.warehouseId = filters.warehouseId;
+    if (filters.companyId)   (where as any).warehouse = { companyId: filters.companyId };
+    if (filters.type)        where.type = filters.type as any;
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};
-      if (filters.startDate) {
-        (where.createdAt as Prisma.DateTimeFilter).gte = new Date(filters.startDate);
-      }
+      if (filters.startDate) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(filters.startDate);
       if (filters.endDate) {
         const endDate = new Date(filters.endDate);
         endDate.setHours(23, 59, 59, 999);
@@ -191,24 +184,69 @@ export class PrismaStockRepository implements IStockRepository {
       }
     }
 
-    const [data, total] = await Promise.all([
-      this.prisma.stockMovement.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: { product: true, warehouse: true, user: true },
-      }),
+    // Build WHERE for raw query
+    const conditions: Prisma.Sql[] = [];
+    if (filters.productId)   conditions.push(Prisma.sql`sm."productId" = ${filters.productId}`);
+    if (filters.warehouseId) conditions.push(Prisma.sql`sm."warehouseId" = ${filters.warehouseId}`);
+    if (filters.companyId)   conditions.push(Prisma.sql`w."companyId" = ${filters.companyId}`);
+    if (filters.type)        conditions.push(Prisma.sql`sm.type::text = ${filters.type}`);
+    if (filters.startDate)   conditions.push(Prisma.sql`sm."createdAt" >= ${new Date(filters.startDate)}`);
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      conditions.push(Prisma.sql`sm."createdAt" <= ${endDate}`);
+    }
+    const whereClause = conditions.length > 0
+      ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+      : Prisma.sql``;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.$queryRaw<any[]>`
+        SELECT
+          sm.id, sm."productId", sm."warehouseId", sm.type::text AS type,
+          sm.quantity, sm."previousQuantity", sm."newQuantity",
+          sm.reason, sm."referenceId", sm."userId", sm."relatedWarehouseId", sm."createdAt",
+          p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
+          w.id AS "wh_id", w.name AS "wh_name",
+          u.name AS "user_name",
+          COALESCE(
+            (SELECT c.name FROM invoices i JOIN customers c ON c.id = i."customerId" WHERE i.id = sm."referenceId" LIMIT 1),
+            (SELECT s.name FROM purchases pu JOIN suppliers s ON s.id = pu."supplierId" WHERE pu.id = sm."referenceId" LIMIT 1),
+            (SELECT c.name FROM remitos r JOIN customers c ON c.id = r."customerId" WHERE r.id = sm."referenceId" LIMIT 1),
+            (SELECT c.name FROM orden_pedidos op JOIN customers c ON c.id = op."customerId" WHERE op.id = sm."referenceId" LIMIT 1),
+            (SELECT c.name FROM budgets b JOIN customers c ON c.id = b."customerId" WHERE b.id = sm."referenceId" LIMIT 1)
+          ) AS "partyName"
+        FROM stock_movements sm
+        LEFT JOIN products p ON p.id = sm."productId"
+        LEFT JOIN warehouses w ON w.id = sm."warehouseId"
+        LEFT JOIN users u ON u.id = sm."userId"
+        ${whereClause}
+        ORDER BY sm."createdAt" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `,
       this.prisma.stockMovement.count({ where }),
     ]);
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    const data = rows.map((r) => ({
+      id:                 r.id,
+      productId:          r.productId,
+      warehouseId:        r.warehouseId,
+      type:               r.type,
+      quantity:           r.quantity,
+      previousQuantity:   r.previousQuantity,
+      newQuantity:        r.newQuantity,
+      reason:             r.reason ?? null,
+      referenceId:        r.referenceId ?? null,
+      userId:             r.userId ?? null,
+      relatedWarehouseId: r.relatedWarehouseId ?? null,
+      createdAt:          r.createdAt,
+      partyName:          r.partyName ?? null,
+      product:   r.prod_id ? { id: r.prod_id, name: r.prod_name, sku: r.prod_sku } : null,
+      warehouse: r.wh_id   ? { id: r.wh_id,   name: r.wh_name }                   : null,
+      user:      r.user_name ? { name: r.user_name }                               : null,
+    }));
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async adjustBulk(

@@ -1,14 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
 
 export class DashboardController {
-  async getStats(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const reqYear = parseInt(req.query.year as string);
+      const reqMonth = parseInt(req.query.month as string); // 1-12
+      const year = !isNaN(reqYear) ? reqYear : now.getFullYear();
+      const month = !isNaN(reqMonth) && reqMonth >= 1 && reqMonth <= 12 ? reqMonth - 1 : now.getMonth(); // 0-indexed
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const companyId = req.companyId;
 
       const [
         ventasMesAgg,
@@ -34,6 +38,7 @@ export class DashboardController {
           _sum: { total: true },
           _count: true,
           where: {
+            companyId,
             status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
             currency: 'ARS',
             date: { gte: monthStart, lte: monthEnd },
@@ -45,6 +50,7 @@ export class DashboardController {
           _sum: { total: true },
           _count: true,
           where: {
+            companyId,
             status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
             currency: 'ARS',
           },
@@ -55,6 +61,7 @@ export class DashboardController {
           _sum: { amount: true },
           _count: true,
           where: {
+            companyId,
             status: 'EMITTED',
             currency: 'ARS',
             date: { gte: monthStart, lte: monthEnd },
@@ -66,6 +73,7 @@ export class DashboardController {
           SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
           FROM "orden_pagos"
           WHERE status = 'EMITTED'
+            AND "companyId" = ${companyId}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
@@ -74,6 +82,7 @@ export class DashboardController {
           _sum: { total: true },
           _count: true,
           where: {
+            companyId,
             status: { not: 'CANCELLED' },
             date: { gte: monthStart, lte: monthEnd },
           },
@@ -86,6 +95,7 @@ export class DashboardController {
           FROM "purchases"
           WHERE "paymentStatus" != 'PAID'
             AND status != 'CANCELLED'
+            AND "companyId" = ${companyId}
         `,
 
         // OC pendientes (no recibidas ni canceladas)
@@ -93,24 +103,25 @@ export class DashboardController {
           SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
           FROM "orden_compras"
           WHERE status NOT IN ('RECEIVED', 'CANCELLED')
+            AND "companyId" = ${companyId}
         `,
 
         // Contadores
-        prisma.customer.count({ where: { isActive: true } }),
-        prisma.product.count({ where: { isActive: true } }),
-        prisma.supplier.count({ where: { isActive: true } }),
-        prisma.invoice.count({ where: { status: 'DRAFT' } }),
+        prisma.customer.count({ where: { companyId, isActive: true } }),
+        prisma.product.count({ where: { companyId, isActive: true } }),
+        prisma.supplier.count({ where: { companyId, isActive: true } }),
+        prisma.invoice.count({ where: { companyId, status: 'DRAFT' } }),
 
         // Remitos pendientes
         prisma.remito.count({
-          where: { status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
+          where: { companyId, status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
         }),
 
         // Últimas 5 facturas
         prisma.invoice.findMany({
           take: 5,
           orderBy: { date: 'desc' },
-          where: { status: { not: 'DRAFT' } },
+          where: { companyId, status: { not: 'DRAFT' } },
           include: { customer: { select: { id: true, name: true } } },
         }),
 
@@ -121,13 +132,14 @@ export class DashboardController {
           FROM "orden_pagos" op
           LEFT JOIN "suppliers" s ON s.id = op."supplierId"
           WHERE op.status = 'EMITTED'
+            AND op."companyId" = ${companyId}
           ORDER BY op."createdAt" DESC
           LIMIT 5
         `,
 
         // Remitos pendientes de entrega (detalle, top 5)
         prisma.remito.findMany({
-          where: { status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
+          where: { companyId, status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
           take: 5,
           orderBy: { date: 'asc' },
           include: { customer: { select: { id: true, name: true } } },
@@ -135,7 +147,11 @@ export class DashboardController {
 
         // Clientes con deuda (balance > 0, ARS)
         prisma.currentAccount.findMany({
-          where: { balance: { gt: 0 }, currency: 'ARS' },
+          where: {
+            balance: { gt: 0 },
+            currency: 'ARS',
+            customer: { companyId },
+          },
           include: { customer: { select: { id: true, name: true } } },
           orderBy: { balance: 'desc' },
           take: 5,
@@ -143,7 +159,10 @@ export class DashboardController {
 
         // Stock bajo
         prisma.stock.findMany({
-          where: { minQuantity: { not: null } },
+          where: {
+            minQuantity: { not: null },
+            warehouse: { companyId },
+          },
           include: {
             product: { select: { id: true, name: true, sku: true } },
             warehouse: { select: { id: true, name: true } },
@@ -238,9 +257,10 @@ export class DashboardController {
     }
   }
 
-  async getCharts(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getCharts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const now = new Date();
+      const companyId = req.companyId;
 
       const months: { year: number; month: number; start: Date; end: Date }[] = [];
       for (let i = 11; i >= 0; i--) {
@@ -259,6 +279,7 @@ export class DashboardController {
         // Ventas: solo facturas
         prisma.invoice.findMany({
           where: {
+            companyId,
             status: { in: ['ISSUED', 'PARTIALLY_PAID', 'PAID'] },
             currency: 'ARS',
             date: { gte: months[0].start, lte: months[11].end },
@@ -267,6 +288,7 @@ export class DashboardController {
         }),
         prisma.purchase.findMany({
           where: {
+            companyId,
             status: { not: 'CANCELLED' },
             date: { gte: months[0].start, lte: months[11].end },
           },
@@ -274,6 +296,7 @@ export class DashboardController {
         }),
         prisma.recibo.findMany({
           where: {
+            companyId,
             status: 'EMITTED',
             currency: 'ARS',
             date: { gte: months[0].start, lte: months[11].end },
@@ -284,6 +307,7 @@ export class DashboardController {
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
           SELECT date, amount FROM "orden_pagos"
           WHERE status = 'EMITTED'
+            AND "companyId" = ${companyId}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
       ]);

@@ -6,6 +6,7 @@ const invoiceItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().positive('Quantity must be positive'),
   unitPrice: z.number().min(0, 'Unit price must be positive'),
+  discountPct: z.number().min(0).max(100).default(0),
   taxRate: z.number().min(0).max(100).default(21),
 });
 

@@ -11,17 +11,44 @@ const INCLUDE = {
 
 @injectable()
 export class PrismaAppSettingsRepository implements IAppSettingsRepository {
-  async get(): Promise<AppSettings | null> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (prisma.appSettings as any).findUnique({
-      where:   { id: 'default' },
-      include: INCLUDE,
-    }) as Promise<AppSettings | null>;
+  async get(companyId = '00000000-0000-0000-0000-000000000001'): Promise<AppSettings | null> {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        s.*,
+        bc.id   AS "budgetCashRegisterId",   bc.name   AS "budgetCashRegisterName",
+        ic.id   AS "invoiceCashRegisterId",  ic.name   AS "invoiceCashRegisterName"
+      FROM "app_settings" s
+      LEFT JOIN "cash_registers" bc ON bc.id = s."defaultBudgetCashRegisterId"
+      LEFT JOIN "cash_registers" ic ON ic.id = s."defaultInvoiceCashRegisterId"
+      WHERE s.id = ${companyId}
+      LIMIT 1
+    `;
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      id:                          r.id,
+      deadStockDays:               Number(r.deadStockDays),
+      safetyStockDays:             Number(r.safetyStockDays),
+      stalePriceWarnDays1:         Number(r.stalePriceWarnDays1),
+      stalePriceWarnDays2:         Number(r.stalePriceWarnDays2),
+      companyTaxCondition:         r.companyTaxCondition,
+      printFormat:                 r.printFormat,
+      smtpHost:                    r.smtpHost,
+      smtpPort:                    r.smtpPort != null ? Number(r.smtpPort) : null,
+      smtpUser:                    r.smtpUser,
+      smtpPass:                    r.smtpPass,
+      smtpFrom:                    r.smtpFrom,
+      smtpSecure:                  Boolean(r.smtpSecure),
+      defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
+      defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
+      defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
+      defaultInvoiceCashRegister:  r.invoiceCashRegisterId ? { id: r.invoiceCashRegisterId, name: r.invoiceCashRegisterName } : null,
+    } as AppSettings;
   }
 
-  async upsert(data: UpdateAppSettingsInput): Promise<AppSettings> {
+  async upsert(data: UpdateAppSettingsInput, companyId = '00000000-0000-0000-0000-000000000001'): Promise<AppSettings> {
     // Use $executeRaw to bypass stale Prisma client runtime validation on FK scalar fields
-    const current = await this.get();
+    const current = await this.get(companyId);
 
     const budgetCashRegisterId  = data.defaultBudgetCashRegisterId  !== undefined
       ? data.defaultBudgetCashRegisterId
@@ -50,7 +77,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "smtpSecure",
         "defaultBudgetCashRegisterId", "defaultInvoiceCashRegisterId", "updatedAt"
       ) VALUES (
-        'default',
+        ${companyId},
         ${deadStockDays}, ${safetyStockDays}, ${stalePriceWarnDays1}, ${stalePriceWarnDays2},
         ${companyTaxCondition}, ${printFormat},
         ${smtpHost}, ${smtpPort}, ${smtpUser}, ${smtpPass}, ${smtpFrom}, ${smtpSecure},
@@ -74,6 +101,6 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "updatedAt"                    = NOW()
     `;
 
-    return (await this.get())!;
+    return (await this.get(companyId))!;
   }
 }

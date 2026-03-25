@@ -15,7 +15,7 @@ export const createReciboSchema = z.object({
 
 export const reciboQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().default(20),
   invoiceId: z.string().optional(),
   budgetId: z.string().optional(),
   ordenPedidoId: z.string().optional(),
@@ -32,7 +32,7 @@ export const updateCheckStatusSchema = z.object({
 
 export const reciboCheckQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(50),
+  limit: z.coerce.number().int().positive().default(50),
   customerId: z.string().optional(),
   checkStatus: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED']).optional(),
   dueDateFrom: z.string().optional(),

@@ -8,9 +8,10 @@ export class CategoryController {
     try {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
 
-      const category = await categoryRepository.create({
+      const category = await (categoryRepository as any).create({
         name: req.body.name,
         parentId: req.body.parentId ?? null,
+        companyId: req.companyId,
       });
 
       res.status(201).json({
@@ -40,10 +41,10 @@ export class CategoryController {
     }
   }
 
-  async findAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-      const categories = await categoryRepository.findAll();
+      const categories = await (categoryRepository as any).findAll(req.companyId);
 
       res.json({
         status: 'success',

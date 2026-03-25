@@ -8,6 +8,7 @@ export interface OrdenPagoItem {
   id: string;
   ordenPagoId: string;
   purchaseId: string;
+  purchaseInvoiceId: string | null;
   amount: Decimal;
   purchase?: {
     id: string;
@@ -15,6 +16,13 @@ export interface OrdenPagoItem {
     total: Decimal;
     paidAmount: Decimal;
     date: Date;
+  };
+  invoice?: {
+    id: string;
+    number: string;
+    type: string;
+    amount: Decimal;
+    status: string;
   };
 }
 
@@ -47,7 +55,7 @@ export interface OrdenPagoWithRelations extends OrdenPago {
 }
 
 export interface CreateOrdenPagoItemInput {
-  purchaseId: string;
+  purchaseInvoiceId: string;
   amount: number;
 }
 

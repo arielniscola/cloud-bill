@@ -170,60 +170,92 @@ export class OrdenCompraController {
       if (oc.status !== 'CONFIRMED') throw new AppError('Solo se pueden convertir OC confirmadas', 400);
       if (oc.purchaseId) throw new AppError('Esta OC ya fue convertida a compra', 400);
 
-      // Get next purchase number
-      const year    = new Date().getFullYear();
-      const count   = await db.purchase.count({ where: { number: { startsWith: `OC-CONV-${year}-` } } });
-      const number  = `OC-CONV-${year}-${String(count + 1).padStart(4, '0')}`;
+      // receivedItems: optional array of { itemId, receivedQty } from the review modal
+      const receivedItems: { itemId: string; receivedQty: number }[] = req.body.receivedItems ?? [];
+      const receivedMap = new Map(receivedItems.map((r) => [r.itemId, r.receivedQty]));
 
-      const itemsTotals = oc.items.reduce(
+      // Build items with actual received quantities
+      const resolvedItems = oc.items.map((item) => {
+        const receivedQty = receivedMap.has(item.id)
+          ? receivedMap.get(item.id)!
+          : Number(item.quantity);
+        const unitPrice = Number(item.unitPrice);
+        const taxRate   = Number(item.taxRate);
+        const subtotal  = receivedQty * unitPrice;
+        const taxAmount = subtotal * (taxRate / 100);
+        return {
+          ...item,
+          receivedQty,
+          subtotal,
+          taxAmount,
+          total: subtotal + taxAmount,
+        };
+      });
+
+      const itemsTotals = resolvedItems.reduce(
         (acc, i) => ({
-          subtotal:  acc.subtotal  + Number(i.subtotal),
-          taxAmount: acc.taxAmount + Number(i.taxAmount),
-          total:     acc.total     + Number(i.total),
+          subtotal:  acc.subtotal  + i.subtotal,
+          taxAmount: acc.taxAmount + i.taxAmount,
+          total:     acc.total     + i.total,
         }),
         { subtotal: 0, taxAmount: 0, total: 0 }
       );
 
+      // Get next purchase number
+      const year   = new Date().getFullYear();
+      const count  = await db.purchase.count({ where: { number: { startsWith: `OC-CONV-${year}-` } } });
+      const number = `OC-CONV-${year}-${String(count + 1).padStart(4, '0')}`;
+
+      // Build notes with discrepancies if any
+      const discrepancies = resolvedItems
+        .filter((i) => i.receivedQty !== Number(i.quantity))
+        .map((i) => `${i.description}: pedido ${Number(i.quantity)}, recibido ${i.receivedQty}`)
+        .join('; ');
+      const notes = discrepancies
+        ? `Generado desde Orden de Compra ${oc.number}. Diferencias: ${discrepancies}`
+        : `Generado desde Orden de Compra ${oc.number}`;
+
       // Create Purchase
       const purchase = await db.purchase.create({
         data: {
-          type:       'FACTURA_A',
+          type:        'FACTURA_A',
           number,
-          supplierId: oc.supplierId,
-          userId:     req.user!.userId,
+          supplierId:  oc.supplierId,
+          userId:      req.user!.userId,
           warehouseId: oc.warehouseId ?? null,
-          date:       new Date(),
-          currency:   oc.currency as any,
-          subtotal:   new Decimal(itemsTotals.subtotal),
-          taxAmount:  new Decimal(itemsTotals.taxAmount),
-          total:      new Decimal(itemsTotals.total),
-          notes:      `Generado desde Orden de Compra ${oc.number}`,
+          companyId:   (oc as any).companyId,
+          date:        new Date(),
+          currency:    oc.currency as any,
+          subtotal:    new Decimal(itemsTotals.subtotal),
+          taxAmount:   new Decimal(itemsTotals.taxAmount),
+          total:       new Decimal(itemsTotals.total),
+          notes,
           items: {
-            create: oc.items.map((item) => ({
+            create: resolvedItems.map((item) => ({
               productId:   item.productId ?? null,
               description: item.description,
-              quantity:    new Decimal(Number(item.quantity)),
+              quantity:    new Decimal(item.receivedQty),
               unitPrice:   new Decimal(Number(item.unitPrice)),
               taxRate:     new Decimal(Number(item.taxRate)),
-              subtotal:    new Decimal(Number(item.subtotal)),
-              taxAmount:   new Decimal(Number(item.taxAmount)),
-              total:       new Decimal(Number(item.total)),
+              subtotal:    new Decimal(item.subtotal),
+              taxAmount:   new Decimal(item.taxAmount),
+              total:       new Decimal(item.total),
             })),
           },
         },
       });
 
-      // Auto-stock: create PURCHASE movements if warehouse + productId
+      // Auto-stock: create PURCHASE movements using received quantities
       if (oc.warehouseId) {
         const stockRepo = container.resolve<IStockRepository>('StockRepository');
-        const itemsWithProduct = oc.items.filter((i) => i.productId);
+        const itemsWithProduct = resolvedItems.filter((i) => i.productId && i.receivedQty > 0);
         for (const item of itemsWithProduct) {
           try {
             await stockRepo.addMovement({
               productId:   item.productId!,
               warehouseId: oc.warehouseId,
               type:        'PURCHASE',
-              quantity:    Number(item.quantity),
+              quantity:    item.receivedQty,
               reason:      `OC ${oc.number} → Compra ${number}`,
               referenceId: purchase.id,
               userId:      req.user!.userId,
@@ -242,7 +274,7 @@ export class OrdenCompraController {
         action:      'CREATE',
         entity:      'OrdenCompra',
         entityId:    oc.id,
-        description: `OC ${oc.number} convertida a compra ${number}`,
+        description: `OC ${oc.number} convertida a compra ${number}${discrepancies ? ' (con diferencias)' : ''}`,
       });
 
       res.json({ status: 'success', data: { ordenCompra: updated, purchase } });

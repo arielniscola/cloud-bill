@@ -73,7 +73,9 @@ export class OrdenPedidoController {
       let subtotal = 0;
       let taxAmount = 0;
       const items = data.items.map((item) => {
-        const itemSubtotal = item.quantity * item.unitPrice;
+        const base = item.quantity * item.unitPrice;
+        const discountAmt = base * ((item.discountPct ?? 0) / 100);
+        const itemSubtotal = base - discountAmt;
         const itemTax = itemSubtotal * (item.taxRate / 100);
         subtotal += itemSubtotal;
         taxAmount += itemTax;
@@ -138,6 +140,7 @@ export class OrdenPedidoController {
             stockBehavior: stockBehavior as any,
             notes: `Auto-generado desde orden de pedido ${op.number}`,
             ordenPedidoId: op.id,
+            companyId: req.companyId,
             items: itemsWithProduct.map((item) => ({
               productId: item.productId!,
               quantity: Number(item.quantity),
@@ -348,6 +351,7 @@ export class OrdenPedidoController {
       const op = await opRepo.findById(req.params.id);
       if (!op) throw new NotFoundError('Orden de pedido');
 
+      if (op.status === 'DRAFT') throw new AppError('Debe confirmar la orden antes de registrar un pago', 400);
       if (op.status === 'CANCELLED' || op.status === 'CONVERTED') {
         throw new AppError('No se puede registrar un pago en esta orden', 400);
       }

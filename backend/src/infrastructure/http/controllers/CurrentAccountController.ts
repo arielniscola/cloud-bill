@@ -12,7 +12,7 @@ export class CurrentAccountController {
       );
 
       if (req.query.hasDebt === 'true') {
-        const accounts = await currentAccountRepository.findAllWithDebt();
+        const accounts = await (currentAccountRepository as any).findAllWithDebt(req.companyId);
         res.json({ status: 'success', data: accounts });
         return;
       }

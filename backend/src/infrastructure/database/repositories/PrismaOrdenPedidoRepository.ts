@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { injectable } from 'tsyringe';
 import { Decimal } from '@prisma/client/runtime/library';
 import { IOrdenPedidoRepository, OrdenPedidoFilters } from '../../../domain/repositories/IOrdenPedidoRepository';
@@ -10,12 +11,7 @@ import {
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 
-const includeRelations = {
-  items: {
-    include: {
-      product: { select: { id: true, name: true, sku: true } },
-    },
-  },
+const includeWithoutItems = {
   customer: { select: { id: true, name: true, taxId: true, email: true, address: true } },
   user: { select: { id: true, name: true } },
   invoice: { select: { id: true, number: true, status: true } },
@@ -67,27 +63,20 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
   }
 
   async findById(id: string): Promise<OrdenPedidoWithItems | null> {
-    return (prisma as any).ordenPedido.findUnique({
+    const op = await (prisma as any).ordenPedido.findUnique({
       where: { id },
-      include: includeRelations,
-    }) as Promise<OrdenPedidoWithItems | null>;
+      include: includeWithoutItems,
+    });
+    if (!op) return null;
+    const items = await this._fetchItemsRaw(id);
+    return { ...op, items } as OrdenPedidoWithItems;
   }
 
   async create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
     const number = await this.getNextNumber();
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
 
-    const items = data.items.map((item) => ({
-      productId: item.productId ?? null,
-      description: item.description,
-      quantity: new Decimal(item.quantity),
-      unitPrice: new Decimal(item.unitPrice),
-      taxRate: new Decimal(item.taxRate),
-      subtotal: new Decimal(item.subtotal),
-      taxAmount: new Decimal(item.taxAmount),
-      total: new Decimal(item.total),
-    }));
-
-    return (prisma as any).ordenPedido.create({
+    const op = await (prisma as any).ordenPedido.create({
       data: {
         number,
         customerId: data.customerId ?? null,
@@ -99,16 +88,18 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: data.stockBehavior ?? 'DISCOUNT',
-        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        companyId,
         cashRegisterId: (data as any).cashRegisterId ?? null,
         invoiceCashRegisterId: (data as any).invoiceCashRegisterId ?? null,
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),
-        items: { create: items },
       },
-      include: includeRelations,
-    }) as Promise<OrdenPedidoWithItems>;
+    });
+
+    await this._insertItemsRaw(op.id, data.items);
+
+    return this.findById(op.id) as Promise<OrdenPedidoWithItems>;
   }
 
   async update(id: string, data: UpdateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
@@ -116,24 +107,8 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
 
     if (items) {
       await (prisma as any).ordenPedidoItem.deleteMany({ where: { ordenPedidoId: id } });
-      await (prisma as any).ordenPedido.update({
-        where: { id },
-        data: {
-          ...rest,
-          items: {
-            create: items.map((item) => ({
-              productId: item.productId ?? null,
-              description: item.description,
-              quantity: new Decimal(item.quantity),
-              unitPrice: new Decimal(item.unitPrice),
-              taxRate: new Decimal(item.taxRate),
-              subtotal: new Decimal(item.subtotal),
-              taxAmount: new Decimal(item.taxAmount),
-              total: new Decimal(item.total),
-            })),
-          },
-        },
-      });
+      await (prisma as any).ordenPedido.update({ where: { id }, data: rest });
+      await this._insertItemsRaw(id, items);
     } else {
       await (prisma as any).ordenPedido.update({ where: { id }, data: rest });
     }
@@ -143,6 +118,86 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
 
   async delete(id: string): Promise<void> {
     await (prisma as any).ordenPedido.delete({ where: { id } });
+  }
+
+  private async _fetchItemsRaw(ordenPedidoId: string): Promise<any[]> {
+    // Check if discountPct column exists (migration may not be applied yet)
+    const colCheck = await prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'orden_pedido_items' AND column_name = 'discountPct'
+      ) AS "exists"
+    `;
+    const hasDiscount = colCheck[0]?.exists ?? false;
+
+    const rows = hasDiscount
+      ? await prisma.$queryRaw<any[]>`
+          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi.description,
+            opi.quantity, opi."unitPrice", opi."discountPct",
+            opi."taxRate", opi.subtotal, opi."taxAmount", opi.total,
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku"
+          FROM "orden_pedido_items" opi
+          LEFT JOIN "products" p ON p.id = opi."productId"
+          WHERE opi."ordenPedidoId" = ${ordenPedidoId}
+        `
+      : await prisma.$queryRaw<any[]>`
+          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi.description,
+            opi.quantity, opi."unitPrice", 0 AS "discountPct",
+            opi."taxRate", opi.subtotal, opi."taxAmount", opi.total,
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku"
+          FROM "orden_pedido_items" opi
+          LEFT JOIN "products" p ON p.id = opi."productId"
+          WHERE opi."ordenPedidoId" = ${ordenPedidoId}
+        `;
+    return rows.map((r) => ({
+      id: r.id,
+      ordenPedidoId: r.ordenPedidoId,
+      productId: r.productId,
+      description: r.description,
+      quantity: r.quantity,
+      unitPrice: r.unitPrice,
+      discountPct: r.discountPct,
+      taxRate: r.taxRate,
+      subtotal: r.subtotal,
+      taxAmount: r.taxAmount,
+      total: r.total,
+      product: r.prod_id ? { id: r.prod_id, name: r.prod_name, sku: r.prod_sku } : null,
+    }));
+  }
+
+  private async _insertItemsRaw(ordenPedidoId: string, items: any[]): Promise<void> {
+    const colCheck = await prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'orden_pedido_items' AND column_name = 'discountPct'
+      ) AS "exists"
+    `;
+    const hasDiscount = colCheck[0]?.exists ?? false;
+
+    for (const item of items) {
+      const itemId = randomUUID();
+      const productId = item.productId ?? null;
+      const discountPct = Number(item.discountPct ?? 0);
+      if (hasDiscount) {
+        await prisma.$executeRaw`
+          INSERT INTO "orden_pedido_items"
+            (id, "ordenPedidoId", "productId", description, quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
+          VALUES
+            (${itemId}, ${ordenPedidoId}, ${productId}, ${item.description},
+             ${Number(item.quantity)}, ${Number(item.unitPrice)}, ${discountPct},
+             ${Number(item.taxRate)}, ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
+        `;
+      } else {
+        await prisma.$executeRaw`
+          INSERT INTO "orden_pedido_items"
+            (id, "ordenPedidoId", "productId", description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
+          VALUES
+            (${itemId}, ${ordenPedidoId}, ${productId}, ${item.description},
+             ${Number(item.quantity)}, ${Number(item.unitPrice)},
+             ${Number(item.taxRate)}, ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
+        `;
+      }
+    }
   }
 
   async getNextNumber(): Promise<string> {

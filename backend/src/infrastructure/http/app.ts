@@ -31,6 +31,8 @@ import { ordenPagoRoutes } from './routes/ordenPagoRoutes';
 import { bankRoutes } from './routes/bankRoutes';
 import { searchRoutes } from './routes/searchRoutes';
 import { remindersRoutes } from './routes/remindersRoutes';
+import { syncRoutes } from './routes/syncRoutes';
+import { reportsRoutes } from './routes/reportsRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -89,6 +91,8 @@ export function createApp(): Application {
   app.use('/api/banks', bankRoutes);
   app.use('/api/search', searchRoutes);
   app.use('/api/reminders', remindersRoutes);
+  app.use('/api/sync', syncRoutes);
+  app.use('/api/reports', reportsRoutes);
 
   // 404 handler
   app.use((_req, res) => {

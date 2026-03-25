@@ -10,7 +10,7 @@ export class AfipController {
   async getConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const config = await repo.getActive();
+      const config = await (repo as any).getActive(req.companyId);
 
       if (!config) {
         res.json({ status: 'success', data: null });
@@ -46,7 +46,7 @@ export class AfipController {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
       const { cuit, salePoint, cert, privateKey, isProduction, businessName, businessAddress, taxCondition, activityStartDate } = req.body;
 
-      const config = await repo.upsert({
+      const config = await (repo as any).upsert({
         cuit,
         salePoint: Number(salePoint),
         cert,
@@ -56,7 +56,7 @@ export class AfipController {
         businessAddress: businessAddress || null,
         taxCondition: taxCondition || null,
         activityStartDate: activityStartDate ? new Date(activityStartDate) : null,
-      });
+      }, req.companyId);
 
       res.json({
         status: 'success',
@@ -84,7 +84,7 @@ export class AfipController {
   async testConnection(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const config = await repo.getActive();
+      const config = await (repo as any).getActive(req.companyId);
 
       if (!config) {
         throw new AppError('No hay configuración AFIP activa', 400);
@@ -114,7 +114,7 @@ export class AfipController {
         throw new AppError('Esta factura ya tiene CAE asignado', 400);
       }
 
-      const config = await afipRepo.getActive();
+      const config = await (afipRepo as any).getActive(req.companyId);
       if (!config) {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }

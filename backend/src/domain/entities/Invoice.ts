@@ -35,6 +35,7 @@ export interface InvoiceItem {
   productId: string;
   quantity: Decimal;
   unitPrice: Decimal;
+  discountPct: Decimal;
   taxRate: Decimal;
   subtotal: Decimal;
   taxAmount: Decimal;
@@ -49,6 +50,7 @@ export interface CreateInvoiceItemInput {
   productId: string;
   quantity: number;
   unitPrice: number;
+  discountPct?: number;
   taxRate: number;
 }
 

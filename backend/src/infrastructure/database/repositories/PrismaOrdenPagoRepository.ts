@@ -19,8 +19,9 @@ type RawOrdenPago = {
 };
 
 type RawItem = {
-  id: string; ordenPagoId: string; purchaseId: string; amount: any;
+  id: string; ordenPagoId: string; purchaseId: string; purchaseInvoiceId: string | null; amount: any;
   purchaseNumber?: string; purchaseTotal?: any; purchasePaidAmount?: any; purchaseDate?: Date;
+  invoiceNumber?: string; invoiceType?: string; invoiceAmount?: any; invoiceStatus?: string;
 };
 
 type RawMovement = {
@@ -60,19 +61,28 @@ function mapOrdenPago(row: RawOrdenPago, items: RawItem[]): OrdenPagoWithRelatio
       id: i.id,
       ordenPagoId: i.ordenPagoId,
       purchaseId: i.purchaseId,
+      purchaseInvoiceId: i.purchaseInvoiceId ?? null,
       amount: i.amount,
       purchase: i.purchaseNumber
-        ? {
-            id: i.purchaseId,
-            number: i.purchaseNumber,
-            total: i.purchaseTotal,
-            paidAmount: i.purchasePaidAmount,
-            date: i.purchaseDate!,
-          }
+        ? { id: i.purchaseId, number: i.purchaseNumber, total: i.purchaseTotal, paidAmount: i.purchasePaidAmount, date: i.purchaseDate! }
+        : undefined,
+      invoice: i.invoiceNumber
+        ? { id: i.purchaseInvoiceId!, number: i.invoiceNumber, type: i.invoiceType!, amount: i.invoiceAmount, status: i.invoiceStatus! }
         : undefined,
     })),
   };
 }
+
+const ITEMS_SELECT = Prisma.sql`
+  SELECT opi.*,
+    p.number AS "purchaseNumber", p.total AS "purchaseTotal",
+    p."paidAmount" AS "purchasePaidAmount", p.date AS "purchaseDate",
+    pi.number AS "invoiceNumber", pi.type AS "invoiceType",
+    pi.amount AS "invoiceAmount", pi.status AS "invoiceStatus"
+  FROM "orden_pago_items" opi
+  LEFT JOIN "purchases" p ON p.id = opi."purchaseId"
+  LEFT JOIN "purchase_invoices" pi ON pi.id = opi."purchaseInvoiceId"
+`;
 
 @injectable()
 export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
@@ -102,11 +112,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     if (!rows[0]) return null;
 
     const items = await prisma.$queryRaw<RawItem[]>`
-      SELECT opi.*, p.number AS "purchaseNumber",
-        p.total AS "purchaseTotal", p."paidAmount" AS "purchasePaidAmount",
-        p.date AS "purchaseDate"
-      FROM "orden_pago_items" opi
-      LEFT JOIN "purchases" p ON p.id = opi."purchaseId"
+      ${ITEMS_SELECT}
       WHERE opi."ordenPagoId" = ${id}
     `;
     return mapOrdenPago(rows[0], items);
@@ -150,16 +156,11 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
     const total = Number(countRows[0]?.count ?? 0);
 
-    // Batch-load items
     const ids = rows.map((r) => r.id);
     let allItems: RawItem[] = [];
     if (ids.length > 0) {
       allItems = await prisma.$queryRaw<RawItem[]>`
-        SELECT opi.*, p.number AS "purchaseNumber",
-          p.total AS "purchaseTotal", p."paidAmount" AS "purchasePaidAmount",
-          p.date AS "purchaseDate"
-        FROM "orden_pago_items" opi
-        LEFT JOIN "purchases" p ON p.id = opi."purchaseId"
+        ${ITEMS_SELECT}
         WHERE opi."ordenPagoId" IN (${Prisma.join(ids)})
       `;
     }
@@ -180,8 +181,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const exchangeRate = data.exchangeRate ?? 1;
     const date = data.date ?? new Date();
 
-    // 1. Insert orden_pago
-    // CHECK payments go to bank/cartera — never linked to a cash register
     const effectiveCashRegisterId = data.paymentMethod === 'CHECK' ? null : (data.cashRegisterId ?? null);
 
     await prisma.$executeRaw`
@@ -200,29 +199,32 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       )
     `;
 
-    // 2. Insert items + update purchase paidAmount
+    // Process each item: resolve invoice → purchase, mark invoice PAID, update purchase status
     for (const item of data.items) {
+      // Fetch invoice to get its purchaseId
+      const invRows = await prisma.$queryRaw<{ id: string; purchaseId: string; amount: any }[]>`
+        SELECT id, "purchaseId", amount FROM "purchase_invoices" WHERE id = ${item.purchaseInvoiceId}
+      `;
+      if (!invRows[0]) throw new Error(`Purchase invoice ${item.purchaseInvoiceId} not found`);
+      const invoice = invRows[0];
+
       const itemId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
       await prisma.$executeRaw`
-        INSERT INTO "orden_pago_items" ("id", "ordenPagoId", "purchaseId", "amount")
-        VALUES (${itemId[0].id}, ${opId}, ${item.purchaseId}, ${item.amount})
+        INSERT INTO "orden_pago_items" ("id", "ordenPagoId", "purchaseInvoiceId", "purchaseId", "amount")
+        VALUES (${itemId[0].id}, ${opId}, ${item.purchaseInvoiceId}, ${invoice.purchaseId}, ${item.amount})
       `;
 
-      // Update purchase paidAmount and recalculate paymentStatus
+      // Mark the invoice as PAID
       await prisma.$executeRaw`
-        UPDATE "purchases"
-        SET "paidAmount" = LEAST("paidAmount" + ${item.amount}, total),
-            "paymentStatus" = CASE
-              WHEN ("paidAmount" + ${item.amount}) >= total THEN 'PAID'
-              WHEN ("paidAmount" + ${item.amount}) > 0      THEN 'PARTIALLY_PAID'
-              ELSE 'PENDING'
-            END,
-            "updatedAt" = NOW()
-        WHERE id = ${item.purchaseId}
+        UPDATE "purchase_invoices" SET status = 'PAID', "updatedAt" = NOW()
+        WHERE id = ${item.purchaseInvoiceId}
       `;
+
+      // Recalculate purchase paymentStatus from its invoices
+      await this._recalcPurchasePaymentStatus(invoice.purchaseId);
     }
 
-    // 3. Create supplier account movement (CREDIT — we paid)
+    // Create supplier account movement (CREDIT — we paid)
     const totalAmount = data.items.reduce((s, i) => s + i.amount, 0);
     await this.createSupplierMovement({
       supplierId: data.supplierId,
@@ -234,8 +236,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       companyId,
     });
 
-    // Note: cash register outflow is reflected in CashRegisterClose totals via OrdenPago records
-
     return this.findById(opId) as Promise<OrdenPagoWithRelations>;
   }
 
@@ -243,27 +243,33 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const op = await this.findById(id);
     if (!op) throw new Error('OrdenPago not found');
 
-    // 1. Revert purchase paidAmount for each item
+    // Revert each invoice to PENDING and recalculate purchase status
     for (const item of op.items) {
-      const amount = Number(item.amount);
-      await prisma.$executeRaw`
-        UPDATE "purchases"
-        SET "paidAmount" = GREATEST("paidAmount" - ${amount}, 0),
-            "paymentStatus" = CASE
-              WHEN GREATEST("paidAmount" - ${amount}, 0) = 0     THEN 'PENDING'
-              WHEN GREATEST("paidAmount" - ${amount}, 0) < total THEN 'PARTIALLY_PAID'
-              ELSE 'PAID'
-            END,
-            "updatedAt" = NOW()
-        WHERE id = ${item.purchaseId}
-      `;
+      if (item.purchaseInvoiceId) {
+        await prisma.$executeRaw`
+          UPDATE "purchase_invoices" SET status = 'PENDING', "updatedAt" = NOW()
+          WHERE id = ${item.purchaseInvoiceId}
+        `;
+        await this._recalcPurchasePaymentStatus(item.purchaseId);
+      } else {
+        // Backward compat: items without purchaseInvoiceId use old paidAmount logic
+        const amount = Number(item.amount);
+        await prisma.$executeRaw`
+          UPDATE "purchases"
+          SET "paidAmount" = GREATEST("paidAmount" - ${amount}, 0),
+              "paymentStatus" = CASE
+                WHEN GREATEST("paidAmount" - ${amount}, 0) = 0     THEN 'PENDING'
+                WHEN GREATEST("paidAmount" - ${amount}, 0) < total THEN 'PARTIALLY_PAID'
+                ELSE 'PAID'
+              END,
+              "updatedAt" = NOW()
+          WHERE id = ${item.purchaseId}
+        `;
+      }
     }
 
-    // 2. Cancel supplier account movement
     await this.cancelSupplierMovement(id);
 
-
-    // 4. Mark as CANCELLED
     await prisma.$executeRaw`
       UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
     `;
@@ -272,6 +278,20 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       SELECT * FROM "orden_pagos" WHERE id = ${id}
     `;
     return rows[0] as any as OrdenPago;
+  }
+
+  private async _recalcPurchasePaymentStatus(purchaseId: string): Promise<void> {
+    await prisma.$executeRaw`
+      UPDATE "purchases"
+      SET "paymentStatus" = CASE
+        WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId}) THEN 'PENDING'
+        WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status = 'PENDING') THEN 'PAID'
+        WHEN EXISTS     (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status = 'PAID')    THEN 'PARTIALLY_PAID'
+        ELSE 'PENDING'
+      END,
+      "updatedAt" = NOW()
+      WHERE id = ${purchaseId}
+    `;
   }
 
   // ── Supplier current account ──────────────────────────────────────────────
@@ -329,7 +349,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
 
-    // Compute running balance
     const currentBalance = await this.getSupplierBalance(data.supplierId, companyId);
     const newBalance = data.type === 'DEBIT'
       ? currentBalance + data.amount
@@ -356,14 +375,12 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   }
 
   async cancelSupplierMovement(ordenPagoId: string): Promise<void> {
-    // Get the original movement to get its amount and supplierId
     const rows = await prisma.$queryRaw<RawMovement[]>`
       SELECT * FROM "supplier_account_movements" WHERE "ordenPagoId" = ${ordenPagoId}
     `;
     if (!rows[0]) return;
 
     const original = rows[0];
-    // Insert a reversal movement (opposite type, no ordenPagoId link)
     await this.createSupplierMovement({
       supplierId: original.supplierId,
       type: original.type === 'CREDIT' ? 'DEBIT' : 'CREDIT',
@@ -373,7 +390,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       companyId: original.companyId,
     });
 
-    // Delete the original movement
     await prisma.$executeRaw`
       DELETE FROM "supplier_account_movements" WHERE "ordenPagoId" = ${ordenPagoId}
     `;

@@ -5,6 +5,7 @@ export const ordenPedidoItemSchema = z.object({
   description: z.string().min(1, 'La descripción es requerida'),
   quantity: z.number().positive('Cantidad debe ser mayor a 0'),
   unitPrice: z.number().min(0, 'Precio debe ser mayor o igual a 0'),
+  discountPct: z.number().min(0).max(100).default(0),
   taxRate: z.number().min(0).max(100),
   subtotal: z.number().min(0),
   taxAmount: z.number().min(0),
@@ -33,7 +34,7 @@ export const updateOrdenPedidoStatusSchema = z.object({
 
 export const ordenPedidoQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().default(20),
   customerId: z.string().uuid().optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED', 'CONVERTED']).optional(),
   currency: z.enum(['ARS', 'USD']).optional(),

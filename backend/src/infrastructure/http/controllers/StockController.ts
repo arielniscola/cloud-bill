@@ -107,7 +107,8 @@ export class StockController {
           type: type as string,
           startDate: startDate as string,
           endDate: endDate as string,
-        },
+          companyId: req.companyId,
+        } as any,
         { page: Number(page) || 1, limit: Number(limit) || 10 }
       );
 
@@ -125,7 +126,7 @@ export class StockController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const { warehouseId } = req.query;
 
-      const stocks = await stockRepository.getLowStockItems(warehouseId as string);
+      const stocks = await (stockRepository as any).getLowStockItems(warehouseId as string, req.companyId);
 
       res.json({
         status: 'success',

@@ -30,7 +30,7 @@ export const updateOrdenCompraStatusSchema = z.object({
 
 export const ordenCompraQuerySchema = z.object({
   page:       z.coerce.number().int().positive().default(1),
-  limit:      z.coerce.number().int().positive().max(100).default(20),
+  limit:      z.coerce.number().int().positive().default(20),
   supplierId: z.string().uuid().optional(),
   status:     z.enum(['DRAFT', 'SENT', 'CONFIRMED', 'RECEIVED', 'CANCELLED']).optional(),
   dateFrom:   z.string().optional(),

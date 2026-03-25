@@ -138,9 +138,12 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     return account ? account.balance.toNumber() : 0;
   }
 
-  async findAllWithDebt(): Promise<CurrentAccount[]> {
+  async findAllWithDebt(companyId?: string): Promise<CurrentAccount[]> {
     return this.prisma.currentAccount.findMany({
-      where: { balance: { gt: 0 } },
+      where: {
+        balance: { gt: 0 },
+        ...(companyId ? { customer: { companyId } } : {}),
+      },
       include: { customer: true },
     });
   }

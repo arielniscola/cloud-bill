@@ -34,10 +34,12 @@ export class PrismaStockIntelligenceRepository implements IStockIntelligenceRepo
   async getInsights(filters: StockIntelligenceFilters): Promise<StockIntelligenceSummary> {
     const days       = filters.days ?? 30;
     const windowFrom = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const companyId  = (filters as any).companyId as string | undefined;
 
     // ── 1. Fetch app settings for thresholds ─────────────────────────────────
+    const settingsId = companyId ?? '00000000-0000-0000-0000-000000000001';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const settings: any = await prisma.appSettings.findUnique({ where: { id: 'default' } });
+    const settings: any = await prisma.appSettings.findUnique({ where: { id: settingsId } });
     const deadStockDays   = (settings?.deadStockDays   as number | undefined) ?? 90;
     const safetyStockDays = (settings?.safetyStockDays as number | undefined) ?? 14;
     const deadStockFrom   = new Date(Date.now() - deadStockDays * 24 * 60 * 60 * 1000);
@@ -46,6 +48,7 @@ export class PrismaStockIntelligenceRepository implements IStockIntelligenceRepo
     const stocks = (await (prisma.stock.findMany as Function)({
       where: {
         ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+        ...(companyId ? { warehouse: { companyId } } : {}),
         product: { isActive: true },
       },
       include: {

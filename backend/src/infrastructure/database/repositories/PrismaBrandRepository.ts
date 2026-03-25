@@ -9,11 +9,14 @@ export class PrismaBrandRepository implements IBrandRepository {
     return (prisma as any).brand.findUnique({ where: { id } });
   }
 
-  async findAll(): Promise<Brand[]> {
-    return (prisma as any).brand.findMany({ orderBy: { name: 'asc' } });
+  async findAll(companyId?: string): Promise<Brand[]> {
+    return (prisma as any).brand.findMany({
+      where: companyId ? { companyId } : undefined,
+      orderBy: { name: 'asc' },
+    });
   }
 
-  async create(data: CreateBrandInput): Promise<Brand> {
+  async create(data: CreateBrandInput & { companyId?: string }): Promise<Brand> {
     return (prisma as any).brand.create({ data });
   }
 

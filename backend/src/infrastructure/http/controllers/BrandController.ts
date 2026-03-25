@@ -7,9 +7,10 @@ export class BrandController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
-      const brand = await repo.create({
+      const brand = await (repo as any).create({
         name: req.body.name,
         isActive: req.body.isActive ?? true,
+        companyId: req.companyId,
       });
       res.status(201).json({ status: 'success', data: brand });
     } catch (error) {
@@ -28,10 +29,10 @@ export class BrandController {
     }
   }
 
-  async findAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
-      const brands = await repo.findAll();
+      const brands = await (repo as any).findAll(req.companyId);
       res.json({ status: 'success', data: brands });
     } catch (error) {
       next(error);

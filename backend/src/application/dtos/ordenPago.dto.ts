@@ -3,7 +3,7 @@ import { z } from 'zod';
 const paymentMethodSchema = z.enum(['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'MERCADO_PAGO']);
 
 export const createOrdenPagoItemSchema = z.object({
-  purchaseId: z.string().min(1),
+  purchaseInvoiceId: z.string().min(1),
   amount: z.number().positive('El monto debe ser mayor a 0'),
 });
 
@@ -18,7 +18,7 @@ export const createOrdenPagoSchema = z.object({
   bank:           z.string().optional(),
   checkDueDate:   z.string().optional(),
   notes:          z.string().optional(),
-  items: z.array(createOrdenPagoItemSchema).min(1, 'Se requiere al menos una compra'),
+  items: z.array(createOrdenPagoItemSchema).min(1, 'Se requiere al menos una factura'),
 });
 
 export const ordenPagoQuerySchema = z.object({

@@ -34,7 +34,7 @@ export const updateBudgetStatusSchema = z.object({
 
 export const budgetQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().default(20),
   customerId: z.string().uuid().optional(),
   status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'CONVERTED', 'EXPIRED']).optional(),
   type: z.enum([

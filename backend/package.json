@@ -12,6 +12,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "jest",
     "prisma:generate": "prisma generate",
+    "migrate": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "postinstall": "prisma generate"
@@ -19,6 +20,7 @@
   "dependencies": {
     "@afipsdk/afip.js": "^1.2.2",
     "@prisma/client": "^5.22.0",
+    "prisma": "^5.22.0",
     "@types/nodemailer": "^7.0.11",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
@@ -46,7 +48,6 @@
     "eslint": "^8.57.1",
     "jest": "^29.7.0",
     "prettier": "^3.3.3",
-    "prisma": "^5.22.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "ts-node-dev": "^2.0.0",

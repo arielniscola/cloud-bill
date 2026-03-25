@@ -15,7 +15,7 @@ export class StockIntelligenceController {
         return;
       }
 
-      const result = await repo.getInsights({ warehouseId, days });
+      const result = await repo.getInsights({ warehouseId, days, companyId: req.companyId } as any);
       res.json({ status: 'success', data: result });
     } catch (error) {
       next(error);

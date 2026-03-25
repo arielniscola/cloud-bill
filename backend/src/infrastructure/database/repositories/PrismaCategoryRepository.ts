@@ -16,8 +16,9 @@ export class PrismaCategoryRepository implements ICategoryRepository {
     return this.prisma.category.findUnique({ where: { id } });
   }
 
-  async findAll(): Promise<Category[]> {
+  async findAll(companyId?: string): Promise<Category[]> {
     return this.prisma.category.findMany({
+      where: companyId ? ({ companyId } as any) : undefined,
       orderBy: { name: 'asc' },
       include: {
         parent: true,
@@ -33,8 +34,8 @@ export class PrismaCategoryRepository implements ICategoryRepository {
     });
   }
 
-  async create(data: CreateCategoryInput): Promise<Category> {
-    return this.prisma.category.create({ data });
+  async create(data: CreateCategoryInput & { companyId?: string }): Promise<Category> {
+    return this.prisma.category.create({ data: data as any });
   }
 
   async update(id: string, data: UpdateCategoryInput): Promise<Category> {

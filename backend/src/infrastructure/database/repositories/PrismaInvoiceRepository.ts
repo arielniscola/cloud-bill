@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { injectable } from 'tsyringe';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -20,16 +21,13 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   }
 
   async findById(id: string): Promise<InvoiceWithItems | null> {
-    return this.prisma.invoice.findUnique({
+    const invoice = await this.prisma.invoice.findUnique({
       where: { id },
-      include: {
-        items: {
-          include: { product: true },
-        },
-        customer: true,
-        user: true,
-      },
+      include: { customer: true, user: true },
     });
+    if (!invoice) return null;
+    const items = await this._fetchItemsRaw(id);
+    return { ...invoice, items } as unknown as InvoiceWithItems;
   }
 
   async findByNumber(number: string): Promise<Invoice | null> {
@@ -110,27 +108,21 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   async create(data: CreateInvoiceInput): Promise<InvoiceWithItems> {
     const invoiceNumber = await this.getNextInvoiceNumber(data.type);
 
-    const items = data.items.map((item) => {
-      const subtotal = new Decimal(item.quantity).times(item.unitPrice);
+    const computedItems = data.items.map((item) => {
+      const base = new Decimal(item.quantity).times(item.unitPrice);
+      const discountPct = new Decimal(item.discountPct ?? 0);
+      const discountAmt = base.times(discountPct).dividedBy(100);
+      const subtotal = base.minus(discountAmt);
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-
-      return {
-        productId: item.productId,
-        quantity: new Decimal(item.quantity),
-        unitPrice: new Decimal(item.unitPrice),
-        taxRate: new Decimal(item.taxRate),
-        subtotal,
-        taxAmount,
-        total,
-      };
+      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
     });
 
-    const subtotal = items.reduce((acc, item) => acc.plus(item.subtotal), new Decimal(0));
-    const taxAmount = items.reduce((acc, item) => acc.plus(item.taxAmount), new Decimal(0));
+    const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
+    const taxAmount = computedItems.reduce((acc, i) => acc.plus(i.taxAmount), new Decimal(0));
     const total = subtotal.plus(taxAmount);
 
-    return this.prisma.invoice.create({
+    const invoice = await (this.prisma as any).invoice.create({
       data: {
         type: data.type,
         number: invoiceNumber,
@@ -150,16 +142,12 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         total,
         currency: data.currency,
         exchangeRate: new Decimal(data.exchangeRate),
-        items: {
-          create: items,
-        },
       },
-      include: {
-        items: true,
-        customer: true,
-        user: true,
-      },
-    } as any) as unknown as Promise<InvoiceWithItems>;
+    });
+
+    await this._insertItemsRaw(invoice.id, computedItems);
+
+    return this.findById(invoice.id) as Promise<InvoiceWithItems>;
   }
 
   async update(id: string, data: UpdateInvoiceInput): Promise<Invoice> {
@@ -170,55 +158,130 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   }
 
   async updateWithItems(id: string, data: CreateInvoiceInput): Promise<InvoiceWithItems> {
-    const items = data.items.map((item) => {
-      const subtotal = new Decimal(item.quantity).times(item.unitPrice);
+    const computedItems = data.items.map((item) => {
+      const base = new Decimal(item.quantity).times(item.unitPrice);
+      const discountPct = new Decimal(item.discountPct ?? 0);
+      const discountAmt = base.times(discountPct).dividedBy(100);
+      const subtotal = base.minus(discountAmt);
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
+      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
+    });
 
-      return {
-        productId: item.productId,
-        quantity: new Decimal(item.quantity),
-        unitPrice: new Decimal(item.unitPrice),
-        taxRate: new Decimal(item.taxRate),
+    const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
+    const taxAmount = computedItems.reduce((acc, i) => acc.plus(i.taxAmount), new Decimal(0));
+    const total = subtotal.plus(taxAmount);
+
+    await this.prisma.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    await (this.prisma as any).invoice.update({
+      where: { id },
+      data: {
+        type: data.type,
+        customerId: data.customerId,
+        dueDate: data.dueDate ?? null,
+        notes: data.notes ?? null,
+        paymentTerms: data.paymentTerms ?? null,
+        saleCondition: data.saleCondition ?? 'CONTADO',
+        originInvoiceId: (data as any).originInvoiceId ?? null,
         subtotal,
         taxAmount,
         total,
-      };
+        currency: data.currency,
+        exchangeRate: new Decimal(data.exchangeRate),
+      },
     });
 
-    const subtotal = items.reduce((acc, item) => acc.plus(item.subtotal), new Decimal(0));
-    const taxAmount = items.reduce((acc, item) => acc.plus(item.taxAmount), new Decimal(0));
-    const total = subtotal.plus(taxAmount);
+    await this._insertItemsRaw(id, computedItems);
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+    return this.findById(id) as Promise<InvoiceWithItems>;
+  }
 
-      return tx.invoice.update({
-        where: { id },
-        data: {
-          type: data.type,
-          customerId: data.customerId,
-          dueDate: data.dueDate ?? null,
-          notes: data.notes ?? null,
-          paymentTerms: data.paymentTerms ?? null,
-          saleCondition: data.saleCondition ?? 'CONTADO',
-          originInvoiceId: (data as any).originInvoiceId ?? null,
-          subtotal,
-          taxAmount,
-          total,
-          currency: data.currency,
-          exchangeRate: new Decimal(data.exchangeRate),
-          items: {
-            create: items,
-          },
-        },
-        include: {
-          items: true,
-          customer: true,
-          user: true,
-        },
-      } as any) as unknown as InvoiceWithItems;
-    }) as unknown as Promise<InvoiceWithItems>;
+  private async _fetchItemsRaw(invoiceId: string): Promise<any[]> {
+    const colCheck = await this.prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'invoice_items' AND column_name = 'discountPct'
+      ) AS "exists"
+    `;
+    const hasDiscount = colCheck[0]?.exists ?? false;
+
+    const rows = hasDiscount
+      ? await this.prisma.$queryRaw<any[]>`
+          SELECT ii.id, ii."invoiceId", ii."productId",
+            ii.quantity, ii."unitPrice", ii."discountPct",
+            ii."taxRate", ii.subtotal, ii."taxAmount", ii.total,
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
+            p."taxRate" AS "prod_taxRate", p.price AS "prod_price",
+            p.barcode AS "prod_barcode", p.description AS "prod_description"
+          FROM "invoice_items" ii
+          JOIN "products" p ON p.id = ii."productId"
+          WHERE ii."invoiceId" = ${invoiceId}
+        `
+      : await this.prisma.$queryRaw<any[]>`
+          SELECT ii.id, ii."invoiceId", ii."productId",
+            ii.quantity, ii."unitPrice", 0 AS "discountPct",
+            ii."taxRate", ii.subtotal, ii."taxAmount", ii.total,
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
+            p."taxRate" AS "prod_taxRate", p.price AS "prod_price",
+            p.barcode AS "prod_barcode", p.description AS "prod_description"
+          FROM "invoice_items" ii
+          JOIN "products" p ON p.id = ii."productId"
+          WHERE ii."invoiceId" = ${invoiceId}
+        `;
+    return rows.map((r) => ({
+      id: r.id,
+      invoiceId: r.invoiceId,
+      productId: r.productId,
+      quantity: r.quantity,
+      unitPrice: r.unitPrice,
+      discountPct: r.discountPct,
+      taxRate: r.taxRate,
+      subtotal: r.subtotal,
+      taxAmount: r.taxAmount,
+      total: r.total,
+      product: {
+        id: r.prod_id,
+        name: r.prod_name,
+        sku: r.prod_sku,
+        taxRate: r.prod_taxRate,
+        price: r.prod_price,
+        barcode: r.prod_barcode,
+        description: r.prod_description,
+      },
+    }));
+  }
+
+  private async _insertItemsRaw(invoiceId: string, items: any[]): Promise<void> {
+    const colCheck = await this.prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'invoice_items' AND column_name = 'discountPct'
+      ) AS "exists"
+    `;
+    const hasDiscount = colCheck[0]?.exists ?? false;
+
+    for (const item of items) {
+      const itemId = randomUUID();
+      if (hasDiscount) {
+        await this.prisma.$executeRaw`
+          INSERT INTO "invoice_items"
+            (id, "invoiceId", "productId", quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
+          VALUES
+            (${itemId}, ${invoiceId}, ${item.productId}, ${Number(item.quantity)},
+             ${Number(item.unitPrice)}, ${Number(item.discountPct)}, ${Number(item.taxRate)},
+             ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
+        `;
+      } else {
+        await this.prisma.$executeRaw`
+          INSERT INTO "invoice_items"
+            (id, "invoiceId", "productId", quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
+          VALUES
+            (${itemId}, ${invoiceId}, ${item.productId}, ${Number(item.quantity)},
+             ${Number(item.unitPrice)}, ${Number(item.taxRate)},
+             ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
+        `;
+      }
+    }
   }
 
   async delete(id: string): Promise<void> {

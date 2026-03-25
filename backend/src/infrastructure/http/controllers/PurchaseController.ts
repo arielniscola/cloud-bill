@@ -49,9 +49,17 @@ export class PurchaseController {
 
       const saleCondition: string = req.body.saleCondition ?? 'CONTADO';
 
+      // Auto-generate purchase number if not provided
+      const year = new Date().getFullYear();
+      const count = await prisma.$queryRaw<{ c: bigint }[]>`
+        SELECT COUNT(*) AS c FROM "purchases"
+        WHERE "companyId" = ${req.companyId} AND number LIKE ${'COMP-' + year + '-%'}
+      `;
+      const autoNumber = `COMP-${year}-${String(Number((count[0]?.c ?? 0n)) + 1).padStart(4, '0')}`;
+
       const purchase = await repo.create({
-        type: req.body.type,
-        number: req.body.number,
+        type: 'FACTURA_A',         // internal default — not shown in UI
+        number: autoNumber,
         supplierId: req.body.supplierId,
         userId: req.user!.userId,
         companyId: req.companyId,
@@ -111,6 +119,72 @@ export class PurchaseController {
       });
 
       res.status(201).json({ status: 'success', data: purchase });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getPendingInvoices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { supplierId } = req.query;
+      if (!supplierId) throw new AppError('supplierId es requerido', 400);
+
+      const rows = await prisma.$queryRaw<{
+        id: string; number: string; type: string; amount: any; subtotal: any;
+        taxRate: any; taxAmount: any; dueDate: Date | null; paymentMethod: string;
+        purchaseId: string; purchaseNumber: string; purchaseDate: Date; currency: string;
+      }[]>`
+        SELECT pi.id, pi.number, pi.type, pi.amount, pi.subtotal, pi."taxRate", pi."taxAmount",
+               pi."dueDate", pi."paymentMethod",
+               p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate", p.currency
+        FROM "purchase_invoices" pi
+        JOIN "purchases" p ON p.id = pi."purchaseId"
+        WHERE p."supplierId" = ${supplierId as string}
+          AND p."companyId" = ${req.companyId}
+          AND p.status = 'REGISTERED'
+          AND pi.status = 'PENDING'
+        ORDER BY pi."createdAt" ASC
+      `;
+
+      res.json({ status: 'success', data: rows });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async assignWarehouse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo      = container.resolve<IPurchaseRepository>('PurchaseRepository');
+      const stockRepo = container.resolve<IStockRepository>('StockRepository');
+
+      const purchase = await repo.findById(req.params.id);
+      if (!purchase) throw new NotFoundError('Purchase');
+      if (purchase.warehouseId) throw new AppError('Esta compra ya tiene un almacén asignado', 400);
+
+      const { warehouseId } = req.body;
+      if (!warehouseId) throw new AppError('warehouseId es requerido', 400);
+
+      const updated = await repo.update(req.params.id, { warehouseId });
+
+      // Create PURCHASE stock movements for items linked to products
+      const itemsWithProduct = purchase.items.filter((i) => i.productId);
+      for (const item of itemsWithProduct) {
+        try {
+          await stockRepo.addMovement({
+            productId: item.productId!,
+            warehouseId,
+            type: 'PURCHASE',
+            quantity: Number(item.quantity),
+            reason: `Compra ${purchase.number} (almacén asignado)`,
+            referenceId: purchase.id,
+            userId: req.user!.userId,
+          });
+        } catch (stockError) {
+          console.error(`Stock movement failed for product ${item.productId}:`, stockError);
+        }
+      }
+
+      res.json({ status: 'success', data: updated });
     } catch (error) {
       next(error);
     }

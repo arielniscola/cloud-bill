@@ -13,14 +13,18 @@ async function withActivityDate(config: any): Promise<AfipConfig> {
 
 @injectable()
 export class PrismaAfipConfigRepository implements IAfipConfigRepository {
-  async getActive(): Promise<AfipConfig | null> {
-    const config = await prisma.afipConfig.findFirst({ where: { isActive: true } });
+  async getActive(companyId?: string): Promise<AfipConfig | null> {
+    const where: any = { isActive: true };
+    if (companyId) where.companyId = companyId;
+    const config = await prisma.afipConfig.findFirst({ where });
     if (!config) return null;
     return withActivityDate(config);
   }
 
-  async upsert(data: CreateAfipConfigInput): Promise<AfipConfig> {
-    const existing = await prisma.afipConfig.findFirst({ where: { isActive: true } });
+  async upsert(data: CreateAfipConfigInput, companyId?: string): Promise<AfipConfig> {
+    const where: any = { isActive: true };
+    if (companyId) where.companyId = companyId;
+    const existing = await prisma.afipConfig.findFirst({ where });
 
     let config: any;
     if (existing) {
@@ -37,7 +41,7 @@ export class PrismaAfipConfigRepository implements IAfipConfigRepository {
       config = await prisma.afipConfig.update({ where: { id: existing.id }, data: updateData });
     } else {
       const { activityStartDate: _asd, ...rest } = data as any;
-      config = await prisma.afipConfig.create({ data: rest });
+      config = await prisma.afipConfig.create({ data: { ...rest, ...(companyId ? { companyId } : {}) } });
     }
 
     // Set activityStartDate via raw SQL (stale Prisma client workaround)

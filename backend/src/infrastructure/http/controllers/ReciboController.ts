@@ -64,7 +64,8 @@ export class ReciboController {
           dueDateTo: query.dueDateTo ? new Date(query.dueDateTo) : undefined,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
-        }
+          companyId: req.companyId,
+        } as any
       );
 
       res.json({ status: 'success', ...result });

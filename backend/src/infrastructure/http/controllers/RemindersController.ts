@@ -29,7 +29,7 @@ export class RemindersController {
 
       const companyFilter = companyId ? { companyId } : {};
 
-      const [invoices, checks, ordenPedidos] = await Promise.all([
+      const [invoices, checks, ordenPedidos, purchaseInvoices] = await Promise.all([
         // Facturas por cobrar con dueDate próximo o ya vencido
         prisma.invoice.findMany({
           where: {
@@ -86,6 +86,21 @@ export class RemindersController {
           },
           orderBy: { dueDate: 'asc' },
         }),
+
+        // Facturas de proveedor pendientes con vencimiento próximo o vencido
+        prisma.$queryRaw<any[]>`
+          SELECT pi.id, pi.number, pi.amount, pi."dueDate",
+                 p.id AS "purchaseId", p.number AS "purchaseNumber",
+                 s.name AS "supplierName"
+          FROM "purchase_invoices" pi
+          JOIN "purchases" p ON p.id = pi."purchaseId"
+          JOIN "suppliers" s ON s.id = p."supplierId"
+          WHERE pi.status = 'PENDING'
+            AND pi."dueDate" IS NOT NULL
+            AND pi."dueDate" <= ${cutoff}
+            AND pi."companyId" = ${companyId ?? '00000000-0000-0000-0000-000000000001'}
+          ORDER BY pi."dueDate" ASC
+        `,
       ]);
 
       const reminders: Array<{
@@ -146,6 +161,22 @@ export class RemindersController {
           daysUntilDue,
           urgency,
           amount: Number(op.total),
+        });
+      }
+
+      for (const pinv of purchaseInvoices) {
+        if (!pinv.dueDate) continue;
+        const { urgency, daysUntilDue } = classifyDueDate(new Date(pinv.dueDate), now);
+        reminders.push({
+          id: `purchase-invoice-${pinv.id}`,
+          type: 'purchase-invoice-due',
+          title: `Fact. proveedor ${pinv.number}`,
+          message: `${pinv.supplierName ?? '—'} — ${dueDateLabel(daysUntilDue)}`,
+          href: `/purchases/${pinv.purchaseId}`,
+          dueDate: pinv.dueDate,
+          daysUntilDue,
+          urgency,
+          amount: Number(pinv.amount),
         });
       }
 

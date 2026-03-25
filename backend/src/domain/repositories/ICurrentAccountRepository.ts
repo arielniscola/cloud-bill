@@ -17,5 +17,5 @@ export interface ICurrentAccountRepository {
     pagination?: PaginationParams
   ): Promise<PaginatedResult<AccountMovement>>;
   getBalance(customerId: string, currency: Currency): Promise<number>;
-  findAllWithDebt(): Promise<CurrentAccount[]>;
+  findAllWithDebt(companyId?: string): Promise<CurrentAccount[]>;
 }

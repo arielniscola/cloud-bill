@@ -106,6 +106,7 @@ export class PrismaReciboRepository implements IReciboRepository {
 
     const where: any = { paymentMethod: 'CHECK', status: 'EMITTED' };
     if (filters.customerId) where.customerId = filters.customerId;
+    if ((filters as any).companyId) where.customer = { companyId: (filters as any).companyId };
     if (filters.checkStatus !== undefined) where.checkStatus = filters.checkStatus;
     if (filters.dueDateFrom || filters.dueDateTo) {
       where.checkDueDate = {};
