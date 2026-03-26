@@ -6,7 +6,7 @@ const router = Router();
 const ivaController = new IvaController();
 
 router.use(authMiddleware);
-router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'));
 
 router.get('/ventas', ivaController.getVentas);
 router.get('/ventas/export', ivaController.exportVentasCSV);

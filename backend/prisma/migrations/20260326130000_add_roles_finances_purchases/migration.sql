@@ -1,0 +1,3 @@
+-- Add FINANCES and PURCHASES roles to UserRole enum
+ALTER TYPE "UserRole" ADD VALUE 'FINANCES';
+ALTER TYPE "UserRole" ADD VALUE 'PURCHASES';

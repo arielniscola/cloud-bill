@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Building2, CheckCircle2, XCircle, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Building2, CheckCircle2, XCircle, Pencil, Trash2, LayoutGrid, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
-import { Button } from '../../components/ui';
+import { Button, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { Company } from '../../types/company.types';
+import { ALL_MODULE_KEYS, MODULE_LABELS } from '../../types/company.types';
 import { formatDate } from '../../utils/formatters';
 
 const MODULE_BADGES: Record<string, string> = {
@@ -31,12 +32,96 @@ function ModulesList({ modules }: { modules: string[] }) {
   );
 }
 
+// ── Modules modal ─────────────────────────────────────────────────────────────
+function ModulesModal({
+  company,
+  onClose,
+  onSaved,
+}: {
+  company: Company | null;
+  onClose: () => void;
+  onSaved: (updated: Company) => void;
+}) {
+  const [allEnabled, setAllEnabled] = useState(true);
+  const [modules, setModules] = useState<string[]>([...ALL_MODULE_KEYS]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!company) return;
+    const isAll = company.enabledModules.includes('ALL');
+    setAllEnabled(isAll);
+    setModules(isAll ? [...ALL_MODULE_KEYS] : company.enabledModules.filter(m => ALL_MODULE_KEYS.includes(m as any)));
+  }, [company]);
+
+  const toggle = (key: string) =>
+    setModules(prev => prev.includes(key) ? prev.filter(m => m !== key) : [...prev, key]);
+
+  const handleSave = async () => {
+    if (!company) return;
+    setIsSaving(true);
+    try {
+      const payload = allEnabled || modules.length === ALL_MODULE_KEYS.length ? ['ALL'] : modules;
+      const updated = await companiesService.updateModules(company.id, payload.length === 0 ? [ALL_MODULE_KEYS[0]] : payload);
+      toast.success('Módulos actualizados');
+      onSaved(updated);
+      onClose();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al guardar');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={!!company} onClose={onClose} title={`Módulos — ${company?.name ?? ''}`} size="sm">
+      <div className="space-y-3">
+        {/* All access toggle */}
+        <label className="flex items-center justify-between p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+          <div>
+            <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">Acceso completo</p>
+            <p className="text-xs text-indigo-500 mt-0.5">Habilita todos los módulos presentes y futuros</p>
+          </div>
+          <input type="checkbox" checked={allEnabled}
+            onChange={e => { setAllEnabled(e.target.checked); if (e.target.checked) setModules([...ALL_MODULE_KEYS]); }}
+            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
+        </label>
+
+        <div className={clsx('space-y-2 transition-opacity', allEnabled && 'opacity-40 pointer-events-none')}>
+          {ALL_MODULE_KEYS.map(key => {
+            const { label, description } = MODULE_LABELS[key];
+            return (
+              <label key={key} className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-slate-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                <div>
+                  <p className="text-sm font-medium text-gray-800 dark:text-slate-200">{label}</p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{description}</p>
+                </div>
+                <input type="checkbox" checked={modules.includes(key)} onChange={() => toggle(key)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-2 pt-1 justify-end">
+          <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSave} isLoading={isSaving}>
+            <Save className="w-3.5 h-3.5 mr-1.5" />
+            Guardar
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function CompaniesPage() {
   const navigate = useNavigate();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading]  = useState(true);
   const [deleteId, setDeleteId]    = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [modulesCompany, setModulesCompany] = useState<Company | null>(null);
 
   const load = async () => {
     try {
@@ -141,6 +226,13 @@ export default function CompaniesPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => setModulesCompany(company)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                    title="Módulos"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                  </button>
                   <Link
                     to={`/companies/${company.id}/edit`}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
@@ -171,6 +263,12 @@ export default function CompaniesPage() {
         message="¿Estás seguro? Se eliminarán todos los datos asociados a esta empresa."
         confirmText="Eliminar"
         isLoading={isDeleting}
+      />
+
+      <ModulesModal
+        company={modulesCompany}
+        onClose={() => setModulesCompany(null)}
+        onSaved={(updated) => setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c))}
       />
     </div>
   );

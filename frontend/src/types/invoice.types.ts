@@ -66,6 +66,7 @@ export interface Invoice {
   caeExpiry: string | null;
   afipPtVenta: number | null;
   afipCbtNum: number | null;
+  afipObservaciones: string | null;
   items: InvoiceItem[];
   _count?: { items: number };
   deliveryStatus?: DeliveryStatus;

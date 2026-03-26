@@ -14,16 +14,20 @@ export function usePermissions() {
 
   return {
     role,
-    isSuperAdmin:    role === 'SUPER_ADMIN',
-    isAdmin:         role === 'ADMIN',
-    isSeller:        role === 'SELLER',
+    isSuperAdmin:     role === 'SUPER_ADMIN',
+    isAdmin:          role === 'ADMIN',
+    isSeller:         role === 'SELLER',
     isWarehouseClerk: role === 'WAREHOUSE_CLERK',
-    /** Can create, edit, delete — true for ADMIN and SELLER */
+    isFinances:       role === 'FINANCES',
+    isPurchases:      role === 'PURCHASES',
+    /** Can create/edit/delete sales documents — ADMIN and SELLER */
     canWrite: role === 'ADMIN' || role === 'SELLER',
-    /** Can access purchases & suppliers section */
-    canAccessPurchases: role === 'ADMIN',
-    /** Can access finances section (IVA, cash registers management, reports, settings, activity) */
-    canAccessFinances: role === 'ADMIN',
+    /** Can create/edit purchases and supplier data — ADMIN and PURCHASES */
+    canWritePurchases: role === 'ADMIN' || role === 'PURCHASES',
+    /** Can view purchases, suppliers and their accounts — ADMIN, FINANCES and PURCHASES */
+    canAccessPurchases: role === 'ADMIN' || role === 'FINANCES' || role === 'PURCHASES',
+    /** Can view finances section (IVA, cajas, bancos, reports) — ADMIN and FINANCES */
+    canAccessFinances: role === 'ADMIN' || role === 'FINANCES',
     enabledModules,
     isModuleEnabled,
   };

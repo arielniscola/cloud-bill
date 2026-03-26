@@ -6,7 +6,7 @@ const router = Router();
 const reportsController = new ReportsController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN', 'SELLER'));
+router.use(requireRoles('ADMIN', 'SELLER', 'FINANCES'));
 
 router.get('/sales/by-product', reportsController.salesByProduct);
 

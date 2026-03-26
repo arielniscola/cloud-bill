@@ -373,19 +373,23 @@ export class InvoiceController {
 
       // For BANK_TRANSFER with a bankAccountId, create a bank movement
       if (isBankTransfer && (paymentData as any).bankAccountId) {
+        const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
+        const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
+        const customerName = (invoice as any).customer?.name ?? '';
+        const bankDescription = `Cobro ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
         await (prisma as any).bankMovement.create({
           data: {
             bankAccountId: (paymentData as any).bankAccountId,
             type: 'CREDIT',
-            amount: paymentData.amount,
-            description: `Cobro ${invoice.type} ${invoice.number} (${recibo.number})`,
+            amount: amountARS,
+            description: bankDescription,
             reciboId: recibo.id,
             companyId: req.companyId,
           },
         });
         // Update bank account balance
         await (prisma as any).$executeRaw`
-          UPDATE "bank_accounts" SET balance = balance + ${paymentData.amount}, "updatedAt" = NOW()
+          UPDATE "bank_accounts" SET balance = balance + ${amountARS}, "updatedAt" = NOW()
           WHERE id = ${(paymentData as any).bankAccountId}
         `;
       }
@@ -469,19 +473,24 @@ export class InvoiceController {
         caeExpiry: result.caeExpiry,
         afipCbtNum: result.afipCbtNum,
         afipPtVenta: result.afipPtVenta,
+        afipObservaciones: result.observaciones,
         status: 'ISSUED',
-      });
+      } as any);
 
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'CREATE',
         entity: 'AfipEmission',
         entityId: invoice.id,
-        description: `CAE emitido para factura ${invoice.number}: ${result.cae}`,
-        metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum },
+        description: `CAE emitido para ${invoice.number}: ${result.cae}${result.observaciones ? ` | Obs: ${result.observaciones}` : ''}`,
+        metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum, observaciones: result.observaciones },
       });
 
-      res.json({ status: 'success', data: updated });
+      res.json({
+        status: 'success',
+        data: updated,
+        ...(result.observaciones ? { warnings: result.observaciones } : {}),
+      });
     } catch (error) {
       next(error);
     }
@@ -548,7 +557,7 @@ export class InvoiceController {
       const { id } = req.params;
       const { to } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendInvoiceEmail(id, to);
+      await sendInvoiceEmail(id, to, req.companyId!);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

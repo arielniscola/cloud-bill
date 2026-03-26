@@ -20,9 +20,9 @@ router.post(
   cashRegisterController.create
 );
 router.get('/', cashRegisterController.findAll);
-router.get('/:id/movements', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getMovements);
-router.get('/:id/close-preview', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getClosePreview);
-router.get('/:id/closes', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.getCloses);
+router.get('/:id/movements', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'), cashRegisterController.getMovements);
+router.get('/:id/close-preview', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'), cashRegisterController.getClosePreview);
+router.get('/:id/closes', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'), cashRegisterController.getCloses);
 router.post(
   '/:id/close',
   requireRoles('SUPER_ADMIN', 'ADMIN'),

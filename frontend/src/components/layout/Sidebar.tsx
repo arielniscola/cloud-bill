@@ -81,6 +81,7 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Ventas",
     moduleKey: "ventas",
+    requiredRoles: ["ADMIN", "SELLER", "WAREHOUSE_CLERK", "FINANCES"] as const,
     items: [
       {
         name: "Ventas",
@@ -101,7 +102,7 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Compras",
     moduleKey: "compras",
-    requiredRoles: ["ADMIN"] as const,
+    requiredRoles: ["ADMIN", "FINANCES", "PURCHASES"] as const,
     items: [
       {
         name: "Compras",
@@ -148,7 +149,7 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Finanzas",
     moduleKey: "finanzas",
-    requiredRoles: ["ADMIN"] as const,
+    requiredRoles: ["ADMIN", "FINANCES"] as const,
     items: [
       { name: "Cajas",           href: "/cash-registers", icon: Landmark },
       { name: "Banco de Cheques",  href: "/banco-cheques", icon: Banknote },

@@ -14,6 +14,8 @@ enum UserRole {
   ADMIN
   SELLER
   WAREHOUSE_CLERK
+  FINANCES
+  PURCHASES
 }
 
 enum TaxCondition {
@@ -243,10 +245,11 @@ model Invoice {
   stockBehavior  String  @default("DISCOUNT") // DISCOUNT | RESERVE
   originInvoiceId String?                    // FK to origin invoice (for NC/ND)
   ordenPedidoId  String?                    // Set when created from an OrdenPedido
-  cae            String?
-  caeExpiry    DateTime?
-  afipPtVenta  Int?
-  afipCbtNum   Int?
+  cae                 String?
+  caeExpiry           DateTime?
+  afipPtVenta         Int?
+  afipCbtNum          Int?
+  afipObservaciones   String?   // Observaciones/advertencias devueltas por ARCA al emitir
   companyId    String        @default("00000000-0000-0000-0000-000000000001")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

@@ -4,14 +4,14 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { clsx } from 'clsx';
-import { Plus, Trash2, Calculator, Info, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, PaymentModal } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService } from '../../services';
-import type { CreateReciboDTO, Budget, AppSettings } from '../../types';
+import type { Budget, AppSettings } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import type { Customer, Product, Currency } from '../../types';
@@ -73,11 +73,11 @@ export default function OrdenPedidoFormPage() {
   const [isFetching, setIsFetching] = useState(isEditing);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<Array<{ productName: string; requested: number; available: number }>>([]);
-  const [registerPayment, setRegisterPayment] = useState(false);
-  const [createdOpId, setCreatedOpId] = useState<string | null>(null);
-  const [isPaymentLoading, setIsPaymentLoading] = useState(false);
+
+
   const [discountType, setDiscountType] = useState<'%' | '$'>('%');
   const [discountValue, setDiscountValue] = useState(0);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
 
   const {
     register, control, handleSubmit, setValue, watch, reset, getValues,
@@ -352,11 +352,7 @@ export default function OrdenPedidoFormPage() {
           await budgetsService.updateStatus(fromBudget.id, { status: 'CONVERTED' }).catch(() => null);
         }
         toast.success('Orden de pedido creada');
-        if (registerPayment) {
-          setCreatedOpId(op.id);
-        } else {
-          navigate(`/orden-pedidos/${op.id}`);
-        }
+        navigate(`/orden-pedidos/${op.id}`);
       }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -366,20 +362,6 @@ export default function OrdenPedidoFormPage() {
     }
   };
 
-  const handlePaymentConfirm = async (data: CreateReciboDTO) => {
-    if (!createdOpId) return;
-    setIsPaymentLoading(true);
-    try {
-      await ordenPedidosService.pay(createdOpId, data);
-      toast.success('Pago registrado');
-      navigate(`/orden-pedidos/${createdOpId}`);
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al registrar pago');
-    } finally {
-      setIsPaymentLoading(false);
-    }
-  };
 
   if (isFetching) return (
     <div>
@@ -613,13 +595,25 @@ export default function OrdenPedidoFormPage() {
           <div className="lg:sticky lg:top-6 space-y-4">
             {/* Metadata card */}
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
-              <CustomerSearchSelect
-                customers={customers}
-                value={customerId}
-                onChange={(id) => setValue('customerId', id || null)}
-                label="Cliente"
-                clearLabel="Sin cliente (consumidor final)"
-              />
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Cliente</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateCustomer(true)}
+                    className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Nuevo cliente
+                  </button>
+                </div>
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={customerId}
+                  onChange={(id) => setValue('customerId', id || null)}
+                  clearLabel="Sin cliente (consumidor final)"
+                />
+              </div>
 
               <Input
                 label="Fecha de entrega (opcional)"
@@ -716,20 +710,6 @@ export default function OrdenPedidoFormPage() {
               </div>
             </div>
 
-            {/* Register payment at creation */}
-            {!isEditing && !!customerId && saleCondition !== 'CUENTA_CORRIENTE' && (
-              <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
-                    checked={registerPayment}
-                    onChange={(e) => setRegisterPayment(e.target.checked)}
-                  />
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Registrar pago al crear</span>
-                </label>
-              </div>
-            )}
 
             {/* Actions */}
             <div className="flex flex-col gap-2.5">
@@ -762,18 +742,6 @@ export default function OrdenPedidoFormPage() {
         cancelText="Seguir editando"
       />
 
-      <PaymentModal
-        open={createdOpId !== null}
-        onClose={() => {
-          if (createdOpId) navigate(`/orden-pedidos/${createdOpId}`);
-          setCreatedOpId(null);
-        }}
-        onSubmit={handlePaymentConfirm}
-        remaining={grandTotal}
-        currency={currency}
-        isLoading={isPaymentLoading}
-        title="Registrar pago"
-      />
 
       <Modal isOpen={stockWarnings.length > 0} onClose={() => setStockWarnings([])} size="sm">
         <div className="flex flex-col items-center text-center">
@@ -803,6 +771,16 @@ export default function OrdenPedidoFormPage() {
           </Button>
         </div>
       </Modal>
+
+      <CreateCustomerModal
+        isOpen={showCreateCustomer}
+        onClose={() => setShowCreateCustomer(false)}
+        onCreated={(newCustomer) => {
+          setCustomers((prev) => [...prev, newCustomer]);
+          setValue('customerId', newCustomer.id);
+          setShowCreateCustomer(false);
+        }}
+      />
     </div>
   );
 }

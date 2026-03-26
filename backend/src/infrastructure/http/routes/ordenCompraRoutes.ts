@@ -6,14 +6,13 @@ const router = Router();
 const ctrl   = new OrdenCompraController();
 
 router.use(authMiddleware);
-router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
-router.get('/',             ctrl.findAll);
-router.get('/:id',          ctrl.findById);
-router.post('/',            ctrl.create);
-router.put('/:id',          ctrl.update);
-router.patch('/:id/status', ctrl.updateStatus);
-router.post('/:id/convert', ctrl.convert);
-router.delete('/:id',       ctrl.delete);
+router.get('/',             requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), ctrl.findAll);
+router.get('/:id',          requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), ctrl.findById);
+router.post('/',            requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             ctrl.create);
+router.put('/:id',          requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             ctrl.update);
+router.patch('/:id/status', requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             ctrl.updateStatus);
+router.post('/:id/convert', requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             ctrl.convert);
+router.delete('/:id',       requireRoles('SUPER_ADMIN', 'ADMIN'),                          ctrl.delete);
 
 export { router as ordenCompraRoutes };

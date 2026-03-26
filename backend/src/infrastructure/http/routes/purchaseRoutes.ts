@@ -8,19 +8,18 @@ const purchaseController        = new PurchaseController();
 const purchaseInvoiceController = new PurchaseInvoiceController();
 
 router.use(authMiddleware);
-router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
-router.get('/',                        purchaseController.findAll);
-router.get('/pending-invoices',        purchaseController.getPendingInvoices);
-router.get('/:id',                     purchaseController.findById);
-router.post('/',        purchaseController.create);
-router.post('/:id/cancel',          purchaseController.cancel);
-router.patch('/:id/warehouse',       purchaseController.assignWarehouse);
+router.get('/',                 requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), purchaseController.findAll);
+router.get('/pending-invoices', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), purchaseController.getPendingInvoices);
+router.get('/:id',              requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), purchaseController.findById);
+router.post('/',                requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             purchaseController.create);
+router.post('/:id/cancel',      requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             purchaseController.cancel);
+router.patch('/:id/warehouse',  requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             purchaseController.assignWarehouse);
 
 // Supplier invoices for a purchase
-router.get( '/:purchaseId/invoices',                purchaseInvoiceController.findAll);
-router.post('/:purchaseId/invoices',                purchaseInvoiceController.create);
-router.put( '/:purchaseId/invoices/:invoiceId',     purchaseInvoiceController.update);
-router.delete('/:purchaseId/invoices/:invoiceId',   purchaseInvoiceController.delete);
+router.get( '/:purchaseId/invoices',              requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), purchaseInvoiceController.findAll);
+router.post('/:purchaseId/invoices',              requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             purchaseInvoiceController.create);
+router.put( '/:purchaseId/invoices/:invoiceId',   requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             purchaseInvoiceController.update);
+router.delete('/:purchaseId/invoices/:invoiceId', requireRoles('SUPER_ADMIN', 'ADMIN'),                          purchaseInvoiceController.delete);
 
 export { router as purchaseRoutes };

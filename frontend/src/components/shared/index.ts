@@ -34,3 +34,4 @@ export { default as CsvImportModal } from './CsvImportModal';
 export { default as CuitInput } from './CuitInput';
 export { ReceiveOrdenCompraModal } from './ReceiveOrdenCompraModal';
 export { AddPurchaseInvoiceModal } from './AddPurchaseInvoiceModal';
+export { default as CreateCustomerModal } from './CreateCustomerModal';

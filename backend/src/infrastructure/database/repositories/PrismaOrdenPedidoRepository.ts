@@ -203,10 +203,15 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
 
   async getNextNumber(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await (prisma as any).ordenPedido.count({
-      where: { number: { startsWith: `OP-${year}-` } },
-    });
-    const seq = String(count + 1).padStart(4, '0');
-    return `OP-${year}-${seq}`;
+    const prefix = `OP-${year}-`;
+    const rows = await prisma.$queryRaw<{ number: string }[]>`
+      SELECT number FROM "orden_pedidos"
+      WHERE number LIKE ${prefix + '%'}
+      ORDER BY number DESC
+      LIMIT 1
+    `;
+    const lastSeq = rows.length > 0 ? parseInt(rows[0].number.replace(prefix, ''), 10) : 0;
+    const seq = String(lastSeq + 1).padStart(4, '0');
+    return `${prefix}${seq}`;
   }
 }

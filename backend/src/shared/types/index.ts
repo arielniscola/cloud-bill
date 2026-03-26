@@ -1,4 +1,4 @@
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK' | 'FINANCES' | 'PURCHASES';
 
 export type TaxCondition =
   | 'RESPONSABLE_INSCRIPTO'

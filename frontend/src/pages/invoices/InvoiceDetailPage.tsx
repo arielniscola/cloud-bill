@@ -169,8 +169,11 @@ export default function InvoiceDetailPage() {
     if (!id) return;
     setIsEmitting(true);
     try {
-      const updated = await afipService.emitInvoice(id);
+      const { invoice: updated, warnings } = await afipService.emitInvoice(id);
       toast.success(`Factura emitida ante ARCA. CAE: ${updated.cae}`);
+      if (warnings) {
+        toast(`Observaciones ARCA: ${warnings}`, { icon: '⚠️', duration: 8000 });
+      }
       setShowEmitDialog(false);
       await loadData();
     } catch (error: unknown) {
@@ -555,6 +558,14 @@ export default function InvoiceDetailPage() {
                   <div className="flex justify-between items-center px-5 py-3">
                     <span className="text-sm text-gray-500 dark:text-slate-400">N° AFIP</span>
                     <span className="text-sm text-gray-900 dark:text-white tabular-nums">{invoice.afipCbtNum}</span>
+                  </div>
+                )}
+                {invoice.afipObservaciones && (
+                  <div className="px-5 py-3">
+                    <span className="text-sm text-gray-500 dark:text-slate-400 block mb-1">Observaciones ARCA</span>
+                    <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-2.5 py-1.5 block leading-relaxed">
+                      {invoice.afipObservaciones}
+                    </span>
                   </div>
                 )}
               </div>

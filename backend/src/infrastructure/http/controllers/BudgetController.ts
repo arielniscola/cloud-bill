@@ -221,7 +221,7 @@ export class BudgetController {
       const { id } = req.params;
       const { to } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendBudgetEmail(id, to);
+      await sendBudgetEmail(id, to, req.companyId!);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

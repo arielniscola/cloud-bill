@@ -126,19 +126,24 @@ export class AfipController {
         caeExpiry: result.caeExpiry,
         afipCbtNum: result.afipCbtNum,
         afipPtVenta: result.afipPtVenta,
+        afipObservaciones: result.observaciones,
         status: 'ISSUED',
-      });
+      } as any);
 
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'CREATE',
         entity: 'AfipEmission',
         entityId: invoice.id,
-        description: `CAE emitido para factura ${invoice.number}: ${result.cae}`,
-        metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum },
+        description: `CAE emitido para ${invoice.number}: ${result.cae}${result.observaciones ? ` | Obs: ${result.observaciones}` : ''}`,
+        metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum, observaciones: result.observaciones },
       });
 
-      res.json({ status: 'success', data: updated });
+      res.json({
+        status: 'success',
+        data: updated,
+        ...(result.observaciones ? { warnings: result.observaciones } : {}),
+      });
     } catch (error) {
       next(error);
     }

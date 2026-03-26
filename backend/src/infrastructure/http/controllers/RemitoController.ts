@@ -346,7 +346,7 @@ export class RemitoController {
       const { id } = req.params;
       const { to } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendRemitoEmail(id, to);
+      await sendRemitoEmail(id, to, req.companyId!);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

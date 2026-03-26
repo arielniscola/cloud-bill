@@ -9,20 +9,23 @@ export interface DashboardStats {
   comprasMes: { total: number; count: number };
   comprasPendientesPago: { total: number; count: number };
   ocPendientes: { total: number; count: number };
+  opPendientes: { total: number; count: number };
+  opConvertidas: { total: number; count: number };
   facturasBorrador: number;
   totalClientes: number;
   totalProductos: number;
   totalProveedores: number;
   remitosPendientes: number;
-  recentInvoices: Array<{
+  recentOrdenPedidos: Array<{
     id: string;
     number: string;
     date: string;
-    type: string;
     status: string;
     total: number;
     currency: string;
-    customer: { id: string; name: string };
+    invoiceId: string | null;
+    invoiceNumber: string | null;
+    customer: { name: string };
   }>;
   recentOrdenPagos: Array<{
     id: string;

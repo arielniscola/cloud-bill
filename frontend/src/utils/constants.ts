@@ -63,6 +63,8 @@ export const USER_ROLES = {
   ADMIN: 'Administrador',
   SELLER: 'Vendedor',
   WAREHOUSE_CLERK: 'Empleado de Almacén',
+  FINANCES: 'Finanzas',
+  PURCHASES: 'Compras',
 } as const;
 
 export const CURRENCIES = {

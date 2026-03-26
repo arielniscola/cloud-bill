@@ -15,6 +15,8 @@ import { formatDate } from '../../utils/formatters';
 const ROLE_OPTIONS = [
   { value: 'ADMIN',           label: 'Administrador' },
   { value: 'SELLER',          label: 'Vendedor' },
+  { value: 'FINANCES',        label: 'Finanzas' },
+  { value: 'PURCHASES',       label: 'Compras' },
   { value: 'WAREHOUSE_CLERK', label: 'Depósito (solo lectura)' },
 ];
 
@@ -22,12 +24,16 @@ const ROLE_BADGE: Record<string, string> = {
   SUPER_ADMIN:     'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-900/30 dark:border-purple-800',
   ADMIN:           'text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-800',
   SELLER:          'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800',
+  FINANCES:        'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-900/30 dark:border-cyan-800',
+  PURCHASES:       'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-900/30 dark:border-orange-800',
   WAREHOUSE_CLERK: 'text-gray-600 bg-gray-50 border-gray-200 dark:text-slate-400 dark:bg-slate-700 dark:border-slate-600',
 };
 const ROLE_LABEL: Record<string, string> = {
   SUPER_ADMIN:     'Super Admin',
   ADMIN:           'Administrador',
   SELLER:          'Vendedor',
+  FINANCES:        'Finanzas',
+  PURCHASES:       'Compras',
   WAREHOUSE_CLERK: 'Depósito',
 };
 
@@ -217,6 +223,7 @@ export default function UsersSettingsCard() {
   const [deleteId, setDeleteId]   = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState<string | null>(null);
+  const [companyFilter, setCompanyFilter] = useState<string>('');
 
   const load = async () => {
     try {
@@ -269,21 +276,41 @@ export default function UsersSettingsCard() {
     return companies.find(c => c.id === companyId)?.name ?? companyId.slice(0, 8) + '…';
   };
 
+  const filteredUsers = companyFilter
+    ? users.filter(u => u.companyId === companyFilter)
+    : users;
+
+  const companyFilterOptions = [
+    { value: '', label: 'Todas las empresas' },
+    ...companies.map(c => ({ value: c.id, label: c.name })),
+  ];
+
   return (
     <>
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
-          <div>
+        <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Usuarios</h3>
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-              {users.length} usuario{users.length !== 1 ? 's' : ''}{!isSuperAdmin && ' de esta empresa'}
+              {filteredUsers.length} de {users.length} usuario{users.length !== 1 ? 's' : ''}{!isSuperAdmin && ' de esta empresa'}
             </p>
           </div>
           {isSuperAdmin && (
-            <Button size="sm" onClick={() => { setEditingUser(null); setShowForm(true); }}>
-              <Plus className="w-3.5 h-3.5 mr-1.5" />
-              Nuevo usuario
-            </Button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <select
+                value={companyFilter}
+                onChange={e => setCompanyFilter(e.target.value)}
+                className="text-xs border border-gray-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+              >
+                {companyFilterOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <Button size="sm" onClick={() => { setEditingUser(null); setShowForm(true); }}>
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Nuevo usuario
+              </Button>
+            </div>
           )}
         </div>
 
@@ -302,7 +329,12 @@ export default function UsersSettingsCard() {
           </div>
         ) : (
           <div className="divide-y divide-gray-50 dark:divide-slate-700/50">
-            {users.map((user) => {
+            {filteredUsers.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-400 dark:text-slate-500">
+                No hay usuarios en esta empresa
+              </div>
+            ) : null}
+            {filteredUsers.map((user) => {
               const isMe = user.id === me?.id;
               return (
                 <div key={user.id} className="flex items-center gap-4 px-5 py-3.5">
@@ -390,6 +422,8 @@ export default function UsersSettingsCard() {
           {[
             { role: 'ADMIN',           Icon: ShieldCheck, desc: 'Acceso total a su empresa: ventas, compras, finanzas y configuración. Puede ver la lista de usuarios.' },
             { role: 'SELLER',          Icon: ShieldAlert, desc: 'Puede gestionar ventas, presupuestos, clientes, productos y stock. Sin acceso a compras ni finanzas.' },
+            { role: 'FINANCES',        Icon: ShieldAlert, desc: 'Ve reportes, finanzas (cajas, banco, IVA), compras y proveedores en modo lectura, y cuentas corrientes. No puede realizar ventas ni modificar configuración.' },
+            { role: 'PURCHASES',       Icon: ShieldAlert, desc: 'Gestiona compras, proveedores, órdenes de compra y órdenes de pago. Puede ver stock y catálogo. Sin acceso a ventas ni finanzas.' },
             { role: 'WAREHOUSE_CLERK', Icon: ShieldAlert, desc: 'Solo lectura: ve inventario, órdenes y facturas, pero no puede crear ni modificar nada.' },
           ].map(({ role, desc }) => (
             <div key={role} className="flex items-start gap-3">

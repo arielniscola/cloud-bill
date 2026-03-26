@@ -60,17 +60,17 @@ function wrapHtml(title: string, body: string, companyName: string): string {
 
 // ── Transporter factory ────────────────────────────────────────────────────
 
-async function createTransporter() {
+async function createTransporter(companyId: string) {
   const settings = await prisma.$queryRaw<any[]>`
     SELECT "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "smtpSecure"
     FROM "app_settings"
-    WHERE "id" = 'default'
+    WHERE "id" = ${companyId}
     LIMIT 1
   `;
 
   const s = settings[0];
   if (!s?.smtpHost || !s?.smtpUser || !s?.smtpPass) {
-    throw new Error('SMTP no configurado. Completá la configuración en Ajustes → Empresa.');
+    throw new Error('SMTP no configurado. Completá la configuración en Ajustes → Correo.');
   }
 
   return {
@@ -86,18 +86,22 @@ async function createTransporter() {
 
 // ── Company name helper ────────────────────────────────────────────────────
 
-async function getCompanyName(): Promise<string> {
+async function getCompanyName(companyId: string): Promise<string> {
   const rows = await prisma.$queryRaw<any[]>`
-    SELECT "razonSocial" FROM "afip_config" LIMIT 1
+    SELECT "businessName" FROM "afip_config" WHERE "companyId" = ${companyId} LIMIT 1
   `;
-  return rows[0]?.razonSocial || 'Cloud Bill';
+  if (rows[0]?.businessName) return rows[0].businessName;
+  const company = await prisma.$queryRaw<any[]>`
+    SELECT name FROM "companies" WHERE id = ${companyId} LIMIT 1
+  `;
+  return company[0]?.name || 'Cloud Bill';
 }
 
 // ── Invoice email ──────────────────────────────────────────────────────────
 
-export async function sendInvoiceEmail(invoiceId: string, to: string): Promise<void> {
-  const { transporter, from } = await createTransporter();
-  const companyName = await getCompanyName();
+export async function sendInvoiceEmail(invoiceId: string, to: string, companyId: string): Promise<void> {
+  const { transporter, from } = await createTransporter(companyId);
+  const companyName = await getCompanyName(companyId);
 
   const rows = await prisma.$queryRaw<any[]>`
     SELECT
@@ -107,7 +111,7 @@ export async function sendInvoiceEmail(invoiceId: string, to: string): Promise<v
       c."taxId" AS "customerTaxId",
       json_agg(
         json_build_object(
-          'description', COALESCE(p.name, ii.description),
+          'description', p.name,
           'quantity', ii.quantity,
           'unitPrice', ii."unitPrice",
           'taxRate', ii."taxRate",
@@ -206,9 +210,9 @@ export async function sendInvoiceEmail(invoiceId: string, to: string): Promise<v
 
 // ── Budget email ───────────────────────────────────────────────────────────
 
-export async function sendBudgetEmail(budgetId: string, to: string): Promise<void> {
-  const { transporter, from } = await createTransporter();
-  const companyName = await getCompanyName();
+export async function sendBudgetEmail(budgetId: string, to: string, companyId: string): Promise<void> {
+  const { transporter, from } = await createTransporter(companyId);
+  const companyName = await getCompanyName(companyId);
 
   const rows = await prisma.$queryRaw<any[]>`
     SELECT
@@ -297,9 +301,9 @@ export async function sendBudgetEmail(budgetId: string, to: string): Promise<voi
 
 // ── Remito email ───────────────────────────────────────────────────────────
 
-export async function sendRemitoEmail(remitoId: string, to: string): Promise<void> {
-  const { transporter, from } = await createTransporter();
-  const companyName = await getCompanyName();
+export async function sendRemitoEmail(remitoId: string, to: string, companyId: string): Promise<void> {
+  const { transporter, from } = await createTransporter(companyId);
+  const companyName = await getCompanyName(companyId);
 
   const rows = await prisma.$queryRaw<any[]>`
     SELECT

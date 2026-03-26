@@ -19,9 +19,9 @@ export const afipService = {
     return response.data.data;
   },
 
-  async emitInvoice(invoiceId: string): Promise<Invoice> {
-    const response = await api.post<ApiResponse<Invoice>>(`/invoices/${invoiceId}/emit`);
-    return response.data.data;
+  async emitInvoice(invoiceId: string): Promise<{ invoice: Invoice; warnings: string | null }> {
+    const response = await api.post<ApiResponse<Invoice> & { warnings?: string }>(`/invoices/${invoiceId}/emit`);
+    return { invoice: response.data.data, warnings: response.data.warnings ?? null };
   },
 };
 

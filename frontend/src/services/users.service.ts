@@ -1,10 +1,12 @@
 import api from './api';
 
+type AssignableRole = 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK' | 'FINANCES' | 'PURCHASES';
+
 export interface UserDTO {
   id: string;
   name: string;
   username: string;
-  role: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+  role: AssignableRole;
   isActive: boolean;
   companyId: string | null;
   createdAt: string;
@@ -14,7 +16,7 @@ export interface CreateUserDTO {
   name: string;
   username: string;
   password: string;
-  role: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+  role: AssignableRole;
   companyId: string;
   email?: string;
 }
@@ -23,7 +25,7 @@ export interface UpdateUserDTO {
   name?: string;
   username?: string;
   email?: string;
-  role?: 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK';
+  role?: AssignableRole;
   isActive?: boolean;
 }
 

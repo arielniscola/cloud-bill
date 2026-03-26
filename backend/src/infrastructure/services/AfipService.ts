@@ -37,6 +37,8 @@ export interface EmitResult {
   caeExpiry: Date;
   afipCbtNum: number;
   afipPtVenta: number;
+  /** Observaciones y eventos del sistema devueltos por ARCA (puede ser null si no hay ninguno) */
+  observaciones: string | null;
 }
 
 interface TokenAuth {
@@ -211,19 +213,32 @@ export class AfipService {
     const fResult = caeRes?.FECAESolicitarResult;
     const det = fResult?.FeDetResp?.FECAEDetResponse;
 
-    // Surface any hard errors
+    // Surface hard errors (authentication/connection level)
     const errors = fResult?.Errors?.Err;
     if (errors) {
       const errList = Array.isArray(errors) ? errors : [errors];
-      throw new Error(errList.map((e: any) => `[${e.Code}] ${e.Msg}`).join('; '));
+      throw new Error(`ARCA - Error: ${errList.map((e: any) => `[${e.Code}] ${e.Msg}`).join('; ')}`);
     }
 
+    // Collect observations from the comprobante detail
+    const obsRaw = det?.Observaciones?.Obs;
+    const obsList: string[] = obsRaw
+      ? (Array.isArray(obsRaw) ? obsRaw : [obsRaw]).map((o: any) => `[${o.Code}] ${o.Msg}`)
+      : [];
+
+    // Collect system events (maintenance notices, etc.)
+    const evtRaw = fResult?.Events?.Evt;
+    const evtList: string[] = evtRaw
+      ? (Array.isArray(evtRaw) ? evtRaw : [evtRaw]).map((e: any) => `[EVT ${e.Code}] ${e.Msg}`)
+      : [];
+
+    const allObs = [...obsList, ...evtList];
+    const observaciones = allObs.length > 0 ? allObs.join(' | ') : null;
+
     if (!det?.CAE || det.Resultado !== 'A') {
-      const obs = det?.Observaciones?.Obs;
-      const obsList = obs ? (Array.isArray(obs) ? obs : [obs]) : [];
-      const obsMsg = obsList.map((o: any) => `[${o.Code}] ${o.Msg}`).join('; ');
+      const obsMsg = obsList.length > 0 ? ' ' + obsList.join('; ') : '';
       throw new Error(
-        `CAE rechazado por AFIP. Resultado: ${det?.Resultado ?? 'sin respuesta'}.${obsMsg ? ' ' + obsMsg : ''}`
+        `CAE rechazado por ARCA. Resultado: ${det?.Resultado ?? 'sin respuesta'}.${obsMsg}`
       );
     }
 
@@ -232,6 +247,7 @@ export class AfipService {
       caeExpiry: this.parseAfipDate(det.CAEFchVto),
       afipCbtNum: cbteNro,
       afipPtVenta: config.salePoint,
+      observaciones,
     };
   }
 

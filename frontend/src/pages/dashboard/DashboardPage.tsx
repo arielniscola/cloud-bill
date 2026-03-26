@@ -48,10 +48,10 @@ import { remindersService } from '../../services/reminders.service';
 import type { RemindersResult } from '../../services/reminders.service';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
-  INVOICE_STATUS_COLORS,
-  INVOICE_STATUSES,
   REMITO_STATUSES,
   REMITO_STATUS_COLORS,
+  ORDEN_PEDIDO_STATUSES,
+  ORDEN_PEDIDO_STATUS_COLORS,
 } from '../../utils/constants';
 
 const Skeleton = ({ className }: { className?: string }) => (
@@ -132,14 +132,14 @@ export default function DashboardPage() {
   // ── KPI financieros ──────────────────────────────────────────────────────
   const kpiCards = [
     {
-      title: `Ventas — ${monthLabel}`,
+      title: `Ventas (OP) — ${monthLabel}`,
       value: stats?.ventasMes?.total ?? 0,
-      subtitle: `${stats?.ventasMes?.count ?? 0} facturas emitidas`,
+      subtitle: `${stats?.ventasMes?.count ?? 0} órdenes de pedido`,
       icon: TrendingUp,
       color: 'text-emerald-600 dark:text-emerald-400',
       bg: 'bg-emerald-50 dark:bg-emerald-900/20',
       border: 'border-emerald-100 dark:border-emerald-900/30',
-      href: '/invoices',
+      href: '/orden-pedidos',
       isCurrency: true,
     },
     {
@@ -186,6 +186,28 @@ export default function DashboardPage() {
       iconBg: 'bg-blue-50 dark:bg-blue-900/20',
       iconColor: 'text-blue-500',
       href: '/customers',
+    },
+    {
+      title: 'OP pendientes',
+      value: stats?.opPendientes?.count ?? 0,
+      subtitle: stats?.opPendientes?.total
+        ? formatCurrency(stats.opPendientes.total)
+        : undefined,
+      icon: ShoppingBag,
+      iconBg: 'bg-violet-50 dark:bg-violet-900/20',
+      iconColor: 'text-violet-500',
+      href: '/orden-pedidos?status=CONFIRMED',
+    },
+    {
+      title: 'OP convertidas',
+      value: stats?.opConvertidas?.count ?? 0,
+      subtitle: stats?.opConvertidas?.total
+        ? formatCurrency(stats.opConvertidas.total)
+        : undefined,
+      icon: CheckCircle,
+      iconBg: 'bg-purple-50 dark:bg-purple-900/20',
+      iconColor: 'text-purple-500',
+      href: '/orden-pedidos?status=CONVERTED',
     },
     {
       title: 'Pendientes de cobro',
@@ -349,7 +371,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Row 2: Contadores operacionales ────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
         {counterCards.map((card) => (
           <Link key={card.title} to={card.href}>
             <Card className="hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 group">
@@ -375,14 +397,14 @@ export default function DashboardPage() {
       {/* ── Row 3: Paneles principales ──────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
 
-        {/* Facturas recientes */}
+        {/* Órdenes de Pedido recientes */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Facturas Recientes</h3>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Últimas emitidas / pagadas</p>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Órdenes de Pedido</h3>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Últimas OP activas</p>
             </div>
-            <Link to="/invoices" className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
+            <Link to="/orden-pedidos" className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
               Ver todas <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -395,28 +417,33 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
-          ) : !stats?.recentInvoices.length ? (
+          ) : !stats?.recentOrdenPedidos?.length ? (
             <div className="py-8 text-center">
-              <FileText className="w-8 h-8 text-gray-200 dark:text-slate-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-400 dark:text-slate-500">Sin facturas recientes</p>
+              <ShoppingBag className="w-8 h-8 text-gray-200 dark:text-slate-600 mx-auto mb-2" />
+              <p className="text-sm text-gray-400 dark:text-slate-500">Sin órdenes de pedido recientes</p>
             </div>
           ) : (
             <div className="space-y-0.5">
-              {stats.recentInvoices.map((inv) => (
+              {stats.recentOrdenPedidos.map((op) => (
                 <Link
-                  key={inv.id}
-                  to={`/invoices/${inv.id}`}
+                  key={op.id}
+                  to={`/orden-pedidos/${op.id}`}
                   className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors group"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{inv.customer.name}</p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500">{inv.number} · {formatDate(inv.date)}</p>
+                    <p className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{op.customer.name}</p>
+                    <p className="text-xs text-gray-400 dark:text-slate-500">
+                      {op.number} · {formatDate(op.date)}
+                      {op.status === 'CONVERTED' && op.invoiceNumber && (
+                        <span className="ml-1 text-purple-500">→ {op.invoiceNumber}</span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${INVOICE_STATUS_COLORS[inv.status] ?? 'bg-gray-100 text-gray-800'}`}>
-                      {INVOICE_STATUSES[inv.status as keyof typeof INVOICE_STATUSES] ?? inv.status}
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ORDEN_PEDIDO_STATUS_COLORS[op.status] ?? 'bg-gray-100 text-gray-800'}`}>
+                      {ORDEN_PEDIDO_STATUSES[op.status as keyof typeof ORDEN_PEDIDO_STATUSES] ?? op.status}
                     </span>
-                    <span className="text-xs font-semibold text-gray-700 dark:text-slate-300">{formatCurrency(inv.total)}</span>
+                    <span className="text-xs font-semibold text-gray-700 dark:text-slate-300">{formatCurrency(op.total)}</span>
                   </div>
                 </Link>
               ))}
@@ -759,7 +786,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Rentabilidad bruta — últimos 12 meses</h3>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Ganancia = Ventas (facturas) − Compras · Margen sobre ventas</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Ganancia = Ventas (OP) − Compras · Margen sobre ventas</p>
             </div>
             {charts.length > 0 && (() => {
               const last = charts[charts.length - 1];

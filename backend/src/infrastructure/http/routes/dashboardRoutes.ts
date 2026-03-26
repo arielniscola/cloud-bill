@@ -6,7 +6,7 @@ const router = Router();
 const dashboardController = new DashboardController();
 
 router.use(authMiddleware);
-router.use(requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'));
+router.use(requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK', 'FINANCES', 'PURCHASES'));
 
 router.get('/stats', dashboardController.getStats);
 router.get('/charts', dashboardController.getCharts);

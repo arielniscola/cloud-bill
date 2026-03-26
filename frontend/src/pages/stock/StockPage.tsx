@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Download, Sliders, ArrowLeftRight, Search,
-  Plus, Minus, AlertTriangle, Package, X, RefreshCw,
+  Plus, Minus, AlertTriangle, Package, X, RefreshCw, Warehouse as WarehouseIcon,
 } from 'lucide-react';
 import { Badge, Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { stockService, warehousesService } from '../../services';
 import { formatNumber, formatCurrency } from '../../utils/formatters';
 import type { Stock, Warehouse } from '../../types';
+import { usePermissions } from '../../hooks/usePermissions';
 
 // ── Types ──────────────────────────────────────────────────────────
 type Tab = 'list' | 'by_warehouse';
@@ -61,6 +62,7 @@ function SkeletonRow({ cols = 10 }: { cols?: number }) {
 // ── Main component ─────────────────────────────────────────────────
 export default function StockPage() {
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const [activeTab, setActiveTab] = useState<Tab>('list');
 
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -104,9 +106,15 @@ export default function StockPage() {
         if (data.length > 0) {
           const def = data.find((w: Warehouse) => w.isDefault) ?? data[0];
           setSelectedWarehouse(def.id);
+        } else {
+          // No warehouses — stop loading so the empty state renders
+          setIsLoading(false);
+          setIsFirstLoad(false);
         }
       } catch {
         toast.error('Error al cargar almacenes');
+        setIsLoading(false);
+        setIsFirstLoad(false);
       }
     })();
   }, []);
@@ -457,6 +465,34 @@ export default function StockPage() {
       )}
 
       {/* ── Tab bar ── */}
+      {/* ── Empty state: no warehouses ── */}
+      {!isFirstLoad && warehouses.length === 0 && (
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center py-16 text-center px-6">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center mb-4">
+            <WarehouseIcon className="w-7 h-7 text-indigo-400 dark:text-indigo-500" />
+          </div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">
+            No hay depósitos configurados
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-slate-400 max-w-xs mb-6">
+            Para gestionar el inventario necesitás al menos un depósito. Creá uno para empezar a registrar stock.
+          </p>
+          {canWrite && (
+            <Button onClick={() => navigate('/warehouses/new')}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              Crear depósito
+            </Button>
+          )}
+          {!canWrite && (
+            <p className="text-xs text-gray-400 dark:text-slate-500">
+              Pedile a un administrador que cree un depósito.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Tabs + content (only when there are warehouses) ── */}
+      {warehouses.length > 0 && (<>
       <div className="flex gap-1 bg-gray-100 dark:bg-slate-700/60 p-1 rounded-xl w-fit">
         {([['list', 'Lista'], ['by_warehouse', 'Por depósito']] as [Tab, string][]).map(([tab, label]) => (
           <button
@@ -931,6 +967,8 @@ export default function StockPage() {
           )}
         </div>
       )}
+
+      </>)}
 
       {/* ── Modal: ajuste rápido ── */}
       <Modal isOpen={!!adjustStock} onClose={() => setAdjustStock(null)} title="Ajustar stock" size="sm">

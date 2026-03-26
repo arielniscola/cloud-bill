@@ -286,6 +286,7 @@ export class OrdenPedidoController {
         type: invoiceType,
         customerId: op.customerId,
         userId: req.user!.userId,
+        companyId: req.companyId,
         dueDate: undefined,
         notes: op.notes ?? undefined,
         currency: op.currency as any,

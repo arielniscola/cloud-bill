@@ -331,7 +331,7 @@ export default function ProductsPage() {
       key: 'margin',
       header: 'Margen',
       render: (p) => {
-        const m = margin(p.cost, p.price);
+        const m = margin(Number(p.cost), Number(p.price));
         return m !== null
           ? <span className={`text-xs font-semibold ${marginColor(m)}`}>{m.toFixed(1)}%</span>
           : <span className="text-gray-300 dark:text-slate-600 text-xs">—</span>;
