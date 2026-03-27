@@ -105,19 +105,29 @@ export class OrdenPedidoController {
       const stockBehavior: string = data.stockBehavior ?? 'DISCOUNT';
       const stockRepo = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepo = container.resolve<IWarehouseRepository>('WarehouseRepository');
-      const defaultWarehouse = await warehouseRepo.findDefault();
-      if (defaultWarehouse) {
-        for (const item of op.items) {
-          if (!item.productId) continue;
+      const itemsWithProduct = op.items.filter((item) => item.productId);
+      if (itemsWithProduct.length > 0) {
+        let stockWarehouse = null;
+        if ((data as any).warehouseId) {
+          stockWarehouse = await warehouseRepo.findById((data as any).warehouseId);
+          if (!stockWarehouse) throw new AppError('Almacén seleccionado no encontrado', 400);
+        } else {
+          stockWarehouse = await warehouseRepo.findDefault(req.companyId);
+        }
+        if (!stockWarehouse) {
+          throw new AppError('No se encontró un almacén por defecto. Seleccioná un almacén para registrar el movimiento de stock.', 400);
+        }
+        const defaultWarehouse = stockWarehouse;
+        for (const item of itemsWithProduct) {
           if (stockBehavior === 'RESERVE') {
             await prisma.stock.upsert({
-              where: { productId_warehouseId: { productId: item.productId, warehouseId: defaultWarehouse.id } },
+              where: { productId_warehouseId: { productId: item.productId!, warehouseId: defaultWarehouse.id } },
               update: { reservedQuantity: { increment: item.quantity } },
-              create: { productId: item.productId, warehouseId: defaultWarehouse.id, quantity: 0, reservedQuantity: item.quantity },
+              create: { productId: item.productId!, warehouseId: defaultWarehouse.id, quantity: 0, reservedQuantity: item.quantity },
             });
           } else {
             await stockRepo.addMovement({
-              productId: item.productId,
+              productId: item.productId!,
               warehouseId: defaultWarehouse.id,
               type: 'SALE',
               quantity: Number(item.quantity),
@@ -298,6 +308,7 @@ export class OrdenPedidoController {
           productId: item.productId!,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
+          discountPct: Number(item.discountPct ?? 0),
           taxRate: Number(item.taxRate),
         })),
       } as any);

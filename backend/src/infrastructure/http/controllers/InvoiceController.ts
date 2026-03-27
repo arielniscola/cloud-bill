@@ -13,6 +13,7 @@ import { IReciboRepository } from '../../../domain/repositories/IReciboRepositor
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { afipService } from '../../services/AfipService';
 import { sendInvoiceEmail } from '../../services/EmailService';
+import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
@@ -75,7 +76,7 @@ export class InvoiceController {
       // Update stock for sales invoices
       if (req.body.type.startsWith('FACTURA')) {
         const stockBehavior: string = req.body.stockBehavior ?? 'DISCOUNT';
-        const defaultWarehouse = await warehouseRepository.findDefault();
+        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
         if (defaultWarehouse) {
           if (stockBehavior === 'RESERVE') {
             // Reserve stock (increment reservedQuantity)
@@ -453,8 +454,9 @@ export class InvoiceController {
       const invoice = await invoiceRepo.findById(req.params.id);
       if (!invoice) throw new NotFoundError('Invoice');
 
-      if (invoice.status !== 'DRAFT' && invoice.status !== 'ISSUED') {
-        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador o Emitida', 400);
+      const emittableStatuses = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'];
+      if (!emittableStatuses.includes(invoice.status)) {
+        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador, Emitida o Pagada', 400);
       }
 
       if (invoice.cae) {
@@ -466,7 +468,16 @@ export class InvoiceController {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }
 
-      const result = await afipService.emitInvoice(invoice as any, config);
+      let result;
+      try {
+        result = await afipService.emitInvoice(invoice as any, config);
+      } catch (afipError) {
+        await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
+        throw afipError;
+      }
+
+      // Preserve PAID/PARTIALLY_PAID status — only promote DRAFT to ISSUED
+      const newStatus = invoice.status === 'DRAFT' ? 'ISSUED' : invoice.status;
 
       const updated = await invoiceRepo.update(req.params.id, {
         cae: result.cae,
@@ -474,7 +485,7 @@ export class InvoiceController {
         afipCbtNum: result.afipCbtNum,
         afipPtVenta: result.afipPtVenta,
         afipObservaciones: result.observaciones,
-        status: 'ISSUED',
+        status: newStatus,
       } as any);
 
       await activityLogRepo.create({
@@ -563,4 +574,20 @@ export class InvoiceController {
       next(error);
     }
   };
+
+  async getAfipErrors(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const errors = await prisma.$queryRaw<
+        { id: string; errorMessage: string; errorType: string | null; rawResponse: string | null; createdAt: Date }[]
+      >`
+        SELECT id, "errorMessage", "errorType", "rawResponse", "createdAt"
+        FROM "invoice_afip_errors"
+        WHERE "invoiceId" = ${req.params.id}
+        ORDER BY "createdAt" DESC
+      `;
+      res.json({ status: 'success', data: errors });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

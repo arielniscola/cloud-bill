@@ -6,14 +6,14 @@ export class SearchController {
     try {
       const q = ((req.query.q as string) ?? '').trim();
       if (!q || q.length < 2) {
-        res.json({ status: 'success', data: { invoices: [], customers: [], products: [], budgets: [] } });
+        res.json({ status: 'success', data: { invoices: [], customers: [], products: [], budgets: [], ordenPedidos: [] } });
         return;
       }
 
       const companyId = req.companyId;
       const limit = 5;
 
-      const [invoices, customers, products, budgets] = await Promise.all([
+      const [invoices, customers, products, budgets, ordenPedidos] = await Promise.all([
         prisma.invoice.findMany({
           where: {
             ...(companyId ? { companyId } : {}),
@@ -84,6 +84,27 @@ export class SearchController {
           orderBy: { date: 'desc' },
           take: limit,
         }),
+
+        prisma.ordenPedido.findMany({
+          where: {
+            ...(companyId ? { companyId } : {}),
+            status: { not: 'CANCELLED' },
+            OR: [
+              { number: { contains: q, mode: 'insensitive' } },
+              { customer: { name: { contains: q, mode: 'insensitive' } } },
+            ],
+          },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            total: true,
+            date: true,
+            customer: { select: { id: true, name: true } },
+          },
+          orderBy: { date: 'desc' },
+          take: limit,
+        }),
       ]);
 
       res.json({
@@ -93,6 +114,7 @@ export class SearchController {
           customers,
           products: products.map((p) => ({ ...p, price: Number(p.price) })),
           budgets: budgets.map((b) => ({ ...b, total: Number(b.total) })),
+          ordenPedidos: ordenPedidos.map((op) => ({ ...op, total: Number(op.total) })),
         },
       });
     } catch (error) {

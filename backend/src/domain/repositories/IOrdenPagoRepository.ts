@@ -15,6 +15,7 @@ export interface IOrdenPagoRepository {
   findById(id: string): Promise<OrdenPagoWithRelations | null>;
   findAll(pagination: PaginationParams, filters?: OrdenPagoFilters): Promise<PaginatedResult<OrdenPagoWithRelations>>;
   create(data: CreateOrdenPagoInput): Promise<OrdenPagoWithRelations>;
+  pay(id: string): Promise<OrdenPagoWithRelations>;
   cancel(id: string): Promise<OrdenPago>;
   getNextNumber(): Promise<string>;
 

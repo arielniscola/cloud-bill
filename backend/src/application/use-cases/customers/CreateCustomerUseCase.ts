@@ -14,7 +14,7 @@ export class CreateCustomerUseCase {
     private currentAccountRepository: ICurrentAccountRepository
   ) {}
 
-  async execute(data: CreateCustomerDTO): Promise<Customer> {
+  async execute(data: CreateCustomerDTO & { companyId?: string }): Promise<Customer> {
     if (data.taxId) {
       const existingCustomer = await this.customerRepository.findByTaxId(data.taxId);
       if (existingCustomer) {
@@ -27,6 +27,7 @@ export class CreateCustomerUseCase {
       taxId: data.taxId ?? null,
       taxCondition: data.taxCondition,
       saleCondition: data.saleCondition ?? 'CONTADO',
+      companyId: data.companyId,
       address: data.address ?? null,
       city: data.city ?? null,
       province: data.province ?? null,
@@ -35,7 +36,7 @@ export class CreateCustomerUseCase {
       email: data.email ?? null,
       notes: data.notes ?? null,
       isActive: data.isActive,
-    });
+    } as any);
 
     await this.currentAccountRepository.createForCustomer(customer.id, 'ARS');
 

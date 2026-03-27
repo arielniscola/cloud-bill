@@ -12,7 +12,21 @@ export async function computeDeliveryStatusBatch(
 ): Promise<Record<string, DeliveryStatus>> {
   if (sourceIds.length === 0) return {};
 
-  const [sourceItemRows, remitoItemRows] = await Promise.all([
+  // For invoices, also fetch ordenPedidoId to include OP-linked remitos
+  const ordenPedidoByInvoice: Record<string, string> = {};
+  if (sourceField === 'invoiceId') {
+    const invoices = await prisma.invoice.findMany({
+      where: { id: { in: sourceIds } } as any,
+      select: { id: true, ordenPedidoId: true } as any,
+    });
+    for (const inv of invoices as any[]) {
+      if (inv.ordenPedidoId) ordenPedidoByInvoice[inv.id] = inv.ordenPedidoId;
+    }
+  }
+
+  const opIds = Object.values(ordenPedidoByInvoice);
+
+  const [sourceItemRows, remitoItemRows, opRemitoItemRows] = await Promise.all([
     sourceField === 'invoiceId'
       ? prisma.invoiceItem.findMany({
           where: { invoiceId: { in: sourceIds } },
@@ -32,6 +46,18 @@ export async function computeDeliveryStatusBatch(
         remito: { select: { invoiceId: true, budgetId: true } },
       },
     }),
+    opIds.length > 0
+      ? prisma.remitoItem.findMany({
+          where: {
+            remito: { ordenPedidoId: { in: opIds }, status: { not: 'CANCELLED' } } as any,
+          },
+          select: {
+            productId: true,
+            deliveredQuantity: true,
+            remito: { select: { ordenPedidoId: true } } as any,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Group source items by sourceId
@@ -42,10 +68,25 @@ export async function computeDeliveryStatusBatch(
     itemsBySource[sid].push({ productId: row.productId as string, quantity: Number(row.quantity) });
   }
 
+  // Build reverse map: ordenPedidoId → invoiceId
+  const invoiceByOp: Record<string, string> = {};
+  for (const [invId, opId] of Object.entries(ordenPedidoByInvoice)) {
+    invoiceByOp[opId] = invId;
+  }
+
   // Group delivered quantities by sourceId + productId
   const deliveredBySource: Record<string, Record<string, number>> = {};
   for (const ri of remitoItemRows) {
     const sid = (ri.remito as any)[sourceField] as string;
+    if (!sid) continue;
+    if (!deliveredBySource[sid]) deliveredBySource[sid] = {};
+    deliveredBySource[sid][ri.productId] =
+      (deliveredBySource[sid][ri.productId] || 0) + Number(ri.deliveredQuantity);
+  }
+  // Merge OP remito items into their corresponding invoice
+  for (const ri of opRemitoItemRows as any[]) {
+    const opId = ri.remito?.ordenPedidoId as string;
+    const sid = invoiceByOp[opId];
     if (!sid) continue;
     if (!deliveredBySource[sid]) deliveredBySource[sid] = {};
     deliveredBySource[sid][ri.productId] =
@@ -94,13 +135,28 @@ export async function computeDeliveryStatus(
   const deliverableItems = sourceItems.filter((i) => !!i.productId);
   if (deliverableItems.length === 0) return 'NOT_DELIVERED';
 
+  // For invoices converted from an OP, also check remitos linked to that OP
+  let ordenPedidoId: string | null = null;
+  if (sourceField === 'invoiceId') {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: sourceId },
+      select: { ordenPedidoId: true } as any,
+    });
+    ordenPedidoId = (invoice as any)?.ordenPedidoId ?? null;
+  }
+
   // Aggregate deliveredQuantity from all non-cancelled remito items
+  // (linked directly to the invoice/budget OR to the originating OP)
+  const whereConditions: any[] = [
+    { [sourceField]: sourceId, status: { not: 'CANCELLED' } },
+  ];
+  if (ordenPedidoId) {
+    whereConditions.push({ ordenPedidoId, status: { not: 'CANCELLED' } });
+  }
+
   const remitoItems = await prisma.remitoItem.findMany({
     where: {
-      remito: {
-        [sourceField]: sourceId,
-        status: { not: 'CANCELLED' },
-      },
+      remito: { OR: whereConditions },
     },
     select: { productId: true, deliveredQuantity: true },
   });

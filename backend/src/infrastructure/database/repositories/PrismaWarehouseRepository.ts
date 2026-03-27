@@ -27,9 +27,9 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
     });
   }
 
-  async findDefault(): Promise<Warehouse | null> {
+  async findDefault(companyId?: string): Promise<Warehouse | null> {
     return this.prisma.warehouse.findFirst({
-      where: { isDefault: true, isActive: true },
+      where: { isDefault: true, isActive: true, ...(companyId ? { companyId } as any : {}) },
     });
   }
 

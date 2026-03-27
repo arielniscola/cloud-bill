@@ -23,6 +23,7 @@ export const createOrdenPedidoSchema = z.object({
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   cashRegisterId: z.string().uuid().optional().nullable(),
   invoiceCashRegisterId: z.string().uuid().optional().nullable(),
+  warehouseId: z.string().uuid().optional().nullable(),
   items: z.array(ordenPedidoItemSchema).min(1, 'Agrega al menos un item'),
 });
 

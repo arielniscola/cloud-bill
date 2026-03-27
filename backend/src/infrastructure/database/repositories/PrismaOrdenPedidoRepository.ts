@@ -106,12 +106,57 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
   async update(id: string, data: UpdateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
     const { items, ...rest } = data;
 
+    // Build SET clauses dynamically to only update provided fields
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    // col: SQL column expression (with cast if needed)
+    const fieldMap: Record<string, string> = {
+      customerId:           '"customerId"',
+      userId:               '"userId"',
+      dueDate:              '"dueDate"',
+      currency:             '"currency"',
+      exchangeRate:         '"exchangeRate"',
+      notes:                '"notes"',
+      paymentTerms:         '"paymentTerms"',
+      saleCondition:        '"saleCondition"',
+      stockBehavior:        '"stockBehavior"',
+      warehouseId:          '"warehouseId"',
+      cashRegisterId:       '"cashRegisterId"',
+      invoiceCashRegisterId:'"invoiceCashRegisterId"',
+      subtotal:             '"subtotal"',
+      taxAmount:            '"taxAmount"',
+      total:                '"total"',
+      status:               '"status"',
+      invoiceId:            '"invoiceId"',
+    };
+
+    // Enum columns that need an explicit PostgreSQL cast
+    const enumCasts: Record<string, string> = {
+      currency: '"Currency"',
+    };
+
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if (key in rest) {
+        const cast = enumCasts[key] ? `::${enumCasts[key]}` : '';
+        fields.push(`${col} = $${fields.length + 1}${cast}`);
+        values.push((rest as any)[key] ?? null);
+      }
+    }
+    fields.push(`"updatedAt" = NOW()`);
+
+    if (fields.length > 1) {
+      const setClause = fields.join(', ');
+      values.push(id);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "orden_pedidos" SET ${setClause} WHERE id = $${values.length}`,
+        ...values
+      );
+    }
+
     if (items) {
-      await (prisma as any).ordenPedidoItem.deleteMany({ where: { ordenPedidoId: id } });
-      await (prisma as any).ordenPedido.update({ where: { id }, data: rest });
+      await prisma.$executeRaw`DELETE FROM "orden_pedido_items" WHERE "ordenPedidoId" = ${id}`;
       await this._insertItemsRaw(id, items);
-    } else {
-      await (prisma as any).ordenPedido.update({ where: { id }, data: rest });
     }
 
     return this.findById(id) as Promise<OrdenPedidoWithItems>;

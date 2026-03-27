@@ -11,7 +11,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 export interface IWarehouseRepository {
   findById(id: string): Promise<Warehouse | null>;
   findAll(companyId?: string): Promise<Warehouse[]>;
-  findDefault(): Promise<Warehouse | null>;
+  findDefault(companyId?: string): Promise<Warehouse | null>;
   create(data: CreateWarehouseInput): Promise<Warehouse>;
   update(id: string, data: UpdateWarehouseInput): Promise<Warehouse>;
   delete(id: string): Promise<void>;

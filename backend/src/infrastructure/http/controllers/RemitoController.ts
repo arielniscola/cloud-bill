@@ -18,11 +18,17 @@ export class RemitoController {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
       // Validate source document items if provided and determine stockBehavior
-      const { invoiceId, budgetId } = req.body;
+      const { invoiceId, budgetId, ordenPedidoId: linkedOrdenPedidoId } = req.body;
       let stockBehaviorForRemito: 'DISCOUNT' | 'RESERVE' = 'DISCOUNT';
       let isLinked = false;
 
-      if (invoiceId) {
+      if (linkedOrdenPedidoId) {
+        // Remito linked to an OP: stock was already handled at OP creation
+        const op = await (prisma as any).ordenPedido.findUnique({ where: { id: linkedOrdenPedidoId } });
+        if (!op) throw new AppError('Orden de pedido no encontrada', 404);
+        stockBehaviorForRemito = (op.stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        isLinked = true;
+      } else if (invoiceId) {
         const invoice = await prisma.invoice.findUnique({
           where: { id: invoiceId },
           include: { items: true },
@@ -75,13 +81,14 @@ export class RemitoController {
         notes: req.body.notes,
         invoiceId: invoiceId || undefined,
         budgetId: budgetId || undefined,
+        ordenPedidoId: linkedOrdenPedidoId || undefined,
         companyId: req.companyId,
         items: req.body.items,
       } as any);
 
       // Stock movements only for standalone remitos (linked docs handled stock at creation)
       if (!isLinked) {
-        const defaultWarehouse = await warehouseRepository.findDefault();
+        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
         if (!defaultWarehouse) {
           throw new AppError('No se encontró un almacén por defecto', 400);
         }
@@ -166,7 +173,7 @@ export class RemitoController {
         throw new AppError('Solo se pueden entregar remitos pendientes o parcialmente entregados', 400);
       }
 
-      const defaultWarehouse = await warehouseRepository.findDefault();
+      const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
       if (!defaultWarehouse) {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }
@@ -270,7 +277,7 @@ export class RemitoController {
         throw new AppError('El remito ya está cancelado', 400);
       }
 
-      const defaultWarehouse = await warehouseRepository.findDefault();
+      const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
       if (!defaultWarehouse) {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }

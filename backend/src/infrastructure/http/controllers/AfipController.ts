@@ -5,6 +5,7 @@ import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceReposit
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { afipService } from '../../services/AfipService';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
+import { saveAfipError } from '../../../shared/utils/saveAfipError';
 
 export class AfipController {
   async getConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -119,7 +120,13 @@ export class AfipController {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }
 
-      const result = await afipService.emitInvoice(invoice as any, config);
+      let result;
+      try {
+        result = await afipService.emitInvoice(invoice as any, config);
+      } catch (afipError) {
+        await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
+        throw afipError;
+      }
 
       const updated = await invoiceRepo.update(req.params.id, {
         cae: result.cae,

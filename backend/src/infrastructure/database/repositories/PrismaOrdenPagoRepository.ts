@@ -199,11 +199,10 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       )
     `;
 
-    // Process each item: resolve invoice → purchase, mark invoice PAID, update purchase status
+    // Insert items (no financial movements yet — those happen on pay())
     for (const item of data.items) {
-      // Fetch invoice to get its purchaseId
-      const invRows = await prisma.$queryRaw<{ id: string; purchaseId: string; amount: any }[]>`
-        SELECT id, "purchaseId", amount FROM "purchase_invoices" WHERE id = ${item.purchaseInvoiceId}
+      const invRows = await prisma.$queryRaw<{ id: string; purchaseId: string }[]>`
+        SELECT id, "purchaseId" FROM "purchase_invoices" WHERE id = ${item.purchaseInvoiceId}
       `;
       if (!invRows[0]) throw new Error(`Purchase invoice ${item.purchaseInvoiceId} not found`);
       const invoice = invRows[0];
@@ -213,35 +212,62 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         INSERT INTO "orden_pago_items" ("id", "ordenPagoId", "purchaseInvoiceId", "purchaseId", "amount")
         VALUES (${itemId[0].id}, ${opId}, ${item.purchaseInvoiceId}, ${invoice.purchaseId}, ${item.amount})
       `;
-
-      // Mark the invoice as PAID
-      await prisma.$executeRaw`
-        UPDATE "purchase_invoices" SET status = 'PAID', "updatedAt" = NOW()
-        WHERE id = ${item.purchaseInvoiceId}
-      `;
-
-      // Recalculate purchase paymentStatus from its invoices
-      await this._recalcPurchasePaymentStatus(invoice.purchaseId);
     }
 
-    // Create supplier account movement (CREDIT — we paid)
-    const totalAmount = data.items.reduce((s, i) => s + i.amount, 0);
-    await this.createSupplierMovement({
-      supplierId: data.supplierId,
-      ordenPagoId: opId,
-      type: 'CREDIT',
-      amount: totalAmount,
-      currency,
-      description: `Orden de Pago ${number}`,
-      companyId,
-    });
-
     return this.findById(opId) as Promise<OrdenPagoWithRelations>;
+  }
+
+  async pay(id: string): Promise<OrdenPagoWithRelations> {
+    const op = await this.findById(id);
+    if (!op) throw new Error('OrdenPago not found');
+
+    // Mark each invoice as PAID and recalculate purchase payment status (skip if already PAID)
+    for (const item of op.items) {
+      if (item.purchaseInvoiceId) {
+        await prisma.$executeRaw`
+          UPDATE "purchase_invoices" SET status = 'PAID', "updatedAt" = NOW()
+          WHERE id = ${item.purchaseInvoiceId} AND status != 'PAID'
+        `;
+        await this._recalcPurchasePaymentStatus(item.purchaseId);
+      }
+    }
+
+    // Create supplier account movement only if one doesn't exist yet for this OP
+    const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
+    `;
+    if (existingMovement.length === 0) {
+      const totalAmount = Number(op.amount);
+      await this.createSupplierMovement({
+        supplierId: op.supplierId,
+        ordenPagoId: id,
+        type: 'CREDIT',
+        amount: totalAmount,
+        currency: op.currency,
+        description: `Orden de Pago ${op.number}`,
+        companyId: op.companyId,
+      });
+    }
+
+    await prisma.$executeRaw`
+      UPDATE "orden_pagos" SET status = 'PAID', "updatedAt" = NOW() WHERE id = ${id}
+    `;
+
+    return this.findById(id) as Promise<OrdenPagoWithRelations>;
   }
 
   async cancel(id: string): Promise<OrdenPago> {
     const op = await this.findById(id);
     if (!op) throw new Error('OrdenPago not found');
+
+    // Only revert financial movements if the OP was already PAID
+    if (op.status !== 'PAID') {
+      await prisma.$executeRaw`
+        UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
+      `;
+      const rows = await prisma.$queryRaw<RawOrdenPago[]>`SELECT * FROM "orden_pagos" WHERE id = ${id}`;
+      return rows[0] as any as OrdenPago;
+    }
 
     // Revert each invoice to PENDING and recalculate purchase status
     for (const item of op.items) {

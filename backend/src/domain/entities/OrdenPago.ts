@@ -2,7 +2,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { Currency } from '../../shared/types';
 import { PaymentMethod } from './Recibo';
 
-export type OrdenPagoStatus = 'EMITTED' | 'CANCELLED';
+export type OrdenPagoStatus = 'EMITTED' | 'PAID' | 'CANCELLED';
 
 export interface OrdenPagoItem {
   id: string;
