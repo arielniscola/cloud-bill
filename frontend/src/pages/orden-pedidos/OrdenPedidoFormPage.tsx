@@ -10,8 +10,8 @@ import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService } from '../../services';
-import type { Budget, AppSettings } from '../../types';
+import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService, warehousesService } from '../../services';
+import type { Budget, AppSettings, Warehouse, OrdenPedido } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import type { Customer, Product, Currency } from '../../types';
@@ -64,10 +64,14 @@ export default function OrdenPedidoFormPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
-  const fromBudget = (location.state as { fromBudget?: Budget } | null)?.fromBudget ?? null;
+  const fromBudget = (location.state as { fromBudget?: Budget; fromOrdenPedido?: OrdenPedido } | null)?.fromBudget ?? null;
+  const fromOrdenPedido = (location.state as { fromOrdenPedido?: OrdenPedido } | null)?.fromOrdenPedido ?? null;
   const isEditing = !!id;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [resolvedWarehouseId, setResolvedWarehouseId] = useState<string | null>(null);
+  const [hasDefaultWarehouse, setHasDefaultWarehouse] = useState<boolean | null>(null); // null = loading
   const [priceSettings, setPriceSettings] = useState<Pick<AppSettings, 'stalePriceWarnDays1' | 'stalePriceWarnDays2'>>({ stalePriceWarnDays1: 10, stalePriceWarnDays2: 20 });
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
@@ -145,10 +149,11 @@ export default function OrdenPedidoFormPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [customersData, productsData, settingsData] = await Promise.all([
+        const [customersData, productsData, settingsData, warehousesData] = await Promise.all([
           customersService.getAll({ limit: 1000, isActive: true }),
           productsService.getAll({ limit: 1000 }),
           appSettingsService.get().catch(() => null),
+          warehousesService.getAll().catch(() => [] as Warehouse[]),
         ]);
         setCustomers(customersData.data);
         setProducts(productsData.data);
@@ -157,6 +162,20 @@ export default function OrdenPedidoFormPage() {
             stalePriceWarnDays1: settingsData.stalePriceWarnDays1 ?? 10,
             stalePriceWarnDays2: settingsData.stalePriceWarnDays2 ?? 20,
           });
+        }
+        const activeWarehouses = warehousesData.filter((w) => w.isActive);
+        setWarehouses(activeWarehouses);
+        const defWh = activeWarehouses.find((w) => w.isDefault);
+        if (defWh) {
+          setHasDefaultWarehouse(true);
+          setResolvedWarehouseId(defWh.id);
+        } else if (activeWarehouses.length === 1) {
+          // Single warehouse: auto-select silently
+          setHasDefaultWarehouse(true);
+          setResolvedWarehouseId(activeWarehouses[0].id);
+        } else {
+          setHasDefaultWarehouse(false);
+          setResolvedWarehouseId(null);
         }
 
         // Pre-fill from budget if navigated from a presupuesto
@@ -169,6 +188,26 @@ export default function OrdenPedidoFormPage() {
             stockBehavior: 'DISCOUNT',
             currency: fromBudget.currency,
             items: fromBudget.items.map((item) => ({
+              productId: item.productId,
+              description: item.description,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              discountPct: Number(item.discountPct) || 0,
+              taxRate: Number(item.taxRate),
+            })),
+          });
+        }
+
+        // Pre-fill from existing OP if duplicating
+        if (fromOrdenPedido && !isEditing) {
+          reset({
+            customerId: fromOrdenPedido.customerId,
+            notes: fromOrdenPedido.notes,
+            paymentTerms: fromOrdenPedido.paymentTerms,
+            saleCondition: (fromOrdenPedido as any).saleCondition ?? 'CONTADO',
+            stockBehavior: (fromOrdenPedido as any).stockBehavior ?? 'DISCOUNT',
+            currency: fromOrdenPedido.currency,
+            items: fromOrdenPedido.items.map((item) => ({
               productId: item.productId,
               description: item.description,
               quantity: Number(item.quantity),
@@ -325,6 +364,13 @@ export default function OrdenPedidoFormPage() {
       }
     }
 
+    // Validate warehouse when DISCOUNT mode and items with product
+    const hasItemsWithProduct = data.items.some((i) => i.productId);
+    if (data.stockBehavior === 'DISCOUNT' && hasItemsWithProduct && !resolvedWarehouseId) {
+      toast.error('Seleccioná un almacén para descontar el stock');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const discountPct = discountType === '%'
@@ -339,6 +385,7 @@ export default function OrdenPedidoFormPage() {
         stockBehavior: data.stockBehavior,
         currency: data.currency,
         exchangeRate: 1,
+        warehouseId: resolvedWarehouseId,
         items: data.items.map((item) => buildItemDTO(item, discountPct)),
       };
       if (isEditing) {
@@ -365,7 +412,15 @@ export default function OrdenPedidoFormPage() {
 
   if (isFetching) return (
     <div>
-      <PageHeader title={isEditing ? 'Editar Orden de Pedido' : fromBudget ? `Nueva Orden de Pedido (desde ${fromBudget.number})` : 'Nueva Orden de Pedido'} backTo={isEditing ? `/orden-pedidos/${id}` : '/orden-pedidos'} />
+      <PageHeader
+        title={
+          isEditing ? 'Editar Orden de Pedido'
+          : fromBudget ? `Nueva Orden de Pedido (desde ${fromBudget.number})`
+          : fromOrdenPedido ? `Nueva Orden de Pedido (desde ${fromOrdenPedido.number})`
+          : 'Nueva Orden de Pedido'
+        }
+        backTo={isEditing ? `/orden-pedidos/${id}` : '/orden-pedidos'}
+      />
       <SkeletonForm />
     </div>
   );
@@ -671,6 +726,16 @@ export default function OrdenPedidoFormPage() {
                   <span title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la orden.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'}><Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" /></span>
                 </span>
               </label>
+
+              {/* Warehouse selector — only shown when no default and multiple warehouses */}
+              {stockBehavior === 'DISCOUNT' && hasDefaultWarehouse === false && (
+                <Select
+                  label="Almacén donde descontar *"
+                  options={[{ value: '', label: 'Seleccioná un almacén' }, ...warehouses.map((w) => ({ value: w.id, label: w.name }))]}
+                  value={resolvedWarehouseId || ''}
+                  onChange={(v) => setResolvedWarehouseId(v || null)}
+                />
+              )}
 
             </div>
 

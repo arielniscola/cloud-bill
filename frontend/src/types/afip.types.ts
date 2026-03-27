@@ -32,3 +32,11 @@ export interface EmitResult {
   afipCbtNum: number;
   afipPtVenta: number;
 }
+
+export interface AfipError {
+  id: string;
+  errorMessage: string;
+  errorType: string | null;
+  rawResponse: string | null;
+  createdAt: string;
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck } from 'lucide-react';
+import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
@@ -207,6 +207,14 @@ export default function OrdenPedidoDetailPage() {
             <Button variant="outline" onClick={() => window.open(`/print/orden-pedido/${op.id}`, '_blank', 'width=420,height=700,scrollbars=yes')}>
               <Printer className="w-4 h-4 mr-2" />
               Imprimir
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => navigate('/orden-pedidos/new', { state: { fromOrdenPedido: op } })}
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Nuevo pedido
             </Button>
 
             {canEdit && (

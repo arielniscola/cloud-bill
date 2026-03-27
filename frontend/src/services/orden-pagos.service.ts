@@ -15,6 +15,10 @@ const ordenPagosService = {
     return api.post('/orden-pagos', data).then((r) => r.data.data);
   },
 
+  pay(id: string): Promise<OrdenPago> {
+    return api.post(`/orden-pagos/${id}/pay`).then((r) => r.data.data);
+  },
+
   cancel(id: string): Promise<OrdenPago> {
     return api.delete(`/orden-pagos/${id}`).then((r) => r.data.data);
   },

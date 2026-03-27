@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail,
+  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
@@ -12,7 +12,7 @@ import { invoicesService, recibosService, afipService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
-import type { Invoice, Recibo, CreateReciboDTO } from '../../types';
+import type { Invoice, Recibo, CreateReciboDTO, AfipError } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
@@ -76,6 +76,7 @@ export default function InvoiceDetailPage() {
   const [showEmitDialog, setShowEmitDialog] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [recibos, setRecibos] = useState<Recibo[]>([]);
+  const [afipErrors, setAfipErrors] = useState<AfipError[]>([]);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -83,12 +84,14 @@ export default function InvoiceDetailPage() {
   const loadData = async () => {
     if (!id) return;
     try {
-      const [invoiceData, recibosData] = await Promise.all([
+      const [invoiceData, recibosData, afipErrorsData] = await Promise.all([
         invoicesService.getById(id),
         recibosService.getAll({ invoiceId: id }),
+        invoicesService.getAfipErrors(id).catch(() => []),
       ]);
       setInvoice(invoiceData);
       setRecibos(recibosData.data);
+      setAfipErrors(afipErrorsData);
     } catch {
       toast.error('Error al cargar factura');
       navigate('/invoices');
@@ -246,7 +249,7 @@ export default function InvoiceDetailPage() {
   const isNcNdStatus = ['ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status);
   const canGenerateNC = isFactura && isNcNdStatus;
   const canGenerateND = isFactura && isNcNdStatus;
-  const canEmitArca = (isDraft || invoice.status === 'ISSUED') && !invoice.cae;
+  const canEmitArca = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status) && !invoice.cae;
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(invoice.total) - paidAmount);
@@ -482,6 +485,39 @@ export default function InvoiceDetailPage() {
             onPay={() => setShowPayModal(true)}
             onCancel={(r) => setCancelReciboId(r.id)}
           />
+
+          {/* AFIP / ARCA Error History */}
+          {afipErrors.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/40 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-red-100 dark:border-red-900/30 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500" />
+                <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+                  Errores ARCA ({afipErrors.length})
+                </p>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-slate-700">
+                {afipErrors.map((err) => (
+                  <div key={err.id} className="px-5 py-3 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        err.errorType === 'AUTH_ERROR' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                        err.errorType === 'CAE_REJECTED' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                        err.errorType === 'HARD_ERROR' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                        err.errorType === 'CONNECTION_ERROR' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                        'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-400'
+                      }`}>
+                        {err.errorType ?? 'UNKNOWN'}
+                      </span>
+                      <span className="text-xs text-gray-400 dark:text-slate-500 tabular-nums">
+                        {new Date(err.createdAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-slate-400 break-words">{err.errorMessage}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right: info sidebar ── */}

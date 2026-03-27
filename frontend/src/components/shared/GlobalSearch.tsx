@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Users, Package, ClipboardList, X, Loader2 } from 'lucide-react';
+import { Search, FileText, Users, Package, ClipboardList, ShoppingCart, X, Loader2 } from 'lucide-react';
 import { searchService, type SearchResult } from '../../services/search.service';
 import { formatCurrency } from '../../utils/formatters';
 import { INVOICE_STATUS_COLORS, INVOICE_STATUSES } from '../../utils/constants';
@@ -14,6 +14,16 @@ type ResultItem = {
   href: string;
   icon: React.ReactNode;
   category: string;
+};
+
+const OP_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Borrador', CONFIRMED: 'Confirmada', PARTIALLY_PAID: 'Pago parcial',
+  PAID: 'Pagada', CONVERTED: 'Convertida',
+};
+const OP_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-700', CONFIRMED: 'bg-blue-100 text-blue-700',
+  PARTIALLY_PAID: 'bg-amber-100 text-amber-700', PAID: 'bg-emerald-100 text-emerald-700',
+  CONVERTED: 'bg-violet-100 text-violet-700',
 };
 
 const BUDGET_STATUS_LABELS: Record<string, string> = {
@@ -78,6 +88,19 @@ function buildItems(data: SearchResult): ResultItem[] {
       href: `/budgets/${b.id}`,
       icon: <ClipboardList className="w-4 h-4 text-violet-500" />,
       category: 'Presupuestos',
+    });
+  });
+
+  data.ordenPedidos.forEach((op) => {
+    items.push({
+      id: `op-${op.id}`,
+      label: op.number,
+      sublabel: op.customer?.name ?? '—',
+      badge: OP_STATUS_LABELS[op.status] ?? op.status,
+      badgeColor: OP_STATUS_COLORS[op.status] ?? '',
+      href: `/orden-pedidos/${op.id}`,
+      icon: <ShoppingCart className="w-4 h-4 text-orange-500" />,
+      category: 'Órdenes de Pedido',
     });
   });
 
@@ -186,7 +209,7 @@ export function GlobalSearch() {
               value={query}
               onChange={(e) => handleQueryChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Buscar facturas, clientes, productos, presupuestos..."
+              placeholder="Buscar facturas, clientes, productos, presupuestos, pedidos..."
               className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 outline-none"
             />
             {query && (

@@ -7,6 +7,7 @@ import type {
   InvoiceFilters,
   ApiResponse,
   PaginatedResponse,
+  AfipError,
 } from '../types';
 
 export const invoicesService = {
@@ -57,6 +58,11 @@ export const invoicesService = {
 
   async sendEmail(id: string, to: string): Promise<void> {
     await api.post(`/invoices/${id}/send-email`, { to });
+  },
+
+  async getAfipErrors(id: string): Promise<AfipError[]> {
+    const response = await api.get<ApiResponse<AfipError[]>>(`/invoices/${id}/afip-errors`);
+    return response.data.data;
   },
 };
 

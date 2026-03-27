@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Printer, XCircle, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Printer, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
@@ -31,6 +31,8 @@ export default function OrdenPagoDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -40,6 +42,21 @@ export default function OrdenPagoDetailPage() {
       .catch(() => toast.error('Error al cargar la orden de pago'))
       .finally(() => setIsLoading(false));
   }, [id]);
+
+  const handlePay = async () => {
+    if (!op) return;
+    setIsPaying(true);
+    try {
+      const updated = await ordenPagosService.pay(op.id);
+      setOp(updated);
+      toast.success('Orden de pago marcada como pagada');
+      setPayOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Error al procesar el pago');
+    } finally {
+      setIsPaying(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!op) return;
@@ -67,6 +84,8 @@ export default function OrdenPagoDetailPage() {
   );
 
   const isCancelled = op.status === 'CANCELLED';
+  const isPaid = op.status === 'PAID';
+  const isEmitted = op.status === 'EMITTED';
 
   return (
     <div>
@@ -83,6 +102,11 @@ export default function OrdenPagoDetailPage() {
                 <Printer className="w-4 h-4 mr-2" />Imprimir
               </Button>
             )}
+            {isEmitted && (
+              <Button onClick={() => setPayOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <CheckCircle className="w-4 h-4 mr-2" />Marcar como Pagada
+              </Button>
+            )}
             {!isCancelled && (
               <Button variant="outline" onClick={() => setCancelOpen(true)} className="text-red-600 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
                 <XCircle className="w-4 h-4 mr-2" />Cancelar
@@ -95,7 +119,13 @@ export default function OrdenPagoDetailPage() {
       {isCancelled && (
         <div className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 mb-6 text-red-700 dark:text-red-400">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <p className="text-sm font-medium">Esta orden de pago fue cancelada. Los pagos aplicados han sido revertidos.</p>
+          <p className="text-sm font-medium">Esta orden de pago fue cancelada. Los movimientos aplicados han sido revertidos.</p>
+        </div>
+      )}
+      {isEmitted && (
+        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 mb-6 text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <p className="text-sm font-medium">Orden emitida pendiente de pago. Los movimientos de cuentas se registrarán al marcarla como Pagada.</p>
         </div>
       )}
 
@@ -115,8 +145,8 @@ export default function OrdenPagoDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Estado</p>
-                <Badge variant={isCancelled ? 'error' : 'success'} dot>
-                  {isCancelled ? 'Cancelada' : 'Emitida'}
+                <Badge variant={isCancelled ? 'error' : isPaid ? 'success' : 'warning'} dot>
+                  {isCancelled ? 'Cancelada' : isPaid ? 'Pagada' : 'Emitida'}
                 </Badge>
               </div>
               <div>
@@ -235,11 +265,21 @@ export default function OrdenPagoDetailPage() {
       </div>
 
       <ConfirmDialog
+        isOpen={payOpen}
+        onClose={() => setPayOpen(false)}
+        onConfirm={handlePay}
+        title="Confirmar Pago"
+        message="Al marcar como Pagada se registrarán los movimientos en las cuentas del proveedor y se actualizará el estado de las facturas. ¿Confirmar?"
+        confirmText="Marcar como Pagada"
+        isLoading={isPaying}
+      />
+
+      <ConfirmDialog
         isOpen={cancelOpen}
         onClose={() => setCancelOpen(false)}
         onConfirm={handleCancel}
         title="Cancelar Orden de Pago"
-        message="¿Estás seguro? Se revertirán los pagos aplicados a las compras y los movimientos de caja asociados."
+        message="¿Estás seguro? Si la orden ya fue pagada, se revertirán los movimientos en las cuentas del proveedor y el estado de las facturas."
         confirmText="Cancelar orden"
         isLoading={isCancelling}
       />

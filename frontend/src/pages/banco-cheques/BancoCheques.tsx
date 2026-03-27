@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown, Landmark } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown, Landmark, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Select } from '../../components/ui';
 import { PageHeader, SearchInput, Pagination } from '../../components/shared';
@@ -161,6 +161,8 @@ export default function BancoCheques() {
   const [depositRecibo, setDepositRecibo]   = useState<Recibo | null>(null);
   const [bankAccounts,  setBankAccounts]    = useState<BankAccount[]>([]);
   const [cashRegisters, setCashRegisters]   = useState<{ id: string; name: string }[]>([]);
+  const [sortField, setSortField] = useState<'createdAt' | 'checkDueDate'>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -225,6 +227,25 @@ export default function BancoCheques() {
       setUpdatingId(null);
     }
   };
+
+  const toggleSort = (field: 'createdAt' | 'checkDueDate') => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(field === 'createdAt' ? 'desc' : 'asc');
+    }
+  };
+
+  const sortedChecks = [...checks].sort((a, b) => {
+    const valA = a[sortField] ?? '';
+    const valB = b[sortField] ?? '';
+    if (valA === '' && valB === '') return 0;
+    if (valA === '') return sortDir === 'asc' ? -1 : 1;
+    if (valB === '') return sortDir === 'asc' ? 1 : -1;
+    const cmp = valA < valB ? -1 : valA > valB ? 1 : 0;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
 
   // Summary counts from current data
   const pending = checks.filter((c) => c.checkStatus === 'PENDING').length;
@@ -320,19 +341,39 @@ export default function BancoCheques() {
             <table className="min-w-full">
               <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">N° Recibo</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">
+                    <button
+                      onClick={() => toggleSort('createdAt')}
+                      className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+                    >
+                      N° Recibo
+                      {sortField === 'createdAt'
+                        ? sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                    </button>
+                  </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Cliente</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Banco</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">N° Cheque</th>
                   <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Monto</th>
-                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Vencimiento</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">
+                    <button
+                      onClick={() => toggleSort('checkDueDate')}
+                      className="flex items-center gap-1 mx-auto hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+                    >
+                      Vencimiento
+                      {sortField === 'checkDueDate'
+                        ? sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                    </button>
+                  </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Origen</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Estado</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                {checks.map((check) => {
+                {sortedChecks.map((check) => {
                   const overdueFlag = isOverdue(check);
                   const nextActions = check.checkStatus ? NEXT_STATUSES[check.checkStatus] ?? [] : [];
                   const isUpdating = updatingId === check.id;

@@ -3,7 +3,7 @@ import type { Currency } from './invoice.types';
 import type { Supplier } from './supplier.types';
 import type { Purchase } from './purchase.types';
 
-export type OrdenPagoStatus = 'EMITTED' | 'CANCELLED';
+export type OrdenPagoStatus = 'EMITTED' | 'PAID' | 'CANCELLED';
 
 export type SupplierMovementType = 'DEBIT' | 'CREDIT';
 

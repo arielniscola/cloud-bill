@@ -5,6 +5,7 @@ export interface SearchResult {
   customers: Array<{ id: string; name: string; taxId: string | null; email: string | null }>;
   products: Array<{ id: string; name: string; sku: string | null; price: number }>;
   budgets: Array<{ id: string; number: string; status: string; total: number; date: string; customer: { id: string; name: string } | null }>;
+  ordenPedidos: Array<{ id: string; number: string; status: string; total: number; date: string; customer: { id: string; name: string } | null }>;
 }
 
 export const searchService = {

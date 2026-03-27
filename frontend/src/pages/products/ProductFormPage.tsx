@@ -247,6 +247,20 @@ export default function ProductFormPage() {
   const salePriceUSD = watch('salePriceUSD') ?? 0;
   const isActiveVal = watch('isActive');
 
+  // Derived margin state — not saved, just a calculation helper
+  const [marginPct, setMarginPct] = useState<string>('');
+
+  // Sync margin display when cost/price change externally
+  useEffect(() => {
+    const c = Number(cost);
+    const p = Number(price);
+    if (c > 0 && p > 0) {
+      setMarginPct(((( p - c) / c) * 100).toFixed(2).replace(/\.00$/, ''));
+    } else {
+      setMarginPct('');
+    }
+  }, [cost, price]);
+
   // Load dropdowns
   useEffect(() => {
     Promise.all([categoriesService.getAll(), brandsService.getAll()])
@@ -419,7 +433,7 @@ export default function ProductFormPage() {
           <div className="space-y-4">
             <SectionHeader icon={<DollarSign className="w-3.5 h-3.5" />} label="Precios" />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
                 label="Costo *"
                 type="number"
@@ -430,6 +444,32 @@ export default function ProductFormPage() {
                 error={errors.cost?.message}
                 hint="Precio de compra al proveedor"
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                  Margen sobre costo
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={marginPct}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setMarginPct(m);
+                      const c = Number(cost);
+                      const mNum = parseFloat(m);
+                      if (c > 0 && !isNaN(mNum) && mNum >= 0) {
+                        setValue('price', Math.round(c * (1 + mNum / 100) * 100) / 100, { shouldValidate: true });
+                      }
+                    }}
+                    className="w-full px-3 py-2 pr-8 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 dark:text-slate-500 pointer-events-none">%</span>
+                </div>
+                <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Calcula el precio de venta</p>
+              </div>
               <Input
                 label="Precio de venta *"
                 type="number"

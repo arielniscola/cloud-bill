@@ -10,12 +10,14 @@ import { PAYMENT_METHODS } from '../../utils/constants';
 import type { OrdenPago, OrdenPagoStatus } from '../../types/ordenPago.types';
 import type { Supplier } from '../../types';
 
-const STATUS_VARIANT: Record<string, 'success' | 'error'> = {
-  EMITTED: 'success',
+const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error'> = {
+  EMITTED: 'warning',
+  PAID: 'success',
   CANCELLED: 'error',
 };
 const STATUS_LABELS: Record<string, string> = {
   EMITTED: 'Emitida',
+  PAID: 'Pagada',
   CANCELLED: 'Cancelada',
 };
 
@@ -111,6 +113,7 @@ export default function OrdenPagosPage() {
             <select value={statusFilter} onChange={(e) => change(setStatusFilter)(e.target.value)} className={selectCls}>
               <option value="">Todos</option>
               <option value="EMITTED">Emitida</option>
+              <option value="PAID">Pagada</option>
               <option value="CANCELLED">Cancelada</option>
             </select>
           </div>
