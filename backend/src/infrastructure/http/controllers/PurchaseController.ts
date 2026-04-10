@@ -6,6 +6,7 @@ import { IStockRepository } from '../../../domain/repositories/IWarehouseReposit
 import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
+import { recordPurchaseCreated } from '../../services/AccountingService';
 
 export class PurchaseController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -116,6 +117,17 @@ export class PurchaseController {
         entity: 'Purchase',
         entityId: purchase.id,
         description: `Compra ${purchase.number} registrada`,
+      });
+
+      // Auto-generate journal entry
+      await recordPurchaseCreated({
+        id: purchase.id,
+        number: purchase.number,
+        subtotal: Number(purchase.subtotal),
+        taxAmount: Number(purchase.taxAmount),
+        total: Number(purchase.total),
+        companyId: req.companyId,
+        userId: req.user!.userId,
       });
 
       res.status(201).json({ status: 'success', data: purchase });

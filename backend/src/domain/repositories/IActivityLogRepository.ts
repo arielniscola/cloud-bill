@@ -5,6 +5,7 @@ export interface ActivityLogFilters {
   userId?: string;
   action?: ActivityAction;
   entity?: string;
+  search?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }
@@ -15,4 +16,5 @@ export interface IActivityLogRepository {
     pagination: PaginationParams,
     filters?: ActivityLogFilters
   ): Promise<PaginatedResult<ActivityLog>>;
+  getDistinctEntities(): Promise<string[]>;
 }

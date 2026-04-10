@@ -7,10 +7,8 @@ const userController = new UserController();
 
 router.use(authMiddleware);
 
-// ADMIN + SUPER_ADMIN can list users
-router.get('/', requireRoles('SUPER_ADMIN', 'ADMIN'), userController.findAll);
-
-// Only SUPER_ADMIN can create/edit/delete
+// Only SUPER_ADMIN can manage users
+router.get('/',               requireRoles('SUPER_ADMIN'), userController.findAll);
 router.post('/',              requireRoles('SUPER_ADMIN'), userController.create);
 router.put('/:id',            requireRoles('SUPER_ADMIN'), userController.update);
 router.patch('/:id/password', requireRoles('SUPER_ADMIN'), userController.changePassword);

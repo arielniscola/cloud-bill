@@ -14,13 +14,54 @@ const includeRelations = {
   user: { select: { id: true, name: true } },
 };
 
+// Fetch card fields (not in stale Prisma client) for a list of recibo IDs
+async function enrichWithCardData(recibos: any[]): Promise<void> {
+  const ids = recibos.map((r) => r.id).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const rows = await prisma.$queryRaw<Array<{
+    id: string;
+    cardId: string | null;
+    surchargePercent: any;
+    surchargeAmount: any;
+    cardName: string | null;
+    cardType: string | null;
+  }>>`
+    SELECT r.id,
+           r."cardId",
+           r."surchargePercent",
+           r."surchargeAmount",
+           c.name AS "cardName",
+           c.type AS "cardType"
+    FROM "recibos" r
+    LEFT JOIN "cards" c ON c.id = r."cardId"
+    WHERE r.id = ANY(${ids}::text[])
+  `;
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  for (const recibo of recibos) {
+    const extra = byId.get(recibo.id);
+    if (extra) {
+      recibo.cardId = extra.cardId ?? null;
+      recibo.surchargePercent = extra.surchargePercent != null ? new Decimal(extra.surchargePercent) : null;
+      recibo.surchargeAmount = extra.surchargeAmount != null ? new Decimal(extra.surchargeAmount) : null;
+      recibo.card = extra.cardId
+        ? { id: extra.cardId, name: extra.cardName ?? '', type: extra.cardType ?? '' }
+        : null;
+    }
+  }
+}
+
 @injectable()
 export class PrismaReciboRepository implements IReciboRepository {
   async findById(id: string): Promise<ReciboWithRelations | null> {
-    return prisma.recibo.findUnique({
+    const recibo = await prisma.recibo.findUnique({
       where: { id },
       include: includeRelations,
-    }) as Promise<ReciboWithRelations | null>;
+    });
+    if (!recibo) return null;
+    await enrichWithCardData([recibo]);
+    return recibo as unknown as ReciboWithRelations;
   }
 
   async findAll(
@@ -57,6 +98,7 @@ export class PrismaReciboRepository implements IReciboRepository {
       prisma.recibo.count({ where }),
     ]);
 
+    await enrichWithCardData(data);
     return { data: data as ReciboWithRelations[], total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
@@ -85,10 +127,21 @@ export class PrismaReciboRepository implements IReciboRepository {
       },
     });
 
-    // Set exchangeRate + companyId via raw SQL (bypasses stale Prisma client types)
+    // Set exchangeRate + companyId + card fields via raw SQL (bypasses stale Prisma client types)
     const rate = new Decimal(data.exchangeRate ?? 1);
     const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
-    await prisma.$executeRaw`UPDATE "recibos" SET "exchangeRate" = ${rate}, "companyId" = ${companyId} WHERE id = ${recibo.id}`;
+    const cardId = (data as any).cardId ?? null;
+    const surchargePercent = (data as any).surchargePercent != null ? new Decimal((data as any).surchargePercent) : null;
+    const surchargeAmount = (data as any).surchargeAmount != null ? new Decimal((data as any).surchargeAmount) : null;
+    await prisma.$executeRaw`
+      UPDATE "recibos"
+      SET "exchangeRate" = ${rate},
+          "companyId" = ${companyId},
+          "cardId" = ${cardId},
+          "surchargePercent" = ${surchargePercent},
+          "surchargeAmount" = ${surchargeAmount}
+      WHERE id = ${recibo.id}
+    `;
 
     // Return with relations
     return prisma.recibo.findUnique({

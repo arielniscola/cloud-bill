@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class CashRegisterController {
@@ -8,6 +9,16 @@ export class CashRegisterController {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
       const cashRegister = await repo.create({ ...req.body, companyId: req.companyId });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'CashRegister',
+        entityId: cashRegister.id,
+        description: `Caja ${cashRegister.name} creada`,
+      });
+
       res.status(201).json({ status: 'success', data: cashRegister });
     } catch (error) {
       next(error);
@@ -42,6 +53,16 @@ export class CashRegisterController {
       const existing = await repo.findById(req.params.id);
       if (!existing) throw new NotFoundError('Caja');
       const cashRegister = await repo.update(req.params.id, req.body);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'CashRegister',
+        entityId: cashRegister.id,
+        description: `Caja ${cashRegister.name} actualizada`,
+      });
+
       res.json({ status: 'success', data: cashRegister });
     } catch (error) {
       next(error);
@@ -54,6 +75,16 @@ export class CashRegisterController {
       const existing = await repo.findById(req.params.id);
       if (!existing) throw new NotFoundError('Caja');
       await repo.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'CashRegister',
+        entityId: req.params.id,
+        description: `Caja ${existing.name} eliminada`,
+      });
+
       res.json({ status: 'success', data: null });
     } catch (error) {
       next(error);

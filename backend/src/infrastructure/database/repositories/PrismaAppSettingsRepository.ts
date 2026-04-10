@@ -39,6 +39,10 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       smtpPass:                    r.smtpPass,
       smtpFrom:                    r.smtpFrom,
       smtpSecure:                  Boolean(r.smtpSecure),
+      mpAccessToken:               r.mpAccessToken   ?? null,
+      mpPublicKey:                 r.mpPublicKey     ?? null,
+      mpWebhookSecret:             r.mpWebhookSecret ?? null,
+      mpMode:                      (r.mpMode ?? 'test') as 'test' | 'production',
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -69,18 +73,24 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
     const smtpPass            = data.smtpPass   !== undefined ? data.smtpPass   : (current?.smtpPass   ?? null);
     const smtpFrom            = data.smtpFrom   !== undefined ? data.smtpFrom   : (current?.smtpFrom   ?? null);
     const smtpSecure          = data.smtpSecure ?? current?.smtpSecure ?? false;
+    const mpAccessToken       = data.mpAccessToken   !== undefined ? data.mpAccessToken   : (current?.mpAccessToken   ?? null);
+    const mpPublicKey         = data.mpPublicKey     !== undefined ? data.mpPublicKey     : (current?.mpPublicKey     ?? null);
+    const mpWebhookSecret     = data.mpWebhookSecret !== undefined ? data.mpWebhookSecret : (current?.mpWebhookSecret ?? null);
+    const mpMode              = data.mpMode ?? current?.mpMode ?? 'test';
 
     await prisma.$executeRaw`
       INSERT INTO "app_settings" (
         "id", "deadStockDays", "safetyStockDays", "stalePriceWarnDays1", "stalePriceWarnDays2",
         "companyTaxCondition", "printFormat",
         "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "smtpSecure",
+        "mpAccessToken", "mpPublicKey", "mpWebhookSecret", "mpMode",
         "defaultBudgetCashRegisterId", "defaultInvoiceCashRegisterId", "updatedAt"
       ) VALUES (
         ${companyId},
         ${deadStockDays}, ${safetyStockDays}, ${stalePriceWarnDays1}, ${stalePriceWarnDays2},
         ${companyTaxCondition}, ${printFormat},
         ${smtpHost}, ${smtpPort}, ${smtpUser}, ${smtpPass}, ${smtpFrom}, ${smtpSecure},
+        ${mpAccessToken}, ${mpPublicKey}, ${mpWebhookSecret}, ${mpMode},
         ${budgetCashRegisterId}, ${invoiceCashRegisterId}, NOW()
       )
       ON CONFLICT ("id") DO UPDATE SET
@@ -96,6 +106,10 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "smtpPass"                     = EXCLUDED."smtpPass",
         "smtpFrom"                     = EXCLUDED."smtpFrom",
         "smtpSecure"                   = EXCLUDED."smtpSecure",
+        "mpAccessToken"                = EXCLUDED."mpAccessToken",
+        "mpPublicKey"                  = EXCLUDED."mpPublicKey",
+        "mpWebhookSecret"              = EXCLUDED."mpWebhookSecret",
+        "mpMode"                       = EXCLUDED."mpMode",
         "defaultBudgetCashRegisterId"  = EXCLUDED."defaultBudgetCashRegisterId",
         "defaultInvoiceCashRegisterId" = EXCLUDED."defaultInvoiceCashRegisterId",
         "updatedAt"                    = NOW()

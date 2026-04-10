@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IBrandRepository } from '../../../domain/repositories/IBrandRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class BrandController {
@@ -12,6 +13,16 @@ export class BrandController {
         isActive: req.body.isActive ?? true,
         companyId: req.companyId,
       });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Brand',
+        entityId: brand.id,
+        description: `Marca ${brand.name} creada`,
+      });
+
       res.status(201).json({ status: 'success', data: brand });
     } catch (error) {
       next(error);
@@ -48,6 +59,16 @@ export class BrandController {
         name: req.body.name,
         isActive: req.body.isActive,
       });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Brand',
+        entityId: brand.id,
+        description: `Marca ${brand.name} actualizada`,
+      });
+
       res.json({ status: 'success', data: brand });
     } catch (error) {
       next(error);
@@ -60,6 +81,16 @@ export class BrandController {
       const existing = await repo.findById(req.params.id);
       if (!existing) throw new NotFoundError('Brand');
       await repo.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Brand',
+        entityId: req.params.id,
+        description: `Marca ${existing.name} eliminada`,
+      });
+
       res.status(204).send();
     } catch (error) {
       next(error);

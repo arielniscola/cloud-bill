@@ -15,6 +15,10 @@ export const updateAppSettingsSchema = z.object({
   smtpPass:                     z.string().optional().nullable(),
   smtpFrom:                     z.string().optional().nullable(),
   smtpSecure:                   z.boolean().optional(),
+  mpAccessToken:                z.string().optional().nullable(),
+  mpPublicKey:                  z.string().optional().nullable(),
+  mpWebhookSecret:              z.string().optional().nullable(),
+  mpMode:                       z.enum(['test', 'production']).optional(),
 });
 
 export type UpdateAppSettingsDTO = z.infer<typeof updateAppSettingsSchema>;

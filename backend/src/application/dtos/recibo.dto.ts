@@ -11,6 +11,10 @@ export const createReciboSchema = z.object({
   checkDueDate: z.string().optional().nullable(),
   installments: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Card surcharge fields
+  cardId: z.string().optional().nullable(),
+  surchargePercent: z.number().min(0).optional().nullable(),
+  surchargeAmount: z.number().min(0).optional().nullable(),
 });
 
 export const reciboQuerySchema = z.object({

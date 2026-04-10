@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ISupplierRepository } from '../../../domain/repositories/ISupplierRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
 
@@ -40,6 +41,16 @@ export class SupplierController {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
       const supplier = await repo.create({ ...req.body, companyId: req.companyId });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Supplier',
+        entityId: supplier.id,
+        description: `Proveedor ${supplier.name} creado`,
+      });
+
       res.status(201).json({ status: 'success', data: supplier });
     } catch (error) {
       next(error);
@@ -52,6 +63,16 @@ export class SupplierController {
       const existing = await repo.findById(req.params.id);
       if (!existing) throw new NotFoundError('Supplier');
       const supplier = await repo.update(req.params.id, req.body);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Supplier',
+        entityId: supplier.id,
+        description: `Proveedor ${supplier.name} actualizado`,
+      });
+
       res.json({ status: 'success', data: supplier });
     } catch (error) {
       next(error);
@@ -105,6 +126,16 @@ export class SupplierController {
       const existing = await repo.findById(req.params.id);
       if (!existing) throw new NotFoundError('Supplier');
       await repo.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Supplier',
+        entityId: req.params.id,
+        description: `Proveedor ${existing.name} eliminado`,
+      });
+
       res.json({ status: 'success', message: 'Proveedor eliminado' });
     } catch (error) {
       next(error);

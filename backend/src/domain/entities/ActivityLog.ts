@@ -23,4 +23,5 @@ export interface CreateActivityLogInput {
   entityId: string;
   description: string;
   metadata?: Record<string, unknown>;
+  companyId?: string; // used to check activity_log feature — if plan doesn't include it, skip write
 }

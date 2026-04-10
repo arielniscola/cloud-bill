@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class WarehouseController {
@@ -15,6 +16,15 @@ export class WarehouseController {
         isActive: req.body.isActive ?? true,
         companyId: req.companyId,
       } as any);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Warehouse',
+        entityId: warehouse.id,
+        description: `Almacén ${warehouse.name} creado`,
+      });
 
       res.status(201).json({
         status: 'success',
@@ -73,6 +83,15 @@ export class WarehouseController {
         isActive: req.body.isActive,
       });
 
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Warehouse',
+        entityId: warehouse.id,
+        description: `Almacén ${warehouse.name} actualizado`,
+      });
+
       res.json({
         status: 'success',
         data: warehouse,
@@ -92,6 +111,15 @@ export class WarehouseController {
       }
 
       await warehouseRepository.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Warehouse',
+        entityId: req.params.id,
+        description: `Almacén ${existingWarehouse.name} eliminado`,
+      });
 
       res.status(204).send();
     } catch (error) {

@@ -14,6 +14,7 @@ router.put('/:id', requireRoles('ADMIN', 'SELLER'), controller.update);
 router.patch('/:id/status', requireRoles('ADMIN', 'SELLER'), controller.updateStatus);
 router.post('/:id/convert', requireRoles('ADMIN', 'SELLER'), controller.convertToInvoice);
 router.post('/:id/pay', requireRoles('ADMIN', 'SELLER'), controller.pay);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), controller.sendEmail);
 router.delete('/:id', requireRoles('ADMIN', 'SELLER'), controller.delete);
 
 export { router as ordenPedidoRoutes };

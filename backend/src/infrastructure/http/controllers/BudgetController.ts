@@ -219,9 +219,9 @@ export class BudgetController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to } = req.body;
+      const { to, pdfBase64 } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendBudgetEmail(id, to, req.companyId!);
+      await sendBudgetEmail(id, to, req.companyId!, pdfBase64);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

@@ -8,6 +8,7 @@ const activityLogController = new ActivityLogController();
 router.use(authMiddleware);
 router.use(requireRoles('SUPER_ADMIN', 'ADMIN'));
 
+router.get('/entities', activityLogController.getEntities);
 router.get('/', activityLogController.findAll);
 
 export { router as activityLogRoutes };

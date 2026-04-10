@@ -11,20 +11,24 @@ function parseModules(raw: string | null | undefined): string[] {
 }
 
 async function withModules(company: any): Promise<Company> {
-  const rows = await prisma.$queryRaw<{ enabledModules: string }[]>`
-    SELECT "enabledModules" FROM companies WHERE id = ${company.id}
+  const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string }[]>`
+    SELECT "enabledModules", "plan" FROM companies WHERE id = ${company.id}
   `;
-  return { ...company, enabledModules: parseModules(rows[0]?.enabledModules) };
+  return { ...company, enabledModules: parseModules(rows[0]?.enabledModules), plan: rows[0]?.plan ?? 'PRO' };
 }
 
 async function withModulesMany(companies: any[]): Promise<Company[]> {
   if (companies.length === 0) return [];
   const ids = companies.map(c => c.id);
-  const rows = await prisma.$queryRaw<{ id: string; enabledModules: string }[]>`
-    SELECT id, "enabledModules" FROM companies WHERE id = ANY(${ids}::text[])
+  const rows = await prisma.$queryRaw<{ id: string; enabledModules: string; plan: string }[]>`
+    SELECT id, "enabledModules", "plan" FROM companies WHERE id = ANY(${ids}::text[])
   `;
-  const map = new Map(rows.map(r => [r.id, parseModules(r.enabledModules)]));
-  return companies.map(c => ({ ...c, enabledModules: map.get(c.id) ?? ['ALL'] }));
+  const map = new Map(rows.map(r => [r.id, { modules: parseModules(r.enabledModules), plan: r.plan ?? 'PRO' }]));
+  return companies.map(c => ({
+    ...c,
+    enabledModules: map.get(c.id)?.modules ?? ['ALL'],
+    plan: map.get(c.id)?.plan ?? 'PRO',
+  }));
 }
 
 @injectable()

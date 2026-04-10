@@ -24,6 +24,9 @@ export interface Recibo {
   notes: string | null;
   status: ReciboStatus;
   checkStatus: string | null;
+  cardId: string | null;
+  surchargePercent: Decimal | null;
+  surchargeAmount: Decimal | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +38,7 @@ export interface ReciboWithRelations extends Recibo {
   ordenPedido?: { id: string; number: string } | null;
   cashRegister?: { id: string; name: string } | null;
   user?: { id: string; name: string } | null;
+  card?: { id: string; name: string; type: string } | null;
 }
 
 export interface CreateReciboInput {

@@ -3,6 +3,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { IActivityLogRepository, ActivityLogFilters } from '../../../domain/repositories/IActivityLogRepository';
 import { ActivityLog, CreateActivityLogInput } from '../../../domain/entities/ActivityLog';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
+import { companyHasFeature } from '../../http/middlewares/featureMiddleware';
 import prisma from '../prisma';
 
 @injectable()
@@ -14,19 +15,31 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
   }
 
   async create(data: CreateActivityLogInput): Promise<ActivityLog> {
-    return this.prisma.activityLog.create({
-      data: {
-        userId: data.userId,
-        action: data.action,
-        entity: data.entity,
-        entityId: data.entityId,
-        description: data.description,
-        metadata: data.metadata as Prisma.InputJsonValue | undefined,
-      },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-      },
-    }) as unknown as ActivityLog;
+    try {
+      // Resolve companyId: use explicit one if provided, otherwise look up from user
+      const companyId = data.companyId ?? await this._getCompanyIdForUser(data.userId);
+      if (companyId) {
+        const allowed = await companyHasFeature(companyId, 'activity_log');
+        if (!allowed) return {} as ActivityLog;
+      }
+
+      return await this.prisma.activityLog.create({
+        data: {
+          userId: data.userId,
+          action: data.action,
+          entity: data.entity,
+          entityId: data.entityId,
+          description: data.description,
+          metadata: data.metadata as Prisma.InputJsonValue | undefined,
+        },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      }) as unknown as ActivityLog;
+    } catch {
+      // Activity logging is non-critical — never propagate errors to callers
+      return {} as ActivityLog;
+    }
   }
 
   async findAll(
@@ -40,6 +53,9 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
     if (filters.userId) where.userId = filters.userId;
     if (filters.action) where.action = filters.action;
     if (filters.entity) where.entity = filters.entity;
+    if (filters.search) {
+      where.description = { contains: filters.search, mode: 'insensitive' };
+    }
     if (filters.dateFrom || filters.dateTo) {
       where.createdAt = {
         ...(filters.dateFrom && { gte: filters.dateFrom }),
@@ -67,5 +83,23 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  async getDistinctEntities(): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ entity: string }[]>`
+      SELECT DISTINCT entity FROM activity_logs ORDER BY entity
+    `;
+    return rows.map((r) => r.entity);
+  }
+
+  private async _getCompanyIdForUser(userId: string): Promise<string | null> {
+    try {
+      const rows = await this.prisma.$queryRaw<{ companyId: string | null }[]>`
+        SELECT "companyId" FROM "users" WHERE id = ${userId} LIMIT 1
+      `;
+      return rows[0]?.companyId ?? null;
+    } catch {
+      return null;
+    }
   }
 }

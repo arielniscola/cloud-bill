@@ -129,7 +129,12 @@ export class PrismaRemitoRepository implements IRemitoRepository {
   async create(data: CreateRemitoInput): Promise<RemitoWithItems> {
     const number = await this.getNextRemitoNumber();
 
-    const status: RemitoStatus = data.stockBehavior === 'DISCOUNT' ? 'DELIVERED' : 'PENDING';
+    // Auto-deliver only standalone DISCOUNT remitos (no linked source document).
+    // Linked remitos (from OP / invoice / budget) must start as PENDING and be
+    // confirmed manually via the deliver endpoint, regardless of stockBehavior.
+    const isLinked = !!(data.invoiceId || data.budgetId || data.ordenPedidoId);
+    const autoDeliver = !isLinked && data.stockBehavior === 'DISCOUNT';
+    const status: RemitoStatus = autoDeliver ? 'DELIVERED' : 'PENDING';
 
     return (this.prisma as any).remito.create({
       data: {
@@ -147,7 +152,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
           create: data.items.map((item) => ({
             productId: item.productId,
             quantity: new Decimal(item.quantity),
-            deliveredQuantity: data.stockBehavior === 'DISCOUNT'
+            deliveredQuantity: autoDeliver
               ? new Decimal(item.quantity)
               : new Decimal(0),
           })),

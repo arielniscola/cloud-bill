@@ -190,6 +190,20 @@ model Brand {
   @@map("brands")
 }
 
+model Rubro {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  companyId   String   @default("00000000-0000-0000-0000-000000000001")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("rubros")
+}
+
 model Product {
   id            String   @id @default(uuid())
   sku           String   @unique
@@ -197,6 +211,7 @@ model Product {
   description   String?
   categoryId    String?
   brandId       String?
+  rubroId       String?
   barcode       String?
   unit          String?  @default("UN")
   internalNotes String?
@@ -213,6 +228,7 @@ model Product {
 
   category       Category?       @relation(fields: [categoryId], references: [id])
   brand          Brand?          @relation(fields: [brandId], references: [id])
+  rubro          Rubro?          @relation(fields: [rubroId], references: [id])
   invoiceItems   InvoiceItem[]
   stocks         Stock[]
   stockMovements StockMovement[]
@@ -692,6 +708,11 @@ model Recibo {
   checkDueDate   DateTime?     // Vencimiento cheque
   installments   Int?          // Cuotas (tarjeta)
 
+  cardId         String?
+  card           Card?         @relation(fields: [cardId], references: [id])
+  surchargePercent Decimal?    @db.Decimal(5, 2)
+  surchargeAmount  Decimal?    @db.Decimal(12, 2)
+
   notes          String?
   status         String        @default("EMITTED")       // EMITTED | CANCELLED
   checkStatus    String?                                  // PENDING | DEPOSITED | CLEARED | BOUNCED | RETURNED (only for CHECK)
@@ -890,6 +911,38 @@ model SupplierAccountMovement {
   @@map("supplier_account_movements")
 }
 
+// ── Tarjetas ────────────────────────────────────────────────────────────────
+
+model Card {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("CREDIT") // CREDIT | DEBIT
+  bank        String?
+  isActive    Boolean  @default(true)
+  companyId   String   @default("00000000-0000-0000-0000-000000000001")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  surcharges  CardSurcharge[]
+  recibos     Recibo[]
+
+  @@map("cards")
+}
+
+model CardSurcharge {
+  id               String  @id @default(uuid())
+  cardId           String
+  installments     Int     @default(1)
+  surchargePercent Decimal @db.Decimal(5, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, installments])
+  @@map("card_surcharges")
+}
+
 // ── Banco (cuentas y movimientos bancarios) ─────────────────────────────────
 
 model BankAccount {
@@ -923,4 +976,31 @@ model BankMovement {
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
 
   @@map("bank_movements")
+}
+
+
+model Cheque {
+  id             String    @id @default(uuid())
+  number         String    @unique
+  type           String                      // INGRESO | EGRESO
+  checkNumber    String?                     // N° del cheque físico
+  bank           String?
+  amount         Decimal   @db.Decimal(12, 2)
+  currency       String    @default("ARS")
+  exchangeRate   Decimal   @default(1) @db.Decimal(12, 4)
+  dueDate        DateTime?
+  issuer         String?                     // Librador (INGRESO)
+  beneficiary    String?                     // Beneficiario (EGRESO)
+  status         String    @default("PENDING") // PENDING | DEPOSITED | CLEARED | BOUNCED | RETURNED
+  notes          String?
+  customerId     String?
+  supplierId     String?
+  bankAccountId  String?
+  cashRegisterId String?
+  userId         String
+  companyId      String    @default("00000000-0000-0000-0000-000000000001")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("cheques")
 }

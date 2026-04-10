@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IProductRepository } from '../../../domain/repositories/IProductRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError, ConflictError } from '../../../shared/errors/AppError';
 import { Decimal } from '@prisma/client/runtime/library';
 
@@ -29,6 +30,15 @@ export class ProductController {
         salePriceUSD: req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null,
         taxRate: new Decimal(req.body.taxRate ?? 21),
         isActive: req.body.isActive ?? true,
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Product',
+        entityId: product.id,
+        description: `Producto ${product.name} (${product.sku}) creado`,
       });
 
       res.status(201).json({
@@ -110,6 +120,15 @@ export class ProductController {
 
       const product = await productRepository.update(req.params.id, updateData);
 
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Product',
+        entityId: product.id,
+        description: `Producto ${product.name} actualizado`,
+      });
+
       res.json({
         status: 'success',
         data: product,
@@ -155,6 +174,15 @@ export class ProductController {
       }
 
       await productRepository.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Product',
+        entityId: req.params.id,
+        description: `Producto ${existingProduct.name} (${existingProduct.sku}) eliminado`,
+      });
 
       res.status(204).send();
     } catch (error) {

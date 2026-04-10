@@ -20,7 +20,9 @@ export interface AccountMovement {
   description: string;
   invoiceId: string | null;
   budgetId: string | null;
+  internalNoteId?: string | null;
   cashRegisterId: string | null;
+  reciboId?: string | null;
   createdAt: Date;
 }
 

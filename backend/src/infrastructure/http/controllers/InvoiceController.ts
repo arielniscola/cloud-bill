@@ -12,11 +12,13 @@ import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigR
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { afipService } from '../../services/AfipService';
+import { pdvService } from '../../services/PdvService';
 import { sendInvoiceEmail } from '../../services/EmailService';
 import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
+import { recordInvoiceCreated, recordPaymentReceived } from '../../services/AccountingService';
 
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -111,6 +113,18 @@ export class InvoiceController {
         entity: 'Invoice',
         entityId: invoice.id,
         description: `Factura ${invoice.number} creada`,
+      });
+
+      // Auto-generate journal entry
+      await recordInvoiceCreated({
+        id: invoice.id,
+        number: invoice.number,
+        type: invoice.type,
+        subtotal: Number(invoice.subtotal),
+        taxAmount: Number(invoice.taxAmount),
+        total: Number(invoice.total),
+        companyId: req.companyId,
+        userId: req.user!.userId,
       });
 
       res.status(201).json({
@@ -439,6 +453,17 @@ export class InvoiceController {
         description: `Pago ${recibo.number} registrado en factura ${invoice.number}`,
       });
 
+      // Auto-generate journal entry for payment
+      await recordPaymentReceived({
+        id: recibo.id,
+        number: recibo.number,
+        amount: paymentData.amount,
+        paymentMethod: paymentData.paymentMethod,
+        companyId: req.companyId,
+        userId: req.user!.userId,
+        invoiceNumber: invoice.number,
+      });
+
       res.json({ status: 'success', data: updated, recibo });
     } catch (error) {
       next(error);
@@ -468,9 +493,18 @@ export class InvoiceController {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }
 
+      // Resolve the terminal (PdV) assigned to the user
+      const pdv = await pdvService.getPdvForUser(req.user!.userId);
+
+      // Get TA outside getNextNumber to reuse the same token for both sync and emit
+      const ta = await afipService.getTokenAuth(config);
+
+      // Atomically get next sequential number (syncs from AFIP on first use)
+      const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
+
       let result;
       try {
-        result = await afipService.emitInvoice(invoice as any, config);
+        result = await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
       } catch (afipError) {
         await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
         throw afipError;
@@ -566,9 +600,9 @@ export class InvoiceController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to } = req.body;
+      const { to, pdfBase64 } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendInvoiceEmail(id, to, req.companyId!);
+      await sendInvoiceEmail(id, to, req.companyId!, pdfBase64);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

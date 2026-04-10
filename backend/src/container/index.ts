@@ -24,6 +24,13 @@ import { IOrdenCompraRepository } from '../domain/repositories/IOrdenCompraRepos
 import { ICompanyRepository } from '../domain/repositories/ICompanyRepository';
 import { IOrdenPagoRepository } from '../domain/repositories/IOrdenPagoRepository';
 import { IBankRepository } from '../domain/repositories/IBankRepository';
+import { ICardRepository } from '../domain/repositories/ICardRepository';
+import { IRubroRepository } from '../domain/repositories/IRubroRepository';
+import { IInternalNoteRepository } from '../domain/repositories/IInternalNoteRepository';
+import { IAccountRepository } from '../domain/repositories/IAccountRepository';
+import { IJournalEntryRepository } from '../domain/repositories/IJournalEntryRepository';
+import { IPdvRepository } from '../domain/repositories/IPdvRepository';
+import { IChequeRepository } from '../domain/repositories/IChequeRepository';
 
 import { PrismaUserRepository } from '../infrastructure/database/repositories/PrismaUserRepository';
 import { PrismaCustomerRepository } from '../infrastructure/database/repositories/PrismaCustomerRepository';
@@ -49,6 +56,13 @@ import { PrismaOrdenCompraRepository } from '../infrastructure/database/reposito
 import { PrismaCompanyRepository } from '../infrastructure/database/repositories/PrismaCompanyRepository';
 import { PrismaOrdenPagoRepository } from '../infrastructure/database/repositories/PrismaOrdenPagoRepository';
 import { PrismaBankRepository } from '../infrastructure/database/repositories/PrismaBankRepository';
+import { PrismaCardRepository } from '../infrastructure/database/repositories/PrismaCardRepository';
+import { PrismaRubroRepository } from '../infrastructure/database/repositories/PrismaRubroRepository';
+import { PrismaInternalNoteRepository } from '../infrastructure/database/repositories/PrismaInternalNoteRepository';
+import { PrismaAccountRepository } from '../infrastructure/database/repositories/PrismaAccountRepository';
+import { PrismaJournalEntryRepository } from '../infrastructure/database/repositories/PrismaJournalEntryRepository';
+import { PrismaPdvRepository } from '../infrastructure/database/repositories/PrismaPdvRepository';
+import { PrismaChequeRepository } from '../infrastructure/database/repositories/PrismaChequeRepository';
 
 // Repository registrations
 container.registerSingleton<IUserRepository>('UserRepository', PrismaUserRepository);
@@ -78,5 +92,12 @@ container.registerSingleton<IOrdenCompraRepository>('OrdenCompraRepository', Pri
 container.registerSingleton<ICompanyRepository>('CompanyRepository', PrismaCompanyRepository);
 container.registerSingleton<IOrdenPagoRepository>('OrdenPagoRepository', PrismaOrdenPagoRepository);
 container.registerSingleton<IBankRepository>('BankRepository', PrismaBankRepository);
+container.registerSingleton<ICardRepository>('CardRepository', PrismaCardRepository);
+container.registerSingleton<IRubroRepository>('RubroRepository', PrismaRubroRepository);
+container.registerSingleton<IInternalNoteRepository>('InternalNoteRepository', PrismaInternalNoteRepository);
+container.registerSingleton<IAccountRepository>('AccountRepository', PrismaAccountRepository);
+container.registerSingleton<IJournalEntryRepository>('JournalEntryRepository', PrismaJournalEntryRepository);
+container.registerSingleton<IPdvRepository>('PdvRepository', PrismaPdvRepository);
+container.registerSingleton<IChequeRepository>('ChequeRepository', PrismaChequeRepository);
 
 export { container };

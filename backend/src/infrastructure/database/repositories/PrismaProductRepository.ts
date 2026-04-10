@@ -14,7 +14,7 @@ export class PrismaProductRepository implements IProductRepository {
   }
 
   async findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id }, include: { category: true, brand: true } } as any);
+    return this.prisma.product.findUnique({ where: { id }, include: { category: true, brand: true, rubro: true } } as any);
   }
 
   async findBySku(sku: string): Promise<Product | null> {
@@ -75,7 +75,7 @@ export class PrismaProductRepository implements IProductRepository {
         skip,
         take: limit,
         orderBy: { name: 'asc' },
-        include: { category: true, brand: true },
+        include: { category: true, brand: true, rubro: true } as any,
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -96,7 +96,7 @@ export class PrismaProductRepository implements IProductRepository {
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",
         cost, price, "salePriceUSD", "taxRate", "isActive",
-        "priceUpdatedAt", "categoryId", "brandId", "companyId",
+        "priceUpdatedAt", "categoryId", "brandId", "rubroId", "companyId",
         "createdAt", "updatedAt"
       ) VALUES (
         gen_random_uuid(),
@@ -104,7 +104,7 @@ export class PrismaProductRepository implements IProductRepository {
         ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
         ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
         ${d.isActive ?? true}, NOW(),
-        ${d.categoryId ?? null}, ${d.brandId ?? null}, ${companyId},
+        ${d.categoryId ?? null}, ${d.brandId ?? null}, ${d.rubroId ?? null}, ${companyId},
         NOW(), NOW()
       )
       RETURNING id
@@ -131,6 +131,7 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.leadTimeDays  !== undefined) setClauses.push(Prisma.sql`"leadTimeDays" = ${d.leadTimeDays}`);
     if (d.categoryId    !== undefined) setClauses.push(Prisma.sql`"categoryId" = ${d.categoryId}`);
     if (d.brandId       !== undefined) setClauses.push(Prisma.sql`"brandId" = ${d.brandId}`);
+    if (d.rubroId       !== undefined) setClauses.push(Prisma.sql`"rubroId" = ${d.rubroId}`);
     if (priceChanged)                  setClauses.push(Prisma.sql`"priceUpdatedAt" = NOW()`);
 
     setClauses.push(Prisma.sql`"updatedAt" = NOW()`);

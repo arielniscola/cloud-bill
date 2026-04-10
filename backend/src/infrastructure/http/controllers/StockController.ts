@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class StockController {
@@ -65,6 +66,16 @@ export class StockController {
         userId: req.user?.userId,
       });
 
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'StockMovement',
+        entityId: movement.id,
+        description: `Movimiento de stock ${req.body.type} (cant: ${req.body.quantity})`,
+        metadata: { type: req.body.type, quantity: req.body.quantity, productId: req.body.productId, warehouseId: req.body.warehouseId },
+      });
+
       res.status(201).json({
         status: 'success',
         data: movement,
@@ -85,6 +96,16 @@ export class StockController {
         req.body.quantity,
         req.user?.userId
       );
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'TRANSFER',
+        entity: 'Stock',
+        entityId: req.body.productId,
+        description: `Transferencia de stock (cant: ${req.body.quantity})`,
+        metadata: { productId: req.body.productId, fromWarehouseId: req.body.fromWarehouseId, toWarehouseId: req.body.toWarehouseId, quantity: req.body.quantity },
+      });
 
       res.json({
         status: 'success',
@@ -167,6 +188,16 @@ export class StockController {
         req.body.reason,
         req.user?.userId
       );
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Stock',
+        entityId: req.body.warehouseId,
+        description: `Ajuste de inventario (${req.body.items.length} productos) — ${req.body.reason || 'Sin motivo'}`,
+        metadata: { warehouseId: req.body.warehouseId, itemCount: req.body.items.length, reason: req.body.reason },
+      });
 
       res.json({
         status: 'success',

@@ -7,6 +7,7 @@ import { UnauthorizedError } from '../../../shared/errors/AppError';
 import { env } from '../../../infrastructure/config/env';
 import { JwtPayload } from '../../../shared/types';
 import prisma from '../../../infrastructure/database/prisma';
+import { getFeaturesForPlan } from '../../../shared/constants/planFeatures';
 
 interface LoginResult {
   token: string;
@@ -17,6 +18,8 @@ interface LoginResult {
     role: string;
     companyId: string | null;
     enabledModules: string[];
+    plan: string;
+    features: string[];
   };
 }
 
@@ -46,14 +49,18 @@ export class LoginUseCase {
 
     const companyId = (user as any).companyId ?? null;
 
-    // Fetch enabledModules for company users (SUPER_ADMIN has no company → all access)
+    // Fetch enabledModules + plan for company users (SUPER_ADMIN has no company → all access)
     let enabledModules: string[] = ['ALL'];
+    let plan = 'ENTERPRISE';
+    let features: string[] = [];
     if (companyId) {
-      const rows = await prisma.$queryRaw<{ enabledModules: string }[]>`
-        SELECT "enabledModules" FROM companies WHERE id = ${companyId}
+      const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string }[]>`
+        SELECT "enabledModules", "plan" FROM companies WHERE id = ${companyId}
       `;
       const raw = rows[0]?.enabledModules;
       enabledModules = (!raw || raw === 'ALL') ? ['ALL'] : raw.split(',').filter(Boolean);
+      plan = rows[0]?.plan ?? 'PRO';
+      features = getFeaturesForPlan(plan);
     }
 
     const payload: JwtPayload = {
@@ -76,6 +83,8 @@ export class LoginUseCase {
         role:      user.role,
         companyId,
         enabledModules,
+        plan,
+        features,
       },
     };
   }

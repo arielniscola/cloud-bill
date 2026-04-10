@@ -282,7 +282,7 @@ export class RemitoController {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }
 
-      const isLinkedRemito = !!(remito.invoiceId || remito.budgetId);
+      const isLinkedRemito = !!(remito.invoiceId || remito.budgetId || (remito as any).ordenPedidoId);
 
       if (remito.stockBehavior === 'RESERVE') {
         for (const item of remito.items) {
@@ -351,9 +351,9 @@ export class RemitoController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to } = req.body;
+      const { to, pdfBase64 } = req.body;
       if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
-      await sendRemitoEmail(id, to, req.companyId!);
+      await sendRemitoEmail(id, to, req.companyId!, pdfBase64);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

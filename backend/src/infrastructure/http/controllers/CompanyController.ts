@@ -3,6 +3,9 @@ import { container } from 'tsyringe';
 import { ICompanyRepository } from '../../../domain/repositories/ICompanyRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { createCompanySchema, updateCompanySchema, updateModulesSchema } from '../../../application/dtos/company.dto';
+import { PLAN_NAMES, PLAN_MODULES } from '../../../shared/constants/planFeatures';
+import { invalidatePlanCache } from '../middlewares/featureMiddleware';
+import prisma from '../../database/prisma';
 
 export class CompanyController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -49,6 +52,27 @@ export class CompanyController {
       if (!company) throw new NotFoundError('Empresa');
       const { enabledModules } = updateModulesSchema.parse(req.body);
       const updated = await repo.updateModules(req.params.id, enabledModules);
+      res.json({ status: 'success', data: updated });
+    } catch (error) { next(error); }
+  }
+
+  async updatePlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { plan } = req.body;
+      if (!plan || !PLAN_NAMES.includes(plan)) {
+        throw new AppError(`Plan inválido. Valores permitidos: ${PLAN_NAMES.join(', ')}`, 400);
+      }
+      const repo = container.resolve<ICompanyRepository>('CompanyRepository');
+      const company = await repo.findById(req.params.id);
+      if (!company) throw new NotFoundError('Empresa');
+
+      const modules = PLAN_MODULES[plan as keyof typeof PLAN_MODULES] ?? 'ALL';
+      await prisma.$executeRaw`
+        UPDATE "companies" SET "plan" = ${plan}, "enabledModules" = ${modules}, "updatedAt" = NOW() WHERE id = ${req.params.id}
+      `;
+      invalidatePlanCache(req.params.id);
+
+      const updated = await repo.findById(req.params.id);
       res.json({ status: 'success', data: updated });
     } catch (error) { next(error); }
   }

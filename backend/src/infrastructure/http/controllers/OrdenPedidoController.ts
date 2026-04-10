@@ -10,6 +10,7 @@ import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepositor
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
+import { sendOrdenPedidoEmail } from '../../services/EmailService';
 import {
   createOrdenPedidoSchema,
   updateOrdenPedidoSchema,
@@ -493,6 +494,17 @@ export class OrdenPedidoController {
       next(error);
     }
   }
+
+  sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { to, pdfBase64 } = req.body;
+      await sendOrdenPedidoEmail(id, to, req.companyId!, pdfBase64);
+      res.json({ status: 'success', message: 'Email enviado' });
+    } catch (error) {
+      next(error);
+    }
+  };
 
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

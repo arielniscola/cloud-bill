@@ -110,23 +110,47 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    const [data, total] = await Promise.all([
-      this.prisma.accountMovement.findMany({
-        where: { currentAccountId },
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: { invoice: true, budget: true } as any,
-      }),
+    const [rows, countRows] = await Promise.all([
+      this.prisma.$queryRaw<any[]>`
+        SELECT
+          m.id, m."currentAccountId", m.type, m.amount, m.balance,
+          m.description, m."invoiceId", m."budgetId", m."internalNoteId",
+          m."cashRegisterId", m."reciboId", m."createdAt",
+          i.number  AS "invoiceNumber",  i.type AS "invoiceType",
+          b.number  AS "budgetNumber"
+        FROM "account_movements" m
+        LEFT JOIN invoices i ON i.id = m."invoiceId"
+        LEFT JOIN budgets  b ON b.id = m."budgetId"
+        WHERE m."currentAccountId" = ${currentAccountId}
+        ORDER BY m."createdAt" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `,
       this.prisma.accountMovement.count({ where: { currentAccountId } }),
     ]);
 
+    const data = rows.map((r) => ({
+      id:               r.id,
+      currentAccountId: r.currentAccountId,
+      type:             r.type,
+      amount:           Number(r.amount),
+      balance:          Number(r.balance),
+      description:      r.description,
+      invoiceId:        r.invoiceId   ?? null,
+      budgetId:         r.budgetId    ?? null,
+      internalNoteId:   r.internalNoteId ?? null,
+      cashRegisterId:   r.cashRegisterId ?? null,
+      reciboId:         r.reciboId    ?? null,
+      createdAt:        r.createdAt,
+      invoice:  r.invoiceId ? { id: r.invoiceId, number: r.invoiceNumber, type: r.invoiceType } : null,
+      budget:   r.budgetId  ? { id: r.budgetId,  number: r.budgetNumber  }                     : null,
+    }));
+
     return {
-      data,
-      total,
+      data: data as any as AccountMovement[],
+      total: Number(countRows),
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(Number(countRows) / limit),
     };
   }
 

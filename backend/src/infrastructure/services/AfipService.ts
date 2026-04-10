@@ -93,6 +93,10 @@ export class AfipService {
   }
 
   /** Get (or refresh) the Ticket de Acceso from WSAA */
+  async getTokenAuth(config: AfipConfig): Promise<{ token: string; sign: string }> {
+    return this.getTA(config);
+  }
+
   private async getTA(config: AfipConfig): Promise<TokenAuth> {
     const env = config.isProduction ? 'prod' : 'test';
     const cacheKey = `${config.cuit}-${env}`;
@@ -138,10 +142,14 @@ export class AfipService {
     }
   }
 
-  /** Emit invoice to AFIP and return CAE */
+  /** Emit invoice to AFIP and return CAE.
+   * pdvNumber and cbteNro must be pre-computed by PdvService to ensure no-gap numbering.
+   */
   async emitInvoice(
     invoice: InvoiceWithItems & { customer: { taxId: string | null; taxCondition: string } },
-    config: AfipConfig
+    config: AfipConfig,
+    pdvNumber: number,
+    cbteNro: number
   ): Promise<EmitResult> {
     const cbteTipo = INVOICE_TYPE_MAP[invoice.type];
     if (cbteTipo === undefined) throw new Error(`Tipo de comprobante no soportado: ${invoice.type}`);
@@ -150,15 +158,6 @@ export class AfipService {
     const env = config.isProduction ? 'prod' : 'test';
     const wsfeClient = await soap.createClientAsync(WSFE_WSDL[env]);
     const auth = { Token: ta.token, Sign: ta.sign, Cuit: config.cuit };
-
-    // Get last authorized voucher number to compute the next
-    const [lastRes] = await (wsfeClient as any).FECompUltimoAutorizadoAsync({
-      Auth: auth,
-      PtoVta: config.salePoint,
-      CbteTipo: cbteTipo,
-    });
-    const lastNum: number = lastRes?.FECompUltimoAutorizadoResult?.CbteNro ?? 0;
-    const cbteNro = lastNum + 1;
 
     const docTipo = DOC_TIPO_MAP[invoice.customer.taxCondition] ?? 99;
     const docNro =
@@ -205,7 +204,7 @@ export class AfipService {
     const [caeRes] = await (wsfeClient as any).FECAESolicitarAsync({
       Auth: auth,
       FeCAEReq: {
-        FeCabReq: { CantReg: 1, PtoVta: config.salePoint, CbteTipo: cbteTipo },
+        FeCabReq: { CantReg: 1, PtoVta: pdvNumber, CbteTipo: cbteTipo },
         FeDetReq: { FECAEDetRequest: detRequest },
       },
     });
@@ -246,7 +245,7 @@ export class AfipService {
       cae: det.CAE,
       caeExpiry: this.parseAfipDate(det.CAEFchVto),
       afipCbtNum: cbteNro,
-      afipPtVenta: config.salePoint,
+      afipPtVenta: pdvNumber,
       observaciones,
     };
   }

@@ -12,6 +12,7 @@ router.get('/:id',    requireRoles('SUPER_ADMIN', 'ADMIN'), companyController.fi
 router.post('/',      requireRoles('SUPER_ADMIN'),           companyController.create.bind(companyController));
 router.put('/:id',    requireRoles('SUPER_ADMIN'),           companyController.update.bind(companyController));
 router.patch('/:id/modules', requireRoles('SUPER_ADMIN'),   companyController.updateModules.bind(companyController));
+router.patch('/:id/plan',   requireRoles('SUPER_ADMIN'),   companyController.updatePlan.bind(companyController));
 router.delete('/:id', requireRoles('SUPER_ADMIN'),           companyController.delete.bind(companyController));
 
 export { router as companyRoutes };

@@ -33,6 +33,13 @@ import { searchRoutes } from './routes/searchRoutes';
 import { remindersRoutes } from './routes/remindersRoutes';
 import { syncRoutes } from './routes/syncRoutes';
 import { reportsRoutes } from './routes/reportsRoutes';
+import { mpRoutes } from './routes/mpRoutes';
+import { cardRoutes } from './routes/cardRoutes';
+import { rubroRoutes } from './routes/rubroRoutes';
+import { internalNoteRoutes } from './routes/internalNoteRoutes';
+import { accountingRoutes } from './routes/accountingRoutes';
+import { pdvRoutes } from './routes/pdvRoutes';
+import { chequeRoutes } from './routes/chequeRoutes';
 
 export function createApp(): Application {
   const app = express();
@@ -93,6 +100,13 @@ export function createApp(): Application {
   app.use('/api/reminders', remindersRoutes);
   app.use('/api/sync', syncRoutes);
   app.use('/api/reports', reportsRoutes);
+  app.use('/api/mercadopago', mpRoutes);
+  app.use('/api/cards', cardRoutes);
+  app.use('/api/rubros', rubroRoutes);
+  app.use('/api/internal-notes', internalNoteRoutes);
+  app.use('/api/accounting', accountingRoutes);
+  app.use('/api/pdv', pdvRoutes);
+  app.use('/api/cheques', chequeRoutes);
 
   // 404 handler
   app.use((_req, res) => {
