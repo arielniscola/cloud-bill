@@ -8,6 +8,8 @@ export interface User {
   isActive: boolean;
   companyId?: string | null;
   enabledModules?: string[]; // ['ALL'] or ['ventas','catalogo','compras','finanzas']
+  plan?: string;             // 'STARTER' | 'PRO' | 'ENTERPRISE'
+  features?: string[];       // computed list of allowed feature keys
   createdAt: string;
   updatedAt: string;
 }

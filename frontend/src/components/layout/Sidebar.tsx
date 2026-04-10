@@ -7,6 +7,7 @@ import {
   Package,
   FolderTree,
   Tag,
+  Layers,
   Warehouse,
   PackageSearch,
   FileText,
@@ -36,10 +37,14 @@ import {
   Building2,
   X,
   Search,
+  Smartphone,
+  FileEdit,
+  BookMarked,
 } from "lucide-react";
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useFeatures } from "../../hooks/useFeatures";
 import { getNavTheme } from "../../utils/navThemes";
 import NotificationBell from "../notifications/NotificationBell";
 import CompanySwitcher from "../shared/CompanySwitcher";
@@ -50,11 +55,13 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   children?: NavItem[];
+  featureKey?: string; // hide item if company plan doesn't include this feature
 }
 
 interface NavGroup {
   label: string;
   moduleKey?: string;
+  featureKey?: string; // hide entire group if plan doesn't include this feature
   requiredRoles?: readonly string[];
   items: NavItem[];
 }
@@ -95,6 +102,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Recibos",           href: "/recibos",          icon: Receipt },
           { name: "Clientes",          href: "/customers",        icon: Users },
           { name: "Cuentas Corrientes",href: "/current-accounts", icon: CreditCard },
+          { name: "Notas Internas",    href: "/internal-notes",  icon: FileEdit },
         ],
       },
     ],
@@ -109,10 +117,11 @@ const navigationGroups: NavGroup[] = [
         href: "/purchases",
         icon: ShoppingCart,
         children: [
-          { name: "Proveedores",       href: "/suppliers",     icon: Truck },
-          { name: "Órdenes de Compra", href: "/orden-compras", icon: FileStack },
-          { name: "Compras",           href: "/purchases",     icon: ShoppingCart },
-          { name: "Órdenes de Pago",   href: "/orden-pagos",   icon: Banknote },
+          { name: "Proveedores",       href: "/suppliers",         icon: Truck },
+          { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard },
+          { name: "Órdenes de Compra", href: "/orden-compras",     icon: FileStack },
+          { name: "Compras",           href: "/purchases",         icon: ShoppingCart },
+          { name: "Órdenes de Pago",   href: "/orden-pagos",       icon: Banknote },
         ],
       },
     ],
@@ -129,6 +138,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Lista",      href: "/products",   icon: Package },
           { name: "Categorías", href: "/categories", icon: FolderTree },
           { name: "Marcas",     href: "/brands",     icon: Tag },
+          { name: "Rubros",     href: "/rubros",     icon: Layers },
         ],
       },
       {
@@ -151,11 +161,38 @@ const navigationGroups: NavGroup[] = [
     moduleKey: "finanzas",
     requiredRoles: ["ADMIN", "FINANCES"] as const,
     items: [
-      { name: "Cajas",           href: "/cash-registers", icon: Landmark },
-      { name: "Banco de Cheques",  href: "/banco-cheques", icon: Banknote },
-      { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark },
-      { name: "Libro IVA",       href: "/iva",            icon: BookOpen },
-      { name: "Reporte Ventas",  href: "/reports/sales",  icon: BarChart2 },
+      {
+        name: "Finanzas",
+        href: "/cash-registers",
+        icon: Landmark,
+        children: [
+          { name: "Cajas",             href: "/cash-registers", icon: Landmark },
+          { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote },
+          { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark },
+          { name: "Tarjetas",          href: "/cards",          icon: CreditCard },
+          { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone, featureKey: "mercadopago" },
+          { name: "Libro IVA",         href: "/iva",           icon: BookOpen },
+          { name: "Reporte Ventas",    href: "/reports/sales", icon: BarChart2 },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Contabilidad",
+    moduleKey: "finanzas",
+    featureKey: "accounting",
+    requiredRoles: ["ADMIN", "FINANCES"] as const,
+    items: [
+      {
+        name: "Contabilidad",
+        href: "/accounting/journal-entries",
+        icon: BookMarked,
+        children: [
+          { name: "Asientos Contables", href: "/accounting/journal-entries", icon: BookOpen },
+          { name: "Libro IVA",          href: "/iva",                        icon: BookOpen },
+          { name: "Plan de Cuentas",    href: "/accounting/accounts",        icon: BookMarked },
+        ],
+      },
     ],
   },
   {
@@ -182,6 +219,7 @@ export default function Sidebar() {
     useUIStore();
   const { user, logout } = useAuthStore();
   const { role, isModuleEnabled } = usePermissions();
+  const { hasFeature } = useFeatures();
   const theme = getNavTheme(navTheme);
   const { companies } = useCompanyStore();
   const location = useLocation();
@@ -192,6 +230,7 @@ export default function Sidebar() {
     : navigationGroups.filter((g) => {
         if (g.requiredRoles && !g.requiredRoles.includes(role)) return false;
         if (g.moduleKey && !isModuleEnabled(g.moduleKey)) return false;
+        if (g.featureKey && !hasFeature(g.featureKey as any)) return false;
         return true;
       });
 
@@ -251,6 +290,22 @@ export default function Sidebar() {
     });
     return initial;
   });
+
+  // Auto-open the relevant sub-menu when navigating to a child route
+  useEffect(() => {
+    allNavItems.forEach((item) => {
+      if (!item.children) return;
+      const parentActive = location.pathname.startsWith(item.href);
+      const childActive = item.children.some(
+        (c) =>
+          location.pathname === c.href ||
+          location.pathname.startsWith(c.href + "/"),
+      );
+      if (parentActive || childActive) {
+        setOpenMenus((prev) => ({ ...prev, [item.name]: true }));
+      }
+    });
+  }, [location.pathname]);
 
   const toggleMenu = (name: string) =>
     setOpenMenus((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -474,7 +529,9 @@ export default function Sidebar() {
 
                         {showText && openMenus[item.name] && (
                           <ul className="mt-0.5 ml-[14px] pl-3 border-l border-white/[0.08] space-y-0.5 pb-0.5">
-                            {item.children.map((child) => (
+                            {item.children.filter((child) =>
+                              !child.featureKey || hasFeature(child.featureKey as any)
+                            ).map((child) => (
                               <li key={child.href}>
                                 <NavLink
                                   to={child.href}

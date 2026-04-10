@@ -55,6 +55,10 @@ export const ordenPedidosService = {
     return response.data.data;
   },
 
+  async sendEmail(id: string, to: string): Promise<void> {
+    await api.post(`/orden-pedidos/${id}/send-email`, { to });
+  },
+
   async delete(id: string): Promise<void> {
     await api.delete(`/orden-pedidos/${id}`);
   },

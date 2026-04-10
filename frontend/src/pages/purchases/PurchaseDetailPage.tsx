@@ -5,7 +5,7 @@ import {
   Building2, Calendar, Hash, Banknote,
   XCircle, FileText, Package, CheckCircle2,
   User, Link2, Warehouse, Receipt, Plus,
-  Pencil, Trash2, AlertTriangle, Clock,
+  Pencil, Trash2, AlertTriangle, Clock, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, AddPurchaseInvoiceModal } from '../../components/shared';
@@ -120,8 +120,9 @@ export default function PurchaseDetailPage() {
   const [isLoading,   setIsLoading]   = useState(true);
   const [cancelId,    setCancelId]    = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
-  const [showInvModal, setShowInvModal]   = useState(false);
-  const [editingInv,   setEditingInv]     = useState<PurchaseInvoice | null>(null);
+  const [showInvModal,   setShowInvModal]   = useState(false);
+  const [editingInv,     setEditingInv]     = useState<PurchaseInvoice | null>(null);
+  const [expandedInvIds, setExpandedInvIds] = useState<Set<string>>(new Set());
   const [savingInv,    setSavingInv]      = useState(false);
   const [deletingInv,  setDeletingInv]    = useState<string | null>(null);
 
@@ -384,7 +385,18 @@ export default function PurchaseDetailPage() {
                 </p>
               ) : (
                 <>
-                  {invoices.map((inv) => (
+                  {invoices.map((inv) => {
+                    const isExpanded = expandedInvIds.has(inv.id);
+                    const toggleExpand = () => setExpandedInvIds((prev) => {
+                      const next = new Set(prev);
+                      next.has(inv.id) ? next.delete(inv.id) : next.add(inv.id);
+                      return next;
+                    });
+                    const hasDetail = (inv.items?.length ?? 0) > 0 || (inv.retenciones?.length ?? 0) > 0;
+                    const totalRetenciones = (inv.retenciones ?? []).reduce((s, r) => s + Number(r.amount), 0);
+                    const netoPagar = Number(inv.amount) - totalRetenciones;
+
+                    return (
                     <div
                       key={inv.id}
                       className={`rounded-xl border px-4 py-3 ${
@@ -396,6 +408,12 @@ export default function PurchaseDetailPage() {
                       {/* Row 1: number + type + amount + actions */}
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
+                          {hasDetail && (
+                            <button onClick={toggleExpand}
+                              className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-indigo-500 transition-colors">
+                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
                           <span className="text-sm font-semibold text-gray-800 dark:text-slate-200 font-mono">{inv.number}</span>
                           <span className="text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">
                             {INVOICE_TYPE_LABELS[inv.type] ?? inv.type}
@@ -405,10 +423,17 @@ export default function PurchaseDetailPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
-                            {formatCurrency(Number(inv.amount), purchase.currency)}
-                          </span>
-                          {/* Status badge (read-only — payment via Orden de Pago) */}
+                          <div className="text-right">
+                            <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-white block">
+                              {formatCurrency(Number(inv.amount), purchase.currency)}
+                            </span>
+                            {totalRetenciones > 0 && (
+                              <span className="text-xs text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                Neto {formatCurrency(netoPagar, purchase.currency)}
+                              </span>
+                            )}
+                          </div>
+                          {/* Status badge */}
                           <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${
                             inv.status === 'PAID'
                               ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800'
@@ -436,7 +461,7 @@ export default function PurchaseDetailPage() {
                         </div>
                       </div>
 
-                      {/* Row 2: IVA breakdown + due date */}
+                      {/* Row 2: IVA breakdown + dates */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">
                         {Number(inv.subtotal) > 0 && (
                           <span className="text-xs text-gray-400 dark:text-slate-500">
@@ -444,13 +469,70 @@ export default function PurchaseDetailPage() {
                             {' + '}IVA {inv.taxRate}% {formatCurrency(Number(inv.taxAmount), purchase.currency)}
                           </span>
                         )}
-                        <DueDateBadge dueDate={inv.dueDate} />
-                        {inv.notes && (
-                          <span className="text-xs text-gray-400 truncate">{inv.notes}</span>
+                        {inv.imputationDate && (
+                          <span className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400">
+                            <Calendar className="w-3 h-3" />
+                            Imp. {formatDate(inv.imputationDate)}
+                          </span>
                         )}
+                        <DueDateBadge dueDate={inv.dueDate} />
+                        {inv.notes && <span className="text-xs text-gray-400 truncate">{inv.notes}</span>}
                       </div>
+
+                      {/* Expandable: items + retenciones */}
+                      {isExpanded && hasDetail && (
+                        <div className="mt-3 space-y-3 border-t border-gray-100 dark:border-slate-700 pt-3">
+
+                          {/* Items */}
+                          {(inv.items?.length ?? 0) > 0 && (
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Ítems</p>
+                              <div className="space-y-1">
+                                {inv.items!.map((item) => (
+                                  <div key={item.id} className="grid grid-cols-[3fr_48px_80px_64px_80px] gap-2 text-xs">
+                                    <span className="text-gray-700 dark:text-slate-300 truncate">{item.description}</span>
+                                    <span className="text-right text-gray-500 dark:text-slate-400 tabular-nums">{Number(item.quantity)}</span>
+                                    <span className="text-right text-gray-500 dark:text-slate-400 tabular-nums">{formatCurrency(Number(item.unitPrice), purchase.currency)}</span>
+                                    <span className="text-right text-gray-400 tabular-nums">{Number(item.taxRate)}%</span>
+                                    <span className="text-right font-semibold text-gray-800 dark:text-slate-200 tabular-nums">{formatCurrency(Number(item.total), purchase.currency)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Retenciones */}
+                          {(inv.retenciones?.length ?? 0) > 0 && (
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Retenciones</p>
+                              <div className="space-y-1">
+                                {inv.retenciones!.map((ret) => (
+                                  <div key={ret.id} className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-gray-700 dark:text-slate-300">{ret.type}</span>
+                                      {ret.jurisdiction && <span className="text-gray-500 dark:text-slate-400">{ret.jurisdiction}</span>}
+                                      <span className="text-gray-400">{Number(ret.percentage)}%</span>
+                                      {ret.certificate && (
+                                        <span className="text-[10px] text-gray-400 font-mono">Cert. {ret.certificate}</span>
+                                      )}
+                                    </div>
+                                    <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
+                                      − {formatCurrency(Number(ret.amount), purchase.currency)}
+                                    </span>
+                                  </div>
+                                ))}
+                                <div className="flex justify-between text-xs font-bold border-t border-gray-100 dark:border-slate-700 pt-1.5 text-gray-800 dark:text-white">
+                                  <span>Neto a pagar al proveedor</span>
+                                  <span className="tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(netoPagar, purchase.currency)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  );
+                  })}
 
                   {/* Total invoiced */}
                   <div className="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-slate-700 px-1">

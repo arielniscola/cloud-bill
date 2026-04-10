@@ -22,6 +22,10 @@ const companiesService = {
     const res = await api.patch<{ data: Company }>(`/companies/${id}/modules`, { enabledModules });
     return res.data.data;
   },
+  async updatePlan(id: string, plan: string): Promise<Company> {
+    const res = await api.patch<{ data: Company }>(`/companies/${id}/plan`, { plan });
+    return res.data.data;
+  },
   async delete(id: string): Promise<void> {
     await api.delete(`/companies/${id}`);
   },

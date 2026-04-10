@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Pencil, CheckCircle2, XCircle, Save } from 'lucide-react';
+import { ArrowLeft, Pencil, CheckCircle2, XCircle, Save, Crown, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button } from '../../components/ui';
 import companiesService from '../../services/companies.service';
 import type { Company } from '../../types/company.types';
-import { ALL_MODULE_KEYS, MODULE_LABELS } from '../../types/company.types';
+import { MODULE_LABELS } from '../../types/company.types';
 import { formatDate } from '../../utils/formatters';
+import {
+  PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, PLAN_COLORS,
+  PLAN_FEATURE_MATRIX, FEATURE_LABELS, PLAN_MODULES, type PlanName,
+} from '../../utils/planFeatures';
 
 const TAX_LABEL: Record<string, string> = {
   RESPONSABLE_INSCRIPTO: 'Responsable Inscripto',
@@ -20,41 +24,31 @@ export default function CompanyDetailPage() {
   const { id }       = useParams<{ id: string }>();
   const [company, setCompany]   = useState<Company | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [modules, setModules]   = useState<string[]>(['ALL']);
-  const [allEnabled, setAllEnabled] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PlanName>('PRO');
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     companiesService.getById(id)
       .then(c => {
         setCompany(c);
-        const isAll = c.enabledModules.includes('ALL');
-        setAllEnabled(isAll);
-        setModules(isAll ? [...ALL_MODULE_KEYS] : c.enabledModules.filter(m => ALL_MODULE_KEYS.includes(m as any)));
+        setSelectedPlan((c.plan as PlanName) ?? 'PRO');
       })
       .catch(() => toast.error('Error al cargar empresa'))
       .finally(() => setIsLoading(false));
   }, [id]);
 
-  const toggleModule = (key: string) => {
-    setModules(prev =>
-      prev.includes(key) ? prev.filter(m => m !== key) : [...prev, key]
-    );
-  };
-
-  const handleSaveModules = async () => {
+  const handleSavePlan = async () => {
     if (!id) return;
-    setIsSaving(true);
+    setIsSavingPlan(true);
     try {
-      const payload = allEnabled ? ['ALL'] : modules.length === ALL_MODULE_KEYS.length ? ['ALL'] : modules;
-      const updated = await companiesService.updateModules(id, payload.length === 0 ? [ALL_MODULE_KEYS[0]] : payload);
-      setCompany(updated);
-      toast.success('Módulos actualizados');
+      await companiesService.updatePlan(id, selectedPlan);
+      setCompany(prev => prev ? { ...prev, plan: selectedPlan } : prev);
+      toast.success(`Plan actualizado a ${PLAN_LABELS[selectedPlan]}`);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al guardar módulos');
+      toast.error(err.response?.data?.message || 'Error al actualizar el plan');
     } finally {
-      setIsSaving(false);
+      setIsSavingPlan(false);
     }
   };
 
@@ -119,59 +113,124 @@ export default function CompanyDetailPage() {
         </dl>
       </div>
 
-      {/* Modules card */}
+      {/* Plan card */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Módulos habilitados</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Crown className="w-4 h-4 text-amber-500" />
+              Plan de suscripción
+            </h3>
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-              Controlá a qué secciones tienen acceso los usuarios de esta empresa
+              El plan determina qué funcionalidades avanzadas están disponibles
             </p>
           </div>
-          <Button size="sm" onClick={handleSaveModules} isLoading={isSaving}>
+          <Button size="sm" onClick={handleSavePlan} isLoading={isSavingPlan} disabled={selectedPlan === (company.plan as PlanName)}>
             <Save className="w-3.5 h-3.5 mr-1.5" />
             Guardar
           </Button>
         </div>
 
-        <div className="p-5 space-y-3">
-          {/* All access toggle */}
-          <label className="flex items-center justify-between p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
-            <div>
-              <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">Acceso completo</p>
-              <p className="text-xs text-indigo-500 dark:text-indigo-500 mt-0.5">Habilita todos los módulos presentes y futuros</p>
-            </div>
-            <input
-              type="checkbox"
-              checked={allEnabled}
-              onChange={e => {
-                setAllEnabled(e.target.checked);
-                if (e.target.checked) setModules([...ALL_MODULE_KEYS]);
-              }}
-              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-            />
-          </label>
-
-          <div className={clsx('space-y-2 transition-opacity', allEnabled && 'opacity-40 pointer-events-none')}>
-            {ALL_MODULE_KEYS.map(key => {
-              const { label, description } = MODULE_LABELS[key];
-              const enabled = modules.includes(key);
+        <div className="p-5">
+          {/* Plan selector */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {PLAN_NAMES.map((plan) => {
+              const colors = PLAN_COLORS[plan];
+              const isSelected = selectedPlan === plan;
               return (
-                <label
-                  key={key}
-                  className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-slate-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors"
+                <button
+                  key={plan}
+                  onClick={() => setSelectedPlan(plan)}
+                  className={clsx(
+                    'p-4 rounded-xl border-2 text-left transition-all',
+                    isSelected
+                      ? `${colors.bg} ${colors.border} ${colors.text}`
+                      : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+                  )}
                 >
-                  <div>
-                    <p className="text-sm font-medium text-gray-800 dark:text-slate-200">{label}</p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{description}</p>
+                  <p className={clsx('font-bold text-sm', isSelected ? colors.text : 'text-gray-700 dark:text-slate-200')}>
+                    {PLAN_LABELS[plan]}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-tight">
+                    {PLAN_DESCRIPTIONS[plan]}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Feature matrix */}
+          <div className="border border-gray-100 dark:border-slate-700 rounded-lg overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 dark:bg-slate-700/50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-500 dark:text-slate-400 font-medium w-1/2">Funcionalidad</th>
+                  {PLAN_NAMES.map(p => (
+                    <th key={p} className={clsx('px-3 py-2 text-center font-semibold', selectedPlan === p ? PLAN_COLORS[p].text : 'text-gray-400 dark:text-slate-500')}>
+                      {PLAN_LABELS[p]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-slate-700/50">
+                {PLAN_FEATURE_MATRIX.map(({ feature, plans }) => (
+                  <tr key={feature} className={clsx(
+                    plans.includes(selectedPlan) ? '' : 'opacity-40',
+                    'hover:bg-gray-50/50 dark:hover:bg-slate-700/20'
+                  )}>
+                    <td className="px-3 py-2 text-gray-700 dark:text-slate-300">{FEATURE_LABELS[feature]}</td>
+                    {PLAN_NAMES.map(p => (
+                      <td key={p} className="px-3 py-2 text-center">
+                        {plans.includes(p)
+                          ? <span className="text-emerald-500 font-bold">✓</span>
+                          : <span className="text-gray-200 dark:text-slate-700">—</span>
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Modules card */}
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Package className="w-4 h-4 text-gray-400" />
+            Módulos incluidos en el plan
+          </h3>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+            Los módulos disponibles están determinados por el plan seleccionado
+          </p>
+        </div>
+        <div className="p-5">
+          <div className="grid grid-cols-2 gap-2">
+            {(['ventas', 'catalogo', 'compras', 'finanzas'] as const).map(key => {
+              const included = PLAN_MODULES[selectedPlan]?.includes(key) ?? false;
+              const { label, description } = MODULE_LABELS[key];
+              return (
+                <div
+                  key={key}
+                  className={clsx(
+                    'p-3 rounded-lg border text-sm',
+                    included
+                      ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10'
+                      : 'border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 opacity-50'
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={included ? 'text-emerald-500' : 'text-gray-300 dark:text-slate-600'}>
+                      {included ? '✓' : '—'}
+                    </span>
+                    <span className={clsx('font-medium', included ? 'text-gray-800 dark:text-slate-200' : 'text-gray-400 dark:text-slate-500')}>
+                      {label}
+                    </span>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={() => toggleModule(key)}
-                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                  />
-                </label>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 ml-4 leading-tight">{description}</p>
+                </div>
               );
             })}
           </div>

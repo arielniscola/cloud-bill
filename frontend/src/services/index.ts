@@ -30,3 +30,8 @@ export { default as ordenPagosService } from './orden-pagos.service';
 export { default as bankService } from './bank.service';
 export { default as reportsService } from './reports.service';
 export type { ByProductRow, SalesReportFilters } from './reports.service';
+export { default as mercadoPagoService } from './mercadopago.service';
+export { default as cardsService } from './cards.service';
+export { default as rubrosService } from './rubros.service';
+export { default as internalNotesService } from './internal-notes.service';
+export { accountingService } from './accounting.service';

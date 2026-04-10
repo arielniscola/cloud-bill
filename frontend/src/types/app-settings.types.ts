@@ -14,6 +14,10 @@ export interface AppSettings {
   smtpPass:                     string | null;
   smtpFrom:                     string | null;
   smtpSecure:                   boolean;
+  mpAccessToken:                string | null;
+  mpPublicKey:                  string | null;
+  mpWebhookSecret:              string | null;
+  mpMode:                       'test' | 'production';
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -33,4 +37,8 @@ export interface UpdateAppSettingsDTO {
   smtpPass?:                     string | null;
   smtpFrom?:                     string | null;
   smtpSecure?:                   boolean;
+  mpAccessToken?:                string | null;
+  mpPublicKey?:                  string | null;
+  mpWebhookSecret?:              string | null;
+  mpMode?:                       'test' | 'production';
 }

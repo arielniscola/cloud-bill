@@ -22,6 +22,7 @@ export interface ActivityLogFilters {
   userId?: string;
   action?: ActivityAction;
   entity?: string;
+  search?: string;
   dateFrom?: string;
   dateTo?: string;
 }

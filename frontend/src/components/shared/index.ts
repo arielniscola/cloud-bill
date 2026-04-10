@@ -35,3 +35,4 @@ export { default as CuitInput } from './CuitInput';
 export { ReceiveOrdenCompraModal } from './ReceiveOrdenCompraModal';
 export { AddPurchaseInvoiceModal } from './AddPurchaseInvoiceModal';
 export { default as CreateCustomerModal } from './CreateCustomerModal';
+export { default as FeatureGuard } from './FeatureGuard';

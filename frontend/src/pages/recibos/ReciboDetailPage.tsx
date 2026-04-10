@@ -157,10 +157,24 @@ export default function ReciboDetailPage() {
                 <span className="text-sm tabular-nums text-gray-900 dark:text-white">{formatDate(recibo.checkDueDate)}</span>
               </div>
             )}
+            {(recibo as any).card && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Tarjeta</span>
+                <span className="text-sm text-gray-900 dark:text-white">{(recibo as any).card.name}</span>
+              </div>
+            )}
             {recibo.installments && (
               <div className="flex justify-between items-center px-5 py-3">
                 <span className="text-sm text-gray-500 dark:text-slate-400">Cuotas</span>
                 <span className="text-sm text-gray-900 dark:text-white">{recibo.installments}</span>
+              </div>
+            )}
+            {(recibo as any).surchargePercent > 0 && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Recargo</span>
+                <span className="text-sm text-amber-600 dark:text-amber-400">
+                  {(recibo as any).surchargePercent}% (+{formatCurrency((recibo as any).surchargeAmount ?? 0, recibo.currency)})
+                </span>
               </div>
             )}
             {recibo.cashRegister && (

@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
-import { productsService, categoriesService, brandsService } from '../../services';
+import { productsService, categoriesService, brandsService, rubrosService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import type { Category, Brand } from '../../types';
+import type { Category, Brand, Rubro } from '../../types';
 
 // ── Constants ────────────────────────────────────────────────────
 const UNIT_OPTIONS = [
@@ -38,6 +38,7 @@ const productSchema = z.object({
   description: z.string().optional().nullable(),
   categoryId: z.string().optional().nullable(),
   brandId: z.string().optional().nullable(),
+  rubroId: z.string().optional().nullable(),
   barcode: z.string().optional().nullable(),
   unit: z.string().optional().nullable(),
   internalNotes: z.string().optional().nullable(),
@@ -226,6 +227,7 @@ export default function ProductFormPage() {
   const [isFetching, setIsFetching] = useState(isEditing);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [rubros, setRubros] = useState<Rubro[]>([]);
 
   const {
     register,
@@ -240,6 +242,7 @@ export default function ProductFormPage() {
 
   const categoryId = watch('categoryId') || '';
   const brandId    = watch('brandId')    || '';
+  const rubroId    = watch('rubroId')    || '';
   const unit       = watch('unit')       || '';
   const taxRate    = watch('taxRate')    ?? 21;
   const cost       = watch('cost')        ?? 0;
@@ -263,10 +266,11 @@ export default function ProductFormPage() {
 
   // Load dropdowns
   useEffect(() => {
-    Promise.all([categoriesService.getAll(), brandsService.getAll()])
-      .then(([cats, brnds]) => {
+    Promise.all([categoriesService.getAll(), brandsService.getAll(), rubrosService.getAll()])
+      .then(([cats, brnds, rbrs]) => {
         setCategories(cats);
         setBrands(brnds.filter((b) => b.isActive));
+        setRubros((rbrs as Rubro[]).filter((r) => r.isActive));
       })
       .catch(() => {});
   }, []);
@@ -282,6 +286,7 @@ export default function ProductFormPage() {
         setValue('description',   p.description);
         setValue('categoryId',    p.categoryId);
         setValue('brandId',       p.brandId);
+        setValue('rubroId',       (p as any).rubroId ?? null);
         setValue('barcode',       p.barcode);
         setValue('unit',          p.unit);
         setValue('internalNotes', p.internalNotes);
@@ -307,6 +312,7 @@ export default function ProductFormPage() {
         ...data,
         categoryId:    data.categoryId    || null,
         brandId:       data.brandId       || null,
+        rubroId:       data.rubroId       || null,
         barcode:       data.barcode       || null,
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
@@ -344,6 +350,11 @@ export default function ProductFormPage() {
     { value: '', label: 'Sin marca' },
     ...brands.map((b) => ({ value: b.id, label: b.name })),
   ], [brands]);
+
+  const rubroOptions = useMemo(() => [
+    { value: '', label: 'Sin rubro' },
+    ...rubros.map((r) => ({ value: r.id, label: r.name })),
+  ], [rubros]);
 
   if (isFetching) {
     return (
@@ -425,6 +436,12 @@ export default function ProductFormPage() {
                 options={brandOptions}
                 value={brandId}
                 onChange={(v) => setValue('brandId', v || null)}
+              />
+              <Select
+                label="Rubro"
+                options={rubroOptions}
+                value={rubroId}
+                onChange={(v) => setValue('rubroId', v || null)}
               />
             </div>
           </div>

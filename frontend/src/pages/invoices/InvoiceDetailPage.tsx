@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle,
+  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import QRCode from 'qrcode';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
+import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { invoicesService, recibosService, afipService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
@@ -80,6 +81,7 @@ export default function InvoiceDetailPage() {
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showMpModal,    setShowMpModal]    = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -187,40 +189,44 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const generateInvoicePdfBlob = async (): Promise<Blob> => {
+    const afipConfig = await afipService.getConfig();
+    let qrCodeDataUrl: string | undefined;
+    if (invoice!.cae && afipConfig) {
+      const TYPE_CODES: Record<string, number> = {
+        FACTURA_A: 1, FACTURA_B: 6, FACTURA_C: 11,
+        NOTA_DEBITO_A: 2, NOTA_DEBITO_B: 7, NOTA_DEBITO_C: 12,
+        NOTA_CREDITO_A: 3, NOTA_CREDITO_B: 8, NOTA_CREDITO_C: 13,
+      };
+      const qrPayload = {
+        ver: 1,
+        fecha: invoice!.date.slice(0, 10),
+        cuit: afipConfig.cuit.replace(/\D/g, ''),
+        ptoVta: invoice!.afipPtVenta ?? afipConfig.salePoint,
+        tipoCmp: TYPE_CODES[invoice!.type] ?? 6,
+        nroCmp: invoice!.afipCbtNum ?? 0,
+        importe: invoice!.total,
+        moneda: invoice!.currency === 'USD' ? 'DOL' : 'PES',
+        ctz: invoice!.currency === 'USD' ? (invoice!.exchangeRate ?? 1) : 1,
+        tipoDocRec: invoice!.customer?.taxId ? 80 : 99,
+        nroDocRec: invoice!.customer?.taxId?.replace(/\D/g, '') ?? '0',
+        tipoCodAut: 'E',
+        codAut: invoice!.cae,
+      };
+      const encoded = btoa(JSON.stringify(qrPayload));
+      const qrUrl = `https://www.afip.gob.ar/fe/qr/?p=${encoded}`;
+      qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
+    }
+    return pdf(
+      <InvoicePDF invoice={invoice!} afipConfig={afipConfig} qrCodeDataUrl={qrCodeDataUrl} />
+    ).toBlob();
+  };
+
   const handleDownloadPDF = async () => {
     if (!invoice) return;
     setIsGeneratingPDF(true);
     try {
-      const afipConfig = await afipService.getConfig();
-      let qrCodeDataUrl: string | undefined;
-      if (invoice.cae && afipConfig) {
-        const TYPE_CODES: Record<string, number> = {
-          FACTURA_A: 1, FACTURA_B: 6, FACTURA_C: 11,
-          NOTA_DEBITO_A: 2, NOTA_DEBITO_B: 7, NOTA_DEBITO_C: 12,
-          NOTA_CREDITO_A: 3, NOTA_CREDITO_B: 8, NOTA_CREDITO_C: 13,
-        };
-        const qrPayload = {
-          ver: 1,
-          fecha: invoice.date.slice(0, 10),
-          cuit: afipConfig.cuit.replace(/\D/g, ''),
-          ptoVta: invoice.afipPtVenta ?? afipConfig.salePoint,
-          tipoCmp: TYPE_CODES[invoice.type] ?? 6,
-          nroCmp: invoice.afipCbtNum ?? 0,
-          importe: invoice.total,
-          moneda: invoice.currency === 'USD' ? 'DOL' : 'PES',
-          ctz: invoice.currency === 'USD' ? (invoice.exchangeRate ?? 1) : 1,
-          tipoDocRec: invoice.customer?.taxId ? 80 : 99,
-          nroDocRec: invoice.customer?.taxId?.replace(/\D/g, '') ?? '0',
-          tipoCodAut: 'E',
-          codAut: invoice.cae,
-        };
-        const encoded = btoa(JSON.stringify(qrPayload));
-        const qrUrl = `https://www.afip.gob.ar/fe/qr/?p=${encoded}`;
-        qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
-      }
-      const blob = await pdf(
-        <InvoicePDF invoice={invoice} afipConfig={afipConfig} qrCodeDataUrl={qrCodeDataUrl} />
-      ).toBlob();
+      const blob = await generateInvoicePdfBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -291,6 +297,12 @@ export default function InvoiceDetailPage() {
               <Button variant="outline" onClick={() => setShowPayModal(true)}>
                 <Banknote className="w-4 h-4 mr-2" />
                 Registrar pago
+              </Button>
+            )}
+            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && (
+              <Button variant="outline" onClick={() => setShowMpModal(true)}>
+                <Smartphone className="w-4 h-4 mr-2" />
+                Cobrar con MP
               </Button>
             )}
             {invoice.deliveryStatus !== 'DELIVERED' && (
@@ -680,13 +692,22 @@ export default function InvoiceDetailPage() {
         isLoading={isCancellingRecibo}
       />
 
+      <MercadoPagoPayModal
+        open={showMpModal}
+        onClose={() => setShowMpModal(false)}
+        onPaymentRegistered={loadData}
+        invoiceId={invoice.id}
+        title={`Cobrar Factura ${invoice.number} con MP`}
+      />
+
       <SendEmailModal
         isOpen={showEmailModal}
         onClose={() => setShowEmailModal(false)}
         defaultEmail={(invoice as any)?.customer?.email ?? ''}
         documentLabel={invoice ? `${INVOICE_TYPES[invoice.type]} ${invoice.number}` : ''}
         onSend={async (to) => {
-          await invoicesService.sendEmail(invoice!.id, to);
+          const blob = await generateInvoicePdfBlob();
+          await invoicesService.sendEmail(invoice!.id, to, blob);
           toast.success('Correo enviado correctamente');
         }}
       />

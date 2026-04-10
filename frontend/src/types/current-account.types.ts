@@ -15,6 +15,7 @@ export interface AccountMovement {
   invoice?: Invoice;
   budgetId: string | null;
   budget?: Budget;
+  internalNoteId: string | null;
   createdAt: string;
 }
 

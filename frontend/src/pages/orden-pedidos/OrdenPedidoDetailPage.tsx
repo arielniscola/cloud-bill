@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy } from 'lucide-react';
+import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
-import { PageHeader, ConfirmDialog, PaymentModal, RecibosList } from '../../components/shared';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
 import { ordenPedidosService, recibosService, remitosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import {
@@ -67,6 +67,7 @@ export default function OrdenPedidoDetailPage() {
   const [isPayLoading, setIsPayLoading] = useState(false);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -207,6 +208,11 @@ export default function OrdenPedidoDetailPage() {
             <Button variant="outline" onClick={() => window.open(`/print/orden-pedido/${op.id}`, '_blank', 'width=420,height=700,scrollbars=yes')}>
               <Printer className="w-4 h-4 mr-2" />
               Imprimir
+            </Button>
+
+            <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+              <Mail className="w-4 h-4 mr-2" />
+              Enviar
             </Button>
 
             <Button
@@ -651,6 +657,17 @@ export default function OrdenPedidoDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <SendEmailModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        documentLabel={`Orden de Pedido ${op.number}`}
+        defaultEmail={op.customer?.email ?? ''}
+        onSend={async (to) => {
+          await ordenPedidosService.sendEmail(op.id, to);
+          toast.success('Email enviado correctamente');
+        }}
+      />
     </div>
   );
 }

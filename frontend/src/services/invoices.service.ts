@@ -56,8 +56,13 @@ export const invoicesService = {
     return response.data.data;
   },
 
-  async sendEmail(id: string, to: string): Promise<void> {
-    await api.post(`/invoices/${id}/send-email`, { to });
+  async sendEmail(id: string, to: string, pdfBlob?: Blob): Promise<void> {
+    let pdfBase64: string | undefined;
+    if (pdfBlob) {
+      const buffer = await pdfBlob.arrayBuffer();
+      pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+    await api.post(`/invoices/${id}/send-email`, { to, pdfBase64 });
   },
 
   async getAfipErrors(id: string): Promise<AfipError[]> {

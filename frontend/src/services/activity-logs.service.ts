@@ -8,6 +8,11 @@ export const activityLogsService = {
     });
     return response.data;
   },
+
+  async getEntities(): Promise<string[]> {
+    const response = await api.get<{ status: string; data: string[] }>('/activity-logs/entities');
+    return response.data.data;
+  },
 };
 
 export default activityLogsService;

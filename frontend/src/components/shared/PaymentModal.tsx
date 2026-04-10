@@ -7,11 +7,12 @@ import {
   ArrowLeftRight, CreditCard, FileText, Smartphone, CheckCircle2,
 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '../ui';
-import { cashRegistersService, appSettingsService } from '../../services';
+import { cashRegistersService, appSettingsService, cardsService } from '../../services';
 import bankService from '../../services/bank.service';
 import { formatCurrency } from '../../utils/formatters';
 import type { CreateReciboDTO, CashRegister } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
+import type { Card } from '../../types/card.types';
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
@@ -24,6 +25,9 @@ const paymentSchema = z.object({
   checkDueDate: z.string().optional().nullable(),
   installments: z.coerce.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
+  cardId: z.string().optional().nullable(),
+  surchargePercent: z.coerce.number().min(0).optional().nullable(),
+  surchargeAmount: z.coerce.number().min(0).optional().nullable(),
 });
 
 type PaymentFormData = z.infer<typeof paymentSchema>;
@@ -67,6 +71,7 @@ export function PaymentModal({
   const isUSD = currency === 'USD';
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [loadingCR, setLoadingCR] = useState(false);
   const [loadingRate, setLoadingRate] = useState(false);
 
@@ -85,6 +90,9 @@ export function PaymentModal({
       paymentMethod: 'CASH',
       cashRegisterId: null,
       bankAccountId: null,
+      cardId: null,
+      surchargePercent: null,
+      surchargeAmount: null,
     },
   });
 
@@ -94,6 +102,15 @@ export function PaymentModal({
   const arsEquivalent = isUSD ? amount * exchangeRate : 0;
   const afterPayment = Math.max(0, remaining - amount);
   const isFullPayment = amount > 0 && afterPayment === 0;
+
+  const selectedCardId = watch('cardId');
+  const selectedCard = cards.find((c) => c.id === selectedCardId) ?? null;
+  const selectedInstallments = watch('installments') || 1;
+  const surchargePercent = watch('surchargePercent') || 0;
+  const surchargeAmount = amount > 0 && surchargePercent > 0
+    ? Math.round(amount * surchargePercent / 100 * 100) / 100
+    : 0;
+  const totalToCharge = amount + surchargeAmount;
 
   const needsCaja = CAJA_METHODS.includes(paymentMethod);
   const needsBanco = paymentMethod === 'BANK_TRANSFER';
@@ -124,16 +141,21 @@ export function PaymentModal({
       checkDueDate: null,
       installments: null,
       notes: null,
+      cardId: null,
+      surchargePercent: null,
+      surchargeAmount: null,
     });
     setLoadingCR(true);
     Promise.all([
       cashRegistersService.getAll(true),
       appSettingsService.get().catch(() => null),
       bankService.getAll().catch(() => []),
+      cardsService.getAll().catch(() => []),
     ])
-      .then(([crs, settings, banks]) => {
+      .then(([crs, settings, banks, cardList]) => {
         setCashRegisters(crs);
         setBankAccounts((banks as BankAccount[]).filter((b) => b.isActive));
+        setCards((cardList as Card[]).filter((c) => c.isActive));
         const preferred = defaultCashRegisterId
           || settings?.defaultInvoiceCashRegisterId
           || settings?.defaultBudgetCashRegisterId;
@@ -154,9 +176,36 @@ export function PaymentModal({
     if (needsCaja && cashRegisters.length > 0 && !watch('cashRegisterId')) {
       setValue('cashRegisterId', cashRegisters[0].id);
     }
+    if (paymentMethod !== 'CARD') {
+      setValue('cardId', null);
+      setValue('surchargePercent', null);
+      setValue('surchargeAmount', null);
+    } else if (cards.length > 0 && !watch('cardId')) {
+      const firstCard = cards[0];
+      setValue('cardId', firstCard.id);
+      const contado = firstCard.surcharges.find((s) => s.installments === 1);
+      setValue('installments', 1);
+      setValue('surchargePercent', contado?.surchargePercent ?? 0);
+    }
   }, [paymentMethod]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When card or installments change, recalculate surcharge
+  useEffect(() => {
+    if (paymentMethod !== 'CARD' || !selectedCard) return;
+    const surcharge = selectedCard.surcharges.find((s) => s.installments === selectedInstallments);
+    setValue('surchargePercent', surcharge?.surchargePercent ?? 0);
+    setValue('surchargeAmount', surchargeAmount);
+  }, [selectedCardId, selectedInstallments]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep surchargeAmount in sync with amount changes
+  useEffect(() => {
+    if (paymentMethod === 'CARD' && surchargePercent > 0) {
+      setValue('surchargeAmount', surchargeAmount);
+    }
+  }, [amount, surchargePercent]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleFormSubmit = async (data: PaymentFormData) => {
+    const isCard = data.paymentMethod === 'CARD';
     await onSubmit({
       amount: data.amount,
       exchangeRate: isUSD ? data.exchangeRate : undefined,
@@ -168,7 +217,10 @@ export function PaymentModal({
       checkDueDate: data.checkDueDate || null,
       installments: data.installments || null,
       notes: data.notes || null,
-    });
+      cardId: isCard ? (data.cardId || null) : null,
+      surchargePercent: isCard ? (data.surchargePercent || null) : null,
+      surchargeAmount: isCard ? (surchargeAmount || null) : null,
+    } as any);
   };
 
   // Determine if submit should be disabled
@@ -395,19 +447,77 @@ export function PaymentModal({
         )}
 
         {paymentMethod === 'CARD' && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-3">
+            {/* Card selector */}
+            {loadingCR ? (
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />
+            ) : cards.length === 0 ? (
+              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <XCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800 dark:text-amber-400">
+                  No hay tarjetas activas.{' '}
+                  <a href="/cards" className="underline font-medium">Configurá una tarjeta</a>.
+                </p>
+              </div>
+            ) : (
+              <Select
+                label="Tarjeta"
+                options={cards.map((c) => ({ value: c.id, label: `${c.name}${c.bank ? ` — ${c.bank}` : ''}` }))}
+                value={watch('cardId') ?? ''}
+                onChange={(val) => {
+                  setValue('cardId', val || null);
+                  setValue('installments', 1);
+                }}
+              />
+            )}
+
+            {/* Installments */}
+            {selectedCard && selectedCard.surcharges.length > 0 ? (
+              <Select
+                label="Cuotas"
+                options={selectedCard.surcharges
+                  .slice()
+                  .sort((a, b) => a.installments - b.installments)
+                  .map((s) => ({
+                    value: String(s.installments),
+                    label: `${s.installments === 1 ? 'Contado' : `${s.installments} cuotas`}${s.surchargePercent > 0 ? ` (+${s.surchargePercent}%)` : ' (sin recargo)'}`,
+                  }))}
+                value={String(watch('installments') || 1)}
+                onChange={(val) => setValue('installments', Number(val))}
+              />
+            ) : (
+              <Input
+                label="Cuotas"
+                type="number"
+                min={1}
+                defaultValue={1}
+                {...register('installments')}
+              />
+            )}
+
+            {/* Surcharge summary */}
+            {surchargePercent > 0 && amount > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-amber-700 dark:text-amber-300">Monto base</span>
+                  <span className="font-medium text-amber-800 dark:text-amber-200">{formatCurrency(amount, currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-amber-700 dark:text-amber-300">Recargo ({surchargePercent}%)</span>
+                  <span className="font-medium text-amber-800 dark:text-amber-200">+{formatCurrency(surchargeAmount, currency)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t border-amber-200 dark:border-amber-700 pt-1 mt-1">
+                  <span className="text-amber-800 dark:text-amber-200">Total a cobrar</span>
+                  <span className="text-amber-900 dark:text-amber-100">{formatCurrency(totalToCharge, currency)}</span>
+                </div>
+              </div>
+            )}
+
             <Input
               label="Últimos 4 dígitos"
               maxLength={4}
               placeholder="1234"
               {...register('reference')}
-            />
-            <Input
-              label="Cuotas"
-              type="number"
-              min={1}
-              defaultValue={1}
-              {...register('installments')}
             />
           </div>
         )}

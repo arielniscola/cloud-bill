@@ -4,6 +4,30 @@ import type { Supplier } from './supplier.types';
 export type PurchaseStatus             = 'REGISTERED' | 'CANCELLED';
 export type PurchaseInvoiceStatus      = 'PENDING' | 'PAID';
 
+export type RetentionType = 'IIBB' | 'GANANCIAS' | 'IVA' | 'OTHER';
+
+export interface PurchaseInvoiceItem {
+  id:          string;
+  description: string;
+  quantity:    number;
+  unitPrice:   number;
+  taxRate:     number;
+  subtotal:    number;
+  taxAmount:   number;
+  total:       number;
+}
+
+export interface PurchaseInvoiceRetencion {
+  id:           string;
+  type:         RetentionType;
+  jurisdiction: string | null;
+  base:         number;
+  percentage:   number;
+  amount:       number;
+  certificate:  string | null;
+  notes:        string | null;
+}
+
 export interface PurchaseInvoice {
   id: string;
   purchaseId: string;
@@ -12,13 +36,33 @@ export interface PurchaseInvoice {
   subtotal: number;
   taxRate: number;
   taxAmount: number;
-  amount: number;          // total
+  amount: number;          // total bruto (before retenciones)
   dueDate: string | null;
+  imputationDate: string | null;
   paymentMethod: string;
   status: PurchaseInvoiceStatus;
   notes: string | null;
+  items: PurchaseInvoiceItem[];
+  retenciones: PurchaseInvoiceRetencion[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreatePurchaseInvoiceItemDTO {
+  description: string;
+  quantity:    number;
+  unitPrice:   number;
+  taxRate:     number;
+}
+
+export interface CreatePurchaseInvoiceRetentionDTO {
+  type:         RetentionType;
+  jurisdiction?: string | null;
+  base:         number;
+  percentage:   number;
+  amount:       number;
+  certificate?: string | null;
+  notes?:       string | null;
 }
 
 export interface CreatePurchaseInvoiceDTO {
@@ -29,8 +73,11 @@ export interface CreatePurchaseInvoiceDTO {
   taxAmount: number;
   amount: number;
   dueDate?: string | null;
+  imputationDate?: string | null;
   paymentMethod: string;
   notes?: string | null;
+  items?: CreatePurchaseInvoiceItemDTO[];
+  retenciones?: CreatePurchaseInvoiceRetentionDTO[];
 }
 export type PurchasePaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 export type PurchaseSaleCondition = 'CONTADO' | 'CUENTA_CORRIENTE';

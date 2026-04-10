@@ -10,6 +10,7 @@ export interface Company {
   isActive: boolean;
   logoUrl: string | null;
   enabledModules: string[]; // ['ALL'] or ['ventas','catalogo','compras','finanzas']
+  plan: string;             // 'STARTER' | 'PRO' | 'ENTERPRISE'
   createdAt: string;
   updatedAt: string;
 }

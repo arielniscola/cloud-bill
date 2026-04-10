@@ -5,13 +5,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   DollarSign, Settings, Mail, Phone, Hash,
-  TrendingDown, TrendingUp, Minus, FileText,
+  TrendingDown, TrendingUp, Minus, FileText, FileEdit,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, DataTable } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { currentAccountsService, customersService } from '../../services';
+import CreateInternalNoteModal from '../internal-notes/CreateInternalNoteModal';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Customer, CurrentAccount, AccountMovement, Currency, TaxCondition } from '../../types';
@@ -160,8 +161,9 @@ export default function AccountDetailPage() {
   const [page,  setPage]  = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isCreditModalOpen,  setIsCreditModalOpen]  = useState(false);
+  const [isPaymentModalOpen,     setIsPaymentModalOpen]     = useState(false);
+  const [isCreditModalOpen,      setIsCreditModalOpen]      = useState(false);
+  const [isInternalNoteModalOpen, setIsInternalNoteModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const paymentForm = useForm<PaymentFormData>({
@@ -307,6 +309,16 @@ export default function AccountDetailPage() {
               {mov.budget.number ?? 'Presupuesto'}
             </button>
           )}
+          {mov.internalNoteId && (
+            <button
+              type="button"
+              onClick={() => navigate('/internal-notes')}
+              className="text-xs text-violet-500 dark:text-violet-400 flex items-center gap-1 mt-0.5 hover:underline"
+            >
+              <FileEdit className="w-3 h-3" />
+              Nota interna
+            </button>
+          )}
         </div>
       ),
     },
@@ -360,6 +372,10 @@ export default function AccountDetailPage() {
             <Button size="sm" variant="outline" onClick={openCreditModal}>
               <Settings className="w-3.5 h-3.5 mr-1.5" />
               Límite de crédito
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setIsInternalNoteModalOpen(true)}>
+              <FileEdit className="w-3.5 h-3.5 mr-1.5" />
+              Nota interna
             </Button>
             <Button size="sm" onClick={openPaymentModal}>
               <DollarSign className="w-3.5 h-3.5 mr-1.5" />
@@ -496,6 +512,19 @@ export default function AccountDetailPage() {
           </div>
         </form>
       </Modal>
+
+      {/* ── Internal note modal ── */}
+      {isInternalNoteModalOpen && customerId && (
+        <CreateInternalNoteModal
+          defaultCustomerId={customerId}
+          onClose={() => setIsInternalNoteModalOpen(false)}
+          onCreated={() => {
+            setIsInternalNoteModalOpen(false);
+            toast.success('Nota interna creada');
+            fetchData();
+          }}
+        />
+      )}
 
       {/* ── Credit limit modal ── */}
       <Modal isOpen={isCreditModalOpen} onClose={() => setIsCreditModalOpen(false)} title="Límite de crédito">

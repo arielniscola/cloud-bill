@@ -62,11 +62,21 @@ import CompaniesPage from '../pages/companies/CompaniesPage';
 import CompanyFormPage from '../pages/companies/CompanyFormPage';
 import CompanyDetailPage from '../pages/companies/CompanyDetailPage';
 import UsersPage from '../pages/users/UsersPage';
+import UserFormPage from '../pages/users/UserFormPage';
 import OrdenPagosPage from '../pages/orden-pagos/OrdenPagosPage';
 import OrdenPagoFormPage from '../pages/orden-pagos/OrdenPagoFormPage';
 import OrdenPagoDetailPage from '../pages/orden-pagos/OrdenPagoDetailPage';
+import SupplierAccountsPage from '../pages/suppliers/SupplierAccountsPage';
+import SupplierAccountDetailPage from '../pages/suppliers/SupplierAccountDetailPage';
 import BankAccountsPage from '../pages/banks/BankAccountsPage';
 import BankAccountDetailPage from '../pages/banks/BankAccountDetailPage';
+import MercadoPagoPage from '../pages/mercadopago/MercadoPagoPage';
+import CardsPage from '../pages/cards/CardsPage';
+import RubrosPage from '../pages/rubros/RubrosPage';
+import InternalNotesPage from '../pages/internal-notes/InternalNotesPage';
+import AccountsPage from '../pages/accounting/AccountsPage';
+import JournalEntriesPage from '../pages/accounting/JournalEntriesPage';
+import JournalEntryDetailPage from '../pages/accounting/JournalEntryDetailPage';
 
 export default function AppRoutes() {
   return (
@@ -86,13 +96,15 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        {/* Super admin — companies & users management only */}
+        {/* Super admin only — companies & users management */}
         <Route element={<RoleGuard allowed={['SUPER_ADMIN']} />}>
           <Route path="/companies" element={<CompaniesPage />} />
-          <Route path="/companies/new" element={<CompanyFormPage />} />
+          <Route path="/companies/new" element={<CompanyFormPage key="new" />} />
           <Route path="/companies/:id" element={<CompanyDetailPage />} />
-          <Route path="/companies/:id/edit" element={<CompanyFormPage />} />
+          <Route path="/companies/:id/edit" element={<CompanyFormPage key="edit" />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/new" element={<UserFormPage key="new" />} />
+          <Route path="/users/:id/edit" element={<UserFormPage key="edit" />} />
         </Route>
 
         <Route path="/" element={<HomePage />} />
@@ -104,6 +116,7 @@ export default function AppRoutes() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/brands" element={<BrandsPage />} />
+        <Route path="/rubros" element={<RubrosPage />} />
         <Route path="/warehouses" element={<WarehousesPage />} />
         <Route path="/warehouses/:id" element={<WarehouseDetailPage />} />
         <Route path="/stock" element={<StockPage />} />
@@ -150,6 +163,8 @@ export default function AppRoutes() {
           <Route path="/suppliers/new" element={<SupplierFormPage />} />
           <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
           <Route path="/suppliers/:id/edit" element={<SupplierFormPage />} />
+          <Route path="/supplier-accounts" element={<SupplierAccountsPage />} />
+          <Route path="/supplier-accounts/:supplierId" element={<SupplierAccountDetailPage />} />
 
           <Route path="/purchases" element={<PurchasesPage />} />
           <Route path="/purchases/new" element={<PurchaseFormPage />} />
@@ -169,6 +184,12 @@ export default function AppRoutes() {
           {/* Bancos */}
           <Route path="/banks" element={<BankAccountsPage />} />
           <Route path="/banks/:id" element={<BankAccountDetailPage />} />
+
+          {/* MercadoPago */}
+          <Route path="/mercadopago" element={<MercadoPagoPage />} />
+
+          {/* Tarjetas */}
+          <Route path="/cards" element={<CardsPage />} />
         </Route>
 
         {/* Budgets */}
@@ -183,8 +204,16 @@ export default function AppRoutes() {
         <Route path="/recibos" element={<RecibosPage />} />
         <Route path="/recibos/:id" element={<ReciboDetailPage />} />
 
+        {/* Contabilidad */}
+        <Route path="/accounting/accounts" element={<AccountsPage />} />
+        <Route path="/accounting/journal-entries" element={<JournalEntriesPage />} />
+        <Route path="/accounting/journal-entries/:id" element={<JournalEntryDetailPage />} />
+
         {/* Banco de Cheques */}
         <Route path="/banco-cheques" element={<BancoCheques />} />
+
+        {/* Notas Internas */}
+        <Route path="/internal-notes" element={<InternalNotesPage />} />
 
         {/* Órdenes de Pedido */}
         <Route path="/orden-pedidos" element={<OrdenPedidosPage />} />

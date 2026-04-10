@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Edit, Package, ShoppingCart, Calendar, DollarSign, Truck, ExternalLink } from 'lucide-react';
+import { Edit, Package, ShoppingCart, Calendar, DollarSign, Truck, ExternalLink, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
@@ -87,10 +87,16 @@ export default function SupplierDetailPage() {
         subtitle={supplier.isActive ? 'Proveedor activo' : 'Proveedor inactivo'}
         backTo="/suppliers"
         actions={
-          <Button variant="outline" onClick={() => navigate(`/suppliers/${id}/edit`)}>
-            <Edit className="w-4 h-4 mr-2" />
-            Editar
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate(`/supplier-accounts/${id}`)}>
+              <CreditCard className="w-4 h-4 mr-2" />
+              Cuenta Corriente
+            </Button>
+            <Button variant="outline" onClick={() => navigate(`/suppliers/${id}/edit`)}>
+              <Edit className="w-4 h-4 mr-2" />
+              Editar
+            </Button>
+          </div>
         }
       />
 

@@ -6,6 +6,8 @@ import { Button, Input, Select } from '../../components/ui';
 import { CuitInput } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { CreateCompanyDTO, UpdateCompanyDTO } from '../../types/company.types';
+import { PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, type PlanName } from '../../utils/planFeatures';
+import { useCompanyStore } from '../../stores/company.store';
 
 const TAX_OPTIONS = [
   { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
@@ -13,14 +15,18 @@ const TAX_OPTIONS = [
   { value: 'EXENTO',                label: 'Exento' },
 ];
 
+const PLAN_OPTIONS = PLAN_NAMES.map(p => ({ value: p, label: `${PLAN_LABELS[p]} — ${PLAN_DESCRIPTIONS[p]}` }));
+
 export default function CompanyFormPage() {
   const navigate   = useNavigate();
   const { id }     = useParams<{ id: string }>();
   const isEditing  = !!id;
+  const { setCompanies: storeSetCompanies } = useCompanyStore();
 
   const [form, setForm] = useState({
     name: '', cuit: '', address: '', city: '', phone: '', email: '',
     taxCondition: 'RESPONSABLE_INSCRIPTO',
+    plan: 'PRO' as PlanName,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving,  setIsSaving]  = useState(false);
@@ -37,6 +43,7 @@ export default function CompanyFormPage() {
         phone:        c.phone ?? '',
         email:        c.email ?? '',
         taxCondition: c.taxCondition,
+        plan:         (c.plan as PlanName) ?? 'PRO',
       });
     }).catch(() => toast.error('Error al cargar empresa')).finally(() => setIsLoading(false));
   }, [id, isEditing]);
@@ -55,10 +62,22 @@ export default function CompanyFormPage() {
     };
     try {
       if (isEditing) {
-        await companiesService.update(id, payload as UpdateCompanyDTO);
+        await Promise.all([
+          companiesService.update(id, payload as UpdateCompanyDTO),
+          companiesService.updatePlan(id, form.plan),
+        ]);
+        // Refresh store so CompanySwitcher and other consumers see updated data
+        const all = await companiesService.getAll();
+        storeSetCompanies(all);
         toast.success('Empresa actualizada');
       } else {
         const created = await companiesService.create(payload as CreateCompanyDTO);
+        if (form.plan !== 'PRO') {
+          await companiesService.updatePlan(created.id, form.plan);
+        }
+        // Refresh store so new company appears in all selectors
+        const all = await companiesService.getAll();
+        storeSetCompanies(all);
         toast.success('Empresa creada');
         navigate(`/companies/${created.id}`, { replace: true });
         return;
@@ -106,6 +125,12 @@ export default function CompanyFormPage() {
             options={TAX_OPTIONS}
           />
         </div>
+        <Select
+          label="Plan"
+          value={form.plan}
+          onChange={v => setForm(f => ({ ...f, plan: v as PlanName }))}
+          options={PLAN_OPTIONS}
+        />
         <div className="grid grid-cols-2 gap-4">
           <Input label="Dirección" value={form.address} onChange={set('address')} />
           <Input label="Ciudad" value={form.city} onChange={set('city')} />
