@@ -3,6 +3,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface InternalNoteFilters {
   customerId?: string;
+  supplierId?: string;
   type?:       string;
   status?:     string;
   currency?:   string;

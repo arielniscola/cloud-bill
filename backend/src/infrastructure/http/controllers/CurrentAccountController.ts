@@ -45,7 +45,7 @@ export class CurrentAccountController {
         'CurrentAccountRepository'
       );
       const currency = (req.query.currency as Currency) || 'ARS';
-      const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency);
+      const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
       if (!currentAccount) {
         throw new NotFoundError('Current account');
@@ -72,10 +72,10 @@ export class CurrentAccountController {
         'CurrentAccountRepository'
       );
       const currency: Currency = req.body.currency || 'ARS';
-      let currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency);
+      let currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
       if (!currentAccount) {
-        currentAccount = await currentAccountRepository.createForCustomer(req.params.customerId, currency);
+        currentAccount = await currentAccountRepository.createForCustomer(req.params.customerId, currency, undefined, req.fiscalMode);
       }
 
       const movement = await currentAccountRepository.addMovement({
@@ -100,7 +100,7 @@ export class CurrentAccountController {
         'CurrentAccountRepository'
       );
       const currency: Currency = req.body.currency || 'ARS';
-      const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency);
+      const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
       if (!currentAccount) {
         throw new NotFoundError('Current account');

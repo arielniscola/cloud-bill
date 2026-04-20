@@ -7,6 +7,7 @@ export interface OrdenPagoFilters {
   status?: string;
   paymentMethod?: string;
   companyId?: string;
+  fiscalMode?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

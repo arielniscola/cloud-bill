@@ -25,17 +25,26 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     });
   }
 
-  async findByCustomerId(customerId: string, currency?: Currency): Promise<CurrentAccount | null> {
+  async findByCustomerId(customerId: string, currency?: Currency, fiscalMode?: string): Promise<CurrentAccount | null> {
+    const fm = fiscalMode ?? 'FORMAL';
     if (currency) {
-      return this.prisma.currentAccount.findUnique({
-        where: { customerId_currency: { customerId, currency } },
-        include: { customer: true },
-      });
+      const rows = await this.prisma.$queryRaw<any[]>`
+        SELECT ca.*, c.name as "customerName"
+        FROM "current_accounts" ca
+        LEFT JOIN "customers" c ON c.id = ca."customerId"
+        WHERE ca."customerId" = ${customerId} AND ca.currency = ${currency} AND ca."fiscalMode" = ${fm}
+        LIMIT 1
+      `;
+      return rows[0] ?? null;
     }
-    return this.prisma.currentAccount.findFirst({
-      where: { customerId },
-      include: { customer: true },
-    });
+    const rows = await this.prisma.$queryRaw<any[]>`
+      SELECT ca.*, c.name as "customerName"
+      FROM "current_accounts" ca
+      LEFT JOIN "customers" c ON c.id = ca."customerId"
+      WHERE ca."customerId" = ${customerId} AND ca."fiscalMode" = ${fm}
+      LIMIT 1
+    `;
+    return rows[0] ?? null;
   }
 
   async findAllByCustomerId(customerId: string): Promise<CurrentAccount[]> {
@@ -45,12 +54,14 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     });
   }
 
-  async createForCustomer(customerId: string, currency: Currency, creditLimit?: number): Promise<CurrentAccount> {
-    return this.prisma.currentAccount.create({
+  async createForCustomer(customerId: string, currency: Currency, creditLimit?: number, fiscalMode?: string): Promise<CurrentAccount> {
+    const fm = fiscalMode ?? 'FORMAL';
+    return (this.prisma as any).currentAccount.create({
       data: {
         customerId,
         currency,
         creditLimit: creditLimit !== undefined ? new Decimal(creditLimit) : null,
+        fiscalMode: fm,
       },
     });
   }

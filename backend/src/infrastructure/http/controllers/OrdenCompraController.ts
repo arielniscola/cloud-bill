@@ -28,6 +28,7 @@ export class OrdenCompraController {
           supplierId: query.supplierId,
           status:     query.status,
           companyId:  req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom:   query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo:     query.dateTo   ? new Date(query.dateTo)   : undefined,
         }
@@ -77,6 +78,7 @@ export class OrdenCompraController {
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
         companyId:    req.companyId,
+        fiscalMode:   req.fiscalMode,
         subtotal,
         taxAmount,
         total:        subtotal + taxAmount,
@@ -224,6 +226,7 @@ export class OrdenCompraController {
           userId:      req.user!.userId,
           warehouseId: oc.warehouseId ?? null,
           companyId:   (oc as any).companyId,
+          fiscalMode:  (oc as any).fiscalMode ?? 'FORMAL',
           date:        new Date(),
           currency:    oc.currency as any,
           subtotal:    new Decimal(itemsTotals.subtotal),

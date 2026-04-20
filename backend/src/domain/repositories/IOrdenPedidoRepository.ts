@@ -6,6 +6,7 @@ export interface OrdenPedidoFilters {
   status?: string;
   currency?: string;
   companyId?: string;
+  fiscalMode?: string;
   dateFrom?: Date;
   dateTo?: Date;
   search?: string;

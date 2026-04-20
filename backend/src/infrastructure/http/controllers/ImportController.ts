@@ -261,4 +261,106 @@ export class ImportController {
       next(error);
     }
   }
+
+  // ── POST /suppliers/import ────────────────────────────────────
+  async importSuppliers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const companyId = req.user!.companyId!;
+      const csv = req.body?.csv as string;
+      if (!csv?.trim()) {
+        res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
+        return;
+      }
+
+      const rows = parseCsv(csv);
+      if (rows.length === 0) {
+        res.status(400).json({ status: 'error', message: 'El archivo no tiene filas válidas' });
+        return;
+      }
+
+      const TAX_MAP: Record<string, string> = {
+        'responsableinscripto': 'RESPONSABLE_INSCRIPTO',
+        'ri':                   'RESPONSABLE_INSCRIPTO',
+        'monotributista':       'MONOTRIBUTISTA',
+        'mono':                 'MONOTRIBUTISTA',
+        'exento':               'EXENTO',
+        'consumidorfinal':      'CONSUMIDOR_FINAL',
+        'cf':                   'CONSUMIDOR_FINAL',
+        '':                     'CONSUMIDOR_FINAL',
+      };
+
+      let imported = 0;
+      let skipped  = 0;
+      const errors: ImportError[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row    = rows[i];
+        const rowNum = i + 2;
+
+        const name = pick(row, 'nombre', 'name', 'razonsocial');
+        if (!name) { errors.push({ row: rowNum, message: 'Nombre requerido' }); skipped++; continue; }
+
+        const cuit  = pick(row, 'cuit', 'taxid') || null;
+        const rawTax = pick(row, 'condicioniva', 'taxcondition', 'condicióniva').toLowerCase().replace(/\s/g, '');
+        const taxCondition = TAX_MAP[rawTax] ?? 'CONSUMIDOR_FINAL';
+
+        const address = pick(row, 'direccion', 'address') || null;
+        const city    = pick(row, 'ciudad', 'city')       || null;
+        const phone   = pick(row, 'telefono', 'phone', 'tel') || null;
+        const email   = pick(row, 'email', 'mail', 'correo') || null;
+        const notes   = pick(row, 'notas', 'notes', 'observaciones') || null;
+
+        try {
+          let existingId: string | null = null;
+          if (cuit) {
+            const found = await prisma.$queryRaw<{ id: string }[]>`
+              SELECT id FROM suppliers WHERE cuit = ${cuit} AND "companyId" = ${companyId} LIMIT 1
+            `;
+            existingId = found[0]?.id ?? null;
+          }
+
+          if (existingId) {
+            await prisma.$executeRaw`
+              UPDATE suppliers
+              SET name = ${name},
+                  "taxCondition" = ${taxCondition}::"TaxCondition",
+                  address = ${address},
+                  city    = ${city},
+                  phone   = ${phone},
+                  email   = ${email},
+                  notes   = ${notes},
+                  "updatedAt" = NOW()
+              WHERE id = ${existingId}
+            `;
+          } else {
+            await prisma.$executeRaw`
+              INSERT INTO suppliers (id, name, cuit, "taxCondition", address, city, phone, email, notes, "isActive", "companyId", "createdAt", "updatedAt")
+              VALUES (
+                gen_random_uuid(),
+                ${name},
+                ${cuit},
+                ${taxCondition}::"TaxCondition",
+                ${address},
+                ${city},
+                ${phone},
+                ${email},
+                ${notes},
+                true,
+                ${companyId},
+                NOW(), NOW()
+              )
+            `;
+          }
+          imported++;
+        } catch (err: any) {
+          errors.push({ row: rowNum, message: err?.message ?? 'Error al procesar' });
+          skipped++;
+        }
+      }
+
+      res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

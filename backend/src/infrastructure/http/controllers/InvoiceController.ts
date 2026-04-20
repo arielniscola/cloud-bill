@@ -47,6 +47,7 @@ export class InvoiceController {
         customerId: req.body.customerId,
         userId: req.user!.userId,
         companyId: req.companyId,
+        fiscalMode: req.fiscalMode,
         date: req.body.date ? new Date(req.body.date) : undefined,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
@@ -61,9 +62,9 @@ export class InvoiceController {
 
       // Update current account only for cuenta corriente sales
       if (saleCondition === 'CUENTA_CORRIENTE') {
-        let currentAccount = await currentAccountRepository.findByCustomerId(req.body.customerId, currency);
+        let currentAccount = await currentAccountRepository.findByCustomerId(req.body.customerId, currency, req.fiscalMode);
         if (!currentAccount) {
-          currentAccount = await currentAccountRepository.createForCustomer(req.body.customerId, currency);
+          currentAccount = await currentAccountRepository.createForCustomer(req.body.customerId, currency, undefined, req.fiscalMode);
         }
         const isCredit = req.body.type.startsWith('NOTA_CREDITO');
         await currentAccountRepository.addMovement({
@@ -203,6 +204,7 @@ export class InvoiceController {
           currency: filters.currency as Currency | undefined,
           saleCondition: filters.saleCondition as string | undefined,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
         }
@@ -384,6 +386,7 @@ export class InvoiceController {
         installments: paymentData.installments ?? null,
         notes: paymentData.notes ?? null,
         companyId: req.companyId,
+        fiscalMode: ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
       } as any);
 
       // For BANK_TRANSFER with a bankAccountId, create a bank movement
@@ -413,7 +416,8 @@ export class InvoiceController {
       if ((invoice as any).saleCondition === 'CUENTA_CORRIENTE') {
         const currentAccount = await currentAccountRepository.findByCustomerId(
           invoice.customerId,
-          invoice.currency
+          invoice.currency,
+          ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
         );
         if (currentAccount) {
           const movement = await currentAccountRepository.addMovement({
@@ -561,7 +565,8 @@ export class InvoiceController {
       if ((existingInvoice as any).saleCondition === 'CUENTA_CORRIENTE') {
         const currentAccount = await currentAccountRepository.findByCustomerId(
           existingInvoice.customerId,
-          existingInvoice.currency
+          existingInvoice.currency,
+          ((existingInvoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
         );
         if (currentAccount) {
           const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');

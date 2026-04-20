@@ -2,13 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 import { UnauthorizedError, ForbiddenError } from '../../../shared/errors/AppError';
-import { JwtPayload, UserRole } from '../../../shared/types';
+import { JwtPayload, UserRole, FiscalMode } from '../../../shared/types';
 
 declare global {
   namespace Express {
     interface Request {
       user?: JwtPayload;
       companyId?: string;
+      fiscalMode?: FiscalMode;
     }
   }
 }

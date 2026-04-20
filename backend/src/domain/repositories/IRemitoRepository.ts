@@ -10,6 +10,7 @@ export interface RemitoFilters {
   customerId?: string;
   status?: RemitoStatus;
   companyId?: string;
+  fiscalMode?: string;
   dateFrom?: Date;
   dateTo?: Date;
   ordenPedidoId?: string;

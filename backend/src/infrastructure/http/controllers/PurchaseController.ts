@@ -20,6 +20,7 @@ export class PurchaseController {
           supplierId: supplierId as string | undefined,
           status: status as 'REGISTERED' | 'CANCELLED' | undefined,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
           dateTo: dateTo ? new Date(dateTo as string) : undefined,
         }
@@ -71,9 +72,10 @@ export class PurchaseController {
         items: req.body.items,
       });
 
-      // Persist saleCondition via raw SQL (stale Prisma client workaround)
+      // Persist saleCondition + fiscalMode via raw SQL (stale Prisma client workaround)
+      const fiscalMode = req.fiscalMode ?? 'FORMAL';
       await prisma.$executeRaw`
-        UPDATE "purchases" SET "saleCondition" = ${saleCondition} WHERE id = ${purchase.id}
+        UPDATE "purchases" SET "saleCondition" = ${saleCondition}, "fiscalMode" = ${fiscalMode} WHERE id = ${purchase.id}
       `;
 
       // If Cuenta Corriente: create DEBIT supplier account movement
@@ -87,6 +89,7 @@ export class PurchaseController {
           currency: purchase.currency,
           description: `Compra en CC: ${purchase.number}`,
           companyId: req.companyId,
+          fiscalMode: fiscalMode as 'FORMAL' | 'INFORMAL',
         });
       }
 

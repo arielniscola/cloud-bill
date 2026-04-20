@@ -55,7 +55,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
 
   async getMovements(
     cashRegisterId: string,
-    filters: { type?: string; startDate?: string; endDate?: string },
+    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string },
     pagination: PaginationParams = { page: 1, limit: 20 }
   ): Promise<PaginatedResult<CashRegisterMovement>> {
     const { page = 1, limit = 20 } = pagination;
@@ -63,6 +63,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
 
     const where: Prisma.AccountMovementWhereInput = { cashRegisterId };
     if (filters.type) where.type = filters.type as any;
+    if (filters.fiscalMode) (where as any).fiscalMode = filters.fiscalMode;
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};
       if (filters.startDate) {
@@ -93,6 +94,9 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
         Prisma.sql`op."cashRegisterId" = ${cashRegisterId}`,
         Prisma.sql`op.status != 'CANCELLED'`,
       ];
+      if (filters.fiscalMode) {
+        opConditions.push(Prisma.sql`op."fiscalMode" = ${filters.fiscalMode}`);
+      }
       if (filters.startDate) {
         opConditions.push(Prisma.sql`op."createdAt" >= ${new Date(filters.startDate)}`);
       }
@@ -136,13 +140,15 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
 
   private async _getOrdenPagoOutflows(
     cashRegisterId: string,
-    fromDate: Date | null
+    fromDate: Date | null,
+    fiscalMode?: string
   ): Promise<{ total: number; count: number }> {
     const conditions: Prisma.Sql[] = [
       Prisma.sql`"cashRegisterId" = ${cashRegisterId}`,
       Prisma.sql`status != 'CANCELLED'`,
     ];
     if (fromDate) conditions.push(Prisma.sql`"createdAt" > ${fromDate}`);
+    if (fiscalMode) conditions.push(Prisma.sql`"fiscalMode" = ${fiscalMode}`);
     const where = Prisma.join(conditions, ' AND ');
     const rows = await prisma.$queryRaw<{ total: any; count: bigint }[]>`
       SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
@@ -152,7 +158,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     return { total: Number(rows[0]?.total ?? 0), count: Number(rows[0]?.count ?? 0) };
   }
 
-  private async buildClosePeriodWhere(cashRegisterId: string): Promise<{
+  private async buildClosePeriodWhere(cashRegisterId: string, fiscalMode?: string): Promise<{
     where: Prisma.AccountMovementWhereInput;
     fromDate: Date | null;
   }> {
@@ -165,17 +171,18 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     const where: Prisma.AccountMovementWhereInput = {
       cashRegisterId,
       ...(fromDate && { createdAt: { gt: fromDate } }),
+      ...(fiscalMode ? ({ fiscalMode } as any) : {}),
     };
 
     return { where, fromDate };
   }
 
-  async getClosePreview(cashRegisterId: string): Promise<CashRegisterClosePreview> {
-    const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId);
+  async getClosePreview(cashRegisterId: string, fiscalMode?: string): Promise<CashRegisterClosePreview> {
+    const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
     const [movements, opOutflows] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
-      this._getOrdenPagoOutflows(cashRegisterId, fromDate),
+      this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements
@@ -197,13 +204,14 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
 
   async createClose(
     cashRegisterId: string,
-    data: CreateCashRegisterCloseInput
+    data: CreateCashRegisterCloseInput,
+    fiscalMode?: string
   ): Promise<CashRegisterClose> {
-    const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId);
+    const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
     const [movements, opOutflows] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
-      this._getOrdenPagoOutflows(cashRegisterId, fromDate),
+      this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements

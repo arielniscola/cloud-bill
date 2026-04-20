@@ -38,6 +38,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
     if (filters.supplierId) where.supplierId = filters.supplierId;
     if (filters.status)     where.status     = filters.status;
     if (filters.companyId)  where.companyId  = filters.companyId;
+    if (filters.fiscalMode) where.fiscalMode = filters.fiscalMode;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -95,6 +96,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
         companyId:    (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        fiscalMode:   (data as any).fiscalMode ?? 'FORMAL',
         subtotal:     new Decimal(data.subtotal),
         taxAmount:    new Decimal(data.taxAmount),
         total:        new Decimal(data.total),

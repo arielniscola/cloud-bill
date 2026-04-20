@@ -28,4 +28,5 @@ export interface CreateSupplierMovementInput {
   currency?: string;
   description?: string;
   companyId?: string;
+  fiscalMode?: 'FORMAL' | 'INFORMAL';
 }

@@ -27,6 +27,7 @@ export class ReciboController {
           status: query.status,
           paymentMethod: query.paymentMethod,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
         }
@@ -141,9 +142,9 @@ export class ReciboController {
         // No movement yet (CONTADO): find or create current account and create CREDIT movement
         const customerId = (recibo as any).customerId;
         const currency   = (recibo as any).currency ?? 'ARS';
-        let currentAccount = await currentAccountRepo.findByCustomerId(customerId, currency);
+        let currentAccount = await currentAccountRepo.findByCustomerId(customerId, currency, req.fiscalMode);
         if (!currentAccount) {
-          currentAccount = await currentAccountRepo.createForCustomer(customerId, currency);
+          currentAccount = await currentAccountRepo.createForCustomer(customerId, currency, undefined, req.fiscalMode);
         }
         const movement = await currentAccountRepo.addMovement({
           currentAccountId: currentAccount.id,

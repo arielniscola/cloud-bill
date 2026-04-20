@@ -134,15 +134,16 @@ export class PurchaseInvoiceController {
       const dueDate        = data.dueDate        ? new Date(data.dueDate)        : null;
       const imputationDate = data.imputationDate ? new Date(data.imputationDate) : null;
 
+      const fiscalMode = req.fiscalMode ?? 'FORMAL';
       await prisma.$executeRaw`
         INSERT INTO "purchase_invoices"
           (id, "purchaseId", number, type, subtotal, "taxRate", "taxAmount",
-           amount, "dueDate", "imputationDate", "paymentMethod", status, notes, "companyId")
+           amount, "dueDate", "imputationDate", "paymentMethod", status, notes, "companyId", "updatedAt", "fiscalMode")
         VALUES
           (${id}, ${req.params.purchaseId}, ${data.number}, ${data.type},
            ${data.subtotal}, ${data.taxRate}, ${data.taxAmount},
            ${data.amount}, ${dueDate}, ${imputationDate}, ${data.paymentMethod},
-           'PENDING', ${data.notes ?? null}, ${req.companyId})
+           'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode})
       `;
 
       if (data.items?.length)      await upsertItems(id, data.items);

@@ -36,6 +36,7 @@ export class ChequeController {
         status,
         customerId,
         supplierId,
+        fiscalMode:  req.fiscalMode,
         page:  page  ? Number(page)  : 1,
         limit: limit ? Number(limit) : 50,
       });
@@ -64,6 +65,7 @@ export class ChequeController {
         cashRegisterId: data.cashRegisterId ?? undefined,
         userId:    req.user!.userId,
         companyId: req.companyId!,
+        fiscalMode: req.fiscalMode || 'FORMAL',
       });
       res.status(201).json({ status: 'success', data: cheque });
     } catch (err) { next(err); }

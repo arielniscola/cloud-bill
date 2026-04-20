@@ -281,6 +281,9 @@ model Invoice {
   recibos          Recibo[]
   ordenPedidos     OrdenPedido[]     @relation("InvoiceOrdenPedido")
 
+  fiscalMode String @default("FORMAL")
+
+  @@index([fiscalMode], map: "idx_invoices_fiscalMode")
   @@map("invoices")
 }
 
@@ -314,7 +317,9 @@ model CurrentAccount {
   customer  Customer          @relation(fields: [customerId], references: [id])
   movements AccountMovement[]
 
-  @@unique([customerId, currency])
+  fiscalMode String @default("FORMAL")
+
+  @@unique([customerId, currency, fiscalMode], map: "current_accounts_customerId_currency_fiscalMode_key")
   @@map("current_accounts")
 }
 
@@ -339,6 +344,9 @@ model AccountMovement {
   cashRegister   CashRegister?  @relation(fields: [cashRegisterId], references: [id])
   recibo         Recibo?        @relation(fields: [reciboId], references: [id])
 
+  fiscalMode String @default("FORMAL")
+
+  @@index([fiscalMode], map: "idx_account_movements_fiscal")
   @@map("account_movements")
 }
 
@@ -434,6 +442,9 @@ model StockMovement {
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
   user      User?     @relation(fields: [userId], references: [id])
 
+  fiscalMode String @default("FORMAL")
+
+  @@index([fiscalMode], map: "idx_stock_movements_fiscal")
   @@map("stock_movements")
 }
 
@@ -459,6 +470,8 @@ model Remito {
   budget      Budget?      @relation(fields: [budgetId], references: [id])
   ordenPedido OrdenPedido? @relation(fields: [ordenPedidoId], references: [id])
   items       RemitoItem[]
+
+  fiscalMode String @default("FORMAL")
 
   @@map("remitos")
 }
@@ -567,6 +580,9 @@ model Purchase {
   supplierAccountMovements SupplierAccountMovement[]
   supplierInvoices         PurchaseInvoice[]
 
+  fiscalMode String @default("FORMAL")
+
+  @@index([fiscalMode], map: "idx_purchases_fiscalMode")
   @@map("purchases")
 }
 
@@ -600,6 +616,8 @@ model Budget {
   remitos          Remito[]
   recibos          Recibo[]
   accountMovements AccountMovement[]
+
+  fiscalMode String @default("FORMAL")
 
   @@map("budgets")
 }
@@ -675,6 +693,8 @@ model PurchaseInvoice {
 
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
+  fiscalMode String @default("FORMAL")
+
   @@map("purchase_invoices")
 }
 
@@ -723,6 +743,9 @@ model Recibo {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  fiscalMode String @default("FORMAL")
+
+  @@index([fiscalMode], map: "idx_recibos_fiscalMode")
   @@map("recibos")
 }
 
@@ -760,6 +783,8 @@ model OrdenPedido {
   recibos               Recibo[]
   accountMovements      AccountMovement[]
 
+  fiscalMode String @default("FORMAL")
+
   @@map("orden_pedidos")
 }
 
@@ -788,6 +813,8 @@ model OrdenCompra {
   warehouse  Warehouse? @relation(fields: [warehouseId], references: [id])
   purchase   Purchase?  @relation(fields: [purchaseId], references: [id])
   items      OrdenCompraItem[]
+
+  fiscalMode String @default("FORMAL")
 
   @@map("orden_compras")
 }
@@ -875,6 +902,8 @@ model OrdenPago {
   items        OrdenPagoItem[]
   supplierAccountMovement SupplierAccountMovement?
 
+  fiscalMode String @default("FORMAL")
+
   @@map("orden_pagos")
 }
 
@@ -907,6 +936,8 @@ model SupplierAccountMovement {
   supplier  Supplier   @relation(fields: [supplierId], references: [id])
   ordenPago OrdenPago? @relation(fields: [ordenPagoId], references: [id])
   purchase  Purchase?  @relation(fields: [purchaseId], references: [id])
+
+  fiscalMode String @default("FORMAL")
 
   @@map("supplier_account_movements")
 }
@@ -971,10 +1002,12 @@ model BankMovement {
   reciboId      String?     @unique
   ordenPagoId   String?     @unique
   companyId     String      @default("00000000-0000-0000-0000-000000000001")
+  fiscalMode    String      @default("FORMAL")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
 
+  @@index([fiscalMode], map: "idx_bank_movements_fiscalMode")
   @@map("bank_movements")
 }
 
@@ -999,8 +1032,10 @@ model Cheque {
   cashRegisterId String?
   userId         String
   companyId      String    @default("00000000-0000-0000-0000-000000000001")
+  fiscalMode     String    @default("FORMAL")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  @@index([fiscalMode], map: "idx_cheques_fiscalMode")
   @@map("cheques")
 }

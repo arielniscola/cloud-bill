@@ -6,6 +6,7 @@ export interface ChequeFilters {
   status?:     string;
   customerId?: string;
   supplierId?: string;
+  fiscalMode?: string;
   page?:       number;
   limit?:      number;
 }

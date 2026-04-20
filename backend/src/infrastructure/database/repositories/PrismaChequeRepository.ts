@@ -23,6 +23,7 @@ type RawCheque = {
   cashRegisterId: string | null;
   userId:         string;
   companyId:      string;
+  fiscalMode:     string;
   createdAt:      Date;
   updatedAt:      Date;
   customerName?:  string | null;
@@ -50,6 +51,7 @@ function mapCheque(r: RawCheque): Cheque {
     cashRegisterId: r.cashRegisterId,
     userId:         r.userId,
     companyId:      r.companyId,
+    fiscalMode:     r.fiscalMode ?? 'FORMAL',
     createdAt:      r.createdAt,
     updatedAt:      r.updatedAt,
     customer:       r.customerId && r.customerName ? { id: r.customerId, name: r.customerName } : null,
@@ -79,6 +81,7 @@ export class PrismaChequeRepository implements IChequeRepository {
     if (filters.status)     conditions.push(`c."status" = '${filters.status}'`);
     if (filters.customerId) conditions.push(`c."customerId" = '${filters.customerId}'`);
     if (filters.supplierId) conditions.push(`c."supplierId" = '${filters.supplierId}'`);
+    if (filters.fiscalMode) conditions.push(`c."fiscalMode" = '${filters.fiscalMode}'`);
 
     const where = conditions.join(' AND ');
 
@@ -128,7 +131,7 @@ export class PrismaChequeRepository implements IChequeRepository {
         "dueDate", "issuer", "beneficiary", "status",
         "notes", "customerId", "supplierId",
         "bankAccountId", "cashRegisterId",
-        "userId", "companyId", "createdAt", "updatedAt"
+        "userId", "companyId", "fiscalMode", "createdAt", "updatedAt"
       ) VALUES (
         ${id}, ${number}, ${data.type},
         ${data.checkNumber ?? null}, ${data.bank ?? null},
@@ -137,7 +140,7 @@ export class PrismaChequeRepository implements IChequeRepository {
         ${data.issuer ?? null}, ${data.beneficiary ?? null}, 'PENDING',
         ${data.notes ?? null}, ${data.customerId ?? null}, ${data.supplierId ?? null},
         ${data.bankAccountId ?? null}, ${data.cashRegisterId ?? null},
-        ${data.userId}, ${data.companyId}, NOW(), NOW()
+        ${data.userId}, ${data.companyId}, ${data.fiscalMode ?? 'FORMAL'}, NOW(), NOW()
       )
     `;
 

@@ -106,6 +106,7 @@ export class CashRegisterController {
           type: type as string,
           startDate: startDate as string,
           endDate: endDate as string,
+          fiscalMode: req.fiscalMode,
         },
         { page: Number(page) || 1, limit: Number(limit) || 20 }
       );
@@ -122,7 +123,7 @@ export class CashRegisterController {
       const cashRegister = await repo.findById(req.params.id);
       if (!cashRegister) throw new NotFoundError('Caja');
 
-      const preview = await repo.getClosePreview(req.params.id);
+      const preview = await repo.getClosePreview(req.params.id, req.fiscalMode);
       res.json({ status: 'success', data: preview });
     } catch (error) {
       next(error);
@@ -138,7 +139,7 @@ export class CashRegisterController {
       const close = await repo.createClose(req.params.id, {
         notes: req.body.notes,
         userId: req.user?.userId,
-      });
+      }, req.fiscalMode);
 
       res.status(201).json({ status: 'success', data: close });
     } catch (error) {

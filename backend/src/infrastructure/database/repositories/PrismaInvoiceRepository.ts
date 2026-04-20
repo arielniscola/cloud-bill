@@ -71,6 +71,10 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       (where as any).companyId = filters.companyId;
     }
 
+    if (filters.fiscalMode) {
+      (where as any).fiscalMode = filters.fiscalMode;
+    }
+
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) {
@@ -137,6 +141,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         originInvoiceId: (data as any).originInvoiceId ?? null,
         ordenPedidoId: (data as any).ordenPedidoId ?? null,
         companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        fiscalMode: (data as any).fiscalMode ?? 'FORMAL',
         subtotal,
         taxAmount,
         total,

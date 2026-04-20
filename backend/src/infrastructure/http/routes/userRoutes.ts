@@ -7,8 +7,8 @@ const userController = new UserController();
 
 router.use(authMiddleware);
 
-// Only SUPER_ADMIN can manage users
-router.get('/',               requireRoles('SUPER_ADMIN'), userController.findAll);
+// SUPER_ADMIN manages all; ADMIN can only read their own company's users
+router.get('/',               requireRoles('SUPER_ADMIN', 'ADMIN'), userController.findAll);
 router.post('/',              requireRoles('SUPER_ADMIN'), userController.create);
 router.put('/:id',            requireRoles('SUPER_ADMIN'), userController.update);
 router.patch('/:id/password', requireRoles('SUPER_ADMIN'), userController.changePassword);

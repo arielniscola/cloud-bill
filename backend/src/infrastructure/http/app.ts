@@ -40,6 +40,7 @@ import { internalNoteRoutes } from './routes/internalNoteRoutes';
 import { accountingRoutes } from './routes/accountingRoutes';
 import { pdvRoutes } from './routes/pdvRoutes';
 import { chequeRoutes } from './routes/chequeRoutes';
+import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
 
 export function createApp(): Application {
   const app = express();
@@ -62,6 +63,7 @@ export function createApp(): Application {
   );
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(fiscalModeMiddleware);
 
   // Health check
   app.get('/health', (_req, res) => {

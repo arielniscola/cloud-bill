@@ -7,10 +7,18 @@ import { InternalNote, CreateInternalNoteInput } from '../../../domain/entities/
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 
 const SELECT = `
-  n.id, n.number, n.type, n."customerId", n."userId", n."companyId",
+  n.id, n.number, n.type, n."customerId", n."supplierId", n."userId", n."companyId",
   n.currency, n.amount, n.reason, n.notes, n.status, n."createdAt", n."updatedAt",
   c.name AS "customerName",
+  s.name AS "supplierName",
   u.name AS "userName"
+`;
+
+const FROM = `
+  FROM "internal_notes" n
+  LEFT JOIN customers c ON c.id = n."customerId"
+  LEFT JOIN suppliers s ON s.id = n."supplierId"
+  LEFT JOIN users     u ON u.id = n."userId"
 `;
 
 function mapRow(row: any): InternalNote {
@@ -18,7 +26,8 @@ function mapRow(row: any): InternalNote {
     id:         row.id,
     number:     row.number,
     type:       row.type,
-    customerId: row.customerId,
+    customerId: row.customerId ?? null,
+    supplierId: row.supplierId ?? null,
     userId:     row.userId,
     companyId:  row.companyId,
     currency:   row.currency,
@@ -28,7 +37,8 @@ function mapRow(row: any): InternalNote {
     status:     row.status,
     createdAt:  row.createdAt,
     updatedAt:  row.updatedAt,
-    customer:   row.customerName ? { id: row.customerId, name: row.customerName } : undefined,
+    customer:   row.customerName ? { id: row.customerId, name: row.customerName } : null,
+    supplier:   row.supplierName ? { id: row.supplierId, name: row.supplierName } : null,
     user:       row.userName     ? { id: row.userId,     name: row.userName     } : undefined,
   };
 }
@@ -51,9 +61,7 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
   async findById(id: string): Promise<InternalNote | null> {
     const [row] = await prisma.$queryRaw<any[]>`
       SELECT ${Prisma.raw(SELECT)}
-      FROM "internal_notes" n
-      LEFT JOIN customers c ON c.id = n."customerId"
-      LEFT JOIN users     u ON u.id = n."userId"
+      ${Prisma.raw(FROM)}
       WHERE n.id = ${id}
     `;
     return row ? mapRow(row) : null;
@@ -69,6 +77,7 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
     const conditions: Prisma.Sql[] = [];
     if (filters.companyId)  conditions.push(Prisma.sql`n."companyId" = ${filters.companyId}`);
     if (filters.customerId) conditions.push(Prisma.sql`n."customerId" = ${filters.customerId}`);
+    if (filters.supplierId) conditions.push(Prisma.sql`n."supplierId" = ${filters.supplierId}`);
     if (filters.type)       conditions.push(Prisma.sql`n.type = ${filters.type}`);
     if (filters.status)     conditions.push(Prisma.sql`n.status = ${filters.status}`);
     if (filters.currency)   conditions.push(Prisma.sql`n.currency = ${filters.currency}`);
@@ -82,9 +91,7 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
     const [rows, countRows] = await Promise.all([
       prisma.$queryRaw<any[]>`
         SELECT ${Prisma.raw(SELECT)}
-        FROM "internal_notes" n
-        LEFT JOIN customers c ON c.id = n."customerId"
-        LEFT JOIN users     u ON u.id = n."userId"
+        ${Prisma.raw(FROM)}
         ${where}
         ORDER BY n."createdAt" DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -110,11 +117,13 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
 
     await prisma.$executeRaw`
       INSERT INTO "internal_notes"
-        (id, number, type, "customerId", "userId", "companyId", currency, amount, reason, notes, status)
+        (id, number, type, "customerId", "supplierId", "userId", "companyId",
+         currency, amount, reason, notes, status)
       VALUES
-        (${id}, ${number}, ${data.type}, ${data.customerId}, ${data.userId},
-         ${data.companyId}, ${data.currency}, ${data.amount}, ${data.reason},
-         ${data.notes ?? null}, 'ACTIVE')
+        (${id}, ${number}, ${data.type},
+         ${data.customerId ?? null}, ${data.supplierId ?? null},
+         ${data.userId}, ${data.companyId}, ${data.currency},
+         ${data.amount}, ${data.reason}, ${data.notes ?? null}, 'ACTIVE')
     `;
 
     const note = await this.findById(id);

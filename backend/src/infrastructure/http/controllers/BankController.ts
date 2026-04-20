@@ -79,7 +79,7 @@ export class BankController {
       if (!account) throw new NotFoundError('Cuenta bancaria');
       const page  = Number(req.query.page)  || 1;
       const limit = Number(req.query.limit) || 20;
-      const result = await repo.getMovements(req.params.id, { page, limit });
+      const result = await repo.getMovements(req.params.id, { page, limit }, req.fiscalMode);
       res.json({ status: 'success', ...result });
     } catch (error) { next(error); }
   }
@@ -97,6 +97,7 @@ export class BankController {
         description:   data.description,
         date:          data.date ? new Date(data.date) : undefined,
         companyId:     req.companyId!,
+        fiscalMode:    req.fiscalMode || 'FORMAL',
       });
       res.status(201).json({ status: 'success', data: movement });
     } catch (error) { next(error); }
@@ -125,6 +126,7 @@ export class BankController {
         description:   `Depósito cheque ${(recibo as any).number}`,
         reciboId:      recibo.id,
         companyId:     req.companyId!,
+        fiscalMode:    (recibo as any).fiscalMode ?? req.fiscalMode ?? 'FORMAL',
       });
 
       await reciboRepo.updateCheckStatus(recibo.id, 'DEPOSITED');

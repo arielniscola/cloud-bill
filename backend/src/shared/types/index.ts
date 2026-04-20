@@ -38,6 +38,9 @@ export type StockMovementType =
 export type RemitoStatus = 'PENDING' | 'PARTIALLY_DELIVERED' | 'DELIVERED' | 'CANCELLED';
 export type StockBehavior = 'DISCOUNT' | 'RESERVE';
 
+export type FiscalMode = 'FORMAL' | 'INFORMAL';
+export type FiscalModeFilter = FiscalMode | 'ALL';
+
 export interface PaginationParams {
   page?: number;
   limit?: number;

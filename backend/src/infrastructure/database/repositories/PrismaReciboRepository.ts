@@ -81,6 +81,7 @@ export class PrismaReciboRepository implements IReciboRepository {
     // Workaround: Prisma client stale — companyId not yet in generated types for Recibo.
     // Filter via customer relation (semantically equivalent: recibo.customer.companyId === companyId).
     if (filters.companyId) where.customer = { companyId: filters.companyId };
+    if (filters.fiscalMode) where.fiscalMode = filters.fiscalMode;
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
       if (filters.dateFrom) where.date.gte = filters.dateFrom;
@@ -133,13 +134,15 @@ export class PrismaReciboRepository implements IReciboRepository {
     const cardId = (data as any).cardId ?? null;
     const surchargePercent = (data as any).surchargePercent != null ? new Decimal((data as any).surchargePercent) : null;
     const surchargeAmount = (data as any).surchargeAmount != null ? new Decimal((data as any).surchargeAmount) : null;
+    const fiscalMode = (data as any).fiscalMode ?? 'FORMAL';
     await prisma.$executeRaw`
       UPDATE "recibos"
       SET "exchangeRate" = ${rate},
           "companyId" = ${companyId},
           "cardId" = ${cardId},
           "surchargePercent" = ${surchargePercent},
-          "surchargeAmount" = ${surchargeAmount}
+          "surchargeAmount" = ${surchargeAmount},
+          "fiscalMode" = ${fiscalMode}
       WHERE id = ${recibo.id}
     `;
 

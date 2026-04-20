@@ -19,6 +19,7 @@ export class OrdenPagoController {
           status:        query.status,
           paymentMethod: query.paymentMethod,
           companyId:     req.companyId,
+          fiscalMode:    req.fiscalMode,
           dateFrom:      query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo:        query.dateTo   ? new Date(query.dateTo)   : undefined,
         }
@@ -53,6 +54,7 @@ export class OrdenPagoController {
         userId:         req.user!.userId,
         cashRegisterId: body.cashRegisterId,
         companyId:      req.companyId,
+        fiscalMode:     req.fiscalMode,
         date:           body.date ? new Date(body.date) : undefined,
         currency:       body.currency as any,
         exchangeRate:   body.exchangeRate,
@@ -62,7 +64,7 @@ export class OrdenPagoController {
         checkDueDate:   body.checkDueDate ? new Date(body.checkDueDate) : undefined,
         notes:          body.notes,
         items:          body.items,
-      });
+      } as any);
 
       await activityLogRepo.create({
         userId:      req.user!.userId,

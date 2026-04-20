@@ -7,9 +7,9 @@ import { PaginationParams, PaginatedResult, Currency } from '../../shared/types'
 
 export interface ICurrentAccountRepository {
   findById(id: string): Promise<CurrentAccount | null>;
-  findByCustomerId(customerId: string, currency?: Currency): Promise<CurrentAccount | null>;
+  findByCustomerId(customerId: string, currency?: Currency, fiscalMode?: string): Promise<CurrentAccount | null>;
   findAllByCustomerId(customerId: string): Promise<CurrentAccount[]>;
-  createForCustomer(customerId: string, currency: Currency, creditLimit?: number): Promise<CurrentAccount>;
+  createForCustomer(customerId: string, currency: Currency, creditLimit?: number, fiscalMode?: string): Promise<CurrentAccount>;
   updateCreditLimit(id: string, creditLimit: number | null): Promise<CurrentAccount>;
   addMovement(data: CreateAccountMovementInput): Promise<AccountMovement>;
   getMovements(

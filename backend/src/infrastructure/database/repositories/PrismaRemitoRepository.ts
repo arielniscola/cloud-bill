@@ -55,6 +55,10 @@ export class PrismaRemitoRepository implements IRemitoRepository {
       (where as any).companyId = filters.companyId;
     }
 
+    if (filters.fiscalMode) {
+      (where as any).fiscalMode = filters.fiscalMode;
+    }
+
     if (filters.ordenPedidoId) {
       // Raw SQL to filter by ordenPedidoId (bypasses stale Prisma client types),
       // then fetch full objects with Prisma to get customer/user relations
@@ -148,6 +152,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         budgetId: data.budgetId ?? null,
         ordenPedidoId: data.ordenPedidoId ?? null,
         companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        fiscalMode: (data as any).fiscalMode ?? 'FORMAL',
         items: {
           create: data.items.map((item) => ({
             productId: item.productId,

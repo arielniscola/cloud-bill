@@ -8,6 +8,6 @@ export interface IBankRepository {
   updateAccount(id: string, data: Partial<CreateBankAccountInput> & { isActive?: boolean }): Promise<BankAccount>;
   deleteAccount(id: string): Promise<void>;
 
-  getMovements(bankAccountId: string, pagination: PaginationParams): Promise<PaginatedResult<BankMovement>>;
+  getMovements(bankAccountId: string, pagination: PaginationParams, fiscalMode?: string): Promise<PaginatedResult<BankMovement>>;
   addMovement(data: CreateBankMovementInput): Promise<BankMovement>;
 }

@@ -38,6 +38,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     if (filters.type) where.type = filters.type as any;
     if (filters.currency) where.currency = filters.currency as any;
     if (filters.companyId) (where as any).companyId = filters.companyId;
+    if (filters.fiscalMode) (where as any).fiscalMode = filters.fiscalMode;
 
     if (filters.dateFrom || filters.dateTo) {
       where.date = {};
@@ -83,7 +84,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
       total: new Decimal(item.total),
     }));
 
-    return prisma.budget.create({
+    return (prisma as any).budget.create({
       data: {
         number,
         type: data.type,
@@ -97,6 +98,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
         companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        fiscalMode: (data as any).fiscalMode ?? 'FORMAL',
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),

@@ -27,7 +27,8 @@ type RawItem = {
 type RawMovement = {
   id: string; supplierId: string; ordenPagoId: string | null; purchaseId: string | null;
   type: string; amount: any; currency: string; balance: any;
-  description: string | null; companyId: string; createdAt: Date; updatedAt: Date;
+  description: string | null; companyId: string; fiscalMode?: string | null;
+  createdAt: Date; updatedAt: Date;
 };
 
 function mapOrdenPago(row: RawOrdenPago, items: RawItem[]): OrdenPagoWithRelations {
@@ -127,6 +128,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
     const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
     if (filters.companyId)    conditions.push(Prisma.sql`op."companyId" = ${filters.companyId}`);
+    if (filters.fiscalMode)   conditions.push(Prisma.sql`op."fiscalMode" = ${filters.fiscalMode}`);
     if (filters.supplierId)   conditions.push(Prisma.sql`op."supplierId" = ${filters.supplierId}`);
     if (filters.status)       conditions.push(Prisma.sql`op.status = ${filters.status}`);
     if (filters.paymentMethod) conditions.push(Prisma.sql`op."paymentMethod" = ${filters.paymentMethod}`);
@@ -183,11 +185,12 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
     const effectiveCashRegisterId = data.paymentMethod === 'CHECK' ? null : (data.cashRegisterId ?? null);
 
+    const fiscalMode = (data as any).fiscalMode ?? 'FORMAL';
     await prisma.$executeRaw`
       INSERT INTO "orden_pagos" (
         "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
         "date", "amount", "currency", "exchangeRate", "paymentMethod",
-        "reference", "bank", "checkDueDate", "notes", "status"
+        "reference", "bank", "checkDueDate", "notes", "status", "fiscalMode"
       ) VALUES (
         ${opId}, ${number}, ${data.supplierId}, ${data.userId},
         ${effectiveCashRegisterId}, ${companyId}, ${date},
@@ -195,7 +198,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         ${currency}, ${exchangeRate}, ${data.paymentMethod},
         ${data.reference ?? null}, ${data.bank ?? null},
         ${data.checkDueDate ?? null}, ${data.notes ?? null},
-        'EMITTED'
+        'EMITTED', ${fiscalMode}
       )
     `;
 
@@ -246,6 +249,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         currency: op.currency,
         description: `Orden de Pago ${op.number}`,
         companyId: op.companyId,
+        fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
       });
     }
 
@@ -374,6 +378,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   async createSupplierMovement(data: CreateSupplierMovementInput): Promise<SupplierAccountMovement> {
     const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
+    const fiscalMode = data.fiscalMode ?? 'FORMAL';
 
     const currentBalance = await this.getSupplierBalance(data.supplierId, companyId);
     const newBalance = data.type === 'DEBIT'
@@ -385,12 +390,12 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     await prisma.$executeRaw`
       INSERT INTO "supplier_account_movements" (
         "id", "supplierId", "ordenPagoId", "purchaseId",
-        "type", "amount", "currency", "balance", "description", "companyId"
+        "type", "amount", "currency", "balance", "description", "companyId", "fiscalMode"
       ) VALUES (
         ${movId[0].id}, ${data.supplierId},
         ${data.ordenPagoId ?? null}, ${data.purchaseId ?? null},
         ${data.type}, ${data.amount}, ${currency},
-        ${newBalance}, ${data.description ?? null}, ${companyId}
+        ${newBalance}, ${data.description ?? null}, ${companyId}, ${fiscalMode}
       )
     `;
 
@@ -414,6 +419,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       currency: original.currency,
       description: `Reversión: ${original.description ?? ''}`.trim(),
       companyId: original.companyId,
+      fiscalMode: (original.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
     });
 
     await prisma.$executeRaw`

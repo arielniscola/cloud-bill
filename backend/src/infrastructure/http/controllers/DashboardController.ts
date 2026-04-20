@@ -13,6 +13,7 @@ export class DashboardController {
       const monthStart = new Date(year, month, 1);
       const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
       const companyId = req.companyId;
+      const fiscalMode = req.fiscalMode ?? 'FORMAL';
 
       const [
         ventasMesRows,
@@ -42,6 +43,7 @@ export class DashboardController {
           WHERE status NOT IN ('DRAFT', 'CANCELLED')
             AND currency = 'ARS'
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
@@ -74,6 +76,7 @@ export class DashboardController {
           FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
@@ -96,6 +99,7 @@ export class DashboardController {
           WHERE "paymentStatus" != 'PAID'
             AND status != 'CANCELLED'
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
         `,
 
         // OC pendientes (no recibidas ni canceladas)
@@ -104,6 +108,7 @@ export class DashboardController {
           FROM "orden_compras"
           WHERE status NOT IN ('RECEIVED', 'CANCELLED')
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
         `,
 
         // OP pendientes (CONFIRMED — no convertidas ni pagadas ni canceladas)
@@ -112,6 +117,7 @@ export class DashboardController {
           FROM "orden_pedidos"
           WHERE status = 'CONFIRMED'
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
         `,
 
         // OP convertidas a factura este mes
@@ -120,6 +126,7 @@ export class DashboardController {
           FROM "orden_pedidos"
           WHERE status = 'CONVERTED'
             AND "companyId" = ${companyId}
+            AND "fiscalMode" = ${fiscalMode}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
@@ -145,6 +152,7 @@ export class DashboardController {
           LEFT JOIN "invoices" inv ON inv.id = op."invoiceId"
           WHERE op.status != 'DRAFT'
             AND op."companyId" = ${companyId}
+            AND op."fiscalMode" = ${fiscalMode}
           ORDER BY op."createdAt" DESC
           LIMIT 5
         `,
@@ -157,6 +165,7 @@ export class DashboardController {
           LEFT JOIN "suppliers" s ON s.id = op."supplierId"
           WHERE op.status = 'EMITTED'
             AND op."companyId" = ${companyId}
+            AND op."fiscalMode" = ${fiscalMode}
           ORDER BY op."createdAt" DESC
           LIMIT 5
         `,

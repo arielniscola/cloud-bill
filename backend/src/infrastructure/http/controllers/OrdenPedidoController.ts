@@ -33,6 +33,7 @@ export class OrdenPedidoController {
           status: query.status,
           currency: query.currency,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
           search: query.search,
@@ -96,6 +97,7 @@ export class OrdenPedidoController {
         cashRegisterId: data.cashRegisterId ?? null,
         invoiceCashRegisterId: data.invoiceCashRegisterId ?? null,
         companyId: req.companyId,
+        fiscalMode: req.fiscalMode,
         subtotal,
         taxAmount,
         total: subtotal + taxAmount,
@@ -163,9 +165,9 @@ export class OrdenPedidoController {
       // Create DEBIT account movement if cuenta corriente
       if (data.saleCondition === 'CUENTA_CORRIENTE' && op.customerId) {
         const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
-        let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any);
+        let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
         if (!currentAccount) {
-          currentAccount = await currentAccountRepo.createForCustomer(op.customerId, op.currency as any);
+          currentAccount = await currentAccountRepo.createForCustomer(op.customerId, op.currency as any, undefined, req.fiscalMode);
         }
         await currentAccountRepo.addMovement({
           currentAccountId: currentAccount.id,
@@ -298,6 +300,7 @@ export class OrdenPedidoController {
         customerId: op.customerId,
         userId: req.user!.userId,
         companyId: req.companyId,
+        fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
         dueDate: undefined,
         notes: op.notes ?? undefined,
         currency: op.currency as any,
@@ -416,6 +419,7 @@ export class OrdenPedidoController {
         installments: paymentData.installments ?? null,
         notes: paymentData.notes ?? null,
         companyId: req.companyId,
+        fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
       } as any);
 
       // For BANK_TRANSFER with a bankAccountId, create a bank movement
@@ -441,9 +445,9 @@ export class OrdenPedidoController {
       const isCC = (op as any).saleCondition === 'CUENTA_CORRIENTE';
 
       if (isCC) {
-        let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any);
+        let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
         if (!currentAccount) {
-          currentAccount = await currentAccountRepo.createForCustomer(op.customerId, op.currency as any);
+          currentAccount = await currentAccountRepo.createForCustomer(op.customerId, op.currency as any, undefined, req.fiscalMode);
         }
         const movement = await currentAccountRepo.addMovement({
           currentAccountId: currentAccount.id,
@@ -459,9 +463,9 @@ export class OrdenPedidoController {
       }
 
       if (usesCaja && paymentData.cashRegisterId && !isCC) {
-        let arsAccount = await currentAccountRepo.findByCustomerId(op.customerId, 'ARS');
+        let arsAccount = await currentAccountRepo.findByCustomerId(op.customerId, 'ARS', req.fiscalMode);
         if (!arsAccount) {
-          arsAccount = await currentAccountRepo.createForCustomer(op.customerId, 'ARS');
+          arsAccount = await currentAccountRepo.createForCustomer(op.customerId, 'ARS', undefined, req.fiscalMode);
         }
         await prisma.accountMovement.create({
           data: {

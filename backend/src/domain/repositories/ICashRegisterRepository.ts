@@ -17,10 +17,10 @@ export interface ICashRegisterRepository {
   delete(id: string): Promise<void>;
   getMovements(
     cashRegisterId: string,
-    filters: { type?: string; startDate?: string; endDate?: string },
+    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string },
     pagination?: PaginationParams
   ): Promise<PaginatedResult<CashRegisterMovement>>;
-  getClosePreview(cashRegisterId: string): Promise<CashRegisterClosePreview>;
-  createClose(cashRegisterId: string, data: CreateCashRegisterCloseInput): Promise<CashRegisterClose>;
+  getClosePreview(cashRegisterId: string, fiscalMode?: string): Promise<CashRegisterClosePreview>;
+  createClose(cashRegisterId: string, data: CreateCashRegisterCloseInput, fiscalMode?: string): Promise<CashRegisterClose>;
   getCloses(cashRegisterId: string, pagination?: PaginationParams): Promise<PaginatedResult<CashRegisterClose>>;
 }

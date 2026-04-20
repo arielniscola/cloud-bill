@@ -21,6 +21,7 @@ export interface Cheque {
   cashRegisterId: string | null;
   userId:         string;
   companyId:      string;
+  fiscalMode:     string;
   createdAt:      Date;
   updatedAt:      Date;
   // relations (optional, populated on findById)
@@ -43,4 +44,5 @@ export interface CreateChequeInput {
   supplierId?:    string;
   bankAccountId?: string;
   cashRegisterId?:string;
+  fiscalMode?:    string;
 }

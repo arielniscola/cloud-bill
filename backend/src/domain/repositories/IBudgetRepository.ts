@@ -7,6 +7,7 @@ export interface BudgetFilters {
   type?: string;
   currency?: string;
   companyId?: string;
+  fiscalMode?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }

@@ -24,6 +24,7 @@ export interface BankMovement {
   reciboId: string | null;
   ordenPagoId: string | null;
   companyId: string;
+  fiscalMode: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,4 +46,5 @@ export interface CreateBankMovementInput {
   reciboId?: string | null;
   ordenPagoId?: string | null;
   companyId: string;
+  fiscalMode?: string;
 }

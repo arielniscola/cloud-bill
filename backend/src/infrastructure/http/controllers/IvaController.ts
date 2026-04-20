@@ -28,7 +28,7 @@ export class IvaController {
 
       const result = await invoiceRepo.findAll(
         { page: 1, limit: 9999 },
-        { dateFrom, dateTo, companyId: (req as any).companyId }
+        { dateFrom, dateTo, companyId: (req as any).companyId, fiscalMode: 'FORMAL' }
       );
 
       const rows = result.data
@@ -64,7 +64,7 @@ export class IvaController {
 
       const result = await invoiceRepo.findAll(
         { page: 1, limit: 9999 },
-        { dateFrom, dateTo, companyId: (req as any).companyId }
+        { dateFrom, dateTo, companyId: (req as any).companyId, fiscalMode: 'FORMAL' }
       );
 
       const header = toCSVRow([
@@ -109,7 +109,7 @@ export class IvaController {
       const year = parseInt(req.query.year as string) || new Date().getFullYear();
       const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
 
-      const purchases = await purchaseRepo.findAllByPeriod(year, month, (req as any).companyId);
+      const purchases = await purchaseRepo.findAllByPeriod(year, month, (req as any).companyId, 'FORMAL');
 
       const rows = purchases.map((p) => ({
         fecha: p.date,
@@ -134,7 +134,7 @@ export class IvaController {
       const year = parseInt(req.query.year as string) || new Date().getFullYear();
       const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
 
-      const purchases = await purchaseRepo.findAllByPeriod(year, month, (req as any).companyId);
+      const purchases = await purchaseRepo.findAllByPeriod(year, month, (req as any).companyId, 'FORMAL');
 
       const header = toCSVRow([
         'Fecha', 'Número', 'Tipo', 'Proveedor', 'CUIT', 'Neto', 'IVA', 'Total',

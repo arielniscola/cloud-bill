@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
 import { IBankRepository } from '../../../domain/repositories/IBankRepository';
 import { BankAccount, BankMovement, CreateBankAccountInput, CreateBankMovementInput } from '../../../domain/entities/Bank';
 import { PaginatedResult, PaginationParams } from '../../../shared/types';
@@ -58,19 +59,24 @@ export class PrismaBankRepository implements IBankRepository {
     await prisma.$executeRaw`DELETE FROM bank_accounts WHERE id = ${id}`;
   }
 
-  async getMovements(bankAccountId: string, pagination: PaginationParams): Promise<PaginatedResult<BankMovement>> {
+  async getMovements(bankAccountId: string, pagination: PaginationParams, fiscalMode?: string): Promise<PaginatedResult<BankMovement>> {
     const { page = 1, limit = 20 } = pagination;
     const offset = (page - 1) * limit;
+
+    const fiscalCond = fiscalMode
+      ? Prisma.sql`AND "fiscalMode" = ${fiscalMode}`
+      : Prisma.empty;
 
     const [data, countRows] = await Promise.all([
       prisma.$queryRaw<BankMovement[]>`
         SELECT * FROM bank_movements
-        WHERE "bankAccountId" = ${bankAccountId}
+        WHERE "bankAccountId" = ${bankAccountId} ${fiscalCond}
         ORDER BY date DESC, "createdAt" DESC
         LIMIT ${limit} OFFSET ${offset}
       `,
       prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) AS count FROM bank_movements WHERE "bankAccountId" = ${bankAccountId}
+        SELECT COUNT(*) AS count FROM bank_movements
+        WHERE "bankAccountId" = ${bankAccountId} ${fiscalCond}
       `,
     ]);
 
@@ -82,13 +88,13 @@ export class PrismaBankRepository implements IBankRepository {
     const rows = await prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO bank_movements (
         id, "bankAccountId", type, amount, description, date,
-        "reciboId", "ordenPagoId", "companyId", "createdAt", "updatedAt"
+        "reciboId", "ordenPagoId", "companyId", "fiscalMode", "createdAt", "updatedAt"
       ) VALUES (
         gen_random_uuid()::text,
         ${data.bankAccountId}, ${data.type}, ${new Decimal(data.amount)},
         ${data.description}, ${data.date ?? new Date()},
         ${data.reciboId ?? null}, ${data.ordenPagoId ?? null},
-        ${data.companyId}, NOW(), NOW()
+        ${data.companyId}, ${data.fiscalMode ?? 'FORMAL'}, NOW(), NOW()
       )
       RETURNING id
     `;

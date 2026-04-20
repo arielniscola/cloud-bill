@@ -16,6 +16,7 @@ export interface InvoiceFilters {
   companyId?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  fiscalMode?: string;
 }
 
 export interface IInvoiceRepository {

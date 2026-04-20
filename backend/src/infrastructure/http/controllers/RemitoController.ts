@@ -17,9 +17,10 @@ export class RemitoController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      // Validate source document items if provided and determine stockBehavior
+      // Validate source document items if provided and determine stockBehavior + fiscalMode
       const { invoiceId, budgetId, ordenPedidoId: linkedOrdenPedidoId } = req.body;
       let stockBehaviorForRemito: 'DISCOUNT' | 'RESERVE' = 'DISCOUNT';
+      let fiscalModeForRemito: 'FORMAL' | 'INFORMAL' = req.fiscalMode ?? 'FORMAL';
       let isLinked = false;
 
       if (linkedOrdenPedidoId) {
@@ -27,6 +28,7 @@ export class RemitoController {
         const op = await (prisma as any).ordenPedido.findUnique({ where: { id: linkedOrdenPedidoId } });
         if (!op) throw new AppError('Orden de pedido no encontrada', 404);
         stockBehaviorForRemito = (op.stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        fiscalModeForRemito = (op.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
         isLinked = true;
       } else if (invoiceId) {
         const invoice = await prisma.invoice.findUnique({
@@ -48,6 +50,7 @@ export class RemitoController {
         }
 
         stockBehaviorForRemito = ((invoice as any).stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        fiscalModeForRemito = ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
         isLinked = true;
       } else if (budgetId) {
         const budget = await prisma.budget.findUnique({
@@ -71,6 +74,7 @@ export class RemitoController {
         }
 
         stockBehaviorForRemito = ((budget as any).stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
+        fiscalModeForRemito = ((budget as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
         isLinked = true;
       }
 
@@ -83,6 +87,7 @@ export class RemitoController {
         budgetId: budgetId || undefined,
         ordenPedidoId: linkedOrdenPedidoId || undefined,
         companyId: req.companyId,
+        fiscalMode: fiscalModeForRemito,
         items: req.body.items,
       } as any);
 
@@ -143,6 +148,7 @@ export class RemitoController {
           customerId: filters.customerId as string,
           status: filters.status as RemitoStatus | undefined,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
           ordenPedidoId: filters.ordenPedidoId as string | undefined,

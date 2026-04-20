@@ -7,12 +7,13 @@ export interface PurchaseFilters {
   dateFrom?: Date;
   dateTo?: Date;
   companyId?: string;
+  fiscalMode?: string;
 }
 
 export interface IPurchaseRepository {
   findAll(pagination?: PaginationParams, filters?: PurchaseFilters): Promise<PaginatedResult<Purchase>>;
   findById(id: string): Promise<PurchaseWithItems | null>;
-  findAllByPeriod(year: number, month: number, companyId?: string): Promise<PurchaseWithItems[]>;
+  findAllByPeriod(year: number, month: number, companyId?: string, fiscalMode?: string): Promise<PurchaseWithItems[]>;
   create(data: CreatePurchaseInput): Promise<PurchaseWithItems>;
   update(id: string, data: UpdatePurchaseInput): Promise<Purchase>;
   delete(id: string): Promise<void>;
