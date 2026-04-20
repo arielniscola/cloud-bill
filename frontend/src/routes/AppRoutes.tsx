@@ -49,6 +49,12 @@ import BudgetDetailPage from '../pages/budgets/BudgetDetailPage';
 import RecibosPage from '../pages/recibos/RecibosPage';
 import ReciboDetailPage from '../pages/recibos/ReciboDetailPage';
 import SalesReportPage from '../pages/reports/SalesReportPage';
+import ReportsHubPage from '../pages/reports/ReportsHubPage';
+import PurchasesReportPage from '../pages/reports/PurchasesReportPage';
+import ProfitabilityReportPage from '../pages/reports/ProfitabilityReportPage';
+import StockValuationReportPage from '../pages/reports/StockValuationReportPage';
+import AccountsReceivableReportPage from '../pages/reports/AccountsReceivableReportPage';
+import CashFlowReportPage from '../pages/reports/CashFlowReportPage';
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
 import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
 import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
@@ -102,9 +108,12 @@ export default function AppRoutes() {
           <Route path="/companies/new" element={<CompanyFormPage key="new" />} />
           <Route path="/companies/:id" element={<CompanyDetailPage />} />
           <Route path="/companies/:id/edit" element={<CompanyFormPage key="edit" />} />
-          <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<UserFormPage key="new" />} />
           <Route path="/users/:id/edit" element={<UserFormPage key="edit" />} />
+        </Route>
+        {/* ADMIN can view users (read-only); SUPER_ADMIN already covered above */}
+        <Route element={<RoleGuard allowed={['SUPER_ADMIN', 'ADMIN']} />}>
+          <Route path="/users" element={<UsersPage />} />
         </Route>
 
         <Route path="/" element={<HomePage />} />
@@ -154,7 +163,13 @@ export default function AppRoutes() {
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/iva" element={<IvaPage />} />
+          <Route path="/reports" element={<ReportsHubPage />} />
           <Route path="/reports/sales" element={<SalesReportPage />} />
+          <Route path="/reports/purchases" element={<PurchasesReportPage />} />
+          <Route path="/reports/profitability" element={<ProfitabilityReportPage />} />
+          <Route path="/reports/stock-valuation" element={<StockValuationReportPage />} />
+          <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />
+          <Route path="/reports/cash-flow" element={<CashFlowReportPage />} />
         </Route>
 
         {/* Suppliers & Purchases — ADMIN only */}

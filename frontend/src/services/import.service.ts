@@ -17,6 +17,10 @@ export const importService = {
     const res = await api.post<ApiResponse<ImportResult>>('/customers/import', { csv });
     return res.data.data;
   },
+  async importSuppliers(csv: string): Promise<ImportResult> {
+    const res = await api.post<ApiResponse<ImportResult>>('/suppliers/import', { csv });
+    return res.data.data;
+  },
 };
 
 export default importService;

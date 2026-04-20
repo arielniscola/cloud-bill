@@ -171,8 +171,8 @@ const navigationGroups: NavGroup[] = [
           { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark },
           { name: "Tarjetas",          href: "/cards",          icon: CreditCard },
           { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone, featureKey: "mercadopago" },
-          { name: "Libro IVA",         href: "/iva",           icon: BookOpen },
-          { name: "Reporte Ventas",    href: "/reports/sales", icon: BarChart2 },
+          { name: "Libro IVA",         href: "/iva",      icon: BookOpen },
+          { name: "Reportes",          href: "/reports",  icon: BarChart2 },
         ],
       },
     ],
@@ -221,7 +221,11 @@ export default function Sidebar() {
   const { role, isModuleEnabled } = usePermissions();
   const { hasFeature } = useFeatures();
   const theme = getNavTheme(navTheme);
-  const { companies } = useCompanyStore();
+  const { companies, activeCompany } = useCompanyStore();
+  const displayCompanyName =
+    role === 'SUPER_ADMIN'
+      ? activeCompany()?.name ?? 'Cloud Bill'
+      : user?.companyName ?? 'Cloud Bill';
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -280,30 +284,30 @@ export default function Sidebar() {
     const initial: Record<string, boolean> = {};
     allNavItems.forEach((item) => {
       if (!item.children) return;
-      const parentActive = location.pathname.startsWith(item.href);
       const childActive = item.children.some(
         (c) =>
           location.pathname === c.href ||
           location.pathname.startsWith(c.href + "/"),
       );
-      if (parentActive || childActive) initial[item.name] = true;
+      if (childActive) initial[item.name] = true;
     });
     return initial;
   });
 
-  // Auto-open the relevant sub-menu when navigating to a child route
+  // Auto-open the relevant sub-menu only when a specific child route is active
   useEffect(() => {
     allNavItems.forEach((item) => {
       if (!item.children) return;
-      const parentActive = location.pathname.startsWith(item.href);
       const childActive = item.children.some(
         (c) =>
           location.pathname === c.href ||
           location.pathname.startsWith(c.href + "/"),
       );
-      if (parentActive || childActive) {
-        setOpenMenus((prev) => ({ ...prev, [item.name]: true }));
-      }
+      setOpenMenus((prev) => {
+        if (childActive && !prev[item.name]) return { ...prev, [item.name]: true };
+        if (!childActive && prev[item.name]) return { ...prev, [item.name]: false };
+        return prev;
+      });
     });
   }, [location.pathname]);
 
@@ -361,8 +365,11 @@ export default function Sidebar() {
               <img src="/logo.png" alt="Cloud Bill" className="w-full h-full object-contain" />
             </div>
             {showText && (
-              <span className="text-sm font-bold text-white tracking-tight truncate">
-                Cloud Bill
+              <span
+                className="text-sm font-bold text-white tracking-tight truncate"
+                title={displayCompanyName}
+              >
+                {displayCompanyName}
               </span>
             )}
           </div>
@@ -627,7 +634,7 @@ export default function Sidebar() {
             </div>
           )}
 
-          {companies.length > 0 && (
+          {role === 'SUPER_ADMIN' && companies.length > 0 && (
             <div className="mb-1">
               <CompanySwitcher showText={showText} />
             </div>

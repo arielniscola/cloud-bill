@@ -3,10 +3,10 @@ import { X, Plus, FileEdit, CheckCircle2, XCircle, TrendingUp, TrendingDown } fr
 import toast from 'react-hot-toast';
 import { Card, Button, Badge } from '../../components/ui';
 import { PageHeader, Pagination, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
-import { internalNotesService, customersService } from '../../services';
+import { internalNotesService, customersService, suppliersService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
-import type { InternalNote, InternalNoteType, InternalNoteStatus, Customer } from '../../types';
+import type { InternalNote, InternalNoteType, InternalNoteStatus, Customer, Supplier } from '../../types';
 import CreateInternalNoteModal from './CreateInternalNoteModal';
 
 const TYPE_LABEL: Record<InternalNoteType, string> = {
@@ -33,6 +33,7 @@ export default function InternalNotesPage() {
 
   const [notes,      setNotes]      = useState<InternalNote[]>([]);
   const [customers,  setCustomers]  = useState<Customer[]>([]);
+  const [suppliers,  setSuppliers]  = useState<Supplier[]>([]);
   const [isLoading,  setIsLoading]  = useState(true);
   const [page,       setPage]       = useState(1);
   const [limit]                     = useState(20);
@@ -43,6 +44,8 @@ export default function InternalNotesPage() {
   const [typeFilter,     setTypeFilter]     = useState('');
   const [statusFilter,   setStatusFilter]   = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('');
+  const [entityFilter,   setEntityFilter]   = useState<'' | 'CUSTOMER' | 'SUPPLIER'>('');
   const [dateFrom,       setDateFrom]       = useState('');
   const [dateTo,         setDateTo]         = useState('');
 
@@ -50,12 +53,14 @@ export default function InternalNotesPage() {
   const [cancelId,     setCancelId]     = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const hasFilters = !!(typeFilter || statusFilter || customerFilter || dateFrom || dateTo);
+  const hasFilters = !!(typeFilter || statusFilter || customerFilter || supplierFilter || entityFilter || dateFrom || dateTo);
 
   const clearFilters = () => {
     setTypeFilter('');
     setStatusFilter('');
     setCustomerFilter('');
+    setSupplierFilter('');
+    setEntityFilter('');
     setDateFrom('');
     setDateTo('');
     setPage(1);
@@ -70,6 +75,7 @@ export default function InternalNotesPage() {
         type:       typeFilter       as InternalNoteType | '' || undefined,
         status:     statusFilter     as InternalNoteStatus | '' || undefined,
         customerId: customerFilter   || undefined,
+        supplierId: supplierFilter   || undefined,
         dateFrom:   dateFrom         || undefined,
         dateTo:     dateTo           || undefined,
       });
@@ -81,11 +87,14 @@ export default function InternalNotesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, typeFilter, statusFilter, customerFilter, dateFrom, dateTo]);
+  }, [page, limit, typeFilter, statusFilter, customerFilter, supplierFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     customersService.getAll({ limit: 500 })
       .then((r) => setCustomers(r.data))
+      .catch(() => {});
+    suppliersService.getAll({ limit: 500 })
+      .then((r) => setSuppliers(r.data))
       .catch(() => {});
   }, []);
 
@@ -140,15 +149,44 @@ export default function InternalNotesPage() {
             <option value="ACTIVE">Activa</option>
             <option value="CANCELLED">Anulada</option>
           </select>
-          <div className="w-64">
-            <CustomerSearchSelect
-              customers={customers}
-              value={customerFilter}
-              onChange={(v) => { setCustomerFilter(v); setPage(1); }}
-              placeholder="Filtrar por cliente"
-              clearLabel="Todos los clientes"
-            />
-          </div>
+          <select
+            className={selectCls}
+            value={entityFilter}
+            onChange={(e) => {
+              const v = e.target.value as '' | 'CUSTOMER' | 'SUPPLIER';
+              setEntityFilter(v);
+              if (v !== 'CUSTOMER') setCustomerFilter('');
+              if (v !== 'SUPPLIER') setSupplierFilter('');
+              setPage(1);
+            }}
+          >
+            <option value="">Clientes y proveedores</option>
+            <option value="CUSTOMER">Solo clientes</option>
+            <option value="SUPPLIER">Solo proveedores</option>
+          </select>
+          {entityFilter !== 'SUPPLIER' && (
+            <div className="w-64">
+              <CustomerSearchSelect
+                customers={customers}
+                value={customerFilter}
+                onChange={(v) => { setCustomerFilter(v); setPage(1); }}
+                placeholder="Filtrar por cliente"
+                clearLabel="Todos los clientes"
+              />
+            </div>
+          )}
+          {entityFilter === 'SUPPLIER' && (
+            <select
+              className={selectCls}
+              value={supplierFilter}
+              onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">Todos los proveedores</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
           <input
             type="date" className={selectCls}
             value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
@@ -173,7 +211,7 @@ export default function InternalNotesPage() {
               <tr className="border-b border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Número</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Tipo</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Cliente</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Cliente / Proveedor</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Motivo</th>
                 <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Monto</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Fecha</th>
@@ -210,7 +248,17 @@ export default function InternalNotesPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-gray-700 dark:text-slate-300">
-                      {note.customer?.name ?? '—'}
+                      {note.customer?.name ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-[10px] uppercase tracking-wide text-indigo-500 font-semibold">Cliente</span>
+                          {note.customer.name}
+                        </span>
+                      ) : note.supplier?.name ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-[10px] uppercase tracking-wide text-amber-600 font-semibold">Proveedor</span>
+                          {note.supplier.name}
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="px-5 py-3.5 text-gray-600 dark:text-slate-400 max-w-[220px] truncate">
                       {note.reason}
@@ -270,7 +318,7 @@ export default function InternalNotesPage() {
       <ConfirmDialog
         isOpen={!!cancelId}
         title="Anular nota interna"
-        message="Se revertirá el movimiento en la cuenta corriente del cliente. ¿Confirmás?"
+        message="Se revertirá el movimiento en la cuenta corriente del cliente o proveedor. ¿Confirmás?"
         confirmLabel="Anular"
         variant="danger"
         isLoading={isCancelling}

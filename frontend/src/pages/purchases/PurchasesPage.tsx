@@ -7,7 +7,9 @@ import {
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { purchasesService, suppliersService, warehousesService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Purchase, PurchaseStatus } from '../../types';
@@ -145,6 +147,7 @@ export default function PurchasesPage() {
   const [page,  setPage]  = useState(1);
   const [limit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   const hasFilters = !!(statusTab !== 'all' || dateFrom || dateTo || supplierFilter);
 
@@ -172,7 +175,7 @@ export default function PurchasesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, statusTab, dateFrom, dateTo, supplierFilter]);
+  }, [page, limit, statusTab, dateFrom, dateTo, supplierFilter, fiscalMode]);
 
   useEffect(() => { fetchPurchases(); }, [fetchPurchases]);
 
@@ -458,6 +461,7 @@ export default function PurchasesPage() {
                         </p>
                         <p className="font-mono text-[11px] text-gray-400 dark:text-slate-500 mt-1 leading-none">
                           {p.number}
+                          <FiscalModeBadge mode={(p as any).fiscalMode} className="ml-1.5" />
                         </p>
                         <span className="inline-flex mt-1.5 items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full border text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-900/30 dark:border-purple-800 leading-none">
                           {INVOICE_TYPES[p.type as keyof typeof INVOICE_TYPES] ?? p.type}

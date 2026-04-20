@@ -6,6 +6,7 @@ import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import NotificationBell from '../notifications/NotificationBell';
 import OfflineBanner from './OfflineBanner';
+import FiscalModeTopBorder from './FiscalModeTopBorder';
 
 export default function MainLayout() {
   const { menuType, sidebarOpen, toggleMobileMenu } = useUIStore();
@@ -13,6 +14,7 @@ export default function MainLayout() {
   if (menuType === 'navbar') {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+        <FiscalModeTopBorder />
         <OfflineBanner />
         <Navbar />
         <main className="pt-16">
@@ -26,6 +28,7 @@ export default function MainLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <FiscalModeTopBorder />
       <OfflineBanner />
       {/* ── Mobile top bar (hidden on md+) ── */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 flex items-center gap-3 px-4">

@@ -44,6 +44,26 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+// Request interceptor - add fiscal mode header
+api.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    try {
+      const fiscalData = localStorage.getItem("cloud-bill-fiscal-mode");
+      if (fiscalData) {
+        const parsed = JSON.parse(fiscalData);
+        const mode = parsed?.state?.mode;
+        if (mode === 'FORMAL' || mode === 'INFORMAL') {
+          config.headers["X-Fiscal-Mode"] = mode;
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
 // Response interceptor - handle errors
 api.interceptors.response.use(
   (response) => response,

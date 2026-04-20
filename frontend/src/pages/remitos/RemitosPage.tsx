@@ -4,8 +4,10 @@ import { Plus, Eye, X, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Badge } from '../../components/ui';
 import { PageHeader, CustomerSearchSelect } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import Pagination from '../../components/shared/Pagination';
 import { remitosService, customersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatDate } from '../../utils/formatters';
 import {
   REMITO_STATUSES,
@@ -95,6 +97,7 @@ export default function RemitosPage() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [dateFrom,       setDateFrom]       = useState('');
   const [dateTo,         setDateTo]         = useState('');
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   // Load customers once
   useEffect(() => {
@@ -122,7 +125,7 @@ export default function RemitosPage() {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
-  }, [page, limit, statusFilter, customerFilter, dateFrom, dateTo]);
+  }, [page, limit, statusFilter, customerFilter, dateFrom, dateTo, fiscalMode]);
 
   useEffect(() => { fetchRemitos(); }, [fetchRemitos]);
 
@@ -317,6 +320,7 @@ export default function RemitosPage() {
                       >
                         <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">
                           {rem.number}
+                          <FiscalModeBadge mode={(rem as any).fiscalMode} className="ml-1.5" />
                         </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ring-1 ring-inset ${chip.cls}`}>

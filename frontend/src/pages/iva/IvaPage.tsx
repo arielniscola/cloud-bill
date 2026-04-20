@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { Download, RefreshCw, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
@@ -87,6 +87,14 @@ export default function IvaPage() {
           </Button>
         }
       />
+
+      {/* Fiscal mode notice */}
+      <div className="mb-4 flex items-start gap-2 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-300">
+        <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <span>
+          El Libro IVA muestra únicamente comprobantes en modo <strong>FORMAL</strong> (los declarados a AFIP). Los movimientos INFORMALES quedan excluidos independientemente del contexto seleccionado.
+        </span>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 dark:bg-slate-700 p-1 rounded-lg w-fit">

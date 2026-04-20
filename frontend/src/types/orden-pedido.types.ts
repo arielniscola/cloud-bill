@@ -35,6 +35,7 @@ export interface OrdenPedido {
   paymentTerms: string | null;
   saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior: 'DISCOUNT' | 'RESERVE';
+  fiscalMode?: string;
   invoiceId: string | null;
   cashRegisterId: string | null;
   invoiceCashRegisterId: string | null;

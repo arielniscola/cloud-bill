@@ -76,8 +76,8 @@ function ChangePasswordModal({ user, onClose }: { user: UserDTO | null; onClose:
 export default function UsersPage() {
   const navigate          = useNavigate();
   const { user: me }      = useAuthStore();
-  const { isSuperAdmin, isAdmin } = usePermissions();
-  const canManage         = isSuperAdmin || isAdmin;
+  const { isSuperAdmin } = usePermissions();
+  const canManage        = isSuperAdmin;
 
   const [users, setUsers]       = useState<UserDTO[]>([]);
   const [isLoading, setIsLoading] = useState(true);

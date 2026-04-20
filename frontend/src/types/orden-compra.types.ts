@@ -29,6 +29,7 @@ export interface OrdenCompra {
   status: OrdenCompraStatus;
   warehouseId: string | null;
   notes: string | null;
+  fiscalMode?: string;
   purchaseId: string | null;
   createdAt: string;
   updatedAt: string;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FileDown, RefreshCw, Users, Package, UserCheck, FileText, ClipboardList } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { FileDown, RefreshCw, Users, Package, UserCheck, FileText, ClipboardList, ChevronLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button, Select } from '../../components/ui';
@@ -72,20 +73,7 @@ function signedInvoice(inv: Invoice) {
   };
 }
 
-function buildCsv(headers: string[], rows: (string | number)[][]): string {
-  const BOM = '\uFEFF';
-  return BOM + [headers, ...rows]
-    .map((row) => row.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
-    .join('\r\n');
-}
-
-function downloadBlob(csv: string, filename: string) {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
+import { exportToExcel } from '../../utils/excelExport';
 
 // ── Source selector ─────────────────────────────────────────────────────────
 function SourceSelector({ value, onChange }: { value: DataSource; onChange: (v: DataSource) => void }) {
@@ -222,6 +210,7 @@ const BADGE_CLASS: Record<StatusVariant | OPStatusVariant, string> = {
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function SalesReportPage() {
+  const navigate = useNavigate();
   const [source, setSource]             = useState<DataSource>('invoices');
   const [tab, setTab]                   = useState<ViewTab>('list');
 
@@ -405,43 +394,85 @@ export default function SalesReportPage() {
   // ── Export ────────────────────────────────────────────────────────────────
   const exportList = () => {
     if (isOP) {
-      downloadBlob(buildCsv(
-        ['Número','Fecha','Cliente','CUIT','Condición','Subtotal','IVA','Total','Moneda','Estado'],
-        ordenPedidos.map((op) => [
-          op.number, op.date.substring(0,10), op.customer?.name ?? '', op.customer?.taxId ?? '',
-          op.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado',
-          Number(op.subtotal).toFixed(2), Number(op.taxAmount).toFixed(2), Number(op.total).toFixed(2),
-          op.currency, OP_STATUSES[op.status] ?? op.status,
-        ])
-      ), `ordenes-pedido-${today}.csv`);
+      exportToExcel(`ordenes-pedido-${today}`, 'Órdenes de Pedido', [
+        { header: 'Número',     key: 'number',       width: 16 },
+        { header: 'Fecha',      key: 'date',         width: 12 },
+        { header: 'Cliente',    key: 'customerName', width: 26 },
+        { header: 'CUIT',       key: 'taxId',        width: 16 },
+        { header: 'Condición',  key: 'condition',    width: 16 },
+        { header: 'Subtotal',   key: 'subtotal',     width: 14, format: 'currency' as const },
+        { header: 'IVA',        key: 'taxAmount',    width: 14, format: 'currency' as const },
+        { header: 'Total',      key: 'total',        width: 14, format: 'currency' as const },
+        { header: 'Moneda',     key: 'currency',     width: 8  },
+        { header: 'Estado',     key: 'statusLabel',  width: 14 },
+      ], ordenPedidos.map((op) => ({
+        number:       op.number,
+        date:         op.date.substring(0, 10),
+        customerName: op.customer?.name ?? '',
+        taxId:        op.customer?.taxId ?? '',
+        condition:    op.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado',
+        subtotal:     Number(op.subtotal),
+        taxAmount:    Number(op.taxAmount),
+        total:        Number(op.total),
+        currency:     op.currency,
+        statusLabel:  OP_STATUSES[op.status] ?? op.status,
+      })));
     } else {
-      downloadBlob(buildCsv(
-        ['Número','Fecha','Tipo','Cliente','CUIT','Condición','Subtotal','IVA','Total','Moneda','Estado'],
-        invoices.map((inv) => [
-          inv.number, inv.date.substring(0,10), INVOICE_TYPES[inv.type] ?? inv.type,
-          inv.customer?.name ?? '', inv.customer?.taxId ?? '',
-          inv.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado',
-          Number(inv.subtotal).toFixed(2), Number(inv.taxAmount).toFixed(2), Number(inv.total).toFixed(2),
-          inv.currency, INVOICE_STATUSES[inv.status] ?? inv.status,
-        ])
-      ), `ventas-comprobantes-${today}.csv`);
+      exportToExcel(`ventas-comprobantes-${today}`, 'Ventas', [
+        { header: 'Número',     key: 'number',       width: 16 },
+        { header: 'Fecha',      key: 'date',         width: 12 },
+        { header: 'Tipo',       key: 'typeLabel',    width: 20 },
+        { header: 'Cliente',    key: 'customerName', width: 26 },
+        { header: 'CUIT',       key: 'taxId',        width: 16 },
+        { header: 'Condición',  key: 'condition',    width: 16 },
+        { header: 'Subtotal',   key: 'subtotal',     width: 14, format: 'currency' as const },
+        { header: 'IVA',        key: 'taxAmount',    width: 14, format: 'currency' as const },
+        { header: 'Total',      key: 'total',        width: 14, format: 'currency' as const },
+        { header: 'Moneda',     key: 'currency',     width: 8  },
+        { header: 'Estado',     key: 'statusLabel',  width: 14 },
+      ], invoices.map((inv) => ({
+        number:       inv.number,
+        date:         inv.date.substring(0, 10),
+        typeLabel:    INVOICE_TYPES[inv.type] ?? inv.type,
+        customerName: inv.customer?.name ?? '',
+        taxId:        inv.customer?.taxId ?? '',
+        condition:    inv.saleCondition === 'CUENTA_CORRIENTE' ? 'Cuenta Corriente' : 'Contado',
+        subtotal:     Number(inv.subtotal),
+        taxAmount:    Number(inv.taxAmount),
+        total:        Number(inv.total),
+        currency:     inv.currency,
+        statusLabel:  INVOICE_STATUSES[inv.status] ?? inv.status,
+      })));
     }
   };
 
-  const exportByCustomerCsv = () => downloadBlob(buildCsv(
-    ['Cliente','CUIT','# Documentos','Subtotal','IVA','Total'],
-    byCustomer.map((r) => [r.customerName, r.customerTaxId ?? '', r.count, r.subtotal.toFixed(2), r.taxAmount.toFixed(2), r.total.toFixed(2)])
-  ), `ventas-por-cliente-${today}.csv`);
+  const exportByCustomerCsv = () => exportToExcel(`ventas-por-cliente-${today}`, 'Por cliente', [
+    { header: 'Cliente',       key: 'customerName', width: 26 },
+    { header: 'CUIT',          key: 'customerTaxId',width: 16 },
+    { header: '# Documentos',  key: 'count',        width: 12 },
+    { header: 'Subtotal',      key: 'subtotal',     width: 14, format: 'currency' as const },
+    { header: 'IVA',           key: 'taxAmount',    width: 14, format: 'currency' as const },
+    { header: 'Total',         key: 'total',        width: 14, format: 'currency' as const },
+  ], byCustomer);
 
-  const exportBySellerCsv = () => downloadBlob(buildCsv(
-    ['Vendedor','# Documentos','Subtotal','IVA','Total'],
-    bySeller.map((r) => [r.sellerName, r.count, r.subtotal.toFixed(2), r.taxAmount.toFixed(2), r.total.toFixed(2)])
-  ), `ventas-por-vendedor-${today}.csv`);
+  const exportBySellerCsv = () => exportToExcel(`ventas-por-vendedor-${today}`, 'Por vendedor', [
+    { header: 'Vendedor',      key: 'sellerName',   width: 24 },
+    { header: '# Documentos',  key: 'count',        width: 12 },
+    { header: 'Subtotal',      key: 'subtotal',     width: 14, format: 'currency' as const },
+    { header: 'IVA',           key: 'taxAmount',    width: 14, format: 'currency' as const },
+    { header: 'Total',         key: 'total',        width: 14, format: 'currency' as const },
+  ], bySeller);
 
-  const exportByProductCsv = () => downloadBlob(buildCsv(
-    ['SKU','Producto','# Comp.','Cantidad','Precio Prom.','Subtotal','IVA','Total'],
-    byProduct.map((r) => [r.productSku, r.productName, r.invoiceCount, r.quantity.toFixed(2), r.unitPriceAvg.toFixed(2), r.subtotal.toFixed(2), r.taxAmount.toFixed(2), r.total.toFixed(2)])
-  ), `ventas-por-producto-${today}.csv`);
+  const exportByProductCsv = () => exportToExcel(`ventas-por-producto-${today}`, 'Por producto', [
+    { header: 'SKU',           key: 'productSku',   width: 14 },
+    { header: 'Producto',      key: 'productName',  width: 28 },
+    { header: '# Comp.',       key: 'invoiceCount', width: 10 },
+    { header: 'Cantidad',      key: 'quantity',     width: 10, format: 'number' as const },
+    { header: 'Precio Prom.',  key: 'unitPriceAvg', width: 14, format: 'currency' as const },
+    { header: 'Subtotal',      key: 'subtotal',     width: 14, format: 'currency' as const },
+    { header: 'IVA',           key: 'taxAmount',    width: 14, format: 'currency' as const },
+    { header: 'Total',         key: 'total',        width: 14, format: 'currency' as const },
+  ], byProduct);
 
   const handleExport = () => {
     if (tab === 'list')        exportList();
@@ -463,10 +494,15 @@ export default function SalesReportPage() {
         title="Reporte de Ventas"
         subtitle={loading ? 'Cargando…' : `${listCount} documento${listCount !== 1 ? 's' : ''}`}
         actions={
-          <Button variant="outline" onClick={handleExport} disabled={exportDisabled}>
-            <FileDown className="w-4 h-4 mr-2" />
-            Exportar CSV
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate('/reports')}>
+              <ChevronLeft className="w-4 h-4 mr-1" /> Reportes
+            </Button>
+            <Button variant="outline" onClick={handleExport} disabled={exportDisabled}>
+              <FileDown className="w-4 h-4 mr-2" />
+              Exportar Excel
+            </Button>
+          </div>
         }
       />
 

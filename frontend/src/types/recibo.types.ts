@@ -27,6 +27,7 @@ export interface Recibo {
   cardId: string | null;
   surchargePercent: number | null;
   surchargeAmount: number | null;
+  fiscalMode?: string;
   createdAt: string;
   updatedAt: string;
   customer?: { id: string; name: string } | null;

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Building2, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
-import { Button, Input, Select, Modal } from '../../components/ui';
+import { Button, Input, Modal } from '../../components/ui';
 import { ConfirmDialog, CuitInput } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { Company, CreateCompanyDTO, UpdateCompanyDTO } from '../../types/company.types';
@@ -109,14 +109,42 @@ function CompanyFormModal({ isOpen, onClose, onSave, editing }: CompanyFormModal
     >
       <div className="space-y-4">
         <Input label="Nombre *" value={form.name} onChange={f('name')} />
-        <div className="grid grid-cols-2 gap-3">
-          <CuitInput label="CUIT" value={form.cuit} onChange={(raw) => setForm((p) => ({ ...p, cuit: raw || null }))} />
-          <Select
-            label="Condición fiscal"
-            value={form.taxCondition ?? ''}
-            onChange={(value) => setForm((p) => ({ ...p, taxCondition: value }))}
-            options={TAX_CONDITION_OPTIONS}
-          />
+        <CuitInput label="CUIT" value={form.cuit} onChange={(raw) => setForm((p) => ({ ...p, cuit: raw || null }))} />
+        <div>
+          <p className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Condición frente al IVA</p>
+          <div className="flex flex-wrap gap-3">
+            {TAX_CONDITION_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl border cursor-pointer transition-all duration-150 text-sm font-medium select-none',
+                  form.taxCondition === opt.value
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:border-slate-500'
+                )}
+              >
+                <input
+                  type="radio"
+                  name="taxCondition"
+                  value={opt.value}
+                  checked={form.taxCondition === opt.value}
+                  onChange={() => setForm((p) => ({ ...p, taxCondition: opt.value }))}
+                  className="sr-only"
+                />
+                <span className={clsx(
+                  'w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center',
+                  form.taxCondition === opt.value
+                    ? 'border-indigo-500 dark:border-indigo-400'
+                    : 'border-gray-300 dark:border-slate-500'
+                )}>
+                  {form.taxCondition === opt.value && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400" />
+                  )}
+                </span>
+                {opt.label}
+              </label>
+            ))}
+          </div>
         </div>
         <Input label="Dirección" value={form.address ?? ''} onChange={f('address')} />
         <div className="grid grid-cols-2 gap-3">

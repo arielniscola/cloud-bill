@@ -35,6 +35,7 @@ export interface Budget {
   notes: string | null;
   paymentTerms: string | null;
   saleCondition?: string;
+  fiscalMode?: string;
   deliveryStatus?: DeliveryStatus;
   createdAt: string;
   updatedAt: string;

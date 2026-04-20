@@ -59,6 +59,7 @@ export interface Invoice {
   paymentTerms: string | null;
   saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior: 'DISCOUNT' | 'RESERVE';
+  fiscalMode?: string;
   originInvoiceId: string | null;
   originInvoice?: Invoice;
   ordenPedidoId: string | null;

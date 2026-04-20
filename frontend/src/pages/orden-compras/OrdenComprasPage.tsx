@@ -4,7 +4,9 @@ import { Plus, X, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { ordenComprasService, suppliersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import type { OrdenCompra, OrdenCompraStatus, OrdenCompraFilters } from '../../types';
 import type { Supplier } from '../../types';
@@ -51,6 +53,7 @@ export default function OrdenComprasPage() {
   const [dateFrom, setDateFrom]     = useState('');
   const [dateTo, setDateTo]         = useState('');
   const [search, setSearch]         = useState('');
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   useEffect(() => {
     suppliersService.getAll({ limit: 200, isActive: true }).then((r) => setSuppliers(r.data));
@@ -82,7 +85,7 @@ export default function OrdenComprasPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, supplierId, status, dateFrom, dateTo, search]);
+  }, [page, supplierId, status, dateFrom, dateTo, search, fiscalMode]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -193,6 +196,7 @@ export default function OrdenComprasPage() {
                   className="grid grid-cols-[auto_1fr_140px_100px_110px_110px_60px] gap-x-4 px-4 py-3 items-center hover:bg-gray-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors"
                 >
                   <span className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{oc.number}</span>
+                  <FiscalModeBadge mode={(oc as any).fiscalMode} className="ml-1.5" />
                   <span className="text-sm text-gray-700 dark:text-slate-300 truncate">{oc.supplier?.name ?? '—'}</span>
                   <span className="text-sm text-gray-500 dark:text-slate-400 tabular-nums">{formatDate(oc.date)}</span>
                   <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">

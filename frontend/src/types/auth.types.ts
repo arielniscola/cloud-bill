@@ -7,6 +7,7 @@ export interface User {
   role: UserRole;
   isActive: boolean;
   companyId?: string | null;
+  companyName?: string | null;
   enabledModules?: string[]; // ['ALL'] or ['ventas','catalogo','compras','finanzas']
   plan?: string;             // 'STARTER' | 'PRO' | 'ENTERPRISE'
   features?: string[];       // computed list of allowed feature keys

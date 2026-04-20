@@ -113,6 +113,7 @@ export interface Purchase {
   paymentStatus: PurchasePaymentStatus;
   paidAmount: number;
   saleCondition: PurchaseSaleCondition;
+  fiscalMode?: string;
   notes: string | null;
   items: PurchaseItem[];
   supplierInvoices?: PurchaseInvoice[];

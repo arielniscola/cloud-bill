@@ -21,6 +21,7 @@ export interface Cheque {
   cashRegisterId: string | null;
   userId:         string;
   companyId:      string;
+  fiscalMode:     string;
   createdAt:      string;
   updatedAt:      string;
   customer?:      { id: string; name: string } | null;

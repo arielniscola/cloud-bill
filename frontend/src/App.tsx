@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import AppRoutes from './routes/AppRoutes';
 import { useUIStore } from './stores';
 import { GlobalSearch } from './components/shared/GlobalSearch';
+import { FiscalModeQuickSwitch } from './components/shared/FiscalModeQuickSwitch';
 
 function App() {
   const { isDarkMode } = useUIStore();
@@ -16,6 +17,7 @@ function App() {
     <BrowserRouter>
       <AppRoutes />
       <GlobalSearch />
+      <FiscalModeQuickSwitch />
       <Toaster
         position="top-right"
         gutter={8}

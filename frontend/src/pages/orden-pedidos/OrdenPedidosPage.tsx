@@ -4,7 +4,9 @@ import { Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, Pagination, SearchInput, CustomerSearchSelect } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { ordenPedidosService, customersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { ORDEN_PEDIDO_STATUSES, ORDEN_PEDIDO_STATUS_OPTIONS, REMITO_STATUSES } from '../../utils/constants';
 import type { OrdenPedido, OrdenPedidoStatus, Customer } from '../../types';
@@ -69,6 +71,7 @@ export default function OrdenPedidosPage() {
   const [currencyFilter, setCurrencyFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   const hasFilters = !!(search || statusFilter || customerFilter || currencyFilter || dateFrom || dateTo);
 
@@ -112,7 +115,7 @@ export default function OrdenPedidosPage() {
       })
       .catch(() => toast.error('Error al cargar órdenes de pedido'))
       .finally(() => setIsLoading(false));
-  }, [page, limit, statusFilter, customerFilter, currencyFilter, dateFrom, dateTo, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, limit, statusFilter, customerFilter, currencyFilter, dateFrom, dateTo, search, fiscalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -250,6 +253,7 @@ export default function OrdenPedidosPage() {
                     >
                       <td className="px-5 py-3.5">
                         <span className="text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400">{op.number}</span>
+                        <FiscalModeBadge mode={(op as any).fiscalMode} className="ml-1.5" />
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300">
                         {op.customer?.name ?? <span className="text-gray-400 italic">Sin cliente</span>}

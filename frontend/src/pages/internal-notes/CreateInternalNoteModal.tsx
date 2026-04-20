@@ -3,52 +3,73 @@ import { X, FileEdit } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
 import { CustomerSearchSelect } from '../../components/shared';
-import { internalNotesService, customersService } from '../../services';
-import type { CreateInternalNoteDTO, Customer } from '../../types';
+import { internalNotesService, customersService, suppliersService } from '../../services';
+import type { CreateInternalNoteDTO, Customer, Supplier, InternalNoteEntity } from '../../types';
 
 interface Props {
   onClose:   () => void;
   onCreated: () => void;
   /** Pre-fill customer (e.g. when opened from CustomerDetailPage) */
   defaultCustomerId?: string;
+  /** Pre-fill supplier (e.g. when opened from SupplierDetailPage) */
+  defaultSupplierId?: string;
 }
 
 const inputCls = 'w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-700';
 const labelCls = 'block text-xs text-gray-500 dark:text-slate-400 mb-1';
 
-const EMPTY: CreateInternalNoteDTO = {
-  type:       'DEBIT',
-  customerId: '',
-  currency:   'ARS',
-  amount:     0,
-  reason:     '',
-  notes:      null,
-};
+export default function CreateInternalNoteModal({ onClose, onCreated, defaultCustomerId, defaultSupplierId }: Props) {
+  const initialEntity: InternalNoteEntity = defaultSupplierId ? 'SUPPLIER' : 'CUSTOMER';
+  const [entity, setEntity] = useState<InternalNoteEntity>(initialEntity);
 
-export default function CreateInternalNoteModal({ onClose, onCreated, defaultCustomerId }: Props) {
-  const [form,      setForm]      = useState<CreateInternalNoteDTO>({
-    ...EMPTY,
-    customerId: defaultCustomerId ?? '',
+  const [form, setForm] = useState<CreateInternalNoteDTO>({
+    type:       'DEBIT',
+    customerId: defaultCustomerId ?? null,
+    supplierId: defaultSupplierId ?? null,
+    currency:   'ARS',
+    amount:     0,
+    reason:     '',
+    notes:      null,
   });
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     customersService.getAll({ limit: 500 })
       .then((r) => setCustomers(r.data))
       .catch(() => {});
+    suppliersService.getAll({ limit: 500 })
+      .then((r) => setSuppliers(r.data))
+      .catch(() => {});
   }, []);
 
   const set = (field: keyof CreateInternalNoteDTO, value: unknown) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const isValid = form.customerId && form.amount > 0 && form.reason.trim();
+  const switchEntity = (next: InternalNoteEntity) => {
+    if (defaultCustomerId || defaultSupplierId) return;
+    setEntity(next);
+    setForm((prev) => ({
+      ...prev,
+      customerId: next === 'CUSTOMER' ? prev.customerId ?? null : null,
+      supplierId: next === 'SUPPLIER' ? prev.supplierId ?? null : null,
+    }));
+  };
+
+  const entityId = entity === 'CUSTOMER' ? form.customerId : form.supplierId;
+  const isValid  = !!entityId && form.amount > 0 && form.reason.trim();
 
   const handleSubmit = async () => {
     if (!isValid) return;
     setIsLoading(true);
     try {
-      await internalNotesService.create(form);
+      const payload: CreateInternalNoteDTO = {
+        ...form,
+        customerId: entity === 'CUSTOMER' ? form.customerId : null,
+        supplierId: entity === 'SUPPLIER' ? form.supplierId : null,
+      };
+      await internalNotesService.create(payload);
       onCreated();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Error al crear la nota');
@@ -56,6 +77,8 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
       setIsLoading(false);
     }
   };
+
+  const entityLocked = !!(defaultCustomerId || defaultSupplierId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -80,6 +103,29 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
 
+          {/* Entity toggle */}
+          {!entityLocked && (
+            <div>
+              <label className={labelCls}>Aplicar a *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['CUSTOMER', 'SUPPLIER'] as const).map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => switchEntity(e)}
+                    className={`py-2.5 px-3 rounded-xl border text-sm font-semibold transition-all ${
+                      entity === e
+                        ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700'
+                        : 'border-gray-200 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:border-gray-300'
+                    }`}
+                  >
+                    {e === 'CUSTOMER' ? 'Cliente' : 'Proveedor'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Type */}
           <div>
             <label className={labelCls}>Tipo *</label>
@@ -102,22 +148,41 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
               ))}
             </div>
             <p className="mt-1.5 text-xs text-gray-400 dark:text-slate-500">
-              {form.type === 'DEBIT'
-                ? 'Débito: aumenta el saldo que el cliente te debe'
-                : 'Crédito: reduce el saldo que el cliente te debe'}
+              {entity === 'CUSTOMER'
+                ? form.type === 'DEBIT'
+                  ? 'Débito: aumenta el saldo que el cliente te debe'
+                  : 'Crédito: reduce el saldo que el cliente te debe'
+                : form.type === 'DEBIT'
+                  ? 'Débito: aumenta el saldo que le debés al proveedor'
+                  : 'Crédito: reduce el saldo que le debés al proveedor'}
             </p>
           </div>
 
-          {/* Customer */}
-          {!defaultCustomerId && (
+          {/* Entity picker */}
+          {!entityLocked && entity === 'CUSTOMER' && (
             <div>
               <label className={labelCls}>Cliente *</label>
               <CustomerSearchSelect
                 customers={customers}
-                value={form.customerId}
-                onChange={(v) => set('customerId', v)}
+                value={form.customerId ?? ''}
+                onChange={(v) => set('customerId', v || null)}
                 placeholder="Buscar cliente..."
               />
+            </div>
+          )}
+          {!entityLocked && entity === 'SUPPLIER' && (
+            <div>
+              <label className={labelCls}>Proveedor *</label>
+              <select
+                className={inputCls}
+                value={form.supplierId ?? ''}
+                onChange={(e) => set('supplierId', e.target.value || null)}
+              >
+                <option value="">Seleccionar proveedor…</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
             </div>
           )}
 

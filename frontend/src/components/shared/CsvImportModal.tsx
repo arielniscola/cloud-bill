@@ -18,6 +18,11 @@ const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: 
     headers: ['nombre', 'cuit', 'condicioniva', 'condicionventa', 'email', 'telefono', 'direccion', 'ciudad', 'provincia', 'codigopostal'],
     example: ['Juan Pérez', '20-12345678-9', 'RI', 'CONTADO', 'juan@mail.com', '1112345678', 'Av. Corrientes 1234', 'Buenos Aires', 'CABA', '1043'],
   },
+  suppliers: {
+    filename: 'template_proveedores.csv',
+    headers: ['nombre', 'cuit', 'condicioniva', 'email', 'telefono', 'direccion', 'ciudad', 'notas'],
+    example: ['Proveedor SA', '30-12345678-9', 'RI', 'proveedor@mail.com', '1112345678', 'Av. Industrial 500', 'Córdoba', ''],
+  },
 };
 
 const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
@@ -38,14 +43,23 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
       <li>Si el CUIT ya existe → <span className="italic">actualiza</span> el cliente</li>
     </ul>
   ),
+  suppliers: (
+    <ul className="space-y-1 text-xs text-gray-500 dark:text-slate-400">
+      <li><span className="font-medium">nombre</span> — requerido</li>
+      <li><span className="font-medium">condicioniva</span> — RI · Monotributista · Exento · CF (default: CF)</li>
+      <li><span className="font-medium">cuit, email, telefono, direccion, ciudad, notas</span> — opcionales</li>
+      <li>Si el CUIT ya existe → <span className="italic">actualiza</span> el proveedor</li>
+    </ul>
+  ),
 };
 
 const ENTITY_LABELS: Record<Entity, string> = {
-  products: 'Productos',
+  products:  'Productos',
   customers: 'Clientes',
+  suppliers: 'Proveedores',
 };
 
-type Entity = 'products' | 'customers';
+type Entity = 'products' | 'customers' | 'suppliers';
 
 interface Props {
   entity: Entity;
@@ -118,7 +132,9 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
     try {
       const res = entity === 'products'
         ? await importService.importProducts(csvText)
-        : await importService.importCustomers(csvText);
+        : entity === 'customers'
+        ? await importService.importCustomers(csvText)
+        : await importService.importSuppliers(csvText);
       setResult(res);
       if (res.imported > 0) {
         toast.success(`${res.imported} ${ENTITY_LABELS[entity].toLowerCase()} importado${res.imported !== 1 ? 's' : ''}`);

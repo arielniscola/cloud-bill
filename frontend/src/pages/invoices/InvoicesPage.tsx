@@ -4,8 +4,10 @@ import { Plus, X, Receipt, Search, CreditCard, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, CustomerSearchSelect } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import Pagination from '../../components/shared/Pagination';
 import { invoicesService, customersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
   INVOICE_TYPES,
@@ -115,6 +117,7 @@ export default function InvoicesPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   useEffect(() => {
     customersService.getAll({ limit: 1000 }).then((r) => setCustomers(r.data)).catch(() => {});
@@ -140,7 +143,7 @@ export default function InvoicesPage() {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
-  }, [page, limit, statusFilter, typeFilter, customerFilter, saleConditionFilter, dateFrom, dateTo]);
+  }, [page, limit, statusFilter, typeFilter, customerFilter, saleConditionFilter, dateFrom, dateTo, fiscalMode]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -394,6 +397,7 @@ export default function InvoicesPage() {
                         {/* Número */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{inv.number}</span>
+                          <FiscalModeBadge mode={(inv as any).fiscalMode} className="ml-1.5" />
                         </td>
 
                         {/* Cliente */}

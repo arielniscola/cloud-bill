@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, Pagination } from '../../components/shared';
 import { ordenPagosService, suppliersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { PAYMENT_METHODS } from '../../utils/constants';
 import type { OrdenPago, OrdenPagoStatus } from '../../types/ordenPago.types';
@@ -48,6 +49,7 @@ export default function OrdenPagosPage() {
   const [dateFrom, setDateFrom]             = useState('');
   const [dateTo, setDateTo]                 = useState('');
   const LIMIT = 20;
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   const hasFilters = !!(supplierFilter || statusFilter || dateFrom || dateTo);
 
@@ -81,7 +83,7 @@ export default function OrdenPagosPage() {
   }, []);
 
   useEffect(() => { fetchOrdenPagos(); }, // eslint-disable-line react-hooks/exhaustive-deps
-    [page, supplierFilter, statusFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+    [page, supplierFilter, statusFilter, dateFrom, dateTo, fiscalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const change = (setter: (v: string) => void) => (v: string) => { setter(v); setPage(1); };
 

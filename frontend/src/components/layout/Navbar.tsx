@@ -24,6 +24,7 @@ import {
   Brain,
   Landmark,
   BookOpen,
+  BookMarked,
   Settings,
   History,
   ChevronDown,
@@ -137,6 +138,20 @@ const navigation: NavEntry[] = [
           { name: 'Cuentas Bancarias', href: '/banks',          icon: Landmark },
           { name: 'Libro IVA',         href: '/iva',            icon: BookOpen },
           { name: 'Reporte Ventas',    href: '/reports/sales',  icon: BarChart2 },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'dropdown',
+    name: 'Contabilidad',
+    icon: BookMarked,
+    sections: [
+      {
+        items: [
+          { name: 'Asientos Contables', href: '/accounting/journal-entries', icon: BookOpen },
+          { name: 'Libro IVA',          href: '/iva',                        icon: BookOpen },
+          { name: 'Plan de Cuentas',    href: '/accounting/accounts',        icon: BookMarked },
         ],
       },
     ],
@@ -264,7 +279,7 @@ export default function Navbar() {
           </div>
 
           {/* Right: Notifications + User */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <NotificationBell />
 
             <Menu as="div" className="relative">

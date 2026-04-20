@@ -29,6 +29,7 @@ export interface Remito {
   date: string;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
+  fiscalMode?: string;
   notes: string | null;
   items: RemitoItem[];
   createdAt: string;

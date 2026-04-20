@@ -152,8 +152,6 @@ export function AddPurchaseInvoiceModal({ isOpen, currency, existing, onClose, o
     }
   }, [isOpen, existing]);
 
-  if (!isOpen) return null;
-
   const set = (field: keyof typeof EMPTY_FORM, value: unknown) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -251,6 +249,9 @@ export function AddPurchaseInvoiceModal({ isOpen, currency, existing, onClose, o
   const netoPagar        = form.amount - totalRetenciones;
 
   const isValid = form.number.trim() && form.amount > 0;
+
+  // All hooks have been called — safe to early-return now
+  if (!isOpen) return null;
 
   // ── Styles ─────────────────────────────────────────────────────────────────
 

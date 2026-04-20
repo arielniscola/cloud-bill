@@ -4,8 +4,10 @@ import { Plus, X, FileText, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, CustomerSearchSelect } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import Pagination from '../../components/shared/Pagination';
 import { budgetsService, customersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
   BUDGET_STATUSES,
@@ -107,6 +109,7 @@ export default function BudgetsPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   useEffect(() => {
     customersService.getAll({ limit: 1000 }).then((r) => setCustomers(r.data)).catch(() => {});
@@ -130,7 +133,7 @@ export default function BudgetsPage() {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
-  }, [page, limit, statusFilter, customerFilter, dateFrom, dateTo]);
+  }, [page, limit, statusFilter, customerFilter, dateFrom, dateTo, fiscalMode]);
 
   useEffect(() => { fetchBudgets(); }, [fetchBudgets]);
 
@@ -355,6 +358,7 @@ export default function BudgetsPage() {
                         {/* Número */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{b.number}</span>
+                          <FiscalModeBadge mode={(b as any).fiscalMode} className="ml-1.5" />
                         </td>
 
                         {/* Cliente */}

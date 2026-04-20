@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Truck, Mail, Phone, MapPin, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Truck, Mail, Phone, MapPin, Eye, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, SearchInput, ConfirmDialog, DataTable } from '../../components/shared';
+import CsvImportModal from '../../components/shared/CsvImportModal';
 import type { Column } from '../../components/shared/DataTable';
 import { suppliersService } from '../../services';
 import { TAX_CONDITIONS } from '../../utils/constants';
@@ -47,6 +48,7 @@ export default function SuppliersPage() {
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const isActiveFilter = tab === 'all' ? undefined : tab === 'active';
 
@@ -210,10 +212,16 @@ export default function SuppliersPage() {
             : `${suppliers.length} ${suppliers.length === 1 ? 'proveedor' : 'proveedores'}${tab !== 'all' ? (tab === 'active' ? ' activos' : ' inactivos') : ''}`
         }
         actions={
-          <Button onClick={() => navigate('/suppliers/new')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo proveedor
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" />
+              Importar CSV
+            </Button>
+            <Button onClick={() => navigate('/suppliers/new')}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo proveedor
+            </Button>
+          </div>
         }
       />
 
@@ -291,6 +299,14 @@ export default function SuppliersPage() {
         confirmText="Eliminar"
         isLoading={isDeleting}
       />
+
+      {showImport && (
+        <CsvImportModal
+          entity="suppliers"
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); fetchSuppliers(); }}
+        />
+      )}
     </div>
   );
 }

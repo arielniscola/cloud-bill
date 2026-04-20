@@ -4,7 +4,9 @@ import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge } from '../../components/ui';
 import { PageHeader, Pagination, CustomerSearchSelect } from '../../components/shared';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { recibosService, customersService } from '../../services';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { PAYMENT_METHODS, RECIBO_STATUSES, RECIBO_STATUS_OPTIONS, PAYMENT_METHOD_OPTIONS } from '../../utils/constants';
 import type { Recibo, Customer, ReciboStatus, PaymentMethod } from '../../types';
@@ -44,6 +46,7 @@ export default function RecibosPage() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
 
   const hasFilters = !!(statusFilter || paymentMethodFilter || customerFilter || dateFrom || dateTo);
 
@@ -86,7 +89,7 @@ export default function RecibosPage() {
 
   useEffect(() => {
     fetchRecibos();
-  }, [page, limit, statusFilter, paymentMethodFilter, customerFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, limit, statusFilter, paymentMethodFilter, customerFilter, dateFrom, dateTo, fiscalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterChange = (setter: (v: string) => void) => (v: string) => {
     setter(v);
@@ -213,6 +216,7 @@ export default function RecibosPage() {
                       <span className="text-sm font-mono font-medium text-indigo-600 dark:text-indigo-400">
                         {recibo.number}
                       </span>
+                      <FiscalModeBadge mode={(recibo as any).fiscalMode} className="ml-1.5" />
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300">
                       {recibo.invoice
