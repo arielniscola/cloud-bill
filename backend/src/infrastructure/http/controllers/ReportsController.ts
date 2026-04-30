@@ -236,7 +236,7 @@ export class ReportsController {
         orderBy: { balance: 'desc' },
       });
 
-      const data = accounts.map((a) => ({
+      const data = accounts.map((a: any) => ({
         customerId:   a.customer.id,
         customerName: a.customer.name,
         taxId:        a.customer.taxId ?? '—',
@@ -247,7 +247,7 @@ export class ReportsController {
         creditLimit:  a.creditLimit ? round2((a.creditLimit as Decimal).toNumber()) : null,
       }));
 
-      const totalBalance = round2(data.reduce((acc, r) => acc + r.balance, 0));
+      const totalBalance = round2(data.reduce((acc: number, r: { balance: number }) => acc + r.balance, 0));
       res.json({ status: 'success', data, totalBalance });
     } catch (error) { next(error); }
   }

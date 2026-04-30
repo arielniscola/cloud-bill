@@ -9,7 +9,7 @@ export class CardController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICardRepository>('CardRepository');
-      const cards = await repo.findAll(req.companyId);
+      const cards = await repo.findAll(req.companyId!);
       res.json({ status: 'success', data: cards });
     } catch (error) {
       next(error);
@@ -31,7 +31,7 @@ export class CardController {
     try {
       const repo = container.resolve<ICardRepository>('CardRepository');
       const data = createCardSchema.parse(req.body);
-      const card = await repo.create({ ...data, companyId: req.companyId });
+      const card = await repo.create({ ...data, companyId: req.companyId! });
       this._log(req, 'CREATE', card.id, `Tarjeta ${card.name} creada`);
       res.status(201).json({ status: 'success', data: card });
     } catch (error) {

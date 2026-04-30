@@ -11,7 +11,7 @@ export class AccountingController {
   async getAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAccountRepository>('AccountRepository');
-      const accounts = await repo.findAll(req.companyId);
+      const accounts = await repo.findAll(req.companyId!);
       res.json({ status: 'success', data: accounts });
     } catch (error) {
       next(error);
@@ -20,9 +20,9 @@ export class AccountingController {
 
   async seedAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      await seedAccountsForCompany(req.companyId);
+      await seedAccountsForCompany(req.companyId!);
       const repo = container.resolve<IAccountRepository>('AccountRepository');
-      const accounts = await repo.findAll(req.companyId);
+      const accounts = await repo.findAll(req.companyId!);
       res.json({ status: 'success', data: accounts, message: 'Plan de cuentas inicializado' });
     } catch (error) {
       next(error);
@@ -39,7 +39,7 @@ export class AccountingController {
       const result = await repo.findAll(
         { page: Number(page) || 1, limit: Number(limit) || 20 },
         {
-          companyId: req.companyId,
+          companyId: req.companyId!,
           referenceType: referenceType as string | undefined,
           referenceId: referenceId as string | undefined,
           dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,

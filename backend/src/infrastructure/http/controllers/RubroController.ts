@@ -31,7 +31,7 @@ export class RubroController {
     try {
       const repo = container.resolve<IRubroRepository>('RubroRepository');
       const data = createRubroSchema.parse(req.body);
-      const rubro = await repo.create({ ...data, companyId: req.companyId });
+      const rubro = await repo.create({ ...data, description: data.description ?? null, companyId: req.companyId! });
       this._log(req, 'CREATE', rubro.id, `Rubro "${rubro.name}" creado`);
       res.status(201).json({ status: 'success', data: rubro });
     } catch (error) {

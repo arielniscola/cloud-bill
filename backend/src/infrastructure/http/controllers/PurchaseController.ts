@@ -129,7 +129,7 @@ export class PurchaseController {
         subtotal: Number(purchase.subtotal),
         taxAmount: Number(purchase.taxAmount),
         total: Number(purchase.total),
-        companyId: req.companyId,
+        companyId: req.companyId!,
         userId: req.user!.userId,
       });
 

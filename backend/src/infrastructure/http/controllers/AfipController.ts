@@ -4,6 +4,7 @@ import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigR
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { afipService } from '../../services/AfipService';
+import { pdvService } from '../../services/PdvService';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
 import { saveAfipError } from '../../../shared/utils/saveAfipError';
 
@@ -128,9 +129,18 @@ export class AfipController {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }
 
+      // Resolve the terminal (PdV) assigned to the user
+      const pdv = await pdvService.getPdvForUser(req.user!.userId);
+
+      // Get TA outside getNextNumber to reuse the same token for both sync and emit
+      const ta = await afipService.getTokenAuth(config);
+
+      // Atomically get next sequential number (syncs from AFIP on first use)
+      const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
+
       let result;
       try {
-        result = await afipService.emitInvoice(invoice as any, config);
+        result = await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
       } catch (afipError) {
         await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
         throw afipError;

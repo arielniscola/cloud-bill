@@ -18,7 +18,7 @@ export class PdvController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const pdvRepo = container.resolve<IPdvRepository>('PdvRepository');
-      const pdvs = await pdvRepo.findAll(req.companyId);
+      const pdvs = await pdvRepo.findAll(req.companyId!);
       res.json({ status: 'success', data: pdvs });
     } catch (error) {
       next(error);
@@ -42,12 +42,12 @@ export class PdvController {
       const body = createPdvSchema.parse(req.body);
 
       // Check uniqueness within company
-      const existing = await pdvRepo.findByNumber(body.number, req.companyId);
+      const existing = await pdvRepo.findByNumber(body.number, req.companyId!);
       if (existing) {
         throw new AppError(`El Punto de Venta número ${body.number} ya existe en esta empresa`, 409);
       }
 
-      const pdv = await pdvRepo.create({ ...body, companyId: req.companyId });
+      const pdv = await pdvRepo.create({ ...body, companyId: req.companyId! });
       res.status(201).json({ status: 'success', data: pdv });
     } catch (error) {
       next(error);

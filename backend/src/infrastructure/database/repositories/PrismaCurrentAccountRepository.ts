@@ -168,8 +168,8 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
   }
 
   async getBalance(customerId: string, currency: Currency): Promise<number> {
-    const account = await this.prisma.currentAccount.findUnique({
-      where: { customerId_currency: { customerId, currency } },
+    const account = await this.prisma.currentAccount.findFirst({
+      where: { customerId, currency },
     });
 
     return account ? account.balance.toNumber() : 0;

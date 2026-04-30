@@ -124,7 +124,7 @@ export class InvoiceController {
         subtotal: Number(invoice.subtotal),
         taxAmount: Number(invoice.taxAmount),
         total: Number(invoice.total),
-        companyId: req.companyId,
+        companyId: req.companyId!,
         userId: req.user!.userId,
       });
 
@@ -463,7 +463,7 @@ export class InvoiceController {
         number: recibo.number,
         amount: paymentData.amount,
         paymentMethod: paymentData.paymentMethod,
-        companyId: req.companyId,
+        companyId: req.companyId!,
         userId: req.user!.userId,
         invoiceNumber: invoice.number,
       });
