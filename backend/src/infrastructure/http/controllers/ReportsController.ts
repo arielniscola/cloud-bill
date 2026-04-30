@@ -12,7 +12,7 @@ export class ReportsController {
       const companyId = req.user!.companyId!;
       const { dateFrom, dateTo, type, status, currency, customerId } = req.query as Record<string, string>;
 
-      const invoiceWhere: Record<string, unknown> = { companyId, fiscalMode: req.fiscalMode ?? 'FORMAL' };
+      const invoiceWhere: Record<string, unknown> = { companyId, ...(req.fiscalMode && { fiscalMode: req.fiscalMode }) };
       if (status) invoiceWhere.status = status;
       else invoiceWhere.status = { notIn: ['CANCELLED', 'DRAFT'] };
       if (type)       invoiceWhere.type      = type;
@@ -81,7 +81,7 @@ export class ReportsController {
       const companyId = req.user!.companyId!;
       const { dateFrom, dateTo, supplierId, status } = req.query as Record<string, string>;
 
-      const where: Record<string, unknown> = { companyId, fiscalMode: req.fiscalMode ?? 'FORMAL' };
+      const where: Record<string, unknown> = { companyId, ...(req.fiscalMode && { fiscalMode: req.fiscalMode }) };
       if (status) where.status = status;
       else where.status = { not: 'CANCELLED' };
       if (supplierId) where.supplierId = supplierId;
@@ -221,13 +221,13 @@ export class ReportsController {
       const companyId = req.user!.companyId!;
       const { currency, minBalance } = req.query as Record<string, string>;
       const min = parseFloat(minBalance || '0.01');
-      const fiscalMode = req.fiscalMode ?? 'FORMAL';
+      const fiscalMode = req.fiscalMode;
 
       const accounts = await (prisma as any).currentAccount.findMany({
         where: {
           customer: { companyId },
           ...(currency && { currency: currency as any }),
-          fiscalMode,
+          ...(fiscalMode && { fiscalMode }),
           balance: { gt: min },
         },
         include: {
@@ -258,7 +258,7 @@ export class ReportsController {
       const companyId = req.user!.companyId!;
       const { dateFrom, dateTo, cashRegisterId } = req.query as Record<string, string>;
 
-      const where: Record<string, unknown> = { companyId, status: 'EMITTED', fiscalMode: req.fiscalMode ?? 'FORMAL' };
+      const where: Record<string, unknown> = { companyId, status: 'EMITTED', ...(req.fiscalMode && { fiscalMode: req.fiscalMode }) };
       if (cashRegisterId) where.cashRegisterId = cashRegisterId;
       if (dateFrom || dateTo) {
         where.date = {

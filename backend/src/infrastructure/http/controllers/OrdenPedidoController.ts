@@ -142,26 +142,6 @@ export class OrdenPedidoController {
         }
       }
 
-      // Auto-create Remito for items with productId
-      if (op.customerId) {
-        const remitoRepo = container.resolve<IRemitoRepository>('RemitoRepository');
-        const itemsWithProduct = op.items.filter((item) => item.productId);
-        if (itemsWithProduct.length > 0) {
-          await remitoRepo.create({
-            customerId: op.customerId,
-            userId: req.user!.userId,
-            stockBehavior: stockBehavior as any,
-            notes: `Auto-generado desde orden de pedido ${op.number}`,
-            ordenPedidoId: op.id,
-            companyId: req.companyId,
-            items: itemsWithProduct.map((item) => ({
-              productId: item.productId!,
-              quantity: Number(item.quantity),
-            })),
-          } as any);
-        }
-      }
-
       // Create DEBIT account movement if cuenta corriente
       if (data.saleCondition === 'CUENTA_CORRIENTE' && op.customerId) {
         const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
@@ -257,6 +237,26 @@ export class OrdenPedidoController {
 
       const { status } = updateOrdenPedidoStatusSchema.parse(req.body);
       const updated = await repo.update(req.params.id, { status });
+
+      // Auto-create Remito when confirming the OP
+      if (status === 'CONFIRMED' && op.customerId) {
+        const remitoRepo = container.resolve<IRemitoRepository>('RemitoRepository');
+        const itemsWithProduct = op.items.filter((item) => item.productId);
+        if (itemsWithProduct.length > 0) {
+          await remitoRepo.create({
+            customerId: op.customerId,
+            userId: req.user!.userId,
+            stockBehavior: ((op as any).stockBehavior ?? 'DISCOUNT') as any,
+            notes: `Auto-generado desde orden de pedido ${op.number}`,
+            ordenPedidoId: op.id,
+            companyId: req.companyId,
+            items: itemsWithProduct.map((item) => ({
+              productId: item.productId!,
+              quantity: Number(item.quantity),
+            })),
+          } as any);
+        }
+      }
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -503,6 +503,7 @@ export class OrdenPedidoController {
     try {
       const { id } = req.params;
       const { to, pdfBase64 } = req.body;
+      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
       await sendOrdenPedidoEmail(id, to, req.companyId!, pdfBase64);
       res.json({ status: 'success', message: 'Email enviado' });
     } catch (error) {

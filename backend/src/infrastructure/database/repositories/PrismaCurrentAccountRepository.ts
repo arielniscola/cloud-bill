@@ -32,7 +32,9 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
         SELECT ca.*, c.name as "customerName"
         FROM "current_accounts" ca
         LEFT JOIN "customers" c ON c.id = ca."customerId"
-        WHERE ca."customerId" = ${customerId} AND ca.currency = ${currency} AND ca."fiscalMode" = ${fm}
+        WHERE ca."customerId" = ${customerId}
+          AND ca.currency = ${currency}::"Currency"
+          AND ca."fiscalMode" = ${fm}
         LIMIT 1
       `;
       return rows[0] ?? null;

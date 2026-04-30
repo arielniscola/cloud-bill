@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
+import { requireFeature } from '../middlewares/featureMiddleware';
 import { OrdenPagoController } from '../controllers/OrdenPagoController';
 
 export const ordenPagoRoutes = Router();
@@ -12,4 +13,4 @@ ordenPagoRoutes.get('/:id',                          requireRoles('ADMIN', 'FINA
 ordenPagoRoutes.post('/',                            requireRoles('ADMIN', 'PURCHASES'),             (req, res, next) => ctrl.create(req, res, next));
 ordenPagoRoutes.post('/:id/pay',                     requireRoles('ADMIN', 'PURCHASES'),             (req, res, next) => ctrl.pay(req, res, next));
 ordenPagoRoutes.delete('/:id',                       requireRoles('ADMIN', 'PURCHASES'),             (req, res, next) => ctrl.cancel(req, res, next));
-ordenPagoRoutes.get('/supplier/:supplierId/account', requireRoles('ADMIN', 'FINANCES', 'PURCHASES'), (req, res, next) => ctrl.getSupplierAccount(req, res, next));
+ordenPagoRoutes.get('/supplier/:supplierId/account', requireRoles('ADMIN', 'FINANCES', 'PURCHASES'), requireFeature('supplier_accounts'), (req, res, next) => ctrl.getSupplierAccount(req, res, next));

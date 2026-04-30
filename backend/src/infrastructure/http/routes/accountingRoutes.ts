@@ -15,6 +15,7 @@ router.post('/accounts/seed', ctrl.seedAccounts.bind(ctrl));
 
 // Asientos Contables
 router.get('/journal-entries', ctrl.getJournalEntries.bind(ctrl));
+router.post('/journal-entries', ctrl.createJournalEntry.bind(ctrl));
 router.get('/journal-entries/:id', ctrl.getJournalEntryById.bind(ctrl));
 router.get('/journal-entries/ref/:type/:id', ctrl.getEntriesByReference.bind(ctrl));
 

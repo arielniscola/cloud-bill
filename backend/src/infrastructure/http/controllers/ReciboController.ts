@@ -264,8 +264,9 @@ export class ReciboController {
     } else if (paidAmount > 0) {
       newStatus = 'PARTIALLY_PAID';
     } else {
+      // Reverting to a non-paid state: AUTHORIZED if the invoice has CAE (FORMAL), else ISSUED.
       newStatus = invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID'
-        ? 'ISSUED'
+        ? ((invoice as any).cae ? 'AUTHORIZED' : 'ISSUED')
         : invoice.status;
     }
 

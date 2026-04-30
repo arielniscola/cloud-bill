@@ -52,7 +52,8 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     }
 
     if (filters.status) {
-      where.status = filters.status;
+      // Cast: Prisma client may not have AUTHORIZED yet (regenerate pending)
+      where.status = filters.status as any;
     }
 
     if (filters.type) {

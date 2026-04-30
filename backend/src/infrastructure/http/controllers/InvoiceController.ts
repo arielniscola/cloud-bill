@@ -199,7 +199,7 @@ export class InvoiceController {
         {
           customerId: filters.customerId as string,
           userId: filters.userId as string,
-          status: filters.status as 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED' | 'PARTIALLY_PAID',
+          status: filters.status as 'DRAFT' | 'ISSUED' | 'AUTHORIZED' | 'PAID' | 'CANCELLED' | 'PARTIALLY_PAID',
           type: filters.type as string as 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C',
           currency: filters.currency as Currency | undefined,
           saleCondition: filters.saleCondition as string | undefined,
@@ -485,11 +485,11 @@ export class InvoiceController {
 
       const emittableStatuses = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'];
       if (!emittableStatuses.includes(invoice.status)) {
-        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador, Emitida o Pagada', 400);
+        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador, Emitida, Pagada o Parcialmente Pagada', 400);
       }
 
-      if (invoice.cae) {
-        throw new AppError('Esta factura ya tiene CAE asignado', 400);
+      if (invoice.cae || invoice.status === 'AUTHORIZED') {
+        throw new AppError('Esta factura ya está autorizada por ARCA', 400);
       }
 
       const config = await afipRepo.getActive();
@@ -514,8 +514,13 @@ export class InvoiceController {
         throw afipError;
       }
 
-      // Preserve PAID/PARTIALLY_PAID status — only promote DRAFT to ISSUED
-      const newStatus = invoice.status === 'DRAFT' ? 'ISSUED' : invoice.status;
+      // Promote DRAFT/ISSUED → AUTHORIZED (CAE granted by ARCA).
+      // Preserve PAID/PARTIALLY_PAID — payment workflow already moved past authorization step;
+      // the CAE is still saved alongside, so the "autorizada" facet is captured by the cae field.
+      const newStatus =
+        invoice.status === 'DRAFT' || invoice.status === 'ISSUED'
+          ? 'AUTHORIZED'
+          : invoice.status;
 
       const updated = await invoiceRepo.update(req.params.id, {
         cae: result.cae,
@@ -606,7 +611,7 @@ export class InvoiceController {
     try {
       const { id } = req.params;
       const { to, pdfBase64 } = req.body;
-      if (!to || typeof to !== 'string') throw new Error('Destinatario requerido');
+      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
       await sendInvoiceEmail(id, to, req.companyId!, pdfBase64);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {

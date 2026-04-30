@@ -34,7 +34,7 @@ export class RemindersController {
         prisma.invoice.findMany({
           where: {
             ...companyFilter,
-            status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
+            status: { in: ['ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID'] as any },
             dueDate: { not: null, lte: cutoff },
           },
           select: {

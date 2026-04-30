@@ -190,7 +190,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       INSERT INTO "orden_pagos" (
         "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
         "date", "amount", "currency", "exchangeRate", "paymentMethod",
-        "reference", "bank", "checkDueDate", "notes", "status", "fiscalMode"
+        "reference", "bank", "checkDueDate", "notes", "status", "createdAt", "updatedAt", "fiscalMode"
       ) VALUES (
         ${opId}, ${number}, ${data.supplierId}, ${data.userId},
         ${effectiveCashRegisterId}, ${companyId}, ${date},
@@ -198,7 +198,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         ${currency}, ${exchangeRate}, ${data.paymentMethod},
         ${data.reference ?? null}, ${data.bank ?? null},
         ${data.checkDueDate ?? null}, ${data.notes ?? null},
-        'EMITTED', ${fiscalMode}
+        'EMITTED', NOW(), NOW(), ${fiscalMode}
       )
     `;
 
@@ -235,22 +235,36 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       }
     }
 
-    // Create supplier account movement only if one doesn't exist yet for this OP
-    const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
-    `;
-    if (existingMovement.length === 0) {
-      const totalAmount = Number(op.amount);
-      await this.createSupplierMovement({
-        supplierId: op.supplierId,
-        ordenPagoId: id,
-        type: 'CREDIT',
-        amount: totalAmount,
-        currency: op.currency,
-        description: `Orden de Pago ${op.number}`,
-        companyId: op.companyId,
-        fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-      });
+    // Only create supplier account movement if the underlying purchases are on cuenta corriente
+    const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId))];
+    let hasCuentaCorriente = false;
+    if (purchaseIds.length > 0) {
+      const ccRows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "purchases"
+        WHERE id IN (${Prisma.join(purchaseIds)})
+          AND "saleCondition" = 'CUENTA_CORRIENTE'
+        LIMIT 1
+      `;
+      hasCuentaCorriente = ccRows.length > 0;
+    }
+
+    if (hasCuentaCorriente) {
+      const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
+      `;
+      if (existingMovement.length === 0) {
+        const totalAmount = Number(op.amount);
+        await this.createSupplierMovement({
+          supplierId: op.supplierId,
+          ordenPagoId: id,
+          type: 'CREDIT',
+          amount: totalAmount,
+          currency: op.currency,
+          description: `Orden de Pago ${op.number}`,
+          companyId: op.companyId,
+          fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
+        });
+      }
     }
 
     await prisma.$executeRaw`
@@ -298,7 +312,19 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       }
     }
 
-    await this.cancelSupplierMovement(id);
+    // Only reverse supplier account movement if purchases were on cuenta corriente
+    const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId))];
+    if (purchaseIds.length > 0) {
+      const ccRows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "purchases"
+        WHERE id IN (${Prisma.join(purchaseIds)})
+          AND "saleCondition" = 'CUENTA_CORRIENTE'
+        LIMIT 1
+      `;
+      if (ccRows.length > 0) {
+        await this.cancelSupplierMovement(id);
+      }
+    }
 
     await prisma.$executeRaw`
       UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { CurrentAccountController } from '../controllers/CurrentAccountController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
+import { requireFeature } from '../middlewares/featureMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
 import {
   createPaymentSchema,
@@ -12,6 +13,7 @@ const router = Router();
 const currentAccountController = new CurrentAccountController();
 
 router.use(authMiddleware);
+router.use(requireFeature('current_accounts'));
 
 router.get('/', currentAccountController.findAll);
 router.get('/customer/:customerId', currentAccountController.findByCustomerId);

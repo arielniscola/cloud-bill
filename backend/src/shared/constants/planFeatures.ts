@@ -22,13 +22,13 @@ export type FeatureKey = typeof FEATURE_KEYS[number];
 // Feature matrix — which features each plan includes
 const STARTER_FEATURES: FeatureKey[] = [
   'budgets',
-  'reports',
-  'iva_book',
-  'multi_warehouse',
 ];
 
 const PRO_FEATURES: FeatureKey[] = [
   ...STARTER_FEATURES,
+  'reports',
+  'multi_warehouse',
+  'iva_book',
   'current_accounts',
   'supplier_accounts',
   'bank_module',
@@ -58,10 +58,3 @@ export function getFeaturesForPlan(plan: string): FeatureKey[] {
   const p = plan as PlanName;
   return Array.from(PLAN_FEATURES[p] ?? []);
 }
-
-// Modules (nav sections) each plan grants access to
-export const PLAN_MODULES: Record<PlanName, string> = {
-  STARTER:    'ventas,catalogo,finanzas',
-  PRO:        'ALL',
-  ENTERPRISE: 'ALL',
-};

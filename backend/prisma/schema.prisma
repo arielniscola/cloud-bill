@@ -40,6 +40,7 @@ enum InvoiceType {
 enum InvoiceStatus {
   DRAFT
   ISSUED
+  AUTHORIZED
   PAID
   CANCELLED
   PARTIALLY_PAID
@@ -237,8 +238,43 @@ model Product {
   budgetItems      BudgetItem[]
   ordenPedidoItems OrdenPedidoItem[]
   ordenCompraItems OrdenCompraItem[]
+  customFieldValues ProductCustomFieldValue[]
 
   @@map("products")
+}
+
+model ProductCustomField {
+  id          String   @id @default(uuid())
+  name        String
+  key         String
+  type        String   @default("TEXT") // TEXT | NUMBER | DATE | BOOLEAN | SELECT
+  options     String?  // CSV options for SELECT type
+  isRequired  Boolean  @default(false)
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  companyId   String   @default("00000000-0000-0000-0000-000000000001")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  values ProductCustomFieldValue[]
+
+  @@unique([companyId, key])
+  @@map("product_custom_fields")
+}
+
+model ProductCustomFieldValue {
+  id        String   @id @default(uuid())
+  productId String
+  fieldId   String
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field   ProductCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, fieldId])
+  @@map("product_custom_field_values")
 }
 
 model Invoice {
@@ -647,6 +683,11 @@ model AppSettings {
   deadStockDays                Int      @default(90)  // Días sin ventas para considerar producto muerto
   safetyStockDays              Int      @default(14)  // Días de stock de seguridad para recomendaciones
   companyTaxCondition          String   @default("RESPONSABLE_INSCRIPTO")
+  printFormatInvoice           String   @default("A4")
+  printFormatBudget            String   @default("A4")
+  printFormatOrdenPedido       String   @default("THERMAL_80MM")
+  printFormatRemito            String   @default("A4")
+  printFormatRecibo            String   @default("A4")
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
@@ -691,7 +732,8 @@ model PurchaseInvoice {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  purchase       Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  ordenPagoItems OrdenPagoItem[]
 
   fiscalMode String @default("FORMAL")
 
@@ -908,13 +950,15 @@ model OrdenPago {
 }
 
 model OrdenPagoItem {
-  id          String    @id @default(uuid())
-  ordenPagoId String
-  purchaseId  String
-  amount      Decimal   @db.Decimal(12, 2)
+  id                 String    @id @default(uuid())
+  ordenPagoId        String
+  purchaseId         String
+  purchaseInvoiceId  String?
+  amount             Decimal   @db.Decimal(12, 2)
 
-  ordenPago OrdenPago @relation(fields: [ordenPagoId], references: [id], onDelete: Cascade)
-  purchase  Purchase  @relation(fields: [purchaseId], references: [id])
+  ordenPago       OrdenPago        @relation(fields: [ordenPagoId], references: [id], onDelete: Cascade)
+  purchase        Purchase         @relation(fields: [purchaseId], references: [id])
+  purchaseInvoice PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
 
   @@map("orden_pago_items")
 }

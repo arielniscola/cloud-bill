@@ -36,6 +36,7 @@ import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
 import { cardRoutes } from './routes/cardRoutes';
 import { rubroRoutes } from './routes/rubroRoutes';
+import { productCustomFieldRoutes } from './routes/productCustomFieldRoutes';
 import { internalNoteRoutes } from './routes/internalNoteRoutes';
 import { accountingRoutes } from './routes/accountingRoutes';
 import { pdvRoutes } from './routes/pdvRoutes';
@@ -105,6 +106,7 @@ export function createApp(): Application {
   app.use('/api/mercadopago', mpRoutes);
   app.use('/api/cards', cardRoutes);
   app.use('/api/rubros', rubroRoutes);
+  app.use('/api/product-custom-fields', productCustomFieldRoutes);
   app.use('/api/internal-notes', internalNoteRoutes);
   app.use('/api/accounting', accountingRoutes);
   app.use('/api/pdv', pdvRoutes);

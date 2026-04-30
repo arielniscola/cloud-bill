@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { CardController } from '../controllers/CardController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
+import { requireFeature } from '../middlewares/featureMiddleware';
 
 const router = Router();
 const ctrl = new CardController();
 
 router.use(authMiddleware);
+router.use(requireFeature('cards'));
 
 router.get('/',    (req, res, next) => ctrl.findAll(req, res, next));
 router.get('/:id', (req, res, next) => ctrl.findById(req, res, next));

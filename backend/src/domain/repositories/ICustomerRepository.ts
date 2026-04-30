@@ -4,6 +4,8 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 export interface CustomerFilters {
   search?: string;
   taxCondition?: string;
+  saleCondition?: string;
+  city?: string;
   isActive?: boolean;
   companyId?: string;
 }

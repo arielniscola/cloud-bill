@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
+import { Prisma } from '@prisma/client';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IPurchaseRepository } from '../../../domain/repositories/IPurchaseRepository';
+import prisma from '../../database/prisma';
 
 function escapeCSV(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -31,9 +33,36 @@ export class IvaController {
         { dateFrom, dateTo, companyId: (req as any).companyId, fiscalMode: 'FORMAL' }
       );
 
-      const rows = result.data
-        .filter((inv: any) => inv.status !== 'CANCELLED')
-        .map((inv: any) => ({
+      const filtered = result.data.filter((inv: any) => inv.status !== 'CANCELLED');
+
+      // Fetch items for all invoices in a single query
+      const invoiceIds = filtered.map((inv: any) => inv.id);
+      let itemsMap = new Map<string, any[]>();
+      if (invoiceIds.length > 0) {
+        const allItems = await prisma.$queryRaw<any[]>`
+          SELECT ii."invoiceId", COALESCE(p.name, '') AS description,
+            ii.quantity, ii."unitPrice", ii."taxRate", ii.subtotal, ii.total
+          FROM "invoice_items" ii
+          LEFT JOIN "products" p ON p.id = ii."productId"
+          WHERE ii."invoiceId" IN (${Prisma.join(invoiceIds)})
+          ORDER BY ii."invoiceId"
+        `;
+        for (const it of allItems) {
+          const list = itemsMap.get(it.invoiceId) ?? [];
+          list.push({
+            description: it.description ?? '',
+            quantity: Number(it.quantity),
+            unitPrice: Number(it.unitPrice),
+            taxRate: Number(it.taxRate ?? 21),
+            subtotal: Number(it.subtotal),
+            total: Number(it.total),
+          });
+          itemsMap.set(it.invoiceId, list);
+        }
+      }
+
+      const rows = filtered.map((inv: any) => ({
+          invoiceId: inv.id,
           fecha: inv.date,
           numero: inv.number,
           afipCbtNum: inv.afipCbtNum ?? '',
@@ -45,6 +74,10 @@ export class IvaController {
           iva: Number(inv.taxAmount),
           total: Number(inv.total),
           cae: inv.cae ?? '',
+          status: inv.status,
+          saleCondition: (inv as any).saleCondition ?? 'CONTADO',
+          paymentTerms: inv.paymentTerms ?? null,
+          items: itemsMap.get(inv.id) ?? [],
         }));
 
       res.json({ status: 'success', data: rows });
@@ -111,7 +144,8 @@ export class IvaController {
 
       const purchases = await purchaseRepo.findAllByPeriod(year, month, (req as any).companyId, 'FORMAL');
 
-      const rows = purchases.map((p) => ({
+      const rows = purchases.map((p: any) => ({
+        purchaseId: p.id,
         fecha: p.date,
         numero: p.number,
         tipo: p.type,
@@ -120,6 +154,17 @@ export class IvaController {
         neto: Number(p.subtotal),
         iva: Number(p.taxAmount),
         total: Number(p.total),
+        status: p.status,
+        paymentStatus: p.paymentStatus ?? null,
+        saleCondition: p.saleCondition ?? 'CONTADO',
+        items: (p.items ?? []).map((it: any) => ({
+          description: it.description ?? it.product?.name ?? '',
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice),
+          taxRate: Number(it.taxRate ?? 21),
+          subtotal: Number(it.subtotal),
+          total: Number(it.total),
+        })),
       }));
 
       res.json({ status: 'success', data: rows });

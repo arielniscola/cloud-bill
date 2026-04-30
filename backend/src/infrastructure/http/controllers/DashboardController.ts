@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
 
 export class DashboardController {
@@ -13,14 +13,15 @@ export class DashboardController {
       const monthStart = new Date(year, month, 1);
       const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
       const companyId = req.companyId;
-      const fiscalMode = req.fiscalMode ?? 'FORMAL';
+      const fiscalMode = req.fiscalMode;
+      const fmFilter = fiscalMode ? Prisma.sql`AND "fiscalMode" = ${fiscalMode}` : Prisma.empty;
 
       const [
         ventasMesRows,
-        cobrosPendientesAgg,
-        cobrosDelMesAgg,
+        cobrosPendientesRows,
+        cobrosDelMesRows,
         pagosMesRows,
-        comprasMesAgg,
+        comprasMesRows,
         comprasPendientesRows,
         ocPendientesRows,
         opPendientesRows,
@@ -28,47 +29,46 @@ export class DashboardController {
         totalClientes,
         totalProductos,
         totalProveedores,
-        facturasBorrador,
-        remitosPendientesCount,
+        facturasBorradorRows,
+        remitosPendientesRows,
         recentOrdenPedidos,
         recentOrdenPagos,
-        pendingRemitos,
-        customersWithDebt,
+        pendingRemitosRaw,
+        customersWithDebtRows,
         lowStockRaw,
       ] = await Promise.all([
-        // Ventas del mes — basado en OP (no canceladas ni borrador)
+        // Ventas del mes — facturas emitidas (no NC/ND, no borrador/canceladas)
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
           SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
-          FROM "orden_pedidos"
-          WHERE status NOT IN ('DRAFT', 'CANCELLED')
+          FROM "invoices"
+          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
+            AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
             AND currency = 'ARS'
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
-        // Cobros pendientes (facturas ISSUED + PARTIALLY_PAID)
-        prisma.invoice.aggregate({
-          _sum: { total: true },
-          _count: true,
-          where: {
-            companyId,
-            status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
-            currency: 'ARS',
-          },
-        }),
+        // Cobros pendientes (facturas ISSUED/AUTHORIZED + PARTIALLY_PAID)
+        prisma.$queryRaw<{ total: any; count: bigint }[]>`
+          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
+          FROM "invoices"
+          WHERE status IN ('ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID')
+            AND currency = 'ARS'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+        `,
 
         // Cobros del mes — recibos EMITIDOS (dinero efectivamente cobrado)
-        prisma.recibo.aggregate({
-          _sum: { amount: true },
-          _count: true,
-          where: {
-            companyId,
-            status: 'EMITTED',
-            currency: 'ARS',
-            date: { gte: monthStart, lte: monthEnd },
-          },
-        }),
+        prisma.$queryRaw<{ total: any; count: bigint }[]>`
+          SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+          FROM "recibos"
+          WHERE status = 'EMITTED'
+            AND currency = 'ARS'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+            AND date >= ${monthStart} AND date <= ${monthEnd}
+        `,
 
         // Pagos del mes — Órdenes de Pago EMITIDAS este mes
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
@@ -76,20 +76,19 @@ export class DashboardController {
           FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
         // Compras del mes (no canceladas)
-        prisma.purchase.aggregate({
-          _sum: { total: true },
-          _count: true,
-          where: {
-            companyId,
-            status: { not: 'CANCELLED' },
-            date: { gte: monthStart, lte: monthEnd },
-          },
-        }),
+        prisma.$queryRaw<{ total: any; count: bigint }[]>`
+          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
+          FROM "purchases"
+          WHERE status != 'CANCELLED'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+            AND date >= ${monthStart} AND date <= ${monthEnd}
+        `,
 
         // Compras pendientes de pago (no pagadas totalmente)
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
@@ -99,7 +98,7 @@ export class DashboardController {
           WHERE "paymentStatus" != 'PAID'
             AND status != 'CANCELLED'
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
         `,
 
         // OC pendientes (no recibidas ni canceladas)
@@ -108,7 +107,7 @@ export class DashboardController {
           FROM "orden_compras"
           WHERE status NOT IN ('RECEIVED', 'CANCELLED')
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
         `,
 
         // OP pendientes (CONFIRMED — no convertidas ni pagadas ni canceladas)
@@ -117,7 +116,7 @@ export class DashboardController {
           FROM "orden_pedidos"
           WHERE status = 'CONFIRMED'
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
         `,
 
         // OP convertidas a factura este mes
@@ -126,7 +125,7 @@ export class DashboardController {
           FROM "orden_pedidos"
           WHERE status = 'CONVERTED'
             AND "companyId" = ${companyId}
-            AND "fiscalMode" = ${fiscalMode}
+            ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
@@ -134,12 +133,20 @@ export class DashboardController {
         prisma.customer.count({ where: { companyId, isActive: true } }),
         prisma.product.count({ where: { companyId, isActive: true } }),
         prisma.supplier.count({ where: { companyId, isActive: true } }),
-        prisma.invoice.count({ where: { companyId, status: 'DRAFT' } }),
+
+        // Facturas borrador
+        prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(*) AS count FROM "invoices"
+          WHERE status = 'DRAFT' AND "companyId" = ${companyId} ${fmFilter}
+        `,
 
         // Remitos pendientes
-        prisma.remito.count({
-          where: { companyId, status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
-        }),
+        prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(*) AS count FROM "remitos"
+          WHERE status IN ('PENDING', 'PARTIALLY_DELIVERED')
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+        `,
 
         // Últimas 5 OP (no borrador)
         prisma.$queryRaw<{ id: string; number: string; date: Date; total: any; currency: string; status: string; invoiceId: string | null; customerName: string | null; invoiceNumber: string | null }[]>`
@@ -171,24 +178,31 @@ export class DashboardController {
         `,
 
         // Remitos pendientes de entrega (detalle, top 5)
-        prisma.remito.findMany({
-          where: { companyId, status: { in: ['PENDING', 'PARTIALLY_DELIVERED'] } },
-          take: 5,
-          orderBy: { date: 'asc' },
-          include: { customer: { select: { id: true, name: true } } },
-        }),
+        prisma.$queryRaw<{ id: string; number: string; date: Date; status: string; customerId: string; customerName: string }[]>`
+          SELECT r.id, r.number, r.date, r.status,
+                 r."customerId", c.name AS "customerName"
+          FROM "remitos" r
+          LEFT JOIN "customers" c ON c.id = r."customerId"
+          WHERE r.status IN ('PENDING', 'PARTIALLY_DELIVERED')
+            AND r."companyId" = ${companyId}
+            AND r."fiscalMode" = ${fiscalMode}
+          ORDER BY r.date ASC
+          LIMIT 5
+        `,
 
-        // Clientes con deuda (balance > 0, ARS)
-        prisma.currentAccount.findMany({
-          where: {
-            balance: { gt: 0 },
-            currency: 'ARS',
-            customer: { companyId },
-          },
-          include: { customer: { select: { id: true, name: true } } },
-          orderBy: { balance: 'desc' },
-          take: 5,
-        }),
+        // Clientes con deuda (balance > 0, ARS, filtrado por fiscalMode)
+        prisma.$queryRaw<{ id: string; balance: any; currency: string; customerId: string; customerName: string }[]>`
+          SELECT ca.id, ca.balance, ca.currency,
+                 ca."customerId", c.name AS "customerName"
+          FROM "current_accounts" ca
+          JOIN "customers" c ON c.id = ca."customerId"
+          WHERE ca.balance > 0
+            AND ca.currency = 'ARS'
+            AND c."companyId" = ${companyId}
+            AND ca."fiscalMode" = ${fiscalMode}
+          ORDER BY ca.balance DESC
+          LIMIT 5
+        `,
 
         // Stock bajo
         prisma.stock.findMany({
@@ -208,50 +222,28 @@ export class DashboardController {
         .filter((s) => s.minQuantity !== null && s.quantity.lessThan(s.minQuantity))
         .slice(0, 5);
 
+      const r = (rows: { total?: any; count?: bigint }[]) => ({
+        total: Number(rows[0]?.total ?? 0),
+        count: Number(rows[0]?.count ?? 0),
+      });
+
       res.json({
         status: 'success',
         data: {
-          ventasMes: {
-            total: Number(ventasMesRows[0]?.total ?? 0),
-            count: Number(ventasMesRows[0]?.count ?? 0),
-          },
-          cobrosPendientes: {
-            total: cobrosPendientesAgg._sum.total?.toNumber() ?? 0,
-            count: cobrosPendientesAgg._count,
-          },
-          cobrosDelMes: {
-            total: cobrosDelMesAgg._sum.amount?.toNumber() ?? 0,
-            count: cobrosDelMesAgg._count,
-          },
-          pagosMes: {
-            total: Number(pagosMesRows[0]?.total ?? 0),
-            count: Number(pagosMesRows[0]?.count ?? 0),
-          },
-          comprasMes: {
-            total: comprasMesAgg._sum.total?.toNumber() ?? 0,
-            count: comprasMesAgg._count,
-          },
-          comprasPendientesPago: {
-            total: Number(comprasPendientesRows[0]?.total ?? 0),
-            count: Number(comprasPendientesRows[0]?.count ?? 0),
-          },
-          ocPendientes: {
-            total: Number(ocPendientesRows[0]?.total ?? 0),
-            count: Number(ocPendientesRows[0]?.count ?? 0),
-          },
-          opPendientes: {
-            total: Number(opPendientesRows[0]?.total ?? 0),
-            count: Number(opPendientesRows[0]?.count ?? 0),
-          },
-          opConvertidas: {
-            total: Number(opConvertidasRows[0]?.total ?? 0),
-            count: Number(opConvertidasRows[0]?.count ?? 0),
-          },
-          facturasBorrador,
+          ventasMes: r(ventasMesRows),
+          cobrosPendientes: r(cobrosPendientesRows),
+          cobrosDelMes: r(cobrosDelMesRows),
+          pagosMes: r(pagosMesRows),
+          comprasMes: r(comprasMesRows),
+          comprasPendientesPago: r(comprasPendientesRows),
+          ocPendientes: r(ocPendientesRows),
+          opPendientes: r(opPendientesRows),
+          opConvertidas: r(opConvertidasRows),
+          facturasBorrador: Number(facturasBorradorRows[0]?.count ?? 0),
           totalClientes,
           totalProductos,
           totalProveedores,
-          remitosPendientes: remitosPendientesCount,
+          remitosPendientes: Number(remitosPendientesRows[0]?.count ?? 0),
           recentOrdenPedidos: recentOrdenPedidos.map((op) => ({
             id: op.id,
             number: op.number,
@@ -272,18 +264,18 @@ export class DashboardController {
             status: op.status,
             supplier: { name: op.supplierName ?? '—' },
           })),
-          pendingRemitos: pendingRemitos.map((r) => ({
+          pendingRemitos: pendingRemitosRaw.map((r) => ({
             id: r.id,
             number: r.number,
             date: r.date,
             status: r.status,
-            customer: r.customer,
+            customer: { id: r.customerId, name: r.customerName ?? '—' },
           })),
-          customersWithDebt: customersWithDebt.map((ca) => ({
+          customersWithDebt: customersWithDebtRows.map((ca) => ({
             id: ca.id,
-            balance: ca.balance.toNumber(),
+            balance: Number(ca.balance),
             currency: ca.currency,
-            customer: ca.customer,
+            customer: { id: ca.customerId, name: ca.customerName ?? '—' },
           })),
           lowStockItems: lowStockItems.map((s) => ({
             id: s.id,
@@ -303,6 +295,8 @@ export class DashboardController {
     try {
       const now = new Date();
       const companyId = req.companyId;
+      const fiscalMode = req.fiscalMode;
+      const fmFilter = fiscalMode ? Prisma.sql`AND "fiscalMode" = ${fiscalMode}` : Prisma.empty;
 
       const months: { year: number; month: number; start: Date; end: Date }[] = [];
       for (let i = 11; i >= 0; i--) {
@@ -317,37 +311,40 @@ export class DashboardController {
         });
       }
 
-      const [opRows, purchaseRows, reciboRows, ordenPagoRows] = await Promise.all([
-        // Ventas: basado en OP (no borrador ni canceladas)
+      const [invoiceRows, purchaseRows, reciboRows, ordenPagoRows] = await Promise.all([
+        // Ventas: facturas emitidas (no NC/ND)
         prisma.$queryRaw<{ date: Date; total: any }[]>`
-          SELECT date, total FROM "orden_pedidos"
-          WHERE status NOT IN ('DRAFT', 'CANCELLED')
+          SELECT date, total FROM "invoices"
+          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
+            AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
             AND currency = 'ARS'
             AND "companyId" = ${companyId}
+            ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
-        prisma.purchase.findMany({
-          where: {
-            companyId,
-            status: { not: 'CANCELLED' },
-            date: { gte: months[0].start, lte: months[11].end },
-          },
-          select: { date: true, total: true },
-        }),
-        prisma.recibo.findMany({
-          where: {
-            companyId,
-            status: 'EMITTED',
-            currency: 'ARS',
-            date: { gte: months[0].start, lte: months[11].end },
-          },
-          select: { date: true, amount: true },
-        }),
+        // Compras
+        prisma.$queryRaw<{ date: Date; total: any }[]>`
+          SELECT date, total FROM "purchases"
+          WHERE status != 'CANCELLED'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+            AND date >= ${months[0].start} AND date <= ${months[11].end}
+        `,
+        // Cobros (recibos)
+        prisma.$queryRaw<{ date: Date; amount: any }[]>`
+          SELECT date, amount FROM "recibos"
+          WHERE status = 'EMITTED'
+            AND currency = 'ARS'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+            AND date >= ${months[0].start} AND date <= ${months[11].end}
+        `,
         // Pagos a proveedores (Órdenes de Pago)
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
           SELECT date, amount FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
+            ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
       ]);
@@ -357,17 +354,17 @@ export class DashboardController {
       const data = months.map(({ year, month, start, end }) => {
         const inRange = (d: Date) => d >= start && d <= end;
 
-        const ventas = opRows
+        const ventas = invoiceRows
           .filter((r) => inRange(new Date(r.date)))
           .reduce((acc, r) => acc + Number(r.total), 0);
 
         const compras = purchaseRows
           .filter((r) => inRange(new Date(r.date)))
-          .reduce((acc, r) => acc + (r.total as Decimal).toNumber(), 0);
+          .reduce((acc, r) => acc + Number(r.total), 0);
 
         const cobros = reciboRows
           .filter((r) => inRange(new Date(r.date)))
-          .reduce((acc, r) => acc + (r.amount as Decimal).toNumber(), 0);
+          .reduce((acc, r) => acc + Number(r.amount), 0);
 
         const pagos = ordenPagoRows
           .filter((r) => inRange(new Date(r.date)))

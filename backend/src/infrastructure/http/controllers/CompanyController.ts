@@ -3,7 +3,7 @@ import { container } from 'tsyringe';
 import { ICompanyRepository } from '../../../domain/repositories/ICompanyRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { createCompanySchema, updateCompanySchema, updateModulesSchema } from '../../../application/dtos/company.dto';
-import { PLAN_NAMES, PLAN_MODULES } from '../../../shared/constants/planFeatures';
+import { PLAN_NAMES } from '../../../shared/constants/planFeatures';
 import { invalidatePlanCache } from '../middlewares/featureMiddleware';
 import prisma from '../../database/prisma';
 
@@ -66,9 +66,8 @@ export class CompanyController {
       const company = await repo.findById(req.params.id);
       if (!company) throw new NotFoundError('Empresa');
 
-      const modules = PLAN_MODULES[plan as keyof typeof PLAN_MODULES] ?? 'ALL';
       await prisma.$executeRaw`
-        UPDATE "companies" SET "plan" = ${plan}, "enabledModules" = ${modules}, "updatedAt" = NOW() WHERE id = ${req.params.id}
+        UPDATE "companies" SET "plan" = ${plan}, "updatedAt" = NOW() WHERE id = ${req.params.id}
       `;
       invalidatePlanCache(req.params.id);
 

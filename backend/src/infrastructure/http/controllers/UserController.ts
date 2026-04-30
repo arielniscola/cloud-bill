@@ -36,10 +36,14 @@ export class UserController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IUserRepository>('UserRepository');
-      // SUPER_ADMIN sees all; ADMIN sees only their company
-      const filters = req.user!.role === 'SUPER_ADMIN'
-        ? {}
-        : { companyId: req.companyId };
+      // SUPER_ADMIN sees all (optionally filtered by ?companyId=); ADMIN sees only their company
+      let filters: { companyId?: string } = {};
+      if (req.user!.role === 'SUPER_ADMIN') {
+        const queryCompanyId = typeof req.query.companyId === 'string' ? req.query.companyId : undefined;
+        if (queryCompanyId) filters = { companyId: queryCompanyId };
+      } else {
+        filters = { companyId: req.companyId };
+      }
 
       const users = await repo.findAll(filters);
       res.json({ status: 'success', data: users.map(omitPassword) });

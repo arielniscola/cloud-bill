@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { BankController } from '../controllers/BankController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
+import { requireFeature } from '../middlewares/featureMiddleware';
 
 const router = Router();
 const bankController = new BankController();
 
 router.use(authMiddleware);
+router.use(requireFeature('bank_module'));
 
 router.get('/',                                           bankController.findAll);
 router.get('/:id',                                        bankController.findById);

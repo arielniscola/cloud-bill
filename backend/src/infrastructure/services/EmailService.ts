@@ -1,11 +1,56 @@
 import nodemailer from 'nodemailer';
 import prisma from '../database/prisma';
 import { generatePdfFromHtml } from './PdfService';
+import { AppError, NotFoundError } from '../../shared/errors/AppError';
 
 /** Convert a base64 string to a Buffer. */
 function base64ToBuffer(b64: string): Buffer {
   const data = b64.includes(',') ? b64.split(',')[1] : b64;
   return Buffer.from(data, 'base64');
+}
+
+// ── SMTP error helpers ────────────────────────────────────────────────────
+
+/**
+ * Translates a nodemailer / network error into a user-friendly message.
+ * The codes come from nodemailer + node net layer.
+ */
+function describeMailError(err: unknown): string {
+  const e = err as { code?: string; responseCode?: number; response?: string; message?: string; rejected?: string[] };
+  const code     = e?.code;
+  const respCode = e?.responseCode;
+  const response = e?.response;
+  const baseMsg  = e?.message ?? 'Error desconocido al enviar el correo';
+
+  if (code === 'EAUTH' || respCode === 535 || respCode === 534) {
+    return `Autenticación SMTP rechazada. Revisá usuario y contraseña en Ajustes → Correo.${response ? ` (${response})` : ''}`;
+  }
+  if (code === 'ECONNECTION' || code === 'ECONNREFUSED') {
+    return `No se pudo conectar al servidor SMTP. Revisá host y puerto en Ajustes → Correo. (${baseMsg})`;
+  }
+  if (code === 'ETIMEDOUT' || code === 'ESOCKET') {
+    return `Timeout al conectar con el servidor SMTP. Verificá tu conexión y los datos en Ajustes → Correo.`;
+  }
+  if (code === 'EDNS' || code === 'ENOTFOUND') {
+    return `No se pudo resolver el host SMTP. Revisá la dirección del servidor en Ajustes → Correo.`;
+  }
+  if (code === 'EENVELOPE' || respCode === 550 || respCode === 553) {
+    const recipients = e?.rejected?.length ? ` (${e.rejected.join(', ')})` : '';
+    return `El servidor rechazó el destinatario${recipients}. ${response ?? baseMsg}`;
+  }
+  if (code === 'EMESSAGE') {
+    return `El servidor rechazó el contenido del mensaje. ${response ?? baseMsg}`;
+  }
+  return `Error al enviar correo: ${baseMsg}`;
+}
+
+/** Wraps `transporter.sendMail` and converts nodemailer errors into AppError(502). */
+async function safeSendMail(transporter: nodemailer.Transporter, options: nodemailer.SendMailOptions): Promise<void> {
+  try {
+    await transporter.sendMail(options);
+  } catch (err) {
+    throw new AppError(describeMailError(err), 502);
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -121,7 +166,7 @@ async function createTransporter(companyId: string) {
 
   const s = settings[0];
   if (!s?.smtpHost || !s?.smtpUser || !s?.smtpPass) {
-    throw new Error('SMTP no configurado. Completá la configuración en Ajustes → Correo.');
+    throw new AppError('SMTP no configurado. Completá la configuración en Ajustes → Correo.', 400);
   }
 
   return {
@@ -184,7 +229,7 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
     GROUP BY i.id, c.name, c.email, c."taxId"
   `;
 
-  if (!rows.length) throw new Error('Factura no encontrada');
+  if (!rows.length) throw new NotFoundError('Factura');
   const inv = rows[0];
 
   const TYPE_LABELS: Record<string, string> = {
@@ -270,7 +315,7 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
     pdfBuffer = await generatePdfFromHtml(pdfHtml);
   }
 
-  await transporter.sendMail({
+  await safeSendMail(transporter, {
     from: `"${company.name}" <${from}>`,
     to,
     subject: `${typeLabel} ${inv.number} — ${company.name}`,
@@ -310,7 +355,7 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
     GROUP BY b.id, c.name, c.email, c."taxId"
   `;
 
-  if (!rows.length) throw new Error('Presupuesto no encontrado');
+  if (!rows.length) throw new NotFoundError('Presupuesto');
   const bud = rows[0];
   const currencySymbol = bud.currency === 'USD' ? 'U$D' : '$';
 
@@ -379,7 +424,7 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
     Fecha: ${fmtDate(bud.date)}<br/>
     Total: ${currencySymbol} ${fmt(bud.total)}`;
 
-  await transporter.sendMail({
+  await safeSendMail(transporter, {
     from: `"${company.name}" <${from}>`,
     to,
     subject: `Presupuesto ${bud.number} — ${company.name}`,
@@ -419,7 +464,7 @@ export async function sendOrdenPedidoEmail(ordenPedidoId: string, to: string, co
     GROUP BY op.id, c.name, c.email, c."taxId"
   `;
 
-  if (!rows.length) throw new Error('Orden de pedido no encontrada');
+  if (!rows.length) throw new NotFoundError('Orden de pedido');
   const op = rows[0];
   const currencySymbol = op.currency === 'USD' ? 'U$D' : '$';
 
@@ -488,7 +533,7 @@ export async function sendOrdenPedidoEmail(ordenPedidoId: string, to: string, co
     Fecha: ${fmtDate(op.date)}<br/>
     Total: ${currencySymbol} ${fmt(op.total)}`;
 
-  await transporter.sendMail({
+  await safeSendMail(transporter, {
     from: `"${company.name}" <${from}>`,
     to,
     subject: `Orden de Pedido ${op.number} — ${company.name}`,
@@ -526,7 +571,7 @@ export async function sendRemitoEmail(remitoId: string, to: string, companyId: s
     GROUP BY r.id, c.name, c.email
   `;
 
-  if (!rows.length) throw new Error('Remito no encontrado');
+  if (!rows.length) throw new NotFoundError('Remito');
   const rem = rows[0];
 
   const itemsRows = (rem.items as any[]).map((it) => `
@@ -574,7 +619,7 @@ export async function sendRemitoEmail(remitoId: string, to: string, companyId: s
     Fecha: ${fmtDate(rem.date)}<br/>
     Cliente: ${rem.customerName ?? '—'}`;
 
-  await transporter.sendMail({
+  await safeSendMail(transporter, {
     from: `"${company.name}" <${from}>`,
     to,
     subject: `Remito ${rem.number} — ${company.name}`,

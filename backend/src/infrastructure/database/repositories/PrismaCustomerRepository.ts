@@ -64,8 +64,21 @@ export class PrismaCustomerRepository implements ICustomerRepository {
       where.isActive = filters.isActive;
     }
 
+    if (filters.city) {
+      where.city = { contains: filters.city, mode: 'insensitive' };
+    }
+
     if (filters.companyId) {
       (where as any).companyId = filters.companyId;
+    }
+
+    // saleCondition is not in the generated Prisma client — filter via raw SQL pre-query
+    if (filters.saleCondition) {
+      const scIds = await this.prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM customers WHERE "saleCondition" = ${filters.saleCondition}`
+      );
+      const idSet = scIds.map((r) => r.id);
+      where.id = { in: idSet };
     }
 
     const [data, total] = await Promise.all([

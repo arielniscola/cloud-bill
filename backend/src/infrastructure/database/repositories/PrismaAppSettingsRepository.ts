@@ -33,6 +33,11 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       stalePriceWarnDays2:         Number(r.stalePriceWarnDays2),
       companyTaxCondition:         r.companyTaxCondition,
       printFormat:                 r.printFormat,
+      printFormatInvoice:          r.printFormatInvoice     ?? r.printFormat ?? 'A4',
+      printFormatBudget:           r.printFormatBudget      ?? r.printFormat ?? 'A4',
+      printFormatOrdenPedido:      r.printFormatOrdenPedido ?? r.printFormat ?? 'THERMAL_80MM',
+      printFormatRemito:           r.printFormatRemito      ?? r.printFormat ?? 'A4',
+      printFormatRecibo:           r.printFormatRecibo      ?? r.printFormat ?? 'A4',
       smtpHost:                    r.smtpHost,
       smtpPort:                    r.smtpPort != null ? Number(r.smtpPort) : null,
       smtpUser:                    r.smtpUser,
@@ -63,10 +68,13 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
 
     const deadStockDays       = data.deadStockDays       ?? current?.deadStockDays       ?? 90;
     const safetyStockDays     = data.safetyStockDays     ?? current?.safetyStockDays     ?? 14;
-    const stalePriceWarnDays1 = data.stalePriceWarnDays1 ?? current?.stalePriceWarnDays1 ?? 10;
-    const stalePriceWarnDays2 = data.stalePriceWarnDays2 ?? current?.stalePriceWarnDays2 ?? 20;
     const companyTaxCondition = data.companyTaxCondition ?? current?.companyTaxCondition ?? 'RESPONSABLE_INSCRIPTO';
-    const printFormat         = data.printFormat         ?? current?.printFormat         ?? 'A4';
+    const printFormat            = data.printFormat            ?? current?.printFormat            ?? 'A4';
+    const printFormatInvoice     = data.printFormatInvoice     ?? current?.printFormatInvoice     ?? 'A4';
+    const printFormatBudget      = data.printFormatBudget      ?? current?.printFormatBudget      ?? 'A4';
+    const printFormatOrdenPedido = data.printFormatOrdenPedido ?? current?.printFormatOrdenPedido ?? 'THERMAL_80MM';
+    const printFormatRemito      = data.printFormatRemito      ?? current?.printFormatRemito      ?? 'A4';
+    const printFormatRecibo      = data.printFormatRecibo      ?? current?.printFormatRecibo      ?? 'A4';
     const smtpHost            = data.smtpHost   !== undefined ? data.smtpHost   : (current?.smtpHost   ?? null);
     const smtpPort            = data.smtpPort   ?? current?.smtpPort   ?? 587;
     const smtpUser            = data.smtpUser   !== undefined ? data.smtpUser   : (current?.smtpUser   ?? null);
@@ -80,15 +88,19 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
 
     await prisma.$executeRaw`
       INSERT INTO "app_settings" (
-        "id", "deadStockDays", "safetyStockDays", "stalePriceWarnDays1", "stalePriceWarnDays2",
+        "id", "deadStockDays", "safetyStockDays",
         "companyTaxCondition", "printFormat",
+        "printFormatInvoice", "printFormatBudget", "printFormatOrdenPedido",
+        "printFormatRemito", "printFormatRecibo",
         "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "smtpSecure",
         "mpAccessToken", "mpPublicKey", "mpWebhookSecret", "mpMode",
         "defaultBudgetCashRegisterId", "defaultInvoiceCashRegisterId", "updatedAt"
       ) VALUES (
         ${companyId},
-        ${deadStockDays}, ${safetyStockDays}, ${stalePriceWarnDays1}, ${stalePriceWarnDays2},
+        ${deadStockDays}, ${safetyStockDays},
         ${companyTaxCondition}, ${printFormat},
+        ${printFormatInvoice}, ${printFormatBudget}, ${printFormatOrdenPedido},
+        ${printFormatRemito}, ${printFormatRecibo},
         ${smtpHost}, ${smtpPort}, ${smtpUser}, ${smtpPass}, ${smtpFrom}, ${smtpSecure},
         ${mpAccessToken}, ${mpPublicKey}, ${mpWebhookSecret}, ${mpMode},
         ${budgetCashRegisterId}, ${invoiceCashRegisterId}, NOW()
@@ -96,10 +108,13 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       ON CONFLICT ("id") DO UPDATE SET
         "deadStockDays"                = EXCLUDED."deadStockDays",
         "safetyStockDays"              = EXCLUDED."safetyStockDays",
-        "stalePriceWarnDays1"          = EXCLUDED."stalePriceWarnDays1",
-        "stalePriceWarnDays2"          = EXCLUDED."stalePriceWarnDays2",
         "companyTaxCondition"          = EXCLUDED."companyTaxCondition",
         "printFormat"                  = EXCLUDED."printFormat",
+        "printFormatInvoice"           = EXCLUDED."printFormatInvoice",
+        "printFormatBudget"            = EXCLUDED."printFormatBudget",
+        "printFormatOrdenPedido"       = EXCLUDED."printFormatOrdenPedido",
+        "printFormatRemito"            = EXCLUDED."printFormatRemito",
+        "printFormatRecibo"            = EXCLUDED."printFormatRecibo",
         "smtpHost"                     = EXCLUDED."smtpHost",
         "smtpPort"                     = EXCLUDED."smtpPort",
         "smtpUser"                     = EXCLUDED."smtpUser",

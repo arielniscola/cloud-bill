@@ -17,7 +17,7 @@ export type InvoiceType =
   | 'NOTA_DEBITO_B'
   | 'NOTA_DEBITO_C';
 
-export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PAID' | 'CANCELLED' | 'PARTIALLY_PAID';
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'AUTHORIZED' | 'PAID' | 'CANCELLED' | 'PARTIALLY_PAID';
 
 export type MovementType = 'DEBIT' | 'CREDIT';
 

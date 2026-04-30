@@ -4,6 +4,22 @@ import { IProductRepository } from '../../../domain/repositories/IProductReposit
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError, ConflictError } from '../../../shared/errors/AppError';
 import { Decimal } from '@prisma/client/runtime/library';
+import {
+  upsertCustomFieldValues,
+  getCustomFieldValuesForProduct,
+  getCustomFieldValuesForProducts,
+} from '../../database/repositories/productCustomFieldValuesHelper';
+import { ProductCustomFieldValueInput } from '../../../domain/entities/ProductCustomField';
+
+function parseCustomFieldsPayload(body: any): ProductCustomFieldValueInput[] | null {
+  if (!Array.isArray(body?.customFields)) return null;
+  return body.customFields
+    .filter((cf: any) => cf && typeof cf.fieldId === 'string')
+    .map((cf: any) => ({
+      fieldId: cf.fieldId,
+      value: cf.value === undefined || cf.value === null ? null : String(cf.value),
+    }));
+}
 
 export class ProductController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -32,6 +48,11 @@ export class ProductController {
         isActive: req.body.isActive ?? true,
       });
 
+      const customFields = parseCustomFieldsPayload(req.body);
+      if (customFields && customFields.length > 0 && req.companyId) {
+        await upsertCustomFieldValues(product.id, customFields, req.companyId);
+      }
+
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -41,9 +62,10 @@ export class ProductController {
         description: `Producto ${product.name} (${product.sku}) creado`,
       });
 
+      const enriched = { ...product, customFieldValues: await getCustomFieldValuesForProduct(product.id) };
       res.status(201).json({
         status: 'success',
-        data: product,
+        data: enriched,
       });
     } catch (error) {
       next(error);
@@ -59,9 +81,10 @@ export class ProductController {
         throw new NotFoundError('Product');
       }
 
+      const enriched = { ...product, customFieldValues: await getCustomFieldValuesForProduct(product.id) };
       res.json({
         status: 'success',
-        data: product,
+        data: enriched,
       });
     } catch (error) {
       next(error);
@@ -78,9 +101,17 @@ export class ProductController {
         { ...(filters as Record<string, string>), companyId: req.companyId }
       );
 
+      const includeFields = req.query.includeCustomFields === 'true';
+      let data = result.data;
+      if (includeFields && data.length > 0) {
+        const valuesMap = await getCustomFieldValuesForProducts(data.map((p) => p.id));
+        data = data.map((p) => ({ ...p, customFieldValues: valuesMap.get(p.id) ?? [] }));
+      }
+
       res.json({
         status: 'success',
         ...result,
+        data,
       });
     } catch (error) {
       next(error);
@@ -120,6 +151,11 @@ export class ProductController {
 
       const product = await productRepository.update(req.params.id, updateData);
 
+      const customFields = parseCustomFieldsPayload(req.body);
+      if (customFields && req.companyId) {
+        await upsertCustomFieldValues(product.id, customFields, req.companyId);
+      }
+
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -129,9 +165,10 @@ export class ProductController {
         description: `Producto ${product.name} actualizado`,
       });
 
+      const enriched = { ...product, customFieldValues: await getCustomFieldValuesForProduct(product.id) };
       res.json({
         status: 'success',
-        data: product,
+        data: enriched,
       });
     } catch (error) {
       next(error);

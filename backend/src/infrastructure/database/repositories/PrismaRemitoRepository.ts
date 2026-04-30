@@ -41,93 +41,46 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.RemitoWhereInput = {};
+    // Build raw SQL conditions (bypasses stale Prisma client for fiscalMode, companyId, etc.)
+    const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
 
-    if (filters.customerId) {
-      where.customerId = filters.customerId;
-    }
+    if (filters.companyId)      conditions.push(Prisma.sql`"companyId" = ${filters.companyId}`);
+    if (filters.fiscalMode)     conditions.push(Prisma.sql`"fiscalMode" = ${filters.fiscalMode}`);
+    if (filters.customerId)     conditions.push(Prisma.sql`"customerId" = ${filters.customerId}`);
+    if (filters.status)         conditions.push(Prisma.sql`status = ${filters.status}::"RemitoStatus"`);
+    if (filters.ordenPedidoId)  conditions.push(Prisma.sql`"ordenPedidoId" = ${filters.ordenPedidoId}`);
+    if (filters.dateFrom)       conditions.push(Prisma.sql`date >= ${filters.dateFrom}`);
+    if (filters.dateTo)         conditions.push(Prisma.sql`date <= ${filters.dateTo}`);
 
-    if (filters.status) {
-      where.status = filters.status;
-    }
+    const where = Prisma.join(conditions, ' AND ');
 
-    if (filters.companyId) {
-      (where as any).companyId = filters.companyId;
-    }
-
-    if (filters.fiscalMode) {
-      (where as any).fiscalMode = filters.fiscalMode;
-    }
-
-    if (filters.ordenPedidoId) {
-      // Raw SQL to filter by ordenPedidoId (bypasses stale Prisma client types),
-      // then fetch full objects with Prisma to get customer/user relations
-      const oid = filters.ordenPedidoId;
-      const cid = filters.companyId ?? null;
-
-      const [idRows, countResult] = await Promise.all([
-        prisma.$queryRaw<{ id: string }[]>`
-          SELECT id FROM remitos
-          WHERE "ordenPedidoId" = ${oid}
-            ${cid ? Prisma.sql`AND "companyId" = ${cid}` : Prisma.empty}
-          ORDER BY date DESC
-          LIMIT ${limit} OFFSET ${skip}
-        `,
-        prisma.$queryRaw<{ count: bigint }[]>`
-          SELECT COUNT(*)::int AS count FROM remitos
-          WHERE "ordenPedidoId" = ${oid}
-            ${cid ? Prisma.sql`AND "companyId" = ${cid}` : Prisma.empty}
-        `,
-      ]);
-
-      const total = Number(countResult[0]?.count ?? 0);
-      const ids = idRows.map((r) => r.id);
-
-      const data = ids.length > 0
-        ? await (this.prisma as any).remito.findMany({
-            where: { id: { in: ids } },
-            orderBy: { date: 'desc' },
-            include: {
-              customer: true,
-              user: { select: { id: true, name: true, email: true } },
-            },
-          })
-        : [];
-
-      return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
-    }
-
-    if (filters.dateFrom || filters.dateTo) {
-      where.date = {};
-      if (filters.dateFrom) {
-        where.date.gte = filters.dateFrom;
-      }
-      if (filters.dateTo) {
-        where.date.lte = filters.dateTo;
-      }
-    }
-
-    const [data, total] = await Promise.all([
-      (this.prisma as any).remito.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { date: 'desc' },
-        include: {
-          customer: true,
-          user: { select: { id: true, name: true, email: true } },
-        },
-      }),
-      (this.prisma as any).remito.count({ where }),
+    const [idRows, countResult] = await Promise.all([
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM remitos WHERE ${where}
+        ORDER BY date DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `,
+      prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*)::int AS count FROM remitos WHERE ${where}
+      `,
     ]);
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    const total = Number(countResult[0]?.count ?? 0);
+    const ids = idRows.map((r) => r.id);
+
+    const data = ids.length > 0
+      ? await (this.prisma as any).remito.findMany({
+          where: { id: { in: ids } },
+          orderBy: { date: 'desc' },
+          include: {
+            items: { include: { product: true } },
+            customer: true,
+            user: { select: { id: true, name: true, email: true } },
+          },
+        })
+      : [];
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async create(data: CreateRemitoInput): Promise<RemitoWithItems> {

@@ -33,7 +33,7 @@ export const createInvoiceSchema = z.object({
 });
 
 export const updateInvoiceStatusSchema = z.object({
-  status: z.enum(['DRAFT', 'ISSUED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']),
+  status: z.enum(['DRAFT', 'ISSUED', 'AUTHORIZED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']),
 });
 
 export const payInvoiceSchema = z.object({
@@ -52,7 +52,7 @@ export const invoiceQuerySchema = z.object({
   limit: z.string().transform(Number).optional(),
   customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   userId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
-  status: z.preprocess(emptyToUndefined, z.enum(['DRAFT', 'ISSUED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']).optional()),
+  status: z.preprocess(emptyToUndefined, z.enum(['DRAFT', 'ISSUED', 'AUTHORIZED', 'PAID', 'CANCELLED', 'PARTIALLY_PAID']).optional()),
   type: z.preprocess(
     emptyToUndefined,
     z.enum([

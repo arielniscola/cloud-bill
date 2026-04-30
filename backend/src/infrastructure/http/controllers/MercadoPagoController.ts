@@ -426,7 +426,7 @@ export class MercadoPagoController {
     const totalPaid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
     const total = Number(budget[0].total);
     const newStatus = totalPaid >= total - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-    await prisma.$executeRaw`UPDATE "budgets" SET "status" = ${newStatus}, "updatedAt" = NOW() WHERE id = ${budgetId}`;
+    await prisma.$executeRaw`UPDATE "budgets" SET "status" = ${newStatus}::"BudgetStatus", "updatedAt" = NOW() WHERE id = ${budgetId}`;
   }
 
   private static async _recalcOrdenPedido(ordenPedidoId: string, recibo: any) {

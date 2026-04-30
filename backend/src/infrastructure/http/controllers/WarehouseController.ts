@@ -2,12 +2,23 @@ import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
-import { NotFoundError } from '../../../shared/errors/AppError';
+import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError';
+import { companyHasFeature } from '../middlewares/featureMiddleware';
 
 export class WarehouseController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
+
+      if (req.companyId) {
+        const hasMulti = await companyHasFeature(req.companyId, 'multi_warehouse');
+        if (!hasMulti) {
+          const existing = await warehouseRepository.findAll(req.companyId);
+          if (existing.length >= 1) {
+            throw new ForbiddenError('Tu plan actual solo permite un almacén. Actualizá a PRO para crear múltiples.');
+          }
+        }
+      }
 
       const warehouse = await warehouseRepository.create({
         name: req.body.name,

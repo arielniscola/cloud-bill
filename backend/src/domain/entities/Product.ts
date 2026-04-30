@@ -1,4 +1,5 @@
 import { Decimal } from '@prisma/client/runtime/library';
+import { ProductCustomFieldValue } from './ProductCustomField';
 
 export interface Product {
   id: string;
@@ -20,6 +21,7 @@ export interface Product {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  customFieldValues?: ProductCustomFieldValue[];
 }
 
 export type CreateProductInput = Omit<Product, 'id' | 'createdAt' | 'updatedAt'>;

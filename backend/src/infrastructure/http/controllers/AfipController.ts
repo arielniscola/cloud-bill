@@ -47,9 +47,17 @@ export class AfipController {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
       const { cuit, salePoint, cert, privateKey, isProduction, businessName, businessAddress, taxCondition, activityStartDate } = req.body;
 
+      // salePoint is now derived per-user from the assigned PdV (managed in PdvSettingsCard).
+      // We keep the legacy column for back-compat: preserve existing value if not in payload,
+      // default to 1 on first save.
+      const existing = await (repo as any).getActive(req.companyId);
+      const resolvedSalePoint = salePoint != null && !Number.isNaN(Number(salePoint))
+        ? Number(salePoint)
+        : (existing?.salePoint ?? 1);
+
       const config = await (repo as any).upsert({
         cuit,
-        salePoint: Number(salePoint),
+        salePoint: resolvedSalePoint,
         cert,
         privateKey,
         isProduction: Boolean(isProduction),
@@ -134,7 +142,7 @@ export class AfipController {
         afipCbtNum: result.afipCbtNum,
         afipPtVenta: result.afipPtVenta,
         afipObservaciones: result.observaciones,
-        status: 'ISSUED',
+        status: 'AUTHORIZED',
       } as any);
 
       await activityLogRepo.create({
