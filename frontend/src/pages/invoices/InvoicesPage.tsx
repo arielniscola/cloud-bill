@@ -36,6 +36,7 @@ const TYPE_CHIP: Record<string, { label: string; cls: string }> = {
 const STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = {
   DRAFT:          { label: 'Borrador',       cls: 'text-gray-600 bg-gray-100 border-gray-200 dark:text-slate-300 dark:bg-slate-700 dark:border-slate-600',              dot: 'bg-gray-400' },
   ISSUED:         { label: 'Emitida',        cls: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-800',               dot: 'bg-blue-500' },
+  AUTHORIZED:     { label: 'Autorizada',     cls: 'text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-900/30 dark:border-violet-800',  dot: 'bg-violet-500' },
   PAID:           { label: 'Pagada',         cls: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800', dot: 'bg-emerald-500' },
   PARTIALLY_PAID: { label: 'Pago parcial',  cls: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800',          dot: 'bg-amber-500' },
   CANCELLED:      { label: 'Cancelada',      cls: 'text-red-600 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-900/30 dark:border-red-800',                      dot: 'bg-red-500' },
@@ -117,7 +118,7 @@ export default function InvoicesPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   useEffect(() => {
     customersService.getAll({ limit: 1000 }).then((r) => setCustomers(r.data)).catch(() => {});

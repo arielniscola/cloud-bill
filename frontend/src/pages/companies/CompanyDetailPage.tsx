@@ -10,7 +10,7 @@ import { MODULE_LABELS } from '../../types/company.types';
 import { formatDate } from '../../utils/formatters';
 import {
   PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, PLAN_COLORS,
-  PLAN_FEATURE_MATRIX, FEATURE_LABELS, PLAN_MODULES, type PlanName,
+  PLAN_FEATURE_MATRIX, FEATURE_LABELS, type PlanName,
 } from '../../utils/planFeatures';
 
 const TAX_LABEL: Record<string, string> = {
@@ -200,32 +200,32 @@ export default function CompanyDetailPage() {
         <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <Package className="w-4 h-4 text-gray-400" />
-            Módulos incluidos en el plan
+            Módulos habilitados
           </h3>
           <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-            Los módulos disponibles están determinados por el plan seleccionado
+            Los módulos se gestionan de forma independiente al plan. Cambian desde la sección de edición de empresa.
           </p>
         </div>
         <div className="p-5">
           <div className="grid grid-cols-2 gap-2">
             {(['ventas', 'catalogo', 'compras', 'finanzas'] as const).map(key => {
-              const included = PLAN_MODULES[selectedPlan]?.includes(key) ?? false;
+              const enabled = company?.enabledModules?.includes('ALL') || company?.enabledModules?.includes(key) || false;
               const { label, description } = MODULE_LABELS[key];
               return (
                 <div
                   key={key}
                   className={clsx(
                     'p-3 rounded-lg border text-sm',
-                    included
+                    enabled
                       ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10'
                       : 'border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 opacity-50'
                   )}
                 >
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={included ? 'text-emerald-500' : 'text-gray-300 dark:text-slate-600'}>
-                      {included ? '✓' : '—'}
+                    <span className={enabled ? 'text-emerald-500' : 'text-gray-300 dark:text-slate-600'}>
+                      {enabled ? '✓' : '—'}
                     </span>
-                    <span className={clsx('font-medium', included ? 'text-gray-800 dark:text-slate-200' : 'text-gray-400 dark:text-slate-500')}>
+                    <span className={clsx('font-medium', enabled ? 'text-gray-800 dark:text-slate-200' : 'text-gray-400 dark:text-slate-500')}>
                       {label}
                     </span>
                   </div>

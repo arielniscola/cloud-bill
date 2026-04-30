@@ -1,29 +1,26 @@
 import { useAuthStore } from '../stores';
-import { planHasFeature, type FeatureKey } from '../utils/planFeatures';
+import type { FeatureKey } from '../utils/planFeatures';
 
 /**
  * Returns feature access helpers based on the authenticated user's company plan.
  * SUPER_ADMIN always has access to everything.
+ * Reads the features array provided by the server in the login response.
  */
 export function useFeatures() {
   const { user } = useAuthStore();
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const plan = user?.plan ?? 'PRO';
-  // features array from login response (pre-computed by server)
   const features: string[] = user?.features ?? [];
 
   function hasFeature(feature: FeatureKey): boolean {
     if (isSuperAdmin) return true;
-    // Use server-provided features array if available, fallback to local matrix
-    if (features.length > 0) return features.includes(feature);
-    return planHasFeature(plan, feature);
+    return features.includes(feature);
   }
 
   return {
     plan,
     hasFeature,
-    // Convenience flags for commonly-gated features
     canUseAccounting:        hasFeature('accounting'),
     canUseMercadoPago:       hasFeature('mercadopago'),
     hasActivityLog:          hasFeature('activity_log'),

@@ -53,3 +53,16 @@ export interface JournalEntryFilters {
   dateFrom?: string;
   dateTo?: string;
 }
+
+export interface CreateJournalEntryLineDTO {
+  accountCode: string;
+  description?: string;
+  debit: number;
+  credit: number;
+}
+
+export interface CreateJournalEntryDTO {
+  date?: string;
+  description: string;
+  lines: CreateJournalEntryLineDTO[];
+}

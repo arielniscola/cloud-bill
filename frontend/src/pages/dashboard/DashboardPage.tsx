@@ -132,14 +132,14 @@ export default function DashboardPage() {
   // ── KPI financieros ──────────────────────────────────────────────────────
   const kpiCards = [
     {
-      title: `Ventas (OP) — ${monthLabel}`,
+      title: `Ventas — ${monthLabel}`,
       value: stats?.ventasMes?.total ?? 0,
-      subtitle: `${stats?.ventasMes?.count ?? 0} órdenes de pedido`,
+      subtitle: `${stats?.ventasMes?.count ?? 0} facturas emitidas`,
       icon: TrendingUp,
       color: 'text-emerald-600 dark:text-emerald-400',
       bg: 'bg-emerald-50 dark:bg-emerald-900/20',
       border: 'border-emerald-100 dark:border-emerald-900/30',
-      href: '/orden-pedidos',
+      href: '/invoices',
       isCurrency: true,
     },
     {
@@ -199,7 +199,7 @@ export default function DashboardPage() {
       href: '/orden-pedidos?status=CONFIRMED',
     },
     {
-      title: 'OP convertidas',
+      title: 'OP facturadas',
       value: stats?.opConvertidas?.count ?? 0,
       subtitle: stats?.opConvertidas?.total
         ? formatCurrency(stats.opConvertidas.total)
@@ -740,7 +740,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Ventas · Compras · Cobros · Pagos — últimos 12 meses</h3>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Facturación, compras, cobros de clientes y pagos a proveedores en ARS</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Facturas emitidas, compras, cobros de clientes y pagos a proveedores en ARS</p>
             </div>
           </div>
           {isLoadingCharts ? (
@@ -786,7 +786,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Rentabilidad bruta — últimos 12 meses</h3>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Ganancia = Ventas (OP) − Compras · Margen sobre ventas</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Ganancia = Ventas − Compras · Margen sobre ventas</p>
             </div>
             {charts.length > 0 && (() => {
               const last = charts[charts.length - 1];

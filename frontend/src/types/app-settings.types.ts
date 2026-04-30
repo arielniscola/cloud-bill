@@ -8,6 +8,11 @@ export interface AppSettings {
   stalePriceWarnDays2:          number;
   companyTaxCondition:          string;
   printFormat:                  string;
+  printFormatInvoice?:          string;
+  printFormatBudget?:           string;
+  printFormatOrdenPedido?:      string;
+  printFormatRemito?:           string;
+  printFormatRecibo?:           string;
   smtpHost:                     string | null;
   smtpPort:                     number;
   smtpUser:                     string | null;
@@ -31,6 +36,11 @@ export interface UpdateAppSettingsDTO {
   stalePriceWarnDays2?:          number;
   companyTaxCondition?:          string;
   printFormat?:                  string;
+  printFormatInvoice?:           string;
+  printFormatBudget?:            string;
+  printFormatOrdenPedido?:       string;
+  printFormatRemito?:            string;
+  printFormatRecibo?:            string;
   smtpHost?:                     string | null;
   smtpPort?:                     number;
   smtpUser?:                     string | null;

@@ -6,6 +6,8 @@ import { Card } from '../../components/ui';
 import { useUIStore } from '../../stores';
 import { NAV_THEMES } from '../../utils/navThemes';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useFeatures } from '../../hooks/useFeatures';
+import type { FeatureKey } from '../../utils/planFeatures';
 import AfipSettingsCard from './AfipSettingsCard';
 import SmtpSettingsCard from './SmtpSettingsCard';
 import BudgetSettingsCard from './BudgetSettingsCard';
@@ -20,12 +22,12 @@ import PdvSettingsCard from './PdvSettingsCard';
 // ── Types ──────────────────────────────────────────────────────────
 type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios' | 'empresas' | 'pagos';
 
-const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: string; superAdminOnly?: boolean }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: string; superAdminOnly?: boolean; featureKey?: FeatureKey }[] = [
   { id: 'general',     label: 'General',     icon: Monitor,       description: 'Apariencia y preferencias' },
   { id: 'empresa',     label: 'Empresa',     icon: Building2,     description: 'Datos fiscales y ARCA/AFIP' },
   { id: 'operaciones', label: 'Operaciones', icon: Landmark,      description: 'Cajas predeterminadas' },
-  { id: 'stock',       label: 'Stock',       icon: PackageSearch, description: 'Análisis inteligente' },
-  { id: 'pagos',       label: 'Pagos',       icon: Smartphone,    description: 'Integración con MercadoPago y métodos de cobro' },
+  { id: 'stock',       label: 'Stock',       icon: PackageSearch, description: 'Análisis inteligente', featureKey: 'stock_intelligence' },
+  { id: 'pagos',       label: 'Pagos',       icon: Smartphone,    description: 'Integración con MercadoPago y métodos de cobro', featureKey: 'mercadopago' },
   { id: 'correo',      label: 'Correo',      icon: Mail,          description: 'Configuración SMTP para envío de emails' },
   { id: 'usuarios',    label: 'Usuarios',    icon: Users,         description: 'Gestión de usuarios y roles de acceso' },
   { id: 'empresas',    label: 'Empresas',    icon: Store,         description: 'Gestión de empresas y puntos de venta', superAdminOnly: true },
@@ -208,7 +210,12 @@ function DarkModeCard() {
 // ── Main page ──────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { isSuperAdmin } = usePermissions();
-  const TABS = ALL_TABS.filter(t => !t.superAdminOnly || isSuperAdmin);
+  const { hasFeature } = useFeatures();
+  const TABS = ALL_TABS.filter(t => {
+    if (t.superAdminOnly && !isSuperAdmin) return false;
+    if (t.featureKey && !hasFeature(t.featureKey)) return false;
+    return true;
+  });
   const [activeTab, setActiveTab] = useState<Tab>('general');
   const active = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
@@ -246,21 +253,49 @@ export default function SettingsPage() {
       <p className="text-xs text-gray-400 dark:text-slate-500 mb-4 ml-0.5">{active.description}</p>
 
       {/* ── Tab content ── */}
-      <div className={clsx('space-y-6', activeTab !== 'usuarios' && activeTab !== 'empresas' && 'max-w-3xl')}>
-        {activeTab === 'general'     && <MenuTypeCard />}
-        {activeTab === 'general'     && <NavColorCard />}
-        {activeTab === 'general'     && <DarkModeCard />}
-        {activeTab === 'empresa'     && <AfipSettingsCard />}
-        {activeTab === 'empresa'     && <PdvSettingsCard />}
-        {activeTab === 'pagos'       && <MercadoPagoSettingsCard />}
-        {activeTab === 'correo'      && <SmtpSettingsCard />}
-        {activeTab === 'operaciones' && <BudgetSettingsCard />}
-        {activeTab === 'operaciones' && <PriceSettingsCard />}
-        {activeTab === 'operaciones' && <PrintSettingsCard />}
-        {activeTab === 'stock'       && <StockSettingsCard />}
-        {activeTab === 'usuarios'    && <UsersSettingsCard />}
-        {activeTab === 'empresas'   && <CompanySettingsCard />}
-      </div>
+      {activeTab === 'general' && (
+        <div className="max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6 auto-rows-min">
+          <MenuTypeCard />
+          <DarkModeCard />
+          <div className="lg:col-span-2"><NavColorCard /></div>
+        </div>
+      )}
+
+      {activeTab === 'empresa' && (
+        <div className="max-w-6xl grid grid-cols-1 xl:grid-cols-2 gap-6 auto-rows-min">
+          <AfipSettingsCard />
+          <PdvSettingsCard />
+        </div>
+      )}
+
+      {activeTab === 'operaciones' && (
+        <div className="max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6 auto-rows-min">
+          <BudgetSettingsCard />
+          <PriceSettingsCard />
+          <div className="lg:col-span-2"><PrintSettingsCard /></div>
+        </div>
+      )}
+
+      {activeTab === 'pagos' && (
+        <div className="max-w-4xl">
+          <MercadoPagoSettingsCard />
+        </div>
+      )}
+
+      {activeTab === 'correo' && (
+        <div className="max-w-4xl">
+          <SmtpSettingsCard />
+        </div>
+      )}
+
+      {activeTab === 'stock' && (
+        <div className="max-w-4xl">
+          <StockSettingsCard />
+        </div>
+      )}
+
+      {activeTab === 'usuarios' && <UsersSettingsCard />}
+      {activeTab === 'empresas' && <CompanySettingsCard />}
     </div>
   );
 }

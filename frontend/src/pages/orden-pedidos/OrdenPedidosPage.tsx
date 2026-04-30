@@ -71,7 +71,7 @@ export default function OrdenPedidosPage() {
   const [currencyFilter, setCurrencyFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   const hasFilters = !!(search || statusFilter || customerFilter || currencyFilter || dateFrom || dateTo);
 

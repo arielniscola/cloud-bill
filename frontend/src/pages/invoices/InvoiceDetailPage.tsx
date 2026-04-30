@@ -9,7 +9,7 @@ import QRCode from 'qrcode';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
-import { invoicesService, recibosService, afipService } from '../../services';
+import { invoicesService, recibosService, afipService, appSettingsService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
@@ -28,11 +28,12 @@ const DELIVERY_STATUS_VARIANT: Record<string, DeliveryVariant> = {
   DELIVERED: 'success',
 };
 
-type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
+type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info' | 'authorized';
 
 const STATUS_VARIANT: Record<string, StatusVariant> = {
   DRAFT: 'default',
   ISSUED: 'info',
+  AUTHORIZED: 'authorized',
   PAID: 'success',
   CANCELLED: 'error',
   PARTIALLY_PAID: 'warning',
@@ -76,6 +77,7 @@ export default function InvoiceDetailPage() {
   const [isEmitting, setIsEmitting] = useState(false);
   const [showEmitDialog, setShowEmitDialog] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL_80MM'>('A4');
   const [recibos, setRecibos] = useState<Recibo[]>([]);
   const [afipErrors, setAfipErrors] = useState<AfipError[]>([]);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
@@ -105,6 +107,15 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     loadData();
   }, [id, navigate]);
+
+  useEffect(() => {
+    appSettingsService.get()
+      .then((s) => {
+        const fmt = (s.printFormatInvoice ?? s.printFormat ?? 'A4') as 'A4' | 'THERMAL_80MM';
+        setPrintFormat(fmt);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleCancel = async () => {
     if (!id) return;
@@ -241,6 +252,30 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const handlePrint = async () => {
+    if (!invoice) return;
+    if (printFormat === 'THERMAL_80MM') {
+      window.open(`/print/invoice/${invoice.id}`, '_blank', 'width=420,height=700,scrollbars=yes');
+      return;
+    }
+    // A4 → generate PDF blob and open it in a new tab so the user can print from the viewer
+    setIsGeneratingPDF(true);
+    try {
+      const blob = await generateInvoicePdfBlob();
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, '_blank');
+      if (!w) {
+        toast.error('El navegador bloqueó la ventana — habilitá popups para imprimir');
+        URL.revokeObjectURL(url);
+      }
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      toast.error(err.message || 'Error al generar PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   if (isLoading || !invoice) return (
     <div>
       <PageHeader title="Factura" backTo="/invoices" />
@@ -252,10 +287,10 @@ export default function InvoiceDetailPage() {
   const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
   const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
   const isFactura = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'].includes(invoice.type);
-  const isNcNdStatus = ['ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status);
+  const isNcNdStatus = ['ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status);
   const canGenerateNC = isFactura && isNcNdStatus;
   const canGenerateND = isFactura && isNcNdStatus;
-  const canEmitArca = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status) && !invoice.cae;
+  const canEmitArca = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status) && !invoice.cae && invoice.fiscalMode !== 'INFORMAL';
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(invoice.total) - paidAmount);
@@ -318,9 +353,9 @@ export default function InvoiceDetailPage() {
               <FileDown className="w-4 h-4 mr-2" />
               PDF
             </Button>
-            <Button variant="outline" onClick={() => window.open(`/print/invoice/${invoice.id}`, '_blank', 'width=420,height=700,scrollbars=yes')}>
+            <Button variant="outline" onClick={handlePrint} isLoading={isGeneratingPDF && printFormat === 'A4'}>
               <Printer className="w-4 h-4 mr-2" />
-              Imprimir
+              Imprimir ({printFormat === 'THERMAL_80MM' ? '80mm' : 'A4'})
             </Button>
             <Button variant="outline" onClick={() => setShowEmailModal(true)}>
               <Mail className="w-4 h-4 mr-2" />

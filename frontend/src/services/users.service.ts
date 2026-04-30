@@ -31,8 +31,10 @@ export interface UpdateUserDTO {
 }
 
 const usersService = {
-  async getAll(): Promise<UserDTO[]> {
-    const res = await api.get<{ data: UserDTO[] }>('/users');
+  async getAll(filters?: { companyId?: string }): Promise<UserDTO[]> {
+    const res = await api.get<{ data: UserDTO[] }>('/users', {
+      params: filters?.companyId ? { companyId: filters.companyId } : undefined,
+    });
     return res.data.data;
   },
   async create(data: CreateUserDTO): Promise<UserDTO> {

@@ -51,9 +51,9 @@ api.interceptors.request.use(
       const fiscalData = localStorage.getItem("cloud-bill-fiscal-mode");
       if (fiscalData) {
         const parsed = JSON.parse(fiscalData);
-        const mode = parsed?.state?.mode;
-        if (mode === 'FORMAL' || mode === 'INFORMAL') {
-          config.headers["X-Fiscal-Mode"] = mode;
+        const viewMode = parsed?.state?.viewMode ?? parsed?.state?.mode;
+        if (viewMode === 'FORMAL' || viewMode === 'INFORMAL' || viewMode === 'ALL') {
+          config.headers["X-Fiscal-Mode"] = viewMode;
         }
       }
     } catch {

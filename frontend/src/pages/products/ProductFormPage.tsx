@@ -10,9 +10,17 @@ import {
 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
-import { productsService, categoriesService, brandsService, rubrosService } from '../../services';
+import {
+  productsService,
+  categoriesService,
+  brandsService,
+  rubrosService,
+  productCustomFieldsService,
+} from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import type { Category, Brand, Rubro } from '../../types';
+import type { ProductCustomField } from '../../types/product-custom-field.types';
+import ProductCustomFieldsSection from './ProductCustomFieldsSection';
 
 // ── Constants ────────────────────────────────────────────────────
 const UNIT_OPTIONS = [
@@ -197,22 +205,36 @@ function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: b
 // ── Skeleton ─────────────────────────────────────────────────────
 function FormSkeleton() {
   return (
-    <Card className="max-w-3xl animate-pulse">
-      <div className="space-y-8">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="space-y-4">
-            <div className="h-3 w-32 bg-gray-100 dark:bg-slate-700 rounded" />
-            <div className="grid grid-cols-2 gap-4">
+    <Card className="max-w-7xl animate-pulse">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-8">
+        <div className="lg:col-span-7 space-y-8">
+          {[1, 2, 3].map((s) => (
+            <div key={s} className="space-y-3">
+              <div className="h-3 w-32 bg-gray-100 dark:bg-slate-700 rounded" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+                <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="lg:col-span-5 space-y-8 lg:pl-8 lg:border-l lg:border-gray-100 lg:dark:border-slate-700">
+          <div className="space-y-3">
+            <div className="h-3 w-24 bg-gray-100 dark:bg-slate-700 rounded" />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
               <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
               <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
             </div>
+            <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+            <div className="h-24 bg-gray-100 dark:bg-slate-700 rounded-xl" />
           </div>
-        ))}
-        <div className="h-28 bg-gray-100 dark:bg-slate-700 rounded-xl" />
-        <div className="flex gap-3">
-          <div className="h-9 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg" />
-          <div className="h-9 w-24 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+          <div className="h-16 bg-gray-100 dark:bg-slate-700 rounded-xl" />
         </div>
+      </div>
+      <div className="flex gap-3 pt-6 mt-8 border-t border-gray-100 dark:border-slate-700">
+        <div className="h-9 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+        <div className="h-9 w-24 bg-gray-100 dark:bg-slate-700 rounded-lg" />
       </div>
     </Card>
   );
@@ -228,6 +250,9 @@ export default function ProductFormPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [rubros, setRubros] = useState<Rubro[]>([]);
+  const [customFields, setCustomFields] = useState<ProductCustomField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string | undefined>>({});
 
   const {
     register,
@@ -266,11 +291,17 @@ export default function ProductFormPage() {
 
   // Load dropdowns
   useEffect(() => {
-    Promise.all([categoriesService.getAll(), brandsService.getAll(), rubrosService.getAll()])
-      .then(([cats, brnds, rbrs]) => {
+    Promise.all([
+      categoriesService.getAll(),
+      brandsService.getAll(),
+      rubrosService.getAll(),
+      productCustomFieldsService.getAll(true),
+    ])
+      .then(([cats, brnds, rbrs, fields]) => {
         setCategories(cats);
         setBrands(brnds.filter((b) => b.isActive));
         setRubros((rbrs as Rubro[]).filter((r) => r.isActive));
+        setCustomFields(fields);
       })
       .catch(() => {});
   }, []);
@@ -295,6 +326,13 @@ export default function ProductFormPage() {
         setValue('salePriceUSD',  p.salePriceUSD ?? null);
         setValue('taxRate',       p.taxRate);
         setValue('isActive',      p.isActive);
+        if (p.customFieldValues && p.customFieldValues.length > 0) {
+          const map: Record<string, string> = {};
+          for (const cv of p.customFieldValues) {
+            map[cv.fieldId] = cv.value ?? '';
+          }
+          setCustomFieldValues(map);
+        }
       } catch {
         toast.error('Error al cargar producto');
         navigate('/products');
@@ -306,6 +344,25 @@ export default function ProductFormPage() {
   }, [id, isEditing, setValue, navigate]);
 
   const onSubmit = async (data: ProductFormData) => {
+    const cfErrors: Record<string, string | undefined> = {};
+    for (const f of customFields) {
+      if (!f.isRequired) continue;
+      const v = customFieldValues[f.id];
+      if (v === undefined || v === null || v === '' || (f.type === 'BOOLEAN' && v !== 'true')) {
+        cfErrors[f.id] = `Este campo es requerido`;
+      }
+    }
+    if (Object.keys(cfErrors).length > 0) {
+      setCustomFieldErrors(cfErrors);
+      toast.error('Completá los campos personalizados requeridos');
+      return;
+    }
+    setCustomFieldErrors({});
+
+    const customFieldsPayload = customFields
+      .map((f) => ({ fieldId: f.id, value: customFieldValues[f.id] ?? '' }))
+      .filter((cf) => cf.value !== undefined);
+
     setIsLoading(true);
     try {
       const payload = {
@@ -317,6 +374,7 @@ export default function ProductFormPage() {
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
         salePriceUSD:  data.salePriceUSD  != null && data.salePriceUSD > 0 ? data.salePriceUSD : null,
+        customFields:  customFieldsPayload,
       };
       if (isEditing) {
         await productsService.update(id, payload);
@@ -372,182 +430,205 @@ export default function ProductFormPage() {
         backTo="/products"
       />
 
-      <Card className="max-w-3xl">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <Card className="max-w-7xl">
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-8">
 
-          {/* ── Identificación ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<Tag className="w-3.5 h-3.5" />} label="Identificación" />
+            {/* ─────────── LEFT COLUMN — datos del producto ─────────── */}
+            <div className="lg:col-span-7 space-y-8">
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">SKU *</label>
-                <input
-                  type="text"
-                  placeholder="Ej: PROD-001"
-                  {...register('sku')}
-                  autoFocus={!isEditing}
-                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
-                />
-                {errors.sku && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.sku.message}</p>}
+              {/* ── Identificación ── */}
+              <div className="space-y-4">
+                <SectionHeader icon={<Tag className="w-3.5 h-3.5" />} label="Identificación" />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">SKU *</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: PROD-001"
+                      {...register('sku')}
+                      autoFocus={!isEditing}
+                      className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                    />
+                    {errors.sku && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.sku.message}</p>}
+                  </div>
+                  <Input
+                    label="Nombre *"
+                    placeholder="Nombre del producto"
+                    {...register('name')}
+                    error={errors.name?.message}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                      <Barcode className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
+                      Código de barras
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="7790001234567"
+                      {...register('barcode')}
+                      className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                    />
+                  </div>
+                  <Select
+                    label="Unidad de medida"
+                    options={UNIT_OPTIONS}
+                    value={unit}
+                    onChange={(v) => setValue('unit', v || null)}
+                  />
+                </div>
               </div>
-              <Input
-                label="Nombre *"
-                placeholder="Nombre del producto"
-                {...register('name')}
-                error={errors.name?.message}
-              />
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Barcode className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                  Código de barras
-                </label>
-                <input
-                  type="text"
-                  placeholder="7790001234567"
-                  {...register('barcode')}
-                  className="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
-                />
+              {/* ── Clasificación ── */}
+              <div className="space-y-4">
+                <SectionHeader icon={<Layers className="w-3.5 h-3.5" />} label="Clasificación" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Select
+                    label="Categoría"
+                    options={categoryOptions}
+                    value={categoryId}
+                    onChange={(v) => setValue('categoryId', v || null)}
+                  />
+                  <Select
+                    label="Marca"
+                    options={brandOptions}
+                    value={brandId}
+                    onChange={(v) => setValue('brandId', v || null)}
+                  />
+                  <Select
+                    label="Rubro"
+                    options={rubroOptions}
+                    value={rubroId}
+                    onChange={(v) => setValue('rubroId', v || null)}
+                  />
+                </div>
               </div>
-              <Select
-                label="Unidad de medida"
-                options={UNIT_OPTIONS}
-                value={unit}
-                onChange={(v) => setValue('unit', v || null)}
+
+              {/* ── Descripción ── */}
+              <div className="space-y-4">
+                <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Descripción" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Textarea
+                    label="Descripción comercial"
+                    placeholder="Descripción visible en facturas y remitos"
+                    rows={4}
+                    {...register('description')}
+                    error={errors.description?.message}
+                  />
+                  <Textarea
+                    label="Notas internas"
+                    placeholder="Notas visibles solo en el sistema (proveedor preferido, observaciones de stock…)"
+                    rows={4}
+                    {...register('internalNotes')}
+                    error={errors.internalNotes?.message}
+                  />
+                </div>
+              </div>
+
+              {/* ── Campos personalizados ── */}
+              <ProductCustomFieldsSection
+                fields={customFields}
+                values={customFieldValues}
+                onChange={(fieldId, value) => {
+                  setCustomFieldValues((prev) => ({ ...prev, [fieldId]: value }));
+                  if (customFieldErrors[fieldId]) {
+                    setCustomFieldErrors((prev) => ({ ...prev, [fieldId]: undefined }));
+                  }
+                }}
+                errors={customFieldErrors}
               />
             </div>
-          </div>
 
-          {/* ── Clasificación ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<Layers className="w-3.5 h-3.5" />} label="Clasificación" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
-                label="Categoría"
-                options={categoryOptions}
-                value={categoryId}
-                onChange={(v) => setValue('categoryId', v || null)}
-              />
-              <Select
-                label="Marca"
-                options={brandOptions}
-                value={brandId}
-                onChange={(v) => setValue('brandId', v || null)}
-              />
-              <Select
-                label="Rubro"
-                options={rubroOptions}
-                value={rubroId}
-                onChange={(v) => setValue('rubroId', v || null)}
-              />
-            </div>
-          </div>
+            {/* ─────────── RIGHT COLUMN — precios + estado ─────────── */}
+            <div className="lg:col-span-5 space-y-8 lg:pl-8 lg:border-l lg:border-gray-100 lg:dark:border-slate-700">
 
-          {/* ── Precios ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<DollarSign className="w-3.5 h-3.5" />} label="Precios" />
+              {/* ── Precios ── */}
+              <div className="space-y-4">
+                <SectionHeader icon={<DollarSign className="w-3.5 h-3.5" />} label="Precios" />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Input
-                label="Costo *"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                {...register('cost')}
-                error={errors.cost?.message}
-                hint="Precio de compra al proveedor"
-              />
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
-                  Margen sobre costo
-                </label>
-                <div className="relative">
-                  <input
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Input
+                    label="Costo *"
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    value={marginPct}
-                    onChange={(e) => {
-                      const m = e.target.value;
-                      setMarginPct(m);
-                      const c = Number(cost);
-                      const mNum = parseFloat(m);
-                      if (c > 0 && !isNaN(mNum) && mNum >= 0) {
-                        setValue('price', Math.round(c * (1 + mNum / 100) * 100) / 100, { shouldValidate: true });
-                      }
-                    }}
-                    className="w-full px-3 py-2 pr-8 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                    {...register('cost')}
+                    error={errors.cost?.message}
+                    hint="Precio de compra"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 dark:text-slate-500 pointer-events-none">%</span>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                      Margen
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={marginPct}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          setMarginPct(m);
+                          const c = Number(cost);
+                          const mNum = parseFloat(m);
+                          if (c > 0 && !isNaN(mNum) && mNum >= 0) {
+                            setValue('price', Math.round(c * (1 + mNum / 100) * 100) / 100, { shouldValidate: true });
+                          }
+                        }}
+                        className="w-full px-3 py-2 pr-8 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 dark:text-slate-500 pointer-events-none">%</span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Calcula el precio</p>
+                  </div>
+                  <Input
+                    label="Precio venta *"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    {...register('price')}
+                    error={errors.price?.message}
+                    hint="Sin IVA"
+                  />
                 </div>
-                <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Calcula el precio de venta</p>
+
+                <Input
+                  label="Precio en USD (opcional)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  {...register('salePriceUSD')}
+                  error={errors.salePriceUSD?.message}
+                  hint="Se usa en presupuestos en dólares"
+                />
+
+                <IvaSelector
+                  value={Number(taxRate)}
+                  onChange={(v) => setValue('taxRate', v)}
+                  error={errors.taxRate?.message}
+                />
+
+                <PricePreview cost={Number(cost)} price={Number(price)} taxRate={Number(taxRate)} />
               </div>
-              <Input
-                label="Precio de venta *"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                {...register('price')}
-                error={errors.price?.message}
-                hint="Precio sin IVA"
+
+              {/* ── Estado ── */}
+              <ActiveToggle
+                checked={isActiveVal}
+                onChange={(v) => setValue('isActive', v)}
               />
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Precio en USD (opcional)"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                {...register('salePriceUSD')}
-                error={errors.salePriceUSD?.message}
-                hint="Se usa en presupuestos en dólares"
-              />
-            </div>
-
-            <IvaSelector
-              value={Number(taxRate)}
-              onChange={(v) => setValue('taxRate', v)}
-              error={errors.taxRate?.message}
-            />
-
-            <PricePreview cost={Number(cost)} price={Number(price)} taxRate={Number(taxRate)} />
           </div>
-
-          {/* ── Descripción ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Descripción" />
-            <Textarea
-              label="Descripción comercial"
-              placeholder="Descripción visible en facturas y remitos"
-              rows={3}
-              {...register('description')}
-              error={errors.description?.message}
-            />
-            <Textarea
-              label="Notas internas"
-              placeholder="Notas visibles solo en el sistema (proveedor preferido, observaciones de stock…)"
-              rows={2}
-              {...register('internalNotes')}
-              error={errors.internalNotes?.message}
-            />
-          </div>
-
-          {/* ── Estado ── */}
-          <ActiveToggle
-            checked={isActiveVal}
-            onChange={(v) => setValue('isActive', v)}
-          />
 
           {/* ── Actions ── */}
-          <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
+          <div className="flex gap-3 pt-6 mt-8 border-t border-gray-100 dark:border-slate-700">
             <Button type="submit" isLoading={isLoading}>
               {isEditing ? 'Guardar cambios' : 'Crear producto'}
             </Button>

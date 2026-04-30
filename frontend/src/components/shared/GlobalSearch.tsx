@@ -18,7 +18,7 @@ type ResultItem = {
 
 const OP_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Borrador', CONFIRMED: 'Confirmada', PARTIALLY_PAID: 'Pago parcial',
-  PAID: 'Pagada', CONVERTED: 'Convertida',
+  PAID: 'Pagada', CONVERTED: 'Facturada',
 };
 const OP_STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-700', CONFIRMED: 'bg-blue-100 text-blue-700',

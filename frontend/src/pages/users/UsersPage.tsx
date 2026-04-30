@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, KeyRound, Eye, EyeOff, UserX, ShieldCheck, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, KeyRound, Eye, EyeOff, UserX, ShieldCheck, Search, Building2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button, Input, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/shared';
 import usersService from '../../services/users.service';
+import companiesService from '../../services/companies.service';
 import type { UserDTO } from '../../services/users.service';
+import type { Company } from '../../types/company.types';
 import { useAuthStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
 import { formatDate } from '../../utils/formatters';
@@ -80,16 +82,19 @@ export default function UsersPage() {
   const canManage        = isSuperAdmin;
 
   const [users, setUsers]       = useState<UserDTO[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch]     = useState('');
+  const [companyFilter, setCompanyFilter] = useState<string>('');
   const [passUser, setPassUser] = useState<UserDTO | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState<string | null>(null);
 
   const load = async () => {
+    setIsLoading(true);
     try {
-      setUsers(await usersService.getAll());
+      setUsers(await usersService.getAll(companyFilter ? { companyId: companyFilter } : undefined));
     } catch {
       toast.error('Error al cargar usuarios');
     } finally {
@@ -97,7 +102,23 @@ export default function UsersPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyFilter]);
+
+  // Load companies for filter dropdown (SUPER_ADMIN only)
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    companiesService.getAll()
+      .then(setCompanies)
+      .catch(() => {});
+  }, [isSuperAdmin]);
+
+  const companyMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of companies) m.set(c.id, c.name);
+    return m;
+  }, [companies]);
+
+  const selectedCompanyName = companyFilter ? companyMap.get(companyFilter) : undefined;
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -151,17 +172,57 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Buscar por nombre o usuario…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
-        />
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar por nombre o usuario…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+          />
+        </div>
+
+        {isSuperAdmin && (
+          <div className="relative flex items-center">
+            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className={clsx(
+                'pl-9 pr-9 py-2 text-sm border rounded-xl bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 appearance-none min-w-[220px]',
+                companyFilter
+                  ? 'border-indigo-300 dark:border-indigo-600 ring-1 ring-indigo-300/40'
+                  : 'border-gray-200 dark:border-slate-600',
+              )}
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            {companyFilter && (
+              <button
+                type="button"
+                onClick={() => setCompanyFilter('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                title="Limpiar filtro"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Active filter pill */}
+      {isSuperAdmin && companyFilter && selectedCompanyName && (
+        <p className="text-xs text-gray-500 dark:text-slate-400">
+          Mostrando usuarios de <span className="font-semibold text-gray-700 dark:text-slate-300">{selectedCompanyName}</span>
+        </p>
+      )}
 
       {/* List */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -216,6 +277,12 @@ export default function UsersPage() {
                     </div>
                     <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">
                       @{user.username}
+                      {isSuperAdmin && user.companyId && companyMap.get(user.companyId) && (
+                        <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-slate-400">
+                          <Building2 className="w-3 h-3" />
+                          {companyMap.get(user.companyId)}
+                        </span>
+                      )}
                     </p>
                   </div>
 

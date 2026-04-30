@@ -44,5 +44,7 @@ export interface CustomerFilters {
   limit?: number;
   search?: string;
   taxCondition?: TaxCondition;
+  saleCondition?: string;
+  city?: string;
   isActive?: boolean;
 }

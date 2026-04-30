@@ -16,6 +16,7 @@ export type InvoiceType =
 export type InvoiceStatus =
   | 'DRAFT'
   | 'ISSUED'
+  | 'AUTHORIZED'
   | 'PAID'
   | 'CANCELLED'
   | 'PARTIALLY_PAID';

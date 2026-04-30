@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PageHeader, Pagination, FeatureGuard } from '../../components/shared';
-import { Badge } from '../../components/ui';
+import { Badge, Button } from '../../components/ui';
 import { accountingService } from '../../services/accounting.service';
 import { formatDate } from '../../utils/formatters';
 import type { JournalEntry } from '../../types/accounting.types';
@@ -94,6 +94,12 @@ function JournalEntriesPageContent() {
       <PageHeader
         title="Asientos Contables"
         subtitle={`${total} asiento${total !== 1 ? 's' : ''} registrado${total !== 1 ? 's' : ''}`}
+        actions={
+          <Button onClick={() => navigate('/accounting/journal-entries/new')}>
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo asiento
+          </Button>
+        }
       />
 
       {/* Filters */}

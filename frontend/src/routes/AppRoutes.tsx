@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '../components/layout';
 import ProtectedRoute from './ProtectedRoute';
 import RoleGuard from './RoleGuard';
+import FeatureRouteGuard from './FeatureRouteGuard';
 
 // Pages
 import LoginPage from '../pages/auth/LoginPage';
@@ -79,10 +80,13 @@ import BankAccountDetailPage from '../pages/banks/BankAccountDetailPage';
 import MercadoPagoPage from '../pages/mercadopago/MercadoPagoPage';
 import CardsPage from '../pages/cards/CardsPage';
 import RubrosPage from '../pages/rubros/RubrosPage';
+import ProductCustomFieldsPage from '../pages/product-custom-fields/ProductCustomFieldsPage';
+import PlansPage from '../pages/plans/PlansPage';
 import InternalNotesPage from '../pages/internal-notes/InternalNotesPage';
 import AccountsPage from '../pages/accounting/AccountsPage';
 import JournalEntriesPage from '../pages/accounting/JournalEntriesPage';
 import JournalEntryDetailPage from '../pages/accounting/JournalEntryDetailPage';
+import JournalEntryFormPage from '../pages/accounting/JournalEntryFormPage';
 
 export default function AppRoutes() {
   return (
@@ -110,6 +114,7 @@ export default function AppRoutes() {
           <Route path="/companies/:id/edit" element={<CompanyFormPage key="edit" />} />
           <Route path="/users/new" element={<UserFormPage key="new" />} />
           <Route path="/users/:id/edit" element={<UserFormPage key="edit" />} />
+          <Route path="/plans" element={<PlansPage />} />
         </Route>
         {/* ADMIN can view users (read-only); SUPER_ADMIN already covered above */}
         <Route element={<RoleGuard allowed={['SUPER_ADMIN', 'ADMIN']} />}>
@@ -126,19 +131,28 @@ export default function AppRoutes() {
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/brands" element={<BrandsPage />} />
         <Route path="/rubros" element={<RubrosPage />} />
+        <Route element={<RoleGuard allowed={['ADMIN']} />}>
+          <Route path="/products/custom-fields" element={<ProductCustomFieldsPage />} />
+        </Route>
         <Route path="/warehouses" element={<WarehousesPage />} />
         <Route path="/warehouses/:id" element={<WarehouseDetailPage />} />
         <Route path="/stock" element={<StockPage />} />
         <Route path="/stock/movements" element={<StockMovementsPage />} />
-        <Route path="/stock/transfer" element={<StockTransferPage />} />
+        <Route element={<FeatureRouteGuard feature="multi_warehouse" />}>
+          <Route path="/stock/transfer" element={<StockTransferPage />} />
+        </Route>
         <Route path="/stock/physical-count" element={<StockPhysicalCountPage />} />
-        <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
+        <Route element={<FeatureRouteGuard feature="stock_intelligence" />}>
+          <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
+        </Route>
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
         <Route path="/remitos" element={<RemitosPage />} />
         <Route path="/remitos/:id" element={<RemitoDetailPage />} />
-        <Route path="/current-accounts" element={<CurrentAccountsPage />} />
-        <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
+        <Route element={<FeatureRouteGuard feature="current_accounts" />}>
+          <Route path="/current-accounts" element={<CurrentAccountsPage />} />
+          <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
+        </Route>
 
         {/* Write routes — ADMIN + SELLER only */}
         <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
@@ -160,16 +174,22 @@ export default function AppRoutes() {
           <Route path="/cash-registers/new" element={<CashRegisterFormPage />} />
           <Route path="/cash-registers/:id/edit" element={<CashRegisterFormPage />} />
           <Route path="/cash-registers/:id" element={<CashRegisterDetailPage />} />
-          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/iva" element={<IvaPage />} />
-          <Route path="/reports" element={<ReportsHubPage />} />
-          <Route path="/reports/sales" element={<SalesReportPage />} />
-          <Route path="/reports/purchases" element={<PurchasesReportPage />} />
-          <Route path="/reports/profitability" element={<ProfitabilityReportPage />} />
-          <Route path="/reports/stock-valuation" element={<StockValuationReportPage />} />
-          <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />
-          <Route path="/reports/cash-flow" element={<CashFlowReportPage />} />
+          <Route element={<FeatureRouteGuard feature="activity_log" />}>
+            <Route path="/activity" element={<ActivityPage />} />
+          </Route>
+          <Route element={<FeatureRouteGuard feature="iva_book" />}>
+            <Route path="/iva" element={<IvaPage />} />
+          </Route>
+          <Route element={<FeatureRouteGuard feature="reports" />}>
+            <Route path="/reports" element={<ReportsHubPage />} />
+            <Route path="/reports/sales" element={<SalesReportPage />} />
+            <Route path="/reports/purchases" element={<PurchasesReportPage />} />
+            <Route path="/reports/profitability" element={<ProfitabilityReportPage />} />
+            <Route path="/reports/stock-valuation" element={<StockValuationReportPage />} />
+            <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />
+            <Route path="/reports/cash-flow" element={<CashFlowReportPage />} />
+          </Route>
         </Route>
 
         {/* Suppliers & Purchases — ADMIN only */}
@@ -178,8 +198,10 @@ export default function AppRoutes() {
           <Route path="/suppliers/new" element={<SupplierFormPage />} />
           <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
           <Route path="/suppliers/:id/edit" element={<SupplierFormPage />} />
-          <Route path="/supplier-accounts" element={<SupplierAccountsPage />} />
-          <Route path="/supplier-accounts/:supplierId" element={<SupplierAccountDetailPage />} />
+          <Route element={<FeatureRouteGuard feature="supplier_accounts" />}>
+            <Route path="/supplier-accounts" element={<SupplierAccountsPage />} />
+            <Route path="/supplier-accounts/:supplierId" element={<SupplierAccountDetailPage />} />
+          </Route>
 
           <Route path="/purchases" element={<PurchasesPage />} />
           <Route path="/purchases/new" element={<PurchaseFormPage />} />
@@ -197,14 +219,20 @@ export default function AppRoutes() {
           <Route path="/orden-pagos/:id" element={<OrdenPagoDetailPage />} />
 
           {/* Bancos */}
-          <Route path="/banks" element={<BankAccountsPage />} />
-          <Route path="/banks/:id" element={<BankAccountDetailPage />} />
+          <Route element={<FeatureRouteGuard feature="bank_module" />}>
+            <Route path="/banks" element={<BankAccountsPage />} />
+            <Route path="/banks/:id" element={<BankAccountDetailPage />} />
+          </Route>
 
           {/* MercadoPago */}
-          <Route path="/mercadopago" element={<MercadoPagoPage />} />
+          <Route element={<FeatureRouteGuard feature="mercadopago" />}>
+            <Route path="/mercadopago" element={<MercadoPagoPage />} />
+          </Route>
 
           {/* Tarjetas */}
-          <Route path="/cards" element={<CardsPage />} />
+          <Route element={<FeatureRouteGuard feature="cards" />}>
+            <Route path="/cards" element={<CardsPage />} />
+          </Route>
         </Route>
 
         {/* Budgets */}
@@ -222,10 +250,13 @@ export default function AppRoutes() {
         {/* Contabilidad */}
         <Route path="/accounting/accounts" element={<AccountsPage />} />
         <Route path="/accounting/journal-entries" element={<JournalEntriesPage />} />
+        <Route path="/accounting/journal-entries/new" element={<JournalEntryFormPage />} />
         <Route path="/accounting/journal-entries/:id" element={<JournalEntryDetailPage />} />
 
         {/* Banco de Cheques */}
-        <Route path="/banco-cheques" element={<BancoCheques />} />
+        <Route element={<FeatureRouteGuard feature="bank_module" />}>
+          <Route path="/banco-cheques" element={<BancoCheques />} />
+        </Route>
 
         {/* Notas Internas */}
         <Route path="/internal-notes" element={<InternalNotesPage />} />

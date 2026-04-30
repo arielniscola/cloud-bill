@@ -1,10 +1,23 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCircle, XCircle, Save, Wifi, WifiOff } from 'lucide-react';
-import { Card, Button, Input } from '../../components/ui';
+import { CheckCircle, XCircle, Save, Wifi, WifiOff, Info } from 'lucide-react';
+import { Card, Button, Input, Select } from '../../components/ui';
 import { afipService } from '../../services';
 import type { AfipConfigSummary, AfipConfigDTO } from '../../types';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { TAX_CONDITION_OPTIONS } from '../../utils/constants';
+
+/** Normalize legacy display labels (e.g. "Responsable Inscripto") to canonical keys. */
+const TAX_LABEL_TO_KEY: Record<string, string> = {
+  'Responsable Inscripto': 'RESPONSABLE_INSCRIPTO',
+  'Monotributista':         'MONOTRIBUTISTA',
+  'Exento':                 'EXENTO',
+  'Consumidor Final':       'CONSUMIDOR_FINAL',
+};
+function normalizeTaxCondition(value: string | null | undefined): string {
+  if (!value) return 'RESPONSABLE_INSCRIPTO';
+  return TAX_LABEL_TO_KEY[value] ?? value;
+}
 
 export default function AfipSettingsCard() {
   const { isInternetOnline } = useOnlineStatus();
@@ -17,7 +30,7 @@ export default function AfipSettingsCard() {
     salePoint: 1,
     businessName: '',
     businessAddress: '',
-    taxCondition: 'Responsable Inscripto',
+    taxCondition: 'RESPONSABLE_INSCRIPTO',
     activityStartDate: '',
     cert: '',
     privateKey: '',
@@ -36,7 +49,7 @@ export default function AfipSettingsCard() {
             salePoint: data.salePoint,
             businessName: data.businessName ?? '',
             businessAddress: data.businessAddress ?? '',
-            taxCondition: data.taxCondition ?? 'Responsable Inscripto',
+            taxCondition: normalizeTaxCondition(data.taxCondition),
             activityStartDate: data.activityStartDate ? data.activityStartDate.slice(0, 10) : '',
             isProduction: data.isProduction,
           }));
@@ -149,11 +162,11 @@ export default function AfipSettingsCard() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
+          <Select
             label="Condición frente al IVA"
-            placeholder="Responsable Inscripto"
-            value={form.taxCondition ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, taxCondition: e.target.value }))}
+            options={TAX_CONDITION_OPTIONS}
+            value={form.taxCondition ?? 'RESPONSABLE_INSCRIPTO'}
+            onChange={(v) => setForm((f) => ({ ...f, taxCondition: v }))}
           />
           <Input
             label="Inicio de Actividades"
@@ -170,13 +183,14 @@ export default function AfipSettingsCard() {
             value={form.cuit}
             onChange={(e) => setForm((f) => ({ ...f, cuit: e.target.value }))}
           />
-          <Input
-            label="Punto de Venta"
-            type="number"
-            min={1}
-            value={String(form.salePoint)}
-            onChange={(e) => setForm((f) => ({ ...f, salePoint: parseInt(e.target.value) || 1 }))}
-          />
+        </div>
+
+        <div className="flex items-start gap-2.5 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <Info className="w-4 h-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+            <span className="font-semibold">Punto de venta:</span> al emitir una factura, el sistema usa el PdV asignado al usuario logueado.
+            Configurá los puntos de venta y asignalos a cada usuario en la card <span className="font-semibold">Puntos de venta</span> (a la derecha o abajo).
+          </p>
         </div>
 
         <div>

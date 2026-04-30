@@ -49,7 +49,7 @@ export default function OrdenPagosPage() {
   const [dateFrom, setDateFrom]             = useState('');
   const [dateTo, setDateTo]                 = useState('');
   const LIMIT = 20;
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   const hasFilters = !!(supplierFilter || statusFilter || dateFrom || dateTo);
 

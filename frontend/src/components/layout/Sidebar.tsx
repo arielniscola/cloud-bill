@@ -40,6 +40,8 @@ import {
   Smartphone,
   FileEdit,
   BookMarked,
+  Sliders,
+  Crown,
 } from "lucide-react";
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
@@ -73,6 +75,7 @@ const superAdminGroups: NavGroup[] = [
     items: [
       { name: "Empresas", href: "/companies", icon: Building2 },
       { name: "Usuarios", href: "/users",     icon: Users },
+      { name: "Planes",   href: "/plans",     icon: Crown },
     ],
   },
 ];
@@ -101,7 +104,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Remitos",           href: "/remitos",          icon: ClipboardList },
           { name: "Recibos",           href: "/recibos",          icon: Receipt },
           { name: "Clientes",          href: "/customers",        icon: Users },
-          { name: "Cuentas Corrientes",href: "/current-accounts", icon: CreditCard },
+          { name: "Cuentas Corrientes",href: "/current-accounts", icon: CreditCard, featureKey: "current_accounts" },
           { name: "Notas Internas",    href: "/internal-notes",  icon: FileEdit },
         ],
       },
@@ -118,7 +121,7 @@ const navigationGroups: NavGroup[] = [
         icon: ShoppingCart,
         children: [
           { name: "Proveedores",       href: "/suppliers",         icon: Truck },
-          { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard },
+          { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard, featureKey: "supplier_accounts" },
           { name: "Órdenes de Compra", href: "/orden-compras",     icon: FileStack },
           { name: "Compras",           href: "/purchases",         icon: ShoppingCart },
           { name: "Órdenes de Pago",   href: "/orden-pagos",       icon: Banknote },
@@ -139,6 +142,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Categorías", href: "/categories", icon: FolderTree },
           { name: "Marcas",     href: "/brands",     icon: Tag },
           { name: "Rubros",     href: "/rubros",     icon: Layers },
+          { name: "Campos personalizados", href: "/products/custom-fields", icon: Sliders },
         ],
       },
       {
@@ -148,10 +152,10 @@ const navigationGroups: NavGroup[] = [
         children: [
           { name: "Inventario",    href: "/stock",                icon: PackageSearch },
           { name: "Movimientos",   href: "/stock/movements",      icon: BarChart2 },
-          { name: "Transferencias",href: "/stock/transfer",       icon: ArrowRightLeft },
+          { name: "Transferencias",href: "/stock/transfer",       icon: ArrowRightLeft, featureKey: "multi_warehouse" },
           { name: "Conteo físico", href: "/stock/physical-count", icon: ClipboardCheck },
           { name: "Almacenes",     href: "/warehouses",           icon: Warehouse },
-          { name: "Inteligente",   href: "/stock/intelligence",   icon: Brain },
+          { name: "Inteligente",   href: "/stock/intelligence",   icon: Brain, featureKey: "stock_intelligence" },
         ],
       },
     ],
@@ -167,12 +171,12 @@ const navigationGroups: NavGroup[] = [
         icon: Landmark,
         children: [
           { name: "Cajas",             href: "/cash-registers", icon: Landmark },
-          { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote },
-          { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark },
-          { name: "Tarjetas",          href: "/cards",          icon: CreditCard },
+          { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  featureKey: "bank_module" },
+          { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  featureKey: "bank_module" },
+          { name: "Tarjetas",          href: "/cards",          icon: CreditCard, featureKey: "cards" },
           { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone, featureKey: "mercadopago" },
-          { name: "Libro IVA",         href: "/iva",      icon: BookOpen },
-          { name: "Reportes",          href: "/reports",  icon: BarChart2 },
+          { name: "Libro IVA",         href: "/iva",      icon: BookOpen,  featureKey: "iva_book" },
+          { name: "Reportes",          href: "/reports",  icon: BarChart2, featureKey: "reports" },
         ],
       },
     ],
@@ -189,7 +193,7 @@ const navigationGroups: NavGroup[] = [
         icon: BookMarked,
         children: [
           { name: "Asientos Contables", href: "/accounting/journal-entries", icon: BookOpen },
-          { name: "Libro IVA",          href: "/iva",                        icon: BookOpen },
+          { name: "Libro IVA",          href: "/iva",                        icon: BookOpen,    featureKey: "iva_book" },
           { name: "Plan de Cuentas",    href: "/accounting/accounts",        icon: BookMarked },
         ],
       },
@@ -205,7 +209,7 @@ const navigationGroups: NavGroup[] = [
         icon: Settings,
         children: [
           { name: "General",   href: "/settings", icon: Settings },
-          { name: "Historial", href: "/activity", icon: History },
+          { name: "Historial", href: "/activity", icon: History, featureKey: "activity_log" },
         ],
       },
     ],

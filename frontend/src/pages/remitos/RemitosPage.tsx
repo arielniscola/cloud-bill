@@ -97,7 +97,7 @@ export default function RemitosPage() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [dateFrom,       setDateFrom]       = useState('');
   const [dateTo,         setDateTo]         = useState('');
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   // Load customers once
   useEffect(() => {

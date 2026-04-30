@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, Send, CheckCircle, XCircle, ShoppingBag, Trash2, ArrowRight, ChevronDown, FileDown, Mail, Smartphone } from 'lucide-react';
+import { Pencil, Send, CheckCircle, XCircle, ShoppingBag, Trash2, ArrowRight, ChevronDown, FileDown, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
-import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { budgetsService, afipService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { BUDGET_STATUSES, INVOICE_TYPES } from '../../utils/constants';
@@ -71,7 +70,6 @@ export default function BudgetDetailPage() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [showMpModal,    setShowMpModal]    = useState(false);
 
   const generateBudgetPdfBlob = async (): Promise<Blob> => {
     const afipConfig = await afipService.getConfig();
@@ -232,13 +230,6 @@ export default function BudgetDetailPage() {
               <Button onClick={() => navigate('/orden-pedidos/new', { state: { fromBudget: budget } })}>
                 <ShoppingBag className="w-4 h-4 mr-2" />
                 Generar orden de pedido
-              </Button>
-            )}
-
-            {!isTerminal && (
-              <Button variant="outline" onClick={() => setShowMpModal(true)}>
-                <Smartphone className="w-4 h-4 mr-2" />
-                Cobrar con MP
               </Button>
             )}
 
@@ -458,14 +449,6 @@ export default function BudgetDetailPage() {
         message="¿Estás seguro de que deseas eliminar este presupuesto? Esta acción no se puede deshacer."
         confirmText="Eliminar"
         isLoading={isDeleting}
-      />
-
-      <MercadoPagoPayModal
-        open={showMpModal}
-        onClose={() => setShowMpModal(false)}
-        onPaymentRegistered={loadData}
-        budgetId={budget?.id}
-        title={`Cobrar Presupuesto ${budget?.number} con MP`}
       />
 
       <SendEmailModal

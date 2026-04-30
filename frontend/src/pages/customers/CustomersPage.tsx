@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Users, Mail, Phone, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Mail, Phone, Upload, X, SlidersHorizontal, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, SearchInput, ConfirmDialog, CsvImportModal } from '../../components/shared';
 import { customersService } from '../../services';
-import { TAX_CONDITIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { TAX_CONDITIONS, SALE_CONDITIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { formatCuit } from '../../utils/formatters';
 import type { Customer, TaxCondition } from '../../types';
 import type { DataTableProps } from '../../components/shared/DataTable';
@@ -49,12 +49,16 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const [taxConditionFilter, setTaxConditionFilter] = useState('');
+  const [saleConditionFilter, setSaleConditionFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
   // Derive isActive filter from tab
   const isActiveFilter = tab === 'all' ? undefined : tab === 'active';
+  const hasFilters = !!(taxConditionFilter || saleConditionFilter || cityFilter);
 
   const fetchCustomers = useCallback(async () => {
     setIsLoading(true);
@@ -64,6 +68,9 @@ export default function CustomersPage() {
         limit,
         search,
         isActive: isActiveFilter,
+        taxCondition: (taxConditionFilter || undefined) as any,
+        saleCondition: saleConditionFilter || undefined,
+        city: cityFilter || undefined,
       });
       setCustomers(response.data);
       setTotal(response.total);
@@ -72,7 +79,7 @@ export default function CustomersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, search, isActiveFilter]);
+  }, [page, limit, search, isActiveFilter, taxConditionFilter, saleConditionFilter, cityFilter]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -208,31 +215,97 @@ export default function CustomersPage() {
 
       <Card padding="none">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-          {/* Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => { setTab(t.id); setPage(1); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
-                  tab === t.id
-                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700 space-y-2.5">
+          {/* Row 1: tabs + search */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => { setTab(t.id); setPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+                    tab === t.id
+                      ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <SearchInput
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1); }}
+              placeholder="Buscar por nombre, CUIT, email…"
+              className="w-72"
+            />
           </div>
 
-          {/* Search */}
-          <SearchInput
-            value={search}
-            onChange={(v) => { setSearch(v); setPage(1); }}
-            placeholder="Buscar por nombre, CUIT, email…"
-            className="w-72"
-          />
+          {/* Row 2: filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
+
+            {/* Condición IVA */}
+            <select
+              value={taxConditionFilter}
+              onChange={(e) => { setTaxConditionFilter(e.target.value); setPage(1); }}
+              className={`h-[34px] px-2.5 pr-7 text-xs rounded-lg border transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 ${
+                taxConditionFilter
+                  ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                  : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200'
+              }`}
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+            >
+              <option value="">Condición IVA</option>
+              {Object.entries(TAX_CONDITIONS).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+
+            {/* Condición de venta */}
+            <select
+              value={saleConditionFilter}
+              onChange={(e) => { setSaleConditionFilter(e.target.value); setPage(1); }}
+              className={`h-[34px] px-2.5 pr-7 text-xs rounded-lg border transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 ${
+                saleConditionFilter
+                  ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
+                  : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200'
+              }`}
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+            >
+              <option value="">Condición de venta</option>
+              {Object.entries(SALE_CONDITIONS).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+
+            {/* Ciudad */}
+            <div className="relative">
+              <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={cityFilter}
+                onChange={(e) => { setCityFilter(e.target.value); setPage(1); }}
+                placeholder="Ciudad"
+                className={`h-[34px] pl-7 pr-3 text-xs rounded-lg border transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-36 ${
+                  cityFilter
+                    ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 placeholder:text-indigo-400'
+                    : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200 placeholder:text-gray-400 dark:placeholder:text-slate-500'
+                }`}
+              />
+            </div>
+
+            {hasFilters && (
+              <button
+                onClick={() => { setTaxConditionFilter(''); setSaleConditionFilter(''); setCityFilter(''); setPage(1); }}
+                className="flex items-center gap-1 text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                Limpiar
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Table */}

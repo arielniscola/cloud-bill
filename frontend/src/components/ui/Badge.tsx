@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 
 export interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'default' | 'success' | 'warning' | 'error' | 'info';
+  variant?: 'default' | 'success' | 'warning' | 'error' | 'info' | 'authorized';
   size?: 'sm' | 'md';
   dot?: boolean;
   className?: string;
@@ -21,6 +21,7 @@ export default function Badge({
     warning: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-amber-200 dark:ring-amber-800',
     error: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 ring-red-200 dark:ring-red-800',
     info: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 ring-indigo-200 dark:ring-indigo-800',
+    authorized: 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 ring-violet-200 dark:ring-violet-800',
   };
 
   const dotColors = {
@@ -29,6 +30,7 @@ export default function Badge({
     warning: 'bg-amber-500',
     error: 'bg-red-500',
     info: 'bg-indigo-500',
+    authorized: 'bg-violet-500',
   };
 
   const sizes = {

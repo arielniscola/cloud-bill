@@ -1,6 +1,6 @@
 import { Lock } from 'lucide-react';
 import { useFeatures } from '../../hooks/useFeatures';
-import { FEATURE_LABELS, PLAN_FEATURES, PLAN_NAMES, PLAN_LABELS, type FeatureKey } from '../../utils/planFeatures';
+import { FEATURE_LABELS, PLAN_LABELS, minimumPlanFor, type FeatureKey } from '../../utils/planFeatures';
 
 interface FeatureGuardProps {
   feature: FeatureKey;
@@ -16,8 +16,7 @@ export default function FeatureGuard({ feature, children, silent = false }: Feat
 
   if (silent) return null;
 
-  // Find the minimum plan that includes this feature
-  const requiredPlan = PLAN_NAMES.find((p) => PLAN_FEATURES[p]?.has(feature));
+  const requiredPlan = minimumPlanFor(feature);
 
   return (
     <div className="flex flex-col items-center justify-center py-20 px-6 text-center">

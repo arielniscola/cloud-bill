@@ -1,35 +1,93 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Save, Printer, FileText } from 'lucide-react';
+import { Save, FileText, Receipt, ClipboardList, Calculator, ShoppingBag } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '../../components/ui';
 import { appSettingsService } from '../../services';
 
-const OPTIONS = [
+type Format = 'A4' | 'THERMAL_80MM';
+
+const FORMAT_LABEL: Record<Format, string> = {
+  A4: 'A4',
+  THERMAL_80MM: 'Térmica 80mm',
+};
+
+interface DocTypeRow {
+  key: 'printFormatInvoice' | 'printFormatBudget' | 'printFormatOrdenPedido' | 'printFormatRemito' | 'printFormatRecibo';
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  available: { A4: boolean; THERMAL_80MM: boolean };
+  defaultFormat: Format;
+}
+
+const DOC_TYPES: DocTypeRow[] = [
   {
-    value: 'A4',
-    label: 'A4 / PDF',
-    description: 'Formato estándar para impresoras de hoja',
+    key: 'printFormatInvoice',
+    label: 'Facturas',
+    description: 'Facturas A/B/C, Notas de Crédito y Débito',
     icon: FileText,
-    color: 'indigo',
+    available: { A4: true, THERMAL_80MM: true },
+    defaultFormat: 'A4',
   },
   {
-    value: 'THERMAL_80MM',
-    label: 'Térmica 80mm',
-    description: 'Impresoras de ticket, rollo continuo',
-    icon: Printer,
-    color: 'emerald',
+    key: 'printFormatBudget',
+    label: 'Presupuestos',
+    description: 'Cotizaciones y propuestas a clientes',
+    icon: Calculator,
+    available: { A4: false, THERMAL_80MM: false },
+    defaultFormat: 'A4',
   },
-] as const;
+  {
+    key: 'printFormatOrdenPedido',
+    label: 'Órdenes de Pedido',
+    description: 'Pedidos internos antes de facturar',
+    icon: ShoppingBag,
+    available: { A4: false, THERMAL_80MM: true },
+    defaultFormat: 'THERMAL_80MM',
+  },
+  {
+    key: 'printFormatRemito',
+    label: 'Remitos',
+    description: 'Comprobantes de entrega de mercadería',
+    icon: ClipboardList,
+    available: { A4: false, THERMAL_80MM: false },
+    defaultFormat: 'A4',
+  },
+  {
+    key: 'printFormatRecibo',
+    label: 'Recibos',
+    description: 'Comprobantes de pago de clientes',
+    icon: Receipt,
+    available: { A4: false, THERMAL_80MM: false },
+    defaultFormat: 'A4',
+  },
+];
+
+type FormatsState = Record<DocTypeRow['key'], Format>;
 
 export default function PrintSettingsCard() {
-  const [format, setFormat] = useState('A4');
+  const [formats, setFormats] = useState<FormatsState>({
+    printFormatInvoice: 'A4',
+    printFormatBudget: 'A4',
+    printFormatOrdenPedido: 'THERMAL_80MM',
+    printFormatRemito: 'A4',
+    printFormatRecibo: 'A4',
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     appSettingsService.get()
-      .then((s) => setFormat(s.printFormat ?? 'A4'))
+      .then((s) => {
+        setFormats({
+          printFormatInvoice:     (s.printFormatInvoice     ?? s.printFormat ?? 'A4') as Format,
+          printFormatBudget:      (s.printFormatBudget      ?? s.printFormat ?? 'A4') as Format,
+          printFormatOrdenPedido: (s.printFormatOrdenPedido ?? s.printFormat ?? 'THERMAL_80MM') as Format,
+          printFormatRemito:      (s.printFormatRemito      ?? s.printFormat ?? 'A4') as Format,
+          printFormatRecibo:      (s.printFormatRecibo      ?? s.printFormat ?? 'A4') as Format,
+        });
+      })
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
@@ -37,7 +95,7 @@ export default function PrintSettingsCard() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await appSettingsService.update({ printFormat: format });
+      await appSettingsService.update(formats);
       toast.success('Configuración guardada');
     } catch {
       toast.error('Error al guardar');
@@ -50,9 +108,10 @@ export default function PrintSettingsCard() {
     return (
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 animate-pulse">
         <div className="h-5 w-48 bg-gray-100 dark:bg-slate-700 rounded mb-4" />
-        <div className="grid grid-cols-2 gap-3">
-          <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-xl" />
-          <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-14 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+          ))}
         </div>
       </div>
     );
@@ -61,47 +120,68 @@ export default function PrintSettingsCard() {
   return (
     <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
       <div className="mb-5">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Formato de impresión</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Formato de impresión por comprobante</h3>
         <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-          Define el formato predeterminado al imprimir facturas y notas de pedido.
+          Elegí el tamaño preferido para cada tipo de comprobante. Si el formato seleccionado no tiene plantilla disponible, se usa el otro como fallback.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-        {OPTIONS.map(({ value, label, description, icon: Icon, color }) => {
-          const active = format === value;
+      <div className="space-y-2 mb-5">
+        {DOC_TYPES.map((row) => {
+          const Icon = row.icon;
+          const value = formats[row.key];
           return (
-            <button
-              key={value}
-              onClick={() => setFormat(value)}
-              className={clsx(
-                'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-150',
-                active
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 ring-1 ring-indigo-300'
-                  : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300'
-              )}
+            <div
+              key={row.key}
+              className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-700/30"
             >
-              <div className={clsx(
-                'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                active ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-gray-100 dark:bg-slate-600'
-              )}>
-                <Icon className={clsx('w-5 h-5', active ? 'text-indigo-600' : 'text-gray-400 dark:text-slate-400')} />
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 flex items-center justify-center flex-shrink-0">
+                  <Icon className="w-4 h-4 text-gray-500 dark:text-slate-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-700 dark:text-slate-300 leading-tight truncate">{row.label}</p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate">{row.description}</p>
+                </div>
               </div>
-              <div>
-                <p className={clsx('text-sm font-medium', active ? 'text-indigo-800 dark:text-indigo-400' : 'text-gray-700 dark:text-slate-300')}>
-                  {label}
-                </p>
-                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{description}</p>
+
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-lg flex-shrink-0">
+                {(['A4', 'THERMAL_80MM'] as const).map((f) => {
+                  const active = value === f;
+                  const isAvailable = row.available[f];
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFormats((prev) => ({ ...prev, [row.key]: f }))}
+                      title={!isAvailable ? `Plantilla ${FORMAT_LABEL[f]} aún no implementada — fallback al otro formato` : ''}
+                      className={clsx(
+                        'px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150 flex items-center gap-1',
+                        active
+                          ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
+                          : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white',
+                      )}
+                    >
+                      {FORMAT_LABEL[f]}
+                      {!isAvailable && <span className="text-[9px] text-amber-600 dark:text-amber-400" aria-hidden>·</span>}
+                    </button>
+                  );
+                })}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
 
-      <Button onClick={handleSave} isLoading={isSaving} size="sm">
-        <Save className="w-3.5 h-3.5 mr-1.5" />
-        Guardar
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} isLoading={isSaving} size="sm">
+          <Save className="w-3.5 h-3.5 mr-1.5" />
+          Guardar
+        </Button>
+        <p className="text-[11px] text-gray-400 dark:text-slate-500">
+          <span className="text-amber-600 dark:text-amber-400">·</span> indica que la plantilla aún no está implementada en ese formato.
+        </p>
+      </div>
     </div>
   );
 }

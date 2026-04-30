@@ -109,7 +109,7 @@ export default function BudgetsPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   useEffect(() => {
     customersService.getAll({ limit: 1000 }).then((r) => setCustomers(r.data)).catch(() => {});

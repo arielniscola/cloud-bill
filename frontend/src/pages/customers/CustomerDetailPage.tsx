@@ -13,8 +13,9 @@ import type { OrdenPedido, OrdenPedidoStatus } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 
 // ── Badge variants ──────────────────────────────────────────────
-const INVOICE_STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
+const INVOICE_STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'default' | 'authorized'> = {
   ISSUED: 'warning',
+  AUTHORIZED: 'authorized',
   PAID: 'success',
   PARTIALLY_PAID: 'warning',
   DRAFT: 'default',

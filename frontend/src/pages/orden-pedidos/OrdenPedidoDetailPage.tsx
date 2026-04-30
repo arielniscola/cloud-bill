@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail } from 'lucide-react';
+import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
-import { ordenPedidosService, recibosService, remitosService } from '../../services';
+import { ordenPedidosService, recibosService, remitosService, appSettingsService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import {
   ORDEN_PEDIDO_STATUSES,
@@ -68,6 +68,8 @@ export default function OrdenPedidoDetailPage() {
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [deliveringRemitoId, setDeliveringRemitoId] = useState<string | null>(null);
+  const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL_80MM'>('THERMAL_80MM');
 
   const loadData = async () => {
     if (!id) return;
@@ -91,6 +93,23 @@ export default function OrdenPedidoDetailPage() {
   useEffect(() => {
     loadData();
   }, [id, navigate]);
+
+  useEffect(() => {
+    appSettingsService.get()
+      .then((s) => {
+        const fmt = (s.printFormatOrdenPedido ?? s.printFormat ?? 'THERMAL_80MM') as 'A4' | 'THERMAL_80MM';
+        setPrintFormat(fmt);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handlePrint = () => {
+    if (!op) return;
+    if (printFormat === 'A4') {
+      toast('Plantilla A4 para Órdenes de Pedido aún no implementada — usando 80mm', { icon: 'ℹ️' });
+    }
+    window.open(`/print/orden-pedido/${op.id}`, '_blank', 'width=420,height=700,scrollbars=yes');
+  };
 
   const handleUpdateStatus = async (status: OrdenPedidoStatus) => {
     if (!id) return;
@@ -155,6 +174,30 @@ export default function OrdenPedidoDetailPage() {
     }
   };
 
+  const handleDeliverRemito = async (remito: Remito) => {
+    setDeliveringRemitoId(remito.id);
+    try {
+      const pendingItems = (remito.items ?? [])
+        .filter((item) => Number(item.quantity) - Number(item.deliveredQuantity) > 0)
+        .map((item) => ({
+          remitoItemId: item.id,
+          quantity: Number(item.quantity) - Number(item.deliveredQuantity),
+        }));
+      if (pendingItems.length === 0) {
+        toast.error('No hay items pendientes de entrega');
+        return;
+      }
+      await remitosService.deliver(remito.id, { items: pendingItems });
+      toast.success('Remito marcado como entregado');
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al marcar como entregado');
+    } finally {
+      setDeliveringRemitoId(null);
+    }
+  };
+
   const handleConvert = async () => {
     if (!id) return;
     setIsConverting(true);
@@ -205,9 +248,9 @@ export default function OrdenPedidoDetailPage() {
         backTo="/orden-pedidos"
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => window.open(`/print/orden-pedido/${op.id}`, '_blank', 'width=420,height=700,scrollbars=yes')}>
+            <Button variant="outline" onClick={handlePrint}>
               <Printer className="w-4 h-4 mr-2" />
-              Imprimir
+              Imprimir ({printFormat === 'THERMAL_80MM' ? '80mm' : 'A4'})
             </Button>
 
             <Button variant="outline" onClick={() => setShowEmailModal(true)}>
@@ -451,6 +494,7 @@ export default function OrdenPedidoDetailPage() {
                       <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Fecha</th>
                       <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Ítems</th>
                       <th className="px-5 py-2.5 text-center text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Estado</th>
+                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
@@ -461,6 +505,7 @@ export default function OrdenPedidoDetailPage() {
                         DELIVERED: 'success',
                         CANCELLED: 'error',
                       };
+                      const canDeliver = remito.status === 'PENDING' || remito.status === 'PARTIALLY_DELIVERED';
                       return (
                         <tr
                           key={remito.id}
@@ -480,6 +525,22 @@ export default function OrdenPedidoDetailPage() {
                             <Badge variant={statusVariant[remito.status] ?? 'default'} dot>
                               {REMITO_STATUSES[remito.status as keyof typeof REMITO_STATUSES] ?? remito.status}
                             </Badge>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {canDeliver && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeliverRemito(remito); }}
+                                disabled={deliveringRemitoId === remito.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                                  text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20
+                                  border border-emerald-200 dark:border-emerald-800
+                                  hover:bg-emerald-100 dark:hover:bg-emerald-900/40
+                                  disabled:opacity-50 transition-colors duration-150"
+                              >
+                                <PackageCheck className="w-3.5 h-3.5" />
+                                {deliveringRemitoId === remito.id ? 'Entregando...' : 'Entregar todo'}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );

@@ -28,6 +28,7 @@ export const INVOICE_TYPE_OPTIONS = Object.entries(INVOICE_TYPES).map(
 export const INVOICE_STATUSES = {
   DRAFT: 'Borrador',
   ISSUED: 'Emitida',
+  AUTHORIZED: 'Autorizada',
   PAID: 'Pagada',
   CANCELLED: 'Cancelada',
   PARTIALLY_PAID: 'Parcialmente Pagada',
@@ -40,6 +41,7 @@ export const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUSES).map(
 export const INVOICE_STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-800',
   ISSUED: 'bg-blue-100 text-blue-800',
+  AUTHORIZED: 'bg-violet-100 text-violet-800',
   PAID: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-red-100 text-red-800',
   PARTIALLY_PAID: 'bg-yellow-100 text-yellow-800',
@@ -127,7 +129,7 @@ export const ORDEN_PEDIDO_STATUSES = {
   PARTIALLY_PAID: 'Pago parcial',
   PAID: 'Pagada',
   CANCELLED: 'Cancelada',
-  CONVERTED: 'Convertida',
+  CONVERTED: 'Facturada',
 } as const;
 
 export const ORDEN_PEDIDO_STATUS_OPTIONS = Object.entries(ORDEN_PEDIDO_STATUSES).map(

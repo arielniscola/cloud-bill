@@ -27,6 +27,7 @@ export * from './bank.types';
 export * from './mercadopago.types';
 export * from './card.types';
 export * from './rubro.types';
+export * from './product-custom-field.types';
 export * from './internal-note.types';
 export * from './accounting.types';
 export * from './pdv.types';

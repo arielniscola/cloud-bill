@@ -1,5 +1,5 @@
 import api from './api';
-import type { Account, JournalEntry, JournalEntryFilters } from '../types/accounting.types';
+import type { Account, JournalEntry, JournalEntryFilters, CreateJournalEntryDTO } from '../types/accounting.types';
 import type { ApiResponse, PaginatedResponse } from '../types';
 
 export const accountingService = {
@@ -33,6 +33,11 @@ export const accountingService = {
     const res = await api.get<ApiResponse<JournalEntry[]>>(
       `/accounting/journal-entries/ref/${type}/${id}`
     );
+    return res.data.data;
+  },
+
+  async createJournalEntry(data: CreateJournalEntryDTO): Promise<JournalEntry> {
+    const res = await api.post<ApiResponse<JournalEntry>>('/accounting/journal-entries', data);
     return res.data.data;
   },
 };

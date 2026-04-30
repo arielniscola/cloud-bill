@@ -147,7 +147,7 @@ export default function PurchasesPage() {
   const [page,  setPage]  = useState(1);
   const [limit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   const hasFilters = !!(statusTab !== 'all' || dateFrom || dateTo || supplierFilter);
 

@@ -1,6 +1,7 @@
 import type { Category } from './category.types';
 import type { Brand } from './brand.types';
 import type { Rubro } from './rubro.types';
+import type { ProductCustomFieldValue, ProductCustomFieldValueDTO } from './product-custom-field.types';
 
 export interface Product {
   id: string;
@@ -24,6 +25,7 @@ export interface Product {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  customFieldValues?: ProductCustomFieldValue[];
 }
 
 export interface CreateProductDTO {
@@ -41,6 +43,7 @@ export interface CreateProductDTO {
   salePriceUSD?: number | null;
   taxRate?: number;
   isActive?: boolean;
+  customFields?: ProductCustomFieldValueDTO[];
 }
 
 export interface UpdateProductDTO extends Partial<CreateProductDTO> {}
