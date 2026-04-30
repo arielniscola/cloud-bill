@@ -13,7 +13,7 @@ export interface ExcelColumn<T> {
  * Generates and downloads an .xlsx file from an array of objects.
  * Column headers are written in row 1; data starts at row 2.
  */
-export function exportToExcel<T extends Record<string, unknown>>(
+export function exportToExcel<T extends object>(
   filename: string,
   sheetName: string,
   columns: ExcelColumn<T>[],

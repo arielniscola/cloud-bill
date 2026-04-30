@@ -115,7 +115,7 @@ export interface CashFlowFilters extends DateRangeParams {
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
-function clean(params: Record<string, unknown>): Record<string, string> {
+function clean(params: object): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') out[k] = String(v);

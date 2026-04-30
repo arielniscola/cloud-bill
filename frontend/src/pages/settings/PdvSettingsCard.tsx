@@ -104,7 +104,7 @@ function AssignUserModal({ isOpen, onClose, onSave, pdv, allUsers }: AssignModal
   const [isSaving, setIsSaving] = useState(false);
 
   const assignedIds = new Set((pdv.assignedUsers ?? []).map(u => u.id));
-  const available = allUsers.filter(u => !assignedIds.has(u.id) && u.role !== 'SUPER_ADMIN');
+  const available = allUsers.filter(u => !assignedIds.has(u.id) && (u.role as string) !== 'SUPER_ADMIN');
 
   const handleAssign = async () => {
     if (!selectedUserId) return;

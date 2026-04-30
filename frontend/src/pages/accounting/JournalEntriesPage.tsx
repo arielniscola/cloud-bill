@@ -198,9 +198,12 @@ function JournalEntriesPageContent() {
 
       {totalPages > 1 && (
         <Pagination
-          currentPage={page}
+          page={page}
           totalPages={totalPages}
+          limit={limit}
+          total={total}
           onPageChange={setPage}
+          onLimitChange={() => {}}
         />
       )}
     </div>

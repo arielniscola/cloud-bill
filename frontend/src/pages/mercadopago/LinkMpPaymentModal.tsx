@@ -27,7 +27,7 @@ export default function LinkMpPaymentModal({ open, onClose, onLinked, initialPay
     if (!invoiceSearch.trim()) return;
     setIsSearching(true);
     try {
-      const result = await invoicesService.getAll({ search: invoiceSearch, limit: 10 });
+      const result = await invoicesService.getAll({ search: invoiceSearch, limit: 10 } as any);
       setInvoices((result as any).data ?? result);
     } catch {
       toast.error('Error al buscar facturas');

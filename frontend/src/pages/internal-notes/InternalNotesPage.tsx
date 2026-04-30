@@ -301,7 +301,7 @@ export default function InternalNotesPage() {
 
         {totalPages > 1 && (
           <div className="px-5 py-4 border-t border-gray-100 dark:border-slate-700">
-            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+            <Pagination page={page} totalPages={totalPages} limit={limit} total={total} onPageChange={setPage} onLimitChange={() => {}} />
           </div>
         )}
       </Card>
