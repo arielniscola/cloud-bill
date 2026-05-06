@@ -71,23 +71,20 @@ export class PdvService {
     config: AfipConfig,
     ta: { token: string; sign: string }
   ): Promise<number> {
-    // ── Step 1: Ensure counter exists and is synced ───────────────────────────
-    const counter = await this._getCounter(pdvId, invoiceType);
+    // ── Step 1: Always sync with AFIP before assigning a number ───────────────
+    // ARCA error 10016 (numero no se corresponde con el proximo) ocurre si nuestro
+    // contador local quedó desfasado (otra app emitió, retry tras CAE perdido, etc).
+    // Llamamos FECompUltimoAutorizado y usamos GREATEST(local, afip).
+    const afipLast = await this._fetchAfipLastNumber(pdvNumber, invoiceType, config, ta);
 
-    if (!counter || !counter.syncedFromAfip) {
-      // Sync from AFIP — do this OUTSIDE the transaction to avoid long lock
-      const afipLast = await this._fetchAfipLastNumber(pdvNumber, invoiceType, config, ta);
-
-      // Upsert with GREATEST so concurrent syncs never go backwards
-      await prisma.$executeRaw`
-        INSERT INTO "pdv_counters" ("id","pdvId","invoiceType","lastNumber","syncedFromAfip","updatedAt")
-        VALUES (${randomUUID()}, ${pdvId}, ${invoiceType}, ${afipLast}, true, NOW())
-        ON CONFLICT ("pdvId","invoiceType") DO UPDATE
-          SET "lastNumber"     = GREATEST("pdv_counters"."lastNumber", EXCLUDED."lastNumber"),
-              "syncedFromAfip" = true,
-              "updatedAt"      = NOW()
-      `;
-    }
+    await prisma.$executeRaw`
+      INSERT INTO "pdv_counters" ("id","pdvId","invoiceType","lastNumber","syncedFromAfip","updatedAt")
+      VALUES (${randomUUID()}, ${pdvId}, ${invoiceType}, ${afipLast}, true, NOW())
+      ON CONFLICT ("pdvId","invoiceType") DO UPDATE
+        SET "lastNumber"     = GREATEST("pdv_counters"."lastNumber", EXCLUDED."lastNumber"),
+            "syncedFromAfip" = true,
+            "updatedAt"      = NOW()
+    `;
 
     // ── Step 2: Atomic increment inside a serializable transaction ───────────
     const result = await prisma.$transaction(async (tx) => {
@@ -120,6 +117,33 @@ export class PdvService {
    */
   static formatAfipNumber(pdvNumber: number, cbteNro: number): string {
     return `${String(pdvNumber).padStart(4, '0')}-${String(cbteNro).padStart(8, '0')}`;
+  }
+
+  /**
+   * Serializa la emisión a ARCA por (pdv, invoiceType) usando un advisory lock
+   * de Postgres. ARCA exige que los comprobantes lleguen en orden estricto;
+   * sin este lock, dos emisiones concurrentes pueden asignar 101/102 localmente
+   * pero llegar a ARCA en orden inverso → rechazo [10016].
+   *
+   * El lock se mantiene durante todo el callback (sync + numeración + SOAP CAE)
+   * y se libera al cerrar la transacción. Otras emisiones del MISMO (pdv, type)
+   * bloquean en `pg_advisory_xact_lock`; otras empresas / pdv / tipo siguen libres.
+   *
+   * Timeout extendido a 60s porque el SOAP a ARCA suele tardar 1–3s.
+   */
+  async runWithPdvLock<T>(
+    pdvId: string,
+    invoiceType: string,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const lockKey = `${pdvId}:${invoiceType}`;
+    return prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
+        return fn();
+      },
+      { timeout: 60_000, maxWait: 30_000 }
+    );
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

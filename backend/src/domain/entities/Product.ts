@@ -9,6 +9,7 @@ export interface Product {
   description: string | null;
   categoryId: string | null;
   brandId: string | null;
+  rubroId: string | null;
   barcode: string | null;
   unit: string | null;
   internalNotes: string | null;

@@ -3,6 +3,7 @@ export interface Rubro {
   name: string;
   description: string | null;
   isActive: boolean;
+  allowsVariants: boolean;
   companyId: string;
   createdAt: Date;
   updatedAt: Date;

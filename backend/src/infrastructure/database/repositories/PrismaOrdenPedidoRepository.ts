@@ -180,27 +180,32 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
 
     const rows = hasDiscount
       ? await prisma.$queryRaw<any[]>`
-          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi.description,
+          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi."variantId", opi.description,
             opi.quantity, opi."unitPrice", opi."discountPct",
             opi."taxRate", opi.subtotal, opi."taxAmount", opi.total,
-            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku"
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
+            v.id AS "var_id", v.name AS "var_name", v.sku AS "var_sku", v.attributes AS "var_attributes"
           FROM "orden_pedido_items" opi
           LEFT JOIN "products" p ON p.id = opi."productId"
+          LEFT JOIN "product_variants" v ON v.id = opi."variantId"
           WHERE opi."ordenPedidoId" = ${ordenPedidoId}
         `
       : await prisma.$queryRaw<any[]>`
-          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi.description,
+          SELECT opi.id, opi."ordenPedidoId", opi."productId", opi."variantId", opi.description,
             opi.quantity, opi."unitPrice", 0 AS "discountPct",
             opi."taxRate", opi.subtotal, opi."taxAmount", opi.total,
-            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku"
+            p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
+            v.id AS "var_id", v.name AS "var_name", v.sku AS "var_sku", v.attributes AS "var_attributes"
           FROM "orden_pedido_items" opi
           LEFT JOIN "products" p ON p.id = opi."productId"
+          LEFT JOIN "product_variants" v ON v.id = opi."variantId"
           WHERE opi."ordenPedidoId" = ${ordenPedidoId}
         `;
     return rows.map((r) => ({
       id: r.id,
       ordenPedidoId: r.ordenPedidoId,
       productId: r.productId,
+      variantId: r.variantId ?? null,
       description: r.description,
       quantity: r.quantity,
       unitPrice: r.unitPrice,
@@ -210,6 +215,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
       taxAmount: r.taxAmount,
       total: r.total,
       product: r.prod_id ? { id: r.prod_id, name: r.prod_name, sku: r.prod_sku } : null,
+      variant: r.var_id ? { id: r.var_id, name: r.var_name, sku: r.var_sku, attributes: r.var_attributes ?? {} } : null,
     }));
   }
 
@@ -225,22 +231,23 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
     for (const item of items) {
       const itemId = randomUUID();
       const productId = item.productId ?? null;
+      const variantId = item.variantId ?? null;
       const discountPct = Number(item.discountPct ?? 0);
       if (hasDiscount) {
         await prisma.$executeRaw`
           INSERT INTO "orden_pedido_items"
-            (id, "ordenPedidoId", "productId", description, quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
+            (id, "ordenPedidoId", "productId", "variantId", description, quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
           VALUES
-            (${itemId}, ${ordenPedidoId}, ${productId}, ${item.description},
+            (${itemId}, ${ordenPedidoId}, ${productId}, ${variantId}, ${item.description},
              ${Number(item.quantity)}, ${Number(item.unitPrice)}, ${discountPct},
              ${Number(item.taxRate)}, ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;
       } else {
         await prisma.$executeRaw`
           INSERT INTO "orden_pedido_items"
-            (id, "ordenPedidoId", "productId", description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
+            (id, "ordenPedidoId", "productId", "variantId", description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
           VALUES
-            (${itemId}, ${ordenPedidoId}, ${productId}, ${item.description},
+            (${itemId}, ${ordenPedidoId}, ${productId}, ${variantId}, ${item.description},
              ${Number(item.quantity)}, ${Number(item.unitPrice)},
              ${Number(item.taxRate)}, ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;

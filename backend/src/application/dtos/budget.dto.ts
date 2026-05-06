@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const budgetItemSchema = z.object({
   productId: z.string().uuid().optional().nullable(),
+  variantId: z.string().uuid().optional().nullable(),
   description: z.string().min(1, 'La descripción es requerida'),
   quantity: z.number().positive('Cantidad debe ser mayor a 0'),
   unitPrice: z.number().min(0, 'Precio debe ser mayor o igual a 0'),

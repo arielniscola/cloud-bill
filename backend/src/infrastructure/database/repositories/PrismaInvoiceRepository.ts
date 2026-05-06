@@ -120,7 +120,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       const subtotal = base.minus(discountAmt);
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
@@ -171,7 +171,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       const subtotal = base.minus(discountAmt);
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
@@ -213,31 +213,36 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
 
     const rows = hasDiscount
       ? await this.prisma.$queryRaw<any[]>`
-          SELECT ii.id, ii."invoiceId", ii."productId",
+          SELECT ii.id, ii."invoiceId", ii."productId", ii."variantId",
             ii.quantity, ii."unitPrice", ii."discountPct",
             ii."taxRate", ii.subtotal, ii."taxAmount", ii.total,
             p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
             p."taxRate" AS "prod_taxRate", p.price AS "prod_price",
-            p.barcode AS "prod_barcode", p.description AS "prod_description"
+            p.barcode AS "prod_barcode", p.description AS "prod_description",
+            v.id AS "var_id", v.name AS "var_name", v.sku AS "var_sku", v.attributes AS "var_attributes"
           FROM "invoice_items" ii
           JOIN "products" p ON p.id = ii."productId"
+          LEFT JOIN "product_variants" v ON v.id = ii."variantId"
           WHERE ii."invoiceId" = ${invoiceId}
         `
       : await this.prisma.$queryRaw<any[]>`
-          SELECT ii.id, ii."invoiceId", ii."productId",
+          SELECT ii.id, ii."invoiceId", ii."productId", ii."variantId",
             ii.quantity, ii."unitPrice", 0 AS "discountPct",
             ii."taxRate", ii.subtotal, ii."taxAmount", ii.total,
             p.id AS "prod_id", p.name AS "prod_name", p.sku AS "prod_sku",
             p."taxRate" AS "prod_taxRate", p.price AS "prod_price",
-            p.barcode AS "prod_barcode", p.description AS "prod_description"
+            p.barcode AS "prod_barcode", p.description AS "prod_description",
+            v.id AS "var_id", v.name AS "var_name", v.sku AS "var_sku", v.attributes AS "var_attributes"
           FROM "invoice_items" ii
           JOIN "products" p ON p.id = ii."productId"
+          LEFT JOIN "product_variants" v ON v.id = ii."variantId"
           WHERE ii."invoiceId" = ${invoiceId}
         `;
     return rows.map((r) => ({
       id: r.id,
       invoiceId: r.invoiceId,
       productId: r.productId,
+      variantId: r.variantId ?? null,
       quantity: r.quantity,
       unitPrice: r.unitPrice,
       discountPct: r.discountPct,
@@ -254,6 +259,12 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         barcode: r.prod_barcode,
         description: r.prod_description,
       },
+      variant: r.var_id ? {
+        id: r.var_id,
+        name: r.var_name,
+        sku: r.var_sku,
+        attributes: r.var_attributes ?? {},
+      } : null,
     }));
   }
 
@@ -268,21 +279,22 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
 
     for (const item of items) {
       const itemId = randomUUID();
+      const variantId = item.variantId ?? null;
       if (hasDiscount) {
         await this.prisma.$executeRaw`
           INSERT INTO "invoice_items"
-            (id, "invoiceId", "productId", quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
+            (id, "invoiceId", "productId", "variantId", quantity, "unitPrice", "discountPct", "taxRate", subtotal, "taxAmount", total)
           VALUES
-            (${itemId}, ${invoiceId}, ${item.productId}, ${Number(item.quantity)},
+            (${itemId}, ${invoiceId}, ${item.productId}, ${variantId}, ${Number(item.quantity)},
              ${Number(item.unitPrice)}, ${Number(item.discountPct)}, ${Number(item.taxRate)},
              ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;
       } else {
         await this.prisma.$executeRaw`
           INSERT INTO "invoice_items"
-            (id, "invoiceId", "productId", quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
+            (id, "invoiceId", "productId", "variantId", quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
           VALUES
-            (${itemId}, ${invoiceId}, ${item.productId}, ${Number(item.quantity)},
+            (${itemId}, ${invoiceId}, ${item.productId}, ${variantId}, ${Number(item.quantity)},
              ${Number(item.unitPrice)}, ${Number(item.taxRate)},
              ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;

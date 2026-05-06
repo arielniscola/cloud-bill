@@ -100,6 +100,7 @@ export class PurchaseController {
           try {
             await stockRepo.addMovement({
               productId: item.productId!,
+              variantId: (item as any).variantId ?? null,
               warehouseId: purchase.warehouseId,
               type: 'PURCHASE',
               quantity: Number(item.quantity),

@@ -1,20 +1,33 @@
 import { randomUUID } from 'crypto';
 import prisma from '../database/prisma';
 import { AccountType, CreateAccountInput } from '../../domain/entities/Accounting';
+import { companyHasFeature } from '../http/middlewares/featureMiddleware';
 
 // ─── System account codes used for automatic journal entries ─────────────────
 export const ACCOUNT_CODES = {
-  CAJA:            '1.1.1.1',
-  BANCOS:          '1.1.1.2',
-  CHEQUES:         '1.1.1.3',
-  CLIENTES:        '1.1.2.1',
-  IVA_CREDITO:     '1.1.3.1',
-  MERCADERIAS:     '1.1.4.1',
-  PROVEEDORES:     '2.1.1.1',
-  IVA_DEBITO:      '2.1.2.1',
-  VENTAS:          '4.1.1',
-  CMV:             '5.1.1',
+  CAJA:               '1.1.1.1',
+  BANCOS:             '1.1.1.2',
+  CHEQUES:            '1.1.1.3',
+  CLIENTES:           '1.1.2.1',
+  IVA_CREDITO:        '1.1.3.1',
+  MERCADERIAS:        '1.1.4.1',
+  PROVEEDORES:        '2.1.1.1',
+  IVA_DEBITO:         '2.1.2.1',
+  RET_IVA:            '2.1.2.5',
+  RET_IIBB:           '2.1.2.6',
+  RET_GANANCIAS:      '2.1.2.7',
+  RET_OTRAS:          '2.1.2.8',
+  VENTAS:             '4.1.1',
+  CMV:                '5.1.1',
 } as const;
+
+// ─── Retencion type → account code mapping ────────────────────────────────────
+const RETENCION_ACCOUNT_BY_TYPE: Record<string, { code: string; name: string }> = {
+  IVA:       { code: ACCOUNT_CODES.RET_IVA,       name: 'Retenciones IVA a pagar' },
+  IIBB:      { code: ACCOUNT_CODES.RET_IIBB,      name: 'Retenciones IIBB a pagar' },
+  GANANCIAS: { code: ACCOUNT_CODES.RET_GANANCIAS, name: 'Retenciones Ganancias a pagar' },
+  OTHER:     { code: ACCOUNT_CODES.RET_OTRAS,     name: 'Retenciones varias a pagar' },
+};
 
 // ─── Standard Argentine chart of accounts (PyME comercio/distribución) ───────
 function buildChartOfAccounts(companyId: string): CreateAccountInput[] {
@@ -70,6 +83,10 @@ function buildChartOfAccounts(companyId: string): CreateAccountInput[] {
     def('2.1.2.2', 'IVA a pagar (neto)',                  'LIABILITY', '2.1.2', true),
     def('2.1.2.3', 'Impuesto a las Ganancias a pagar',    'LIABILITY', '2.1.2', true),
     def('2.1.2.4', 'Ingresos Brutos a pagar',             'LIABILITY', '2.1.2', true),
+    def('2.1.2.5', 'Retenciones IVA a pagar',             'LIABILITY', '2.1.2', true),
+    def('2.1.2.6', 'Retenciones IIBB a pagar',            'LIABILITY', '2.1.2', true),
+    def('2.1.2.7', 'Retenciones Ganancias a pagar',       'LIABILITY', '2.1.2', true),
+    def('2.1.2.8', 'Retenciones varias a pagar',          'LIABILITY', '2.1.2', true),
     def('2.1.3',   'Remuneraciones y Cargas Sociales',    'LIABILITY', '2.1',   false),
     def('2.1.3.1', 'Sueldos a pagar',                     'LIABILITY', '2.1.3', true),
     def('2.1.3.2', 'Cargas sociales a pagar',             'LIABILITY', '2.1.3', true),
@@ -128,6 +145,24 @@ function buildChartOfAccounts(companyId: string): CreateAccountInput[] {
     def('5.5.2',   'Ingresos brutos',                     'EXPENSE',   '5.5',   true),
     def('5.5.3',   'Tasas municipales',                   'EXPENSE',   '5.5',   true),
   ];
+}
+
+// ─── Idempotent account ensure (used for lazy-add of retencion accounts) ────
+async function ensureAccount(
+  code: string,
+  name: string,
+  parentCode: string,
+  companyId: string,
+): Promise<void> {
+  const level = code.split('.').length;
+  await prisma.$executeRaw`
+    INSERT INTO "accounts" ("id","code","name","type","parentCode","level","isAuxiliary","isActive","companyId","createdAt","updatedAt")
+    VALUES (
+      ${randomUUID()}, ${code}, ${name}, 'LIABILITY',
+      ${parentCode}, ${level}, true, true, ${companyId}, NOW(), NOW()
+    )
+    ON CONFLICT ("code","companyId") DO NOTHING
+  `;
 }
 
 // ─── Helper to get an account id by code ─────────────────────────────────────
@@ -232,6 +267,7 @@ export async function recordInvoiceCreated(invoice: {
   userId: string;
 }): Promise<void> {
   try {
+    if (!(await companyHasFeature(invoice.companyId, 'accounting'))) return;
     const isNC = invoice.type.startsWith('NOTA_CREDITO');
     const isND = invoice.type.startsWith('NOTA_DEBITO');
     const isFact = invoice.type.startsWith('FACTURA');
@@ -290,6 +326,7 @@ export async function recordPaymentReceived(recibo: {
   invoiceNumber?: string;
 }): Promise<void> {
   try {
+    if (!(await companyHasFeature(recibo.companyId, 'accounting'))) return;
     const amount = Math.round(recibo.amount * 100) / 100;
 
     const cashAccount =
@@ -333,6 +370,7 @@ export async function recordPurchaseCreated(purchase: {
   userId: string;
 }): Promise<void> {
   try {
+    if (!(await companyHasFeature(purchase.companyId, 'accounting'))) return;
     const net   = Math.round(purchase.subtotal  * 100) / 100;
     const iva   = Math.round(purchase.taxAmount * 100) / 100;
     const total = Math.round(purchase.total     * 100) / 100;
@@ -352,4 +390,165 @@ export async function recordPurchaseCreated(purchase: {
   } catch (err) {
     console.error('[AccountingService] recordPurchaseCreated error:', err);
   }
+}
+
+/**
+ * Records journal entry when a supplier payment (orden de pago) is settled.
+ *
+ * With no retenciones:
+ *   DR Proveedores              — cash paid
+ *   CR Caja | Bancos | Cheques  — cash paid
+ *
+ * With retenciones (sum = R, cash = C, gross = C + R):
+ *   DR Proveedores                          — gross
+ *   CR Caja | Bancos | Cheques              — cash
+ *   CR Retenciones {IVA|IIBB|Ganancias|...} — per type
+ *
+ * Gated by the `accounting` feature.
+ */
+export async function recordSupplierPayment(payment: {
+  id: string;
+  number: string;
+  amount: number;            // cash actually paid (net of retenciones)
+  paymentMethod: string;
+  companyId: string;
+  userId: string;
+  supplierName?: string;
+  retenciones?: { type: string; amount: number }[];
+}): Promise<void> {
+  try {
+    if (!(await companyHasFeature(payment.companyId, 'accounting'))) return;
+
+    const cash = Math.round(payment.amount * 100) / 100;
+    if (cash <= 0 && (!payment.retenciones || payment.retenciones.length === 0)) return;
+
+    const cashAccount =
+      payment.paymentMethod === 'BANK_TRANSFER' ? ACCOUNT_CODES.BANCOS  :
+      payment.paymentMethod === 'CHECK'         ? ACCOUNT_CODES.CHEQUES :
+      ACCOUNT_CODES.CAJA; // CASH | CARD | otros
+
+    const desc = payment.supplierName
+      ? `${payment.number} (${payment.supplierName})`
+      : payment.number;
+
+    // Sum retenciones by type (handles multiple retenciones of the same type across invoices)
+    const retencionTotals = new Map<string, number>();
+    for (const r of payment.retenciones ?? []) {
+      const key = RETENCION_ACCOUNT_BY_TYPE[r.type] ? r.type : 'OTHER';
+      retencionTotals.set(key, (retencionTotals.get(key) ?? 0) + r.amount);
+    }
+
+    // Lazy-ensure retencion accounts exist for this company (no-op if already seeded)
+    for (const type of retencionTotals.keys()) {
+      const acc = RETENCION_ACCOUNT_BY_TYPE[type];
+      await ensureAccount(acc.code, acc.name, '2.1.2', payment.companyId);
+    }
+
+    const totalRetenciones = Array.from(retencionTotals.values())
+      .reduce((s, v) => s + v, 0);
+    const gross = Math.round((cash + totalRetenciones) * 100) / 100;
+
+    const lines: { code: string; debit: number; credit: number; description?: string }[] = [
+      { code: ACCOUNT_CODES.PROVEEDORES, debit: gross, credit: 0, description: desc },
+    ];
+    if (cash > 0) {
+      lines.push({ code: cashAccount, debit: 0, credit: cash, description: desc });
+    }
+    for (const [type, amt] of retencionTotals.entries()) {
+      const acc = RETENCION_ACCOUNT_BY_TYPE[type];
+      const rounded = Math.round(amt * 100) / 100;
+      if (rounded <= 0) continue;
+      lines.push({ code: acc.code, debit: 0, credit: rounded, description: `${desc} – Retenc. ${type}` });
+    }
+
+    await createEntry(
+      `Pago a proveedor ${payment.number}`,
+      'SUPPLIER_PAYMENT',
+      payment.id,
+      payment.companyId,
+      payment.userId,
+      lines,
+    );
+  } catch (err) {
+    console.error('[AccountingService] recordSupplierPayment error:', err);
+  }
+}
+
+/**
+ * Posts a reversing journal entry for a previously recorded one.
+ * Looks up the original entry by referenceType + referenceId and creates a new
+ * entry with debits/credits swapped. The original entry is preserved.
+ *
+ * Gated by the `accounting` feature.
+ */
+export async function reverseJournalEntry(
+  referenceType: string,
+  referenceId: string,
+  companyId: string,
+  userId: string | null,
+  description: string,
+): Promise<void> {
+  try {
+    if (!(await companyHasFeature(companyId, 'accounting'))) return;
+
+    const original = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "journal_entries"
+      WHERE "referenceType" = ${referenceType}
+        AND "referenceId"   = ${referenceId}
+        AND "companyId"     = ${companyId}
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+    `;
+    if (!original[0]) return;
+
+    const originalLines = await prisma.$queryRaw<{
+      accountCode: string; debit: any; credit: any; description: string | null;
+    }[]>`
+      SELECT "accountCode", debit, credit, description
+      FROM "journal_entry_lines"
+      WHERE "journalEntryId" = ${original[0].id}
+    `;
+    if (originalLines.length === 0) return;
+
+    // Idempotency: if a reversal already exists, do nothing
+    const reversalType = `${referenceType}_REVERSAL`;
+    const existing = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "journal_entries"
+      WHERE "referenceType" = ${reversalType}
+        AND "referenceId"   = ${referenceId}
+        AND "companyId"     = ${companyId}
+      LIMIT 1
+    `;
+    if (existing[0]) return;
+
+    const lines = originalLines.map((l) => ({
+      code:        l.accountCode,
+      debit:       Number(l.credit ?? 0),
+      credit:      Number(l.debit  ?? 0),
+      description: l.description ?? undefined,
+    }));
+
+    await createEntry(description, reversalType, referenceId, companyId, userId, lines);
+  } catch (err) {
+    console.error('[AccountingService] reverseJournalEntry error:', err);
+  }
+}
+
+/**
+ * Reverses the journal entry for a previously paid supplier OP that is now being cancelled.
+ * Idempotent — does nothing if no original entry was found or a reversal already exists.
+ */
+export async function recordSupplierPaymentReversal(
+  paymentId: string,
+  paymentNumber: string,
+  companyId: string,
+  userId: string,
+): Promise<void> {
+  await reverseJournalEntry(
+    'SUPPLIER_PAYMENT',
+    paymentId,
+    companyId,
+    userId,
+    `Anulación pago a proveedor ${paymentNumber}`,
+  );
 }

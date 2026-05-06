@@ -84,17 +84,19 @@ export class InvoiceController {
           if (stockBehavior === 'RESERVE') {
             // Reserve stock (increment reservedQuantity)
             for (const item of invoice.items) {
-              await prisma.stock.upsert({
-                where: { productId_warehouseId: { productId: item.productId, warehouseId: defaultWarehouse.id } },
-                update: { reservedQuantity: { increment: item.quantity } },
-                create: { productId: item.productId, warehouseId: defaultWarehouse.id, quantity: 0, reservedQuantity: item.quantity },
-              });
+              await stockRepository.incrementReserved(
+                item.productId,
+                defaultWarehouse.id,
+                item.quantity.toNumber(),
+                (item as any).variantId ?? null,
+              );
             }
           } else {
             // DISCOUNT: create SALE movement (immediate deduction)
             for (const item of invoice.items) {
               await stockRepository.addMovement({
                 productId: item.productId,
+                variantId: (item as any).variantId ?? null,
                 warehouseId: defaultWarehouse.id,
                 type: 'SALE',
                 quantity: item.quantity.toNumber(),
@@ -365,10 +367,12 @@ export class InvoiceController {
         throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
       }
 
-      // CHECK and BANK_TRANSFER don't use a cash register
+      // CHECK, BANK_TRANSFER y MERCADO_PAGO no impactan en caja física —
+      // tienen su propio canal (banco / cuenta MP).
       const isCheck = paymentData.paymentMethod === 'CHECK';
       const isBankTransfer = paymentData.paymentMethod === 'BANK_TRANSFER';
-      const usesCaja = !isCheck && !isBankTransfer;
+      const isMercadoPago = paymentData.paymentMethod === 'MERCADO_PAGO';
+      const usesCaja = !isCheck && !isBankTransfer && !isMercadoPago;
 
       // Create recibo
       const recibo = await reciboRepository.create({
@@ -503,16 +507,18 @@ export class InvoiceController {
       // Get TA outside getNextNumber to reuse the same token for both sync and emit
       const ta = await afipService.getTokenAuth(config);
 
-      // Atomically get next sequential number (syncs from AFIP on first use)
-      const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
-
-      let result;
-      try {
-        result = await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
-      } catch (afipError) {
-        await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
-        throw afipError;
-      }
+      // Serializamos numeración + emisión por (pdv, tipo) con advisory lock —
+      // ARCA exige orden estricto; sin esto, dos emisiones concurrentes pueden
+      // llegar a ARCA invertidas y rechazarse con [10016].
+      const result = await pdvService.runWithPdvLock(pdv.id, invoice.type, async () => {
+        const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
+        try {
+          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
+        } catch (afipError) {
+          await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
+          throw afipError;
+        }
+      });
 
       // Promote DRAFT/ISSUED → AUTHORIZED (CAE granted by ARCA).
       // Preserve PAID/PARTIALLY_PAID — payment workflow already moved past authorization step;

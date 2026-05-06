@@ -86,14 +86,16 @@ export class PrismaRemitoRepository implements IRemitoRepository {
   async create(data: CreateRemitoInput): Promise<RemitoWithItems> {
     const number = await this.getNextRemitoNumber();
 
-    // Auto-deliver only standalone DISCOUNT remitos (no linked source document).
-    // Linked remitos (from OP / invoice / budget) must start as PENDING and be
-    // confirmed manually via the deliver endpoint, regardless of stockBehavior.
-    const isLinked = !!(data.invoiceId || data.budgetId || data.ordenPedidoId);
-    const autoDeliver = !isLinked && data.stockBehavior === 'DISCOUNT';
+    // Auto-deliver every DISCOUNT remito: stock was already moved upstream
+    // (invoice/budget/OP creation for linked, or remito creation for standalone),
+    // so the deliver step would be a pure no-op. RESERVE remitos start PENDING
+    // because the actual stock movement happens on manual delivery.
+    const autoDeliver = data.stockBehavior === 'DISCOUNT';
     const status: RemitoStatus = autoDeliver ? 'DELIVERED' : 'PENDING';
 
-    return (this.prisma as any).remito.create({
+    const itemVariantIds = data.items.map((it) => (it as any).variantId ?? null);
+
+    const created = await (this.prisma as any).remito.create({
       data: {
         number,
         customerId: data.customerId,
@@ -127,6 +129,18 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         ordenPedido: { select: { id: true, number: true } },
       },
     });
+
+    // Backfill variantId via raw SQL (Prisma client may be stale)
+    const createdItems = (created.items ?? []) as Array<{ id: string; variantId?: string | null }>;
+    for (let i = 0; i < itemVariantIds.length; i++) {
+      const variantId = itemVariantIds[i];
+      if (variantId && createdItems[i]?.id) {
+        await this.prisma.$executeRaw`UPDATE "remito_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}`;
+        createdItems[i].variantId = variantId;
+      }
+    }
+
+    return created;
   }
 
   async updateStatus(id: string, status: RemitoStatus): Promise<Remito> {

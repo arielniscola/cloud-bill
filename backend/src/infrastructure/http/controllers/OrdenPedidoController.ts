@@ -122,15 +122,18 @@ export class OrdenPedidoController {
         }
         const defaultWarehouse = stockWarehouse;
         for (const item of itemsWithProduct) {
+          const variantId = (item as any).variantId ?? null;
           if (stockBehavior === 'RESERVE') {
-            await prisma.stock.upsert({
-              where: { productId_warehouseId: { productId: item.productId!, warehouseId: defaultWarehouse.id } },
-              update: { reservedQuantity: { increment: item.quantity } },
-              create: { productId: item.productId!, warehouseId: defaultWarehouse.id, quantity: 0, reservedQuantity: item.quantity },
-            });
+            await stockRepo.incrementReserved(
+              item.productId!,
+              defaultWarehouse.id,
+              Number(item.quantity),
+              variantId,
+            );
           } else {
             await stockRepo.addMovement({
               productId: item.productId!,
+              variantId,
               warehouseId: defaultWarehouse.id,
               type: 'SALE',
               quantity: Number(item.quantity),
@@ -236,6 +239,67 @@ export class OrdenPedidoController {
       }
 
       const { status } = updateOrdenPedidoStatusSchema.parse(req.body);
+
+      // Reversa de stock al cancelar — el create() de la OP descuenta (DISCOUNT)
+      // o reserva (RESERVE) stock; al cancelar hay que devolverlo.
+      if (status === 'CANCELLED') {
+        const stockRepo = container.resolve<IStockRepository>('StockRepository');
+        const warehouseRepo = container.resolve<IWarehouseRepository>('WarehouseRepository');
+        const stockBehavior: string = (op as any).stockBehavior ?? 'DISCOUNT';
+        const itemsWithProduct = op.items.filter((item) => item.productId);
+
+        if (itemsWithProduct.length > 0) {
+          if (stockBehavior === 'DISCOUNT') {
+            // Buscamos los SALE movements originales por referenceId para saber
+            // de qué almacén descontar la devolución (RETURN).
+            const originalMovs = await prisma.stockMovement.findMany({
+              where: { referenceId: op.id, type: 'SALE' },
+            });
+            for (const mov of originalMovs) {
+              await stockRepo.addMovement({
+                productId: mov.productId,
+                variantId: (mov as any).variantId ?? null,
+                warehouseId: mov.warehouseId,
+                type: 'RETURN',
+                quantity: Number(mov.quantity),
+                reason: `Cancelación orden de pedido ${op.number}`,
+                referenceId: op.id,
+                userId: req.user!.userId,
+              });
+            }
+          } else {
+            // RESERVE: liberar la reserva en el almacén por defecto
+            // (el create() usó findDefault cuando no había warehouseId explícito).
+            const defaultWarehouse = await warehouseRepo.findDefault(req.companyId);
+            if (defaultWarehouse) {
+              for (const item of itemsWithProduct) {
+                await stockRepo.decrementReserved(
+                  item.productId!,
+                  defaultWarehouse.id,
+                  Number(item.quantity),
+                  (item as any).variantId ?? null,
+                );
+              }
+            }
+          }
+        }
+
+        // Si había débito en cuenta corriente al crear la OP, lo revertimos con un CRÉDITO.
+        if ((op as any).saleCondition === 'CUENTA_CORRIENTE' && op.customerId) {
+          const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+          const ca = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
+          if (ca) {
+            await currentAccountRepo.addMovement({
+              currentAccountId: ca.id,
+              type: 'CREDIT',
+              amount: Number(op.total),
+              description: `Reversa por cancelación orden ${op.number}`,
+              ordenPedidoId: op.id,
+            } as any);
+          }
+        }
+      }
+
       const updated = await repo.update(req.params.id, { status });
 
       // Auto-create Remito when confirming the OP
@@ -375,10 +439,12 @@ export class OrdenPedidoController {
 
       const paymentData = createReciboSchema.parse(req.body);
 
-      // CHECK and BANK_TRANSFER don't use a cash register
+      // CHECK, BANK_TRANSFER y MERCADO_PAGO no impactan en caja física —
+      // tienen su propio canal (banco / cuenta MP).
       const isCheck = paymentData.paymentMethod === 'CHECK';
       const isBankTransfer = paymentData.paymentMethod === 'BANK_TRANSFER';
-      const usesCaja = !isCheck && !isBankTransfer;
+      const isMercadoPago = paymentData.paymentMethod === 'MERCADO_PAGO';
+      const usesCaja = !isCheck && !isBankTransfer && !isMercadoPago;
 
       let cashRegisterName = '';
       if (usesCaja && paymentData.cashRegisterId) {

@@ -14,6 +14,7 @@ export interface Warehouse {
 export interface Stock {
   id: string;
   productId: string;
+  variantId: string | null;
   warehouseId: string;
   quantity: Decimal;
   minQuantity: Decimal | null;
@@ -23,6 +24,7 @@ export interface Stock {
 export interface StockMovement {
   id: string;
   productId: string;
+  variantId: string | null;
   warehouseId: string;
   type: StockMovementType;
   quantity: Decimal;
@@ -40,6 +42,7 @@ export type UpdateWarehouseInput = Partial<Omit<Warehouse, 'id' | 'createdAt' | 
 
 export interface CreateStockMovementInput {
   productId: string;
+  variantId?: string | null;
   warehouseId: string;
   type: StockMovementType;
   quantity: number;

@@ -252,6 +252,96 @@ export class ReportsController {
     } catch (error) { next(error); }
   }
 
+  // ── GET /reports/purchase-invoices ───────────────────────────────
+  async purchaseInvoices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const companyId = req.user!.companyId!;
+      const { dateFrom, dateTo, supplierId, status, paymentMethod, dateField } = req.query as Record<string, string>;
+      const fiscalMode = req.fiscalMode;
+
+      const DATE_FIELDS: Record<string, string> = {
+        imputationDate: `pi."imputationDate"`,
+        dueDate:        `pi."dueDate"`,
+        createdAt:      `pi."createdAt"`,
+        purchaseDate:   `p."date"`,
+      };
+      const dateColumn = DATE_FIELDS[dateField] ?? DATE_FIELDS.imputationDate;
+
+      const conditions: string[] = [`p."companyId" = $1`];
+      const params: any[] = [companyId];
+      let i = 2;
+
+      if (fiscalMode)     { conditions.push(`pi."fiscalMode" = $${i++}`);   params.push(fiscalMode); }
+      if (supplierId)     { conditions.push(`p."supplierId" = $${i++}`);    params.push(supplierId); }
+      if (status)         { conditions.push(`pi.status = $${i++}`);          params.push(status); }
+      if (paymentMethod)  { conditions.push(`pi."paymentMethod" = $${i++}`); params.push(paymentMethod); }
+      if (dateFrom)       { conditions.push(`${dateColumn} >= $${i++}`);     params.push(new Date(dateFrom)); }
+      if (dateTo)         { conditions.push(`${dateColumn} <= $${i++}`);     params.push(new Date(dateTo + 'T23:59:59')); }
+
+      conditions.push(`p.status <> 'CANCELLED'`);
+
+      const where = conditions.join(' AND ');
+
+      const rows = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
+          pi."dueDate", pi."imputationDate", pi."paymentMethod", pi.status, pi.notes,
+          pi."createdAt",
+          p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate", p.currency,
+          s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
+          COALESCE((SELECT SUM(amount) FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = pi.id), 0) AS "retencionesTotal"
+        FROM "purchase_invoices" pi
+        JOIN "purchases" p ON p.id = pi."purchaseId"
+        JOIN "suppliers" s ON s.id = p."supplierId"
+        WHERE ${where}
+        ORDER BY pi."imputationDate" DESC NULLS LAST, pi."createdAt" DESC
+      `, ...params);
+
+      const data = rows.map((r) => {
+        const subtotal      = Number(r.subtotal ?? 0);
+        const taxAmount     = Number(r.taxAmount ?? 0);
+        const amount        = Number(r.amount ?? 0);
+        const retenciones   = Number(r.retencionesTotal ?? 0);
+        const net           = amount - retenciones;
+        return {
+          id:             r.id,
+          number:         r.number,
+          type:           r.type,
+          subtotal:       round2(subtotal),
+          taxAmount:      round2(taxAmount),
+          amount:         round2(amount),
+          retenciones:    round2(retenciones),
+          net:            round2(net),
+          dueDate:        r.dueDate        ? r.dueDate.toISOString().substring(0, 10)        : null,
+          imputationDate: r.imputationDate ? r.imputationDate.toISOString().substring(0, 10) : null,
+          paymentMethod:  r.paymentMethod,
+          status:         r.status,
+          notes:          r.notes,
+          purchaseId:     r.purchaseId,
+          purchaseNumber: r.purchaseNumber,
+          purchaseDate:   r.purchaseDate ? r.purchaseDate.toISOString().substring(0, 10) : null,
+          currency:       r.currency,
+          supplierId:     r.supplierId,
+          supplierName:   r.supplierName,
+          supplierCuit:   r.supplierCuit ?? '—',
+        };
+      });
+
+      const totals = {
+        count:        data.length,
+        subtotal:     round2(data.reduce((a, r) => a + r.subtotal,    0)),
+        taxAmount:    round2(data.reduce((a, r) => a + r.taxAmount,   0)),
+        amount:       round2(data.reduce((a, r) => a + r.amount,      0)),
+        retenciones:  round2(data.reduce((a, r) => a + r.retenciones, 0)),
+        net:          round2(data.reduce((a, r) => a + r.net,         0)),
+        pending:      round2(data.filter((r) => r.status === 'PENDING').reduce((a, r) => a + r.net, 0)),
+        paid:         round2(data.filter((r) => r.status === 'PAID').reduce((a, r) => a + r.net, 0)),
+      };
+
+      res.json({ status: 'success', data, totals });
+    } catch (error) { next(error); }
+  }
+
   // ── GET /reports/cash-flow ────────────────────────────────────────
   async cashFlow(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

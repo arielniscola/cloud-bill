@@ -17,8 +17,8 @@ export class PrismaProductRepository implements IProductRepository {
     return this.prisma.product.findUnique({ where: { id }, include: { category: true, brand: true, rubro: true } } as any);
   }
 
-  async findBySku(sku: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { sku } });
+  async findBySku(sku: string, companyId: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({ where: { sku, companyId } });
   }
 
   async findAll(

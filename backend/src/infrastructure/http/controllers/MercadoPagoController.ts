@@ -215,7 +215,7 @@ export class MercadoPagoController {
         ordenPedidoId:  pref.type === 'ORDEN_PEDIDO' ? pref.externalReference : null,
         customerId:     pref.customerId,
         userId:         pref.userId,
-        cashRegisterId: pref.cashRegisterId ?? null,
+        cashRegisterId: null, // MP no impacta en caja física — el canal es la cuenta MP
         amount,
         currency:       'ARS',
         paymentMethod:  'MERCADO_PAGO',
@@ -350,7 +350,7 @@ export class MercadoPagoController {
         ordenPedidoId:  body.ordenPedidoId  ?? null,
         customerId,
         userId:         req.user!.userId,
-        cashRegisterId: body.cashRegisterId ?? null,
+        cashRegisterId: null, // MP no impacta en caja física
         amount,
         currency:       'ARS',
         paymentMethod:  'MERCADO_PAGO',

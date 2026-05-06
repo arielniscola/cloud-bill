@@ -1,5 +1,8 @@
 import * as forge from 'node-forge';
 import * as soap from 'soap';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { AfipConfig } from '../../domain/entities/AfipConfig';
 import { InvoiceWithItems } from '../../domain/entities/Invoice';
 
@@ -20,6 +23,15 @@ const DOC_TIPO_MAP: Record<string, number> = {
   MONOTRIBUTISTA: 80,
   EXENTO: 80,
   CONSUMIDOR_FINAL: 99,
+};
+
+// AFIP — Tabla "Condición IVA Receptor" (RG 5616, obligatorio desde 2024).
+// Ver método FEParamGetCondicionIvaReceptor.
+const COND_IVA_RECEPTOR_MAP: Record<string, number> = {
+  RESPONSABLE_INSCRIPTO: 1,
+  EXENTO: 4,
+  CONSUMIDOR_FINAL: 5,
+  MONOTRIBUTISTA: 6,
 };
 
 const WSAA_WSDL = {
@@ -49,6 +61,35 @@ interface TokenAuth {
 
 // In-memory TA cache — key: `${cuit}-${env}`
 const taCache = new Map<string, TokenAuth>();
+
+// Persisted TA cache (survives backend restarts). ARCA mantiene el TA del lado
+// servidor por ~12hs y rechaza con `coe.alreadyAuthenticated` si pedís uno
+// nuevo antes de que expire — por eso necesitamos persistir.
+const TA_DIR = path.join(os.tmpdir(), 'cloud-bill-afip-ta');
+const taFilePath = (cuit: string, env: string) => path.join(TA_DIR, `${cuit}-${env}.json`);
+
+function loadTaFromDisk(cuit: string, env: string): TokenAuth | null {
+  try {
+    const raw = fs.readFileSync(taFilePath(cuit, env), 'utf8');
+    const parsed = JSON.parse(raw);
+    return { token: parsed.token, sign: parsed.sign, expiresAt: new Date(parsed.expiresAt) };
+  } catch {
+    return null;
+  }
+}
+
+function saveTaToDisk(cuit: string, env: string, ta: TokenAuth): void {
+  try {
+    fs.mkdirSync(TA_DIR, { recursive: true });
+    fs.writeFileSync(taFilePath(cuit, env), JSON.stringify({
+      token: ta.token,
+      sign: ta.sign,
+      expiresAt: ta.expiresAt.toISOString(),
+    }), 'utf8');
+  } catch (err) {
+    console.warn('[AFIP] No se pudo persistir el TA en disco:', err);
+  }
+}
 
 export class AfipService {
   /** Build the TRA (Ticket de Requerimiento de Acceso) XML */
@@ -100,10 +141,20 @@ export class AfipService {
   private async getTA(config: AfipConfig): Promise<TokenAuth> {
     const env = config.isProduction ? 'prod' : 'test';
     const cacheKey = `${config.cuit}-${env}`;
-    const cached = taCache.get(cacheKey);
-    // Reuse if still valid (with 5-min buffer)
-    if (cached && cached.expiresAt.getTime() - Date.now() > 5 * 60 * 1000) return cached;
+    const isStillValid = (ta: TokenAuth) => ta.expiresAt.getTime() - Date.now() > 5 * 60 * 1000;
 
+    // 1. Memory cache
+    const cached = taCache.get(cacheKey);
+    if (cached && isStillValid(cached)) return cached;
+
+    // 2. Disk cache (survives restart) — ARCA bloquea login mientras el TA viejo siga vivo
+    const fromDisk = loadTaFromDisk(config.cuit, env);
+    if (fromDisk && isStillValid(fromDisk)) {
+      taCache.set(cacheKey, fromDisk);
+      return fromDisk;
+    }
+
+    // 3. Login WSAA
     const tra = this.buildTRA('wsfe');
     const cms = this.signTRA(tra, config.cert, config.privateKey);
 
@@ -112,11 +163,20 @@ export class AfipService {
     try {
       [loginResult] = await (wsaaClient as any).loginCmsAsync({ in0: cms });
     } catch (err: any) {
-      throw new Error(`WSAA error: ${err.message ?? err}`);
+      const msg = String(err.message ?? err);
+      if (msg.includes('coe.alreadyAuthenticated')) {
+        throw new Error(
+          'WSAA: ARCA tiene un TA anterior aún vigente que no fue persistido localmente ' +
+          '(probablemente el backend se reinició). El TA dura ~12hs — esperá a que expire ' +
+          'o usá el TA cacheado en disco si está disponible. Detalle: ' + msg
+        );
+      }
+      throw new Error(`WSAA error: ${msg}`);
     }
 
     const ta = this.parseTA(loginResult?.loginCmsReturn ?? '');
     taCache.set(cacheKey, ta);
+    saveTaToDisk(config.cuit, env, ta);
     return ta;
   }
 
@@ -193,6 +253,7 @@ export class AfipService {
       ImpTrib: 0,
       MonId: invoice.currency === 'USD' ? 'DOL' : 'PES',
       MonCotiz: invoice.currency === 'USD' ? invoice.exchangeRate.toNumber() : 1,
+      CondicionIVAReceptorId: COND_IVA_RECEPTOR_MAP[invoice.customer.taxCondition] ?? 5,
     };
 
     if (needsIvaArray) {
@@ -210,7 +271,8 @@ export class AfipService {
     });
 
     const fResult = caeRes?.FECAESolicitarResult;
-    const det = fResult?.FeDetResp?.FECAEDetResponse;
+    const detRaw = fResult?.FeDetResp?.FECAEDetResponse;
+    const det = Array.isArray(detRaw) ? detRaw[0] : detRaw;
 
     // Surface hard errors (authentication/connection level)
     const errors = fResult?.Errors?.Err;
@@ -236,8 +298,10 @@ export class AfipService {
 
     if (!det?.CAE || det.Resultado !== 'A') {
       const obsMsg = obsList.length > 0 ? ' ' + obsList.join('; ') : '';
+      const evtMsg = evtList.length > 0 ? ' ' + evtList.join('; ') : '';
+      console.error('[AFIP] FECAESolicitar respuesta inesperada:', JSON.stringify(caeRes, null, 2));
       throw new Error(
-        `CAE rechazado por ARCA. Resultado: ${det?.Resultado ?? 'sin respuesta'}.${obsMsg}`
+        `CAE rechazado por ARCA. Resultado: ${det?.Resultado ?? 'sin respuesta'}.${obsMsg}${evtMsg}`
       );
     }
 

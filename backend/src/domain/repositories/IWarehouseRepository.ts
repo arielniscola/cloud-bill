@@ -19,19 +19,20 @@ export interface IWarehouseRepository {
 
 export interface BulkAdjustItem {
   productId: string;
+  variantId?: string | null;
   newQuantity: number;
 }
 
 export interface IStockRepository {
-  getStock(productId: string, warehouseId: string): Promise<Stock | null>;
+  getStock(productId: string, warehouseId: string, variantId?: string | null): Promise<Stock | null>;
   getStockByProduct(productId: string): Promise<Stock[]>;
   getStockByWarehouse(warehouseId: string): Promise<Stock[]>;
-  updateStock(productId: string, warehouseId: string, quantity: number): Promise<Stock>;
-  setMinQuantity(productId: string, warehouseId: string, minQuantity: number | null): Promise<Stock>;
+  updateStock(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<Stock>;
+  setMinQuantity(productId: string, warehouseId: string, minQuantity: number | null, variantId?: string | null): Promise<Stock>;
   getLowStockItems(warehouseId?: string): Promise<Stock[]>;
   addMovement(data: CreateStockMovementInput): Promise<StockMovement>;
   getMovements(
-    filters: { productId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string },
+    filters: { productId?: string; variantId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string },
     pagination?: PaginationParams
   ): Promise<PaginatedResult<StockMovement>>;
   transfer(
@@ -39,7 +40,8 @@ export interface IStockRepository {
     fromWarehouseId: string,
     toWarehouseId: string,
     quantity: number,
-    userId?: string
+    userId?: string,
+    variantId?: string | null
   ): Promise<void>;
   adjustBulk(
     warehouseId: string,
@@ -48,4 +50,8 @@ export interface IStockRepository {
     userId?: string
   ): Promise<void>;
   exportWarehouseStock(warehouseId: string): Promise<string>;
+  /** Increment reservedQuantity (variant-aware). Creates row if missing. */
+  incrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<void>;
+  /** Decrement reservedQuantity (variant-aware). Floors at 0. */
+  decrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<void>;
 }

@@ -26,6 +26,7 @@ import { IOrdenPagoRepository } from '../domain/repositories/IOrdenPagoRepositor
 import { IBankRepository } from '../domain/repositories/IBankRepository';
 import { ICardRepository } from '../domain/repositories/ICardRepository';
 import { IRubroRepository } from '../domain/repositories/IRubroRepository';
+import { IProductVariantRepository } from '../domain/repositories/IProductVariantRepository';
 import { IProductCustomFieldRepository } from '../domain/repositories/IProductCustomFieldRepository';
 import { IInternalNoteRepository } from '../domain/repositories/IInternalNoteRepository';
 import { IAccountRepository } from '../domain/repositories/IAccountRepository';
@@ -59,6 +60,7 @@ import { PrismaOrdenPagoRepository } from '../infrastructure/database/repositori
 import { PrismaBankRepository } from '../infrastructure/database/repositories/PrismaBankRepository';
 import { PrismaCardRepository } from '../infrastructure/database/repositories/PrismaCardRepository';
 import { PrismaRubroRepository } from '../infrastructure/database/repositories/PrismaRubroRepository';
+import { PrismaProductVariantRepository } from '../infrastructure/database/repositories/PrismaProductVariantRepository';
 import { PrismaProductCustomFieldRepository } from '../infrastructure/database/repositories/PrismaProductCustomFieldRepository';
 import { PrismaInternalNoteRepository } from '../infrastructure/database/repositories/PrismaInternalNoteRepository';
 import { PrismaAccountRepository } from '../infrastructure/database/repositories/PrismaAccountRepository';
@@ -96,6 +98,7 @@ container.registerSingleton<IOrdenPagoRepository>('OrdenPagoRepository', PrismaO
 container.registerSingleton<IBankRepository>('BankRepository', PrismaBankRepository);
 container.registerSingleton<ICardRepository>('CardRepository', PrismaCardRepository);
 container.registerSingleton<IRubroRepository>('RubroRepository', PrismaRubroRepository);
+container.registerSingleton<IProductVariantRepository>('ProductVariantRepository', PrismaProductVariantRepository);
 container.registerSingleton<IProductCustomFieldRepository>('ProductCustomFieldRepository', PrismaProductCustomFieldRepository);
 container.registerSingleton<IInternalNoteRepository>('InternalNoteRepository', PrismaInternalNoteRepository);
 container.registerSingleton<IAccountRepository>('AccountRepository', PrismaAccountRepository);

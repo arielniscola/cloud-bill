@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const purchaseItemSchema = z.object({
   productId: z.string().uuid().optional().nullable(),
+  variantId: z.string().uuid().optional().nullable(),
   description: z.string().min(1, 'La descripción es requerida'),
   quantity: z.number().positive('La cantidad debe ser positiva'),
   unitPrice: z.number().min(0, 'El precio debe ser positivo'),

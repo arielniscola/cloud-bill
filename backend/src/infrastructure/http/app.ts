@@ -36,6 +36,7 @@ import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
 import { cardRoutes } from './routes/cardRoutes';
 import { rubroRoutes } from './routes/rubroRoutes';
+import { productVariantRoutes, productVariantStandaloneRoutes } from './routes/productVariantRoutes';
 import { productCustomFieldRoutes } from './routes/productCustomFieldRoutes';
 import { internalNoteRoutes } from './routes/internalNoteRoutes';
 import { accountingRoutes } from './routes/accountingRoutes';
@@ -74,6 +75,8 @@ export function createApp(): Application {
   // Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/customers', customerRoutes);
+  app.use('/api/products/:productId/variants', productVariantRoutes);
+  app.use('/api/product-variants', productVariantStandaloneRoutes);
   app.use('/api/products', productRoutes);
   app.use('/api/categories', categoryRoutes);
   app.use('/api/warehouses', warehouseRoutes);

@@ -4,6 +4,9 @@ import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRep
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
 import { createOrdenPagoSchema, ordenPagoQuerySchema } from '../../../application/dtos/ordenPago.dto';
+import { recordSupplierPayment, recordSupplierPaymentReversal } from '../../services/AccountingService';
+import prisma from '../../database/prisma';
+import { Prisma } from '@prisma/client';
 
 export class OrdenPagoController {
 
@@ -94,6 +97,29 @@ export class OrdenPagoController {
 
       const paid = await repo.pay(req.params.id);
 
+      // Fetch retenciones from all linked purchase_invoices to discriminate them in the journal entry
+      const invoiceIds = [...new Set(paid.items.map((i) => i.purchaseInvoiceId).filter(Boolean) as string[])];
+      let retenciones: { type: string; amount: number }[] = [];
+      if (invoiceIds.length > 0) {
+        const rows = await prisma.$queryRaw<{ type: string; amount: any }[]>`
+          SELECT type, amount
+          FROM "purchase_invoice_retenciones"
+          WHERE "purchaseInvoiceId" IN (${Prisma.join(invoiceIds)})
+        `;
+        retenciones = rows.map((r) => ({ type: r.type, amount: Number(r.amount) }));
+      }
+
+      await recordSupplierPayment({
+        id:            paid.id,
+        number:        paid.number,
+        amount:        Number(paid.amount),
+        paymentMethod: paid.paymentMethod,
+        companyId:     req.companyId!,
+        userId:        req.user!.userId,
+        supplierName:  paid.supplier?.name,
+        retenciones,
+      });
+
       await activityLogRepo.create({
         userId:      req.user!.userId,
         action:      'UPDATE',
@@ -118,7 +144,18 @@ export class OrdenPagoController {
 
       if (op.status === 'CANCELLED') throw new AppError('La orden de pago ya está cancelada', 400);
 
+      const wasPaid = op.status === 'PAID';
       const cancelled = await repo.cancel(req.params.id);
+
+      // Reverse the journal entry only if the OP had been paid (otherwise no entry exists)
+      if (wasPaid) {
+        await recordSupplierPaymentReversal(
+          op.id,
+          op.number,
+          req.companyId!,
+          req.user!.userId,
+        );
+      }
 
       await activityLogRepo.create({
         userId:      req.user!.userId,

@@ -4,6 +4,7 @@ const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 
 const remitoItemSchema = z.object({
   productId: z.string().uuid(),
+  variantId: z.string().uuid().optional().nullable(),
   quantity: z.number().positive('Quantity must be positive'),
 });
 

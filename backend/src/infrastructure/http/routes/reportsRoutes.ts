@@ -12,6 +12,7 @@ router.use(requireFeature('reports'));
 
 router.get('/sales/by-product',       ctrl.salesByProduct);
 router.get('/purchases/by-supplier',  ctrl.purchasesBySupplier);
+router.get('/purchase-invoices',      ctrl.purchaseInvoices);
 router.get('/profitability',          ctrl.profitability);
 router.get('/stock-valuation',        ctrl.stockValuation);
 router.get('/accounts-receivable',    ctrl.accountsReceivable);

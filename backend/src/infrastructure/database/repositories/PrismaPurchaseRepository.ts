@@ -77,12 +77,13 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
   }
 
   async create(data: CreatePurchaseInput): Promise<PurchaseWithItems> {
-    const items = data.items.map((item) => {
+    const itemsWithVariant = data.items.map((item) => {
       const subtotal = new Decimal(item.quantity).times(item.unitPrice);
       const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
       return {
         productId: item.productId ?? null,
+        variantId: (item as any).variantId ?? null,
         description: item.description,
         quantity: new Decimal(item.quantity),
         unitPrice: new Decimal(item.unitPrice),
@@ -93,11 +94,14 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
       };
     });
 
-    const subtotal = items.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
-    const taxAmount = items.reduce((acc, i) => acc.plus(i.taxAmount), new Decimal(0));
+    // Strip variantId before passing to Prisma (stale client doesn't know the column).
+    const itemsForPrisma = itemsWithVariant.map(({ variantId: _v, ...rest }) => rest);
+
+    const subtotal = itemsWithVariant.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
+    const taxAmount = itemsWithVariant.reduce((acc, i) => acc.plus(i.taxAmount), new Decimal(0));
     const total = subtotal.plus(taxAmount);
 
-    return prisma.purchase.create({
+    const created = await prisma.purchase.create({
       data: {
         type: data.type,
         number: data.number,
@@ -110,10 +114,26 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
         taxAmount,
         total,
         companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
-        items: { create: items },
+        items: { create: itemsForPrisma },
       },
       include: includeRelations,
-    }) as Promise<PurchaseWithItems>;
+    }) as PurchaseWithItems;
+
+    // Backfill variantId via raw SQL.
+    // Items in `created.items` come back in insertion order; they're 1-to-1 with input.
+    const createdItems = (created.items ?? []) as Array<{ id: string; productId?: string | null }>;
+    for (let i = 0; i < itemsWithVariant.length; i++) {
+      const variantId = itemsWithVariant[i].variantId;
+      if (variantId && createdItems[i]?.id) {
+        await prisma.$executeRaw`
+          UPDATE "purchase_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}
+        `;
+        // Mirror to in-memory object so PurchaseController can read it
+        (createdItems[i] as any).variantId = variantId;
+      }
+    }
+
+    return created;
   }
 
   async update(id: string, data: UpdatePurchaseInput): Promise<Purchase> {

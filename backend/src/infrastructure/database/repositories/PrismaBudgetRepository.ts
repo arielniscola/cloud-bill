@@ -64,17 +64,42 @@ export class PrismaBudgetRepository implements IBudgetRepository {
   }
 
   async findById(id: string): Promise<BudgetWithItems | null> {
-    return prisma.budget.findUnique({
+    const budget = await prisma.budget.findUnique({
       where: { id },
       include: includeRelations,
-    }) as Promise<BudgetWithItems | null>;
+    });
+    if (!budget) return null;
+    await this._enrichItemsWithVariants((budget as any).items);
+    return budget as unknown as BudgetWithItems;
+  }
+
+  /** Hydrate items with variantId + variant info via raw SQL (Prisma client may be stale) */
+  private async _enrichItemsWithVariants(items: any[]): Promise<void> {
+    if (!items || items.length === 0) return;
+    const ids = items.map((i) => i.id);
+    const rows = await prisma.$queryRaw<Array<{ id: string; variantId: string | null; v_id: string | null; v_name: string | null; v_sku: string | null; v_attributes: any }>>`
+      SELECT bi.id, bi."variantId",
+        v.id AS v_id, v.name AS v_name, v.sku AS v_sku, v.attributes AS v_attributes
+      FROM "budget_items" bi
+      LEFT JOIN "product_variants" v ON v.id = bi."variantId"
+      WHERE bi.id = ANY(${ids}::text[])
+    `;
+    const map = new Map(rows.map((r) => [r.id, r]));
+    for (const item of items) {
+      const r = map.get(item.id);
+      if (r) {
+        item.variantId = r.variantId ?? null;
+        item.variant = r.v_id ? { id: r.v_id, name: r.v_name, sku: r.v_sku, attributes: r.v_attributes ?? {} } : null;
+      }
+    }
   }
 
   async create(data: CreateBudgetInput): Promise<BudgetWithItems> {
     const number = await this.getNextBudgetNumber();
 
-    const items = data.items.map((item) => ({
+    const itemsWithVariant = data.items.map((item) => ({
       productId: item.productId ?? null,
+      variantId: (item as any).variantId ?? null,
       description: item.description,
       quantity: new Decimal(item.quantity),
       unitPrice: new Decimal(item.unitPrice),
@@ -83,8 +108,9 @@ export class PrismaBudgetRepository implements IBudgetRepository {
       taxAmount: new Decimal(item.taxAmount),
       total: new Decimal(item.total),
     }));
+    const itemsForPrisma = itemsWithVariant.map(({ variantId: _v, ...rest }) => rest);
 
-    return (prisma as any).budget.create({
+    const created = await (prisma as any).budget.create({
       data: {
         number,
         type: data.type,
@@ -102,10 +128,22 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),
-        items: { create: items },
+        items: { create: itemsForPrisma },
       },
       include: includeRelations,
-    }) as unknown as Promise<BudgetWithItems>;
+    });
+
+    // Backfill variantId via raw SQL
+    const createdItems = (created.items ?? []) as Array<{ id: string }>;
+    for (let i = 0; i < itemsWithVariant.length; i++) {
+      const variantId = itemsWithVariant[i].variantId;
+      if (variantId && createdItems[i]?.id) {
+        await prisma.$executeRaw`UPDATE "budget_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}`;
+        (createdItems[i] as any).variantId = variantId;
+      }
+    }
+
+    return created as BudgetWithItems;
   }
 
   async update(id: string, data: UpdateBudgetInput): Promise<BudgetWithItems> {
@@ -114,24 +152,28 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     if (items) {
       // Replace items: delete all and recreate
       await prisma.budgetItem.deleteMany({ where: { budgetId: id } });
-      await prisma.budget.update({
+      const variantIds = items.map((item) => (item as any).variantId ?? null);
+      const itemsForCreate = items.map((item) => ({
+        productId: item.productId ?? null,
+        description: item.description,
+        quantity: new Decimal(item.quantity),
+        unitPrice: new Decimal(item.unitPrice),
+        taxRate: new Decimal(item.taxRate),
+        subtotal: new Decimal(item.subtotal),
+        taxAmount: new Decimal(item.taxAmount),
+        total: new Decimal(item.total),
+      }));
+      const updated = await (prisma as any).budget.update({
         where: { id },
-        data: {
-          ...(rest as any),
-          items: {
-            create: items.map((item) => ({
-              productId: item.productId ?? null,
-              description: item.description,
-              quantity: new Decimal(item.quantity),
-              unitPrice: new Decimal(item.unitPrice),
-              taxRate: new Decimal(item.taxRate),
-              subtotal: new Decimal(item.subtotal),
-              taxAmount: new Decimal(item.taxAmount),
-              total: new Decimal(item.total),
-            })),
-          },
-        },
+        data: { ...(rest as any), items: { create: itemsForCreate } },
+        include: includeRelations,
       });
+      const createdItems = (updated.items ?? []) as Array<{ id: string }>;
+      for (let i = 0; i < variantIds.length; i++) {
+        if (variantIds[i] && createdItems[i]?.id) {
+          await prisma.$executeRaw`UPDATE "budget_items" SET "variantId" = ${variantIds[i]} WHERE "id" = ${createdItems[i].id}`;
+        }
+      }
     } else {
       await prisma.budget.update({ where: { id }, data: rest as any });
     }

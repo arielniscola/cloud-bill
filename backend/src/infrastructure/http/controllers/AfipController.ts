@@ -135,16 +135,17 @@ export class AfipController {
       // Get TA outside getNextNumber to reuse the same token for both sync and emit
       const ta = await afipService.getTokenAuth(config);
 
-      // Atomically get next sequential number (syncs from AFIP on first use)
-      const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
-
-      let result;
-      try {
-        result = await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
-      } catch (afipError) {
-        await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
-        throw afipError;
-      }
+      // Serializamos numeración + emisión por (pdv, tipo) con advisory lock —
+      // ver comentario equivalente en InvoiceController.emit().
+      const result = await pdvService.runWithPdvLock(pdv.id, invoice.type, async () => {
+        const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
+        try {
+          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
+        } catch (afipError) {
+          await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
+          throw afipError;
+        }
+      });
 
       const updated = await invoiceRepo.update(req.params.id, {
         cae: result.cae,

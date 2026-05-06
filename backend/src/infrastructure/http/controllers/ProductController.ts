@@ -26,9 +26,9 @@ export class ProductController {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
 
-      const existingProduct = await productRepository.findBySku(req.body.sku);
+      const existingProduct = await productRepository.findBySku(req.body.sku, req.companyId!);
       if (existingProduct) {
-        throw new ConflictError('Product with this SKU already exists');
+        throw new ConflictError('Ya existe un producto con este código en tu empresa');
       }
 
       const product = await productRepository.create({
@@ -38,6 +38,7 @@ export class ProductController {
         description: req.body.description ?? null,
         categoryId: req.body.categoryId ?? null,
         brandId: req.body.brandId ?? null,
+        rubroId: req.body.rubroId ?? null,
         barcode: req.body.barcode ?? null,
         unit: req.body.unit ?? null,
         internalNotes: req.body.internalNotes ?? null,
@@ -128,9 +129,9 @@ export class ProductController {
       }
 
       if (req.body.sku && req.body.sku !== existingProduct.sku) {
-        const productWithSku = await productRepository.findBySku(req.body.sku);
+        const productWithSku = await productRepository.findBySku(req.body.sku, req.companyId!);
         if (productWithSku) {
-          throw new ConflictError('Product with this SKU already exists');
+          throw new ConflictError('Ya existe un producto con este código en tu empresa');
         }
       }
 
@@ -140,6 +141,7 @@ export class ProductController {
       if (req.body.description !== undefined) updateData.description = req.body.description;
       if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
       if (req.body.brandId !== undefined) updateData.brandId = req.body.brandId;
+      if (req.body.rubroId !== undefined) updateData.rubroId = req.body.rubroId;
       if (req.body.barcode !== undefined) updateData.barcode = req.body.barcode;
       if (req.body.unit !== undefined) updateData.unit = req.body.unit;
       if (req.body.internalNotes !== undefined) updateData.internalNotes = req.body.internalNotes;

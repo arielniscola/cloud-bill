@@ -100,6 +100,7 @@ export class RemitoController {
         for (const item of remito.items) {
           await stockRepository.addMovement({
             productId: item.productId,
+            variantId: (item as any).variantId ?? null,
             warehouseId: defaultWarehouse.id,
             type: 'REMITO_OUT',
             quantity: item.quantity.toNumber(),
@@ -205,8 +206,10 @@ export class RemitoController {
 
         // For RESERVE mode: discount actual stock and release reservation
         if (remito.stockBehavior === 'RESERVE') {
+          const itemVariantId = (remitoItem as any).variantId ?? null;
           await stockRepository.addMovement({
             productId: remitoItem.productId,
+            variantId: itemVariantId,
             warehouseId: defaultWarehouse.id,
             type: 'REMITO_OUT',
             quantity: deliverItem.quantity,
@@ -215,19 +218,12 @@ export class RemitoController {
             userId: req.user!.userId,
           });
 
-          await prisma.stock.update({
-            where: {
-              productId_warehouseId: {
-                productId: remitoItem.productId,
-                warehouseId: defaultWarehouse.id,
-              },
-            },
-            data: {
-              reservedQuantity: {
-                decrement: new Decimal(deliverItem.quantity),
-              },
-            },
-          });
+          await stockRepository.decrementReserved(
+            remitoItem.productId,
+            defaultWarehouse.id,
+            deliverItem.quantity,
+            itemVariantId,
+          );
         }
         // For DISCOUNT mode: stock was already moved at invoice/budget creation (linked)
         // or at remito creation (standalone). No additional movement needed.
@@ -292,28 +288,23 @@ export class RemitoController {
 
       if (remito.stockBehavior === 'RESERVE') {
         for (const item of remito.items) {
+          const itemVariantId = (item as any).variantId ?? null;
           // Release pending reservations
           const pendingReservation = item.quantity.minus(item.deliveredQuantity);
           if (pendingReservation.greaterThan(0)) {
-            await prisma.stock.update({
-              where: {
-                productId_warehouseId: {
-                  productId: item.productId,
-                  warehouseId: defaultWarehouse.id,
-                },
-              },
-              data: {
-                reservedQuantity: {
-                  decrement: pendingReservation,
-                },
-              },
-            });
+            await stockRepository.decrementReserved(
+              item.productId,
+              defaultWarehouse.id,
+              pendingReservation.toNumber(),
+              itemVariantId,
+            );
           }
 
           // Revert already delivered items
           if (item.deliveredQuantity.greaterThan(0)) {
             await stockRepository.addMovement({
               productId: item.productId,
+              variantId: itemVariantId,
               warehouseId: defaultWarehouse.id,
               type: 'RETURN',
               quantity: item.deliveredQuantity.toNumber(),
@@ -329,6 +320,7 @@ export class RemitoController {
           if (item.deliveredQuantity.greaterThan(0)) {
             await stockRepository.addMovement({
               productId: item.productId,
+              variantId: (item as any).variantId ?? null,
               warehouseId: defaultWarehouse.id,
               type: 'RETURN',
               quantity: item.deliveredQuantity.toNumber(),
