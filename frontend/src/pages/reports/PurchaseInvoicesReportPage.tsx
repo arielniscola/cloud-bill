@@ -107,22 +107,24 @@ export default function PurchaseInvoicesReportPage() {
         { header: 'Estado',           key: 'status',         width: 12 },
       ],
       data,
-      totals && {
-        imputationDate: 'TOTAL',
-        number:        '',
-        purchaseNumber:'',
-        supplierName:  '',
-        supplierCuit:  '',
-        type:          '',
-        subtotal:      totals.subtotal,
-        taxAmount:     totals.taxAmount,
-        retenciones:   totals.retenciones,
-        amount:        totals.amount,
-        net:           totals.net,
-        paymentMethod: '',
-        dueDate:       '',
-        status:        '',
-      },
+      totals
+        ? {
+            imputationDate: 'TOTAL',
+            number:        '',
+            purchaseNumber:'',
+            supplierName:  '',
+            supplierCuit:  '',
+            type:          '',
+            subtotal:      totals.subtotal,
+            taxAmount:     totals.taxAmount,
+            retenciones:   totals.retenciones,
+            amount:        totals.amount,
+            net:           totals.net,
+            paymentMethod: '',
+            dueDate:       '',
+            status:        '',
+          }
+        : undefined,
     );
   };
 
