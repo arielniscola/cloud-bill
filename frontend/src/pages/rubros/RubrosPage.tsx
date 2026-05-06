@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Edit, Trash2, Layers, Search, Power } from 'lucide-react';
+import { Plus, Edit, Trash2, Layers, Search, Power, Shirt } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,6 +13,7 @@ const rubroSchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   description: z.string().optional().nullable(),
   isActive: z.boolean(),
+  allowsVariants: z.boolean(),
 });
 type RubroFormData = z.infer<typeof rubroSchema>;
 
@@ -167,6 +168,7 @@ export default function RubrosPage() {
   });
 
   const isActiveVal = watch('isActive') ?? true;
+  const allowsVariantsVal = watch('allowsVariants') ?? false;
 
   const fetchRubros = useCallback(async () => {
     setIsLoading(true);
@@ -198,10 +200,15 @@ export default function RubrosPage() {
   const openModal = (rubro?: Rubro) => {
     if (rubro) {
       setEditingRubro(rubro);
-      reset({ name: rubro.name, description: rubro.description, isActive: rubro.isActive });
+      reset({
+        name: rubro.name,
+        description: rubro.description,
+        isActive: rubro.isActive,
+        allowsVariants: rubro.allowsVariants ?? false,
+      });
     } else {
       setEditingRubro(null);
-      reset({ name: '', description: null, isActive: true });
+      reset({ name: '', description: null, isActive: true, allowsVariants: false });
     }
     setIsModalOpen(true);
   };
@@ -382,6 +389,54 @@ export default function RubrosPage() {
             checked={isActiveVal}
             onChange={(v) => setValue('isActive', v)}
           />
+
+          <label
+            className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
+              allowsVariantsVal
+                ? 'bg-violet-50/70 border-violet-200'
+                : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600'
+            }`}
+          >
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+                allowsVariantsVal
+                  ? 'bg-violet-100 text-violet-600'
+                  : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
+              }`}
+            >
+              <Shirt className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex-1">
+              <p
+                className={`text-sm font-medium leading-none ${
+                  allowsVariantsVal ? 'text-violet-800' : 'text-gray-600 dark:text-slate-300'
+                }`}
+              >
+                Admite variantes
+              </p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-snug">
+                Activá si los productos de este rubro tienen talles, colores u otros atributos (ej. indumentaria).
+              </p>
+            </div>
+            <div
+              className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${
+                allowsVariantsVal ? 'bg-violet-500' : 'bg-gray-200 dark:bg-slate-600'
+              }`}
+              style={{ width: 36, height: 20 }}
+            >
+              <span
+                className={`absolute top-[3px] w-[14px] h-[14px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                  allowsVariantsVal ? 'translate-x-[17px]' : 'translate-x-[3px]'
+                }`}
+              />
+            </div>
+            <input
+              type="checkbox"
+              checked={allowsVariantsVal}
+              onChange={(e) => setValue('allowsVariants', e.target.checked)}
+              className="sr-only"
+            />
+          </label>
 
           <div className="flex gap-2.5 pt-1">
             <Button type="submit" isLoading={isSaving}>

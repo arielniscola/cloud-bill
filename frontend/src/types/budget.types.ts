@@ -7,6 +7,7 @@ export interface BudgetItem {
   id: string;
   budgetId: string;
   productId: string | null;
+  variantId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -16,6 +17,7 @@ export interface BudgetItem {
   taxAmount: number;
   total: number;
   product?: { id: string; name: string; sku: string } | null;
+  variant?: { id: string; name: string; sku: string; attributes: Record<string, string> } | null;
 }
 
 export interface Budget {
@@ -46,6 +48,7 @@ export interface Budget {
 
 export interface CreateBudgetItemDTO {
   productId?: string | null;
+  variantId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;

@@ -7,6 +7,7 @@ export interface OrdenPedidoItem {
   id: string;
   ordenPedidoId: string;
   productId: string | null;
+  variantId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -16,6 +17,7 @@ export interface OrdenPedidoItem {
   taxAmount: number;
   total: number;
   product?: { id: string; name: string; sku: string } | null;
+  variant?: { id: string; name: string; sku: string; attributes: Record<string, string> } | null;
 }
 
 export interface OrdenPedido {
@@ -50,6 +52,7 @@ export interface OrdenPedido {
 
 export interface CreateOrdenPedidoItemDTO {
   productId?: string | null;
+  variantId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;

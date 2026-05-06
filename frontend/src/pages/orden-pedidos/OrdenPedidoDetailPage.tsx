@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail, PackageCheck } from 'lucide-react';
+import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail, PackageCheck, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
+import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { ordenPedidosService, recibosService, remitosService, appSettingsService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import {
@@ -64,6 +65,7 @@ export default function OrdenPedidoDetailPage() {
   const [recibos, setRecibos] = useState<Recibo[]>([]);
   const [remitos, setRemitos] = useState<Remito[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [showMpModal, setShowMpModal] = useState(false);
   const [isPayLoading, setIsPayLoading] = useState(false);
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
@@ -329,6 +331,13 @@ export default function OrdenPedidoDetailPage() {
               </Button>
             )}
 
+            {canPay && remaining > 0 && (
+              <Button variant="outline" onClick={() => setShowMpModal(true)}>
+                <Smartphone className="w-4 h-4 mr-2" />
+                Cobrar con MP
+              </Button>
+            )}
+
             {canConvert && (
               <Button onClick={() => setShowConvertModal(true)}>
                 <FileText className="w-4 h-4 mr-2" />
@@ -427,8 +436,11 @@ export default function OrdenPedidoDetailPage() {
                     <tr key={item.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors duration-100">
                       <td className="px-5 py-3.5">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{item.description}</p>
-                        {item.product && (
-                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.product.sku}</p>
+                        {item.variant && (
+                          <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">{item.variant.name}</p>
+                        )}
+                        {(item.variant?.sku ?? item.product?.sku) && (
+                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">{Number(item.quantity)}</td>
@@ -718,6 +730,14 @@ export default function OrdenPedidoDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <MercadoPagoPayModal
+        open={showMpModal}
+        onClose={() => setShowMpModal(false)}
+        onPaymentRegistered={loadData}
+        ordenPedidoId={op.id}
+        title={`Cobrar Orden de Pedido ${op.number} con MP`}
+      />
 
       <SendEmailModal
         isOpen={showEmailModal}

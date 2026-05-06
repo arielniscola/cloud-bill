@@ -21,6 +21,8 @@ import { formatCurrency } from '../../utils/formatters';
 import type { Category, Brand, Rubro } from '../../types';
 import type { ProductCustomField } from '../../types/product-custom-field.types';
 import ProductCustomFieldsSection from './ProductCustomFieldsSection';
+import ProductVariantsSection from './ProductVariantsSection';
+import { usePermissions } from '../../hooks/usePermissions';
 
 // ── Constants ────────────────────────────────────────────────────
 const UNIT_OPTIONS = [
@@ -245,6 +247,7 @@ export default function ProductFormPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditing = !!id;
+  const { isModuleEnabled } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -414,6 +417,21 @@ export default function ProductFormPage() {
     ...rubros.map((r) => ({ value: r.id, label: r.name })),
   ], [rubros]);
 
+  const selectedRubro = useMemo(
+    () => rubros.find((r) => r.id === rubroId) ?? null,
+    [rubros, rubroId],
+  );
+  const variantsModuleEnabled = isModuleEnabled('variantes');
+  const variantsRubroEnabled  = !!selectedRubro?.allowsVariants;
+  const variantsEnabled       = variantsModuleEnabled && variantsRubroEnabled;
+  const variantsDisabledReason = !variantsModuleEnabled
+    ? 'El módulo de variantes no está habilitado para esta empresa.'
+    : !selectedRubro
+    ? 'Asigná un rubro al producto para habilitar variantes.'
+    : !variantsRubroEnabled
+    ? `El rubro "${selectedRubro.name}" no admite variantes. Activá "Admite variantes" en el rubro.`
+    : undefined;
+
   if (isFetching) {
     return (
       <div>
@@ -541,6 +559,15 @@ export default function ProductFormPage() {
                 }}
                 errors={customFieldErrors}
               />
+
+              {/* ── Variantes (talles, colores) ── */}
+              {(variantsEnabled || (variantsModuleEnabled && selectedRubro && !variantsRubroEnabled)) && (
+                <ProductVariantsSection
+                  productId={id ?? null}
+                  enabled={variantsEnabled}
+                  disabledReason={variantsDisabledReason}
+                />
+              )}
             </div>
 
             {/* ─────────── RIGHT COLUMN — precios + estado ─────────── */}

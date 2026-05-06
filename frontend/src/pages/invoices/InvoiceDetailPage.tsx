@@ -475,8 +475,13 @@ export default function InvoiceDetailPage() {
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {item.product?.name ?? <span className="text-gray-400 dark:text-slate-500 italic">Producto eliminado</span>}
                         </p>
-                        {item.product?.sku && (
-                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.product.sku}</p>
+                        {item.variant && (
+                          <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">
+                            {item.variant.name}
+                          </p>
+                        )}
+                        {(item.variant?.sku ?? item.product?.sku) && (
+                          <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">{Number(item.quantity)}</td>

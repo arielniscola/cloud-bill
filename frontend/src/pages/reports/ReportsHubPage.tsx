@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, BarChart2, Package,
-  Users, Landmark, ArrowRight,
+  Users, Landmark, ArrowRight, FileText,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 
@@ -28,6 +28,13 @@ const REPORTS: ReportCard[] = [
     href:        '/reports/purchases',
     icon:        ShoppingCart,
     color:       'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  {
+    title:       'Facturas de compras',
+    description: 'Detalle de facturas de proveedor con filtros, retenciones y totales pendiente/pagado.',
+    href:        '/reports/purchase-invoices',
+    icon:        FileText,
+    color:       'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
   },
   {
     title:       'Rentabilidad de productos',

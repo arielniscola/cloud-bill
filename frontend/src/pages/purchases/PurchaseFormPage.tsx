@@ -5,13 +5,15 @@ import toast from 'react-hot-toast';
 import { Button, Input, Select } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
-import { purchasesService, suppliersService, warehousesService, productsService } from '../../services';
+import { purchasesService, suppliersService, warehousesService, productsService, productVariantsService } from '../../services';
+import type { ProductVariant } from '../../types/product-variant.types';
 import { CURRENCY_OPTIONS } from '../../utils/constants';
 import { formatCurrency } from '../../utils/formatters';
 import type { CreatePurchaseDTO, CreatePurchaseItemDTO, Supplier, Warehouse, Product } from '../../types';
 
 const defaultItem: CreatePurchaseItemDTO = {
   productId: null,
+  variantId: null,
   description: '',
   quantity: 1,
   unitPrice: 0,
@@ -36,6 +38,17 @@ export default function PurchaseFormPage() {
   });
 
   const [items, setItems] = useState<CreatePurchaseItemDTO[]>([{ ...defaultItem }]);
+  const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariant[]>>({});
+
+  const loadVariantsFor = async (productId: string) => {
+    if (variantsByProduct[productId]) return;
+    try {
+      const list = await productVariantsService.getByProduct(productId);
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: list }));
+    } catch {
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: [] }));
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -63,13 +76,33 @@ export default function PurchaseFormPage() {
       setItems((prev) =>
         prev.map((item, i) =>
           i === index
-            ? { ...item, productId, description: product.name, unitPrice: product.cost, taxRate: 0 }
+            ? { ...item, productId, variantId: null, description: product.name, unitPrice: product.cost, taxRate: 0 }
             : item
         )
       );
+      void loadVariantsFor(productId);
     } else {
-      updateItem(index, 'productId', null);
+      setItems((prev) => prev.map((it, i) => i === index ? { ...it, productId: null, variantId: null } : it));
     }
+  };
+
+  const handleVariantSelect = (index: number, variantId: string) => {
+    const item = items[index];
+    if (!item?.productId) return;
+    const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
+    setItems((prev) => prev.map((it, i) => {
+      if (i !== index) return it;
+      if (!variant) return { ...it, variantId: null };
+      const overrideCost = variant.costOverride !== null && variant.costOverride !== undefined
+        ? Number(variant.costOverride)
+        : it.unitPrice;
+      return {
+        ...it,
+        variantId,
+        description: `${products.find((p) => p.id === it.productId)?.name ?? ''} · ${variant.name}`,
+        unitPrice: overrideCost,
+      };
+    }));
   };
 
   const handleBarcodeAdd = (product: Product) => {
@@ -153,6 +186,20 @@ export default function PurchaseFormPage() {
                           onChange={(pid) => handleProductSelect(index, pid)}
                           optional
                         />
+                        {item.productId && (variantsByProduct[item.productId]?.length ?? 0) > 0 && (
+                          <select
+                            className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            value={item.variantId ?? ''}
+                            onChange={(e) => handleVariantSelect(index, e.target.value)}
+                          >
+                            <option value="">— Sin variante —</option>
+                            {(variantsByProduct[item.productId] ?? []).map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.name} ({v.sku})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                       {/* Description */}
                       <div>

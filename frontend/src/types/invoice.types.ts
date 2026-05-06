@@ -27,8 +27,10 @@ export interface InvoiceItem {
   id: string;
   invoiceId: string;
   productId: string;
+  variantId?: string | null;
   description?: string;
   product?: Product;
+  variant?: { id: string; name: string; sku: string; attributes: Record<string, string> } | null;
   quantity: number;
   unitPrice: number;
   discountPct: number;
@@ -78,9 +80,11 @@ export interface Invoice {
 
 export interface CreateInvoiceItemDTO {
   productId: string;
+  variantId?: string | null;
   quantity: number;
   unitPrice: number;
   taxRate?: number;
+  discountPct?: number;
 }
 
 export interface CreateInvoiceDTO {

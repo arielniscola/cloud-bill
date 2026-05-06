@@ -44,8 +44,9 @@ const METHODS: Array<{
   { value: 'CHECK',         label: 'Cheque',         icon: <FileText className="w-4 h-4" /> },
 ];
 
-// Methods that need a cash register destination
-const CAJA_METHODS = ['CASH', 'CARD', 'MERCADO_PAGO'];
+// Methods that need a cash register destination — MP va a su propia cuenta,
+// no a caja física.
+const CAJA_METHODS = ['CASH', 'CARD'];
 
 interface PaymentModalProps {
   open: boolean;
@@ -402,7 +403,8 @@ export function PaymentModal({
           <div className="flex items-start gap-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
             <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-blue-800 dark:text-blue-400">
-              Las transferencias de Mercado Pago se registran bajo <strong>Cuenta Corriente</strong> a efectos contables.
+              Registra un cobro ya recibido en tu cuenta de <strong>Mercado Pago</strong>. No se acredita en caja —
+              el movimiento queda visible en la sección Mercado Pago.
             </p>
           </div>
         )}

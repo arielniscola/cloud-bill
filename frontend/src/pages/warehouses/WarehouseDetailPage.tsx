@@ -235,7 +235,7 @@ export default function WarehouseDetailPage() {
       header: 'SKU',
       render: (s) => (
         <span className="font-mono text-[11px] font-semibold text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-          {s.product?.sku ?? '—'}
+          {s.variant?.sku ?? s.product?.sku ?? '—'}
         </span>
       ),
     },
@@ -243,7 +243,14 @@ export default function WarehouseDetailPage() {
       key: 'product.name',
       header: 'Producto',
       render: (s) => (
-        <span className="text-sm font-medium text-gray-800 dark:text-slate-200">{s.product?.name}</span>
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-gray-800 dark:text-slate-200">{s.product?.name}</span>
+          {s.variant && (
+            <span className="text-[11px] text-violet-600 dark:text-violet-400 font-medium">
+              {s.variant.name}
+            </span>
+          )}
+        </div>
       ),
     },
     {

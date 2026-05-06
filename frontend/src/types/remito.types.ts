@@ -9,7 +9,9 @@ export interface RemitoItem {
   id: string;
   remitoId: string;
   productId: string;
+  variantId?: string | null;
   product?: Product;
+  variant?: { id: string; name: string; sku: string; attributes: Record<string, string> } | null;
   quantity: number;
   deliveredQuantity: number;
 }
@@ -41,7 +43,7 @@ export interface CreateRemitoDTO {
   notes?: string;
   invoiceId?: string;
   budgetId?: string;
-  items: { productId: string; quantity: number }[];
+  items: { productId: string; variantId?: string | null; quantity: number }[];
 }
 
 export interface DeliverRemitoDTO {

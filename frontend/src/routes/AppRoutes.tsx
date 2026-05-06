@@ -56,6 +56,7 @@ import ProfitabilityReportPage from '../pages/reports/ProfitabilityReportPage';
 import StockValuationReportPage from '../pages/reports/StockValuationReportPage';
 import AccountsReceivableReportPage from '../pages/reports/AccountsReceivableReportPage';
 import CashFlowReportPage from '../pages/reports/CashFlowReportPage';
+import PurchaseInvoicesReportPage from '../pages/reports/PurchaseInvoicesReportPage';
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
 import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
 import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
@@ -185,6 +186,7 @@ export default function AppRoutes() {
             <Route path="/reports" element={<ReportsHubPage />} />
             <Route path="/reports/sales" element={<SalesReportPage />} />
             <Route path="/reports/purchases" element={<PurchasesReportPage />} />
+            <Route path="/reports/purchase-invoices" element={<PurchaseInvoicesReportPage />} />
             <Route path="/reports/profitability" element={<ProfitabilityReportPage />} />
             <Route path="/reports/stock-valuation" element={<StockValuationReportPage />} />
             <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />

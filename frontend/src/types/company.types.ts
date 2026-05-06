@@ -15,14 +15,15 @@ export interface Company {
   updatedAt: string;
 }
 
-export const ALL_MODULE_KEYS = ['ventas', 'catalogo', 'compras', 'finanzas'] as const;
+export const ALL_MODULE_KEYS = ['ventas', 'catalogo', 'compras', 'finanzas', 'variantes'] as const;
 export type ModuleKey = typeof ALL_MODULE_KEYS[number];
 
 export const MODULE_LABELS: Record<ModuleKey, { label: string; description: string }> = {
-  ventas:   { label: 'Ventas',    description: 'Facturas, presupuestos, remitos, recibos, clientes, cuentas corrientes' },
-  catalogo: { label: 'Catálogo',  description: 'Productos, stock, almacenes' },
-  compras:  { label: 'Compras',   description: 'Proveedores, órdenes de compra, compras' },
-  finanzas: { label: 'Finanzas',  description: 'Cajas, banco de cheques, libro IVA, reportes' },
+  ventas:    { label: 'Ventas',    description: 'Facturas, presupuestos, remitos, recibos, clientes, cuentas corrientes' },
+  catalogo:  { label: 'Catálogo',  description: 'Productos, stock, almacenes' },
+  compras:   { label: 'Compras',   description: 'Proveedores, órdenes de compra, compras' },
+  finanzas:  { label: 'Finanzas',  description: 'Cajas, banco de cheques, libro IVA, reportes' },
+  variantes: { label: 'Variantes', description: 'Permite variantes de producto por talle, color u otros atributos (ej. tienda de ropa)' },
 };
 
 export interface CreateCompanyDTO {

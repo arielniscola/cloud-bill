@@ -297,8 +297,11 @@ export default function RemitoDetailPage() {
                           <p className="text-sm font-medium text-gray-900 dark:text-white">
                             {item.product?.name ?? <span className="text-gray-400 dark:text-slate-500 italic text-xs">Producto eliminado</span>}
                           </p>
-                          {item.product?.sku && (
-                            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.product.sku}</p>
+                          {item.variant && (
+                            <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">{item.variant.name}</p>
+                          )}
+                          {(item.variant?.sku ?? item.product?.sku) && (
+                            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">
@@ -400,6 +403,7 @@ export default function RemitoDetailPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                       {item.product?.name}
+                      {item.variant && <span className="text-violet-600 dark:text-violet-400 font-medium ml-1">· {item.variant.name}</span>}
                     </p>
                     <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Pendiente: {pending}</p>
                   </div>

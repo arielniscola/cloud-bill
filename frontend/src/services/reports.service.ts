@@ -44,6 +44,50 @@ export interface PurchasesReportFilters extends DateRangeParams {
   status?:     string;
 }
 
+// ── Purchase Invoices ─────────────────────────────────────────────────────────
+export interface PurchaseInvoiceReportRow {
+  id:             string;
+  number:         string;
+  type:           string;
+  subtotal:       number;
+  taxAmount:      number;
+  amount:         number;
+  retenciones:    number;
+  net:            number;
+  dueDate:        string | null;
+  imputationDate: string | null;
+  paymentMethod:  string;
+  status:         'PENDING' | 'PAID';
+  notes:          string | null;
+  purchaseId:     string;
+  purchaseNumber: string;
+  purchaseDate:   string | null;
+  currency:       string;
+  supplierId:     string;
+  supplierName:   string;
+  supplierCuit:   string;
+}
+
+export interface PurchaseInvoiceReportTotals {
+  count:        number;
+  subtotal:     number;
+  taxAmount:    number;
+  amount:       number;
+  retenciones:  number;
+  net:          number;
+  pending:      number;
+  paid:         number;
+}
+
+export type PurchaseInvoiceDateField = 'imputationDate' | 'dueDate' | 'createdAt' | 'purchaseDate';
+
+export interface PurchaseInvoicesReportFilters extends DateRangeParams {
+  supplierId?:    string;
+  status?:        string;
+  paymentMethod?: string;
+  dateField?:     PurchaseInvoiceDateField;
+}
+
 // ── Profitability ─────────────────────────────────────────────────────────────
 export interface ProfitabilityRow {
   productId:  string;
@@ -134,6 +178,13 @@ export const reportsService = {
       '/reports/purchases/by-supplier', { params: clean(filters) }
     );
     return { data: res.data.data };
+  },
+
+  async purchaseInvoices(filters: PurchaseInvoicesReportFilters): Promise<{ data: PurchaseInvoiceReportRow[]; totals: PurchaseInvoiceReportTotals }> {
+    const res = await api.get<{ status: string; data: PurchaseInvoiceReportRow[]; totals: PurchaseInvoiceReportTotals }>(
+      '/reports/purchase-invoices', { params: clean(filters) }
+    );
+    return { data: res.data.data, totals: res.data.totals };
   },
 
   async profitability(filters: ProfitabilityFilters): Promise<ProfitabilityRow[]> {

@@ -10,7 +10,8 @@ import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSel
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { invoicesService, customersService, productsService, appSettingsService, stockService } from '../../services';
+import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService } from '../../services';
+import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
@@ -32,6 +33,7 @@ import { PaymentModal } from '../../components/shared';
 
 const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Seleccioná un producto'),
+  variantId: z.string().nullable().optional(),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
   discountPct: z.coerce.number().min(0).max(100).default(0),
@@ -173,6 +175,7 @@ export default function InvoiceFormPage() {
       notes: `${prefix} por ${INVOICE_TYPES[origin.type]} ${origin.number}`,
       items: origin.items.map((item) => ({
         productId: item.productId,
+        variantId: item.variantId ?? null,
         quantity: Number(item.quantity),
         unitPrice: Number(item.unitPrice),
         discountPct: Number(item.discountPct) || 0,
@@ -254,6 +257,7 @@ export default function InvoiceFormPage() {
           originInvoiceId: invoice.originInvoiceId ?? null,
           items: invoice.items.map((item) => ({
             productId: item.productId,
+            variantId: item.variantId ?? null,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
             discountPct: 0,
@@ -270,12 +274,43 @@ export default function InvoiceFormPage() {
     fetchInvoice();
   }, [id, isEditing, reset, navigate]);
 
+  const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariant[]>>({});
+
+  const loadVariantsFor = async (productId: string) => {
+    if (variantsByProduct[productId]) return;
+    try {
+      const list = await productVariantsService.getByProduct(productId);
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: list }));
+    } catch {
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: [] }));
+    }
+  };
+
   const handleProductChange = (index: number, productId: string) => {
     const product = products.find((p) => p.id === productId);
     if (product) {
       setValue(`items.${index}.productId`, productId);
+      setValue(`items.${index}.variantId`, null);
       setValue(`items.${index}.unitPrice`, product.price);
       setValue(`items.${index}.taxRate`, product.taxRate);
+      void loadVariantsFor(productId);
+    }
+  };
+
+  // Pre-cargar variantes cuando hay items con productId (modo edit / NC/ND)
+  useEffect(() => {
+    const pids = new Set<string>();
+    items.forEach((it: any) => { if (it.productId) pids.add(it.productId); });
+    pids.forEach((pid) => { if (!variantsByProduct[pid]) void loadVariantsFor(pid); });
+  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleVariantChange = (index: number, variantId: string) => {
+    const item = items[index];
+    if (!item?.productId) return;
+    const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
+    setValue(`items.${index}.variantId`, variantId || null);
+    if (variant && variant.priceOverride !== null && variant.priceOverride !== undefined) {
+      setValue(`items.${index}.unitPrice`, Number(variant.priceOverride));
     }
   };
 
@@ -484,6 +519,20 @@ export default function InvoiceFormPage() {
                           onChange={(value) => handleProductChange(index, value)}
                           error={errors.items?.[index]?.productId?.message}
                         />
+                        {items[index]?.productId && (variantsByProduct[items[index].productId]?.length ?? 0) > 0 && (
+                          <select
+                            className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            value={(items[index] as any)?.variantId ?? ''}
+                            onChange={(e) => handleVariantChange(index, e.target.value)}
+                          >
+                            <option value="">— Sin variante —</option>
+                            {(variantsByProduct[items[index].productId] ?? []).map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.name} ({v.sku})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
 
                       {/* Quantity */}

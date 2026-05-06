@@ -1,5 +1,6 @@
 import type { Product } from './product.types';
 import type { Warehouse } from './warehouse.types';
+import type { ProductVariant } from './product-variant.types';
 
 export type StockMovementType =
   | 'PURCHASE'
@@ -16,8 +17,10 @@ export type StockMovementType =
 export interface Stock {
   id: string;
   productId: string;
+  variantId: string | null;
   warehouseId: string;
   product?: Product;
+  variant?: ProductVariant | null;
   warehouse?: Warehouse;
   quantity: number;
   reservedQuantity: number;
@@ -28,8 +31,10 @@ export interface Stock {
 export interface StockMovement {
   id: string;
   productId: string;
+  variantId: string | null;
   warehouseId: string;
   product?: Product;
+  variant?: ProductVariant | null;
   warehouse?: Warehouse;
   type: StockMovementType;
   quantity: number;
@@ -76,6 +81,7 @@ export interface StockMovementFilters {
 
 export interface BulkAdjustItem {
   productId: string;
+  variantId?: string | null;
   newQuantity: number;
 }
 

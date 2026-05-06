@@ -123,6 +123,7 @@ export interface Purchase {
 
 export interface CreatePurchaseItemDTO {
   productId?: string | null;
+  variantId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;

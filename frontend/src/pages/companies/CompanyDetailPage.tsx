@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import { Button } from '../../components/ui';
 import companiesService from '../../services/companies.service';
 import type { Company } from '../../types/company.types';
-import { MODULE_LABELS } from '../../types/company.types';
+import { MODULE_LABELS, ALL_MODULE_KEYS, type ModuleKey } from '../../types/company.types';
 import { formatDate } from '../../utils/formatters';
 import {
   PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, PLAN_COLORS,
@@ -26,6 +26,7 @@ export default function CompanyDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<PlanName>('PRO');
   const [isSavingPlan, setIsSavingPlan] = useState(false);
+  const [togglingModule, setTogglingModule] = useState<ModuleKey | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -37,6 +38,32 @@ export default function CompanyDetailPage() {
       .catch(() => toast.error('Error al cargar empresa'))
       .finally(() => setIsLoading(false));
   }, [id]);
+
+  const handleToggleModule = async (key: ModuleKey) => {
+    if (!id || !company) return;
+    const current = company.enabledModules ?? [];
+    const expanded: string[] = current.includes('ALL')
+      ? [...ALL_MODULE_KEYS]
+      : current.filter((k) => k !== 'ALL');
+    const next = expanded.includes(key)
+      ? expanded.filter((k) => k !== key)
+      : [...expanded, key];
+    const finalList = next.length === ALL_MODULE_KEYS.length
+      && ALL_MODULE_KEYS.every((k) => next.includes(k))
+      ? ['ALL']
+      : next;
+
+    setTogglingModule(key);
+    try {
+      await companiesService.updateModules(id, finalList);
+      setCompany((prev) => prev ? { ...prev, enabledModules: finalList } : prev);
+      toast.success(`Módulo "${MODULE_LABELS[key].label}" ${next.includes(key) ? 'activado' : 'desactivado'}`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al actualizar módulos');
+    } finally {
+      setTogglingModule(null);
+    }
+  };
 
   const handleSavePlan = async () => {
     if (!id) return;
@@ -203,22 +230,26 @@ export default function CompanyDetailPage() {
             Módulos habilitados
           </h3>
           <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-            Los módulos se gestionan de forma independiente al plan. Cambian desde la sección de edición de empresa.
+            Los módulos se gestionan de forma independiente al plan. Hacé click en cada uno para activarlo o desactivarlo.
           </p>
         </div>
         <div className="p-5">
           <div className="grid grid-cols-2 gap-2">
-            {(['ventas', 'catalogo', 'compras', 'finanzas'] as const).map(key => {
+            {ALL_MODULE_KEYS.map((key) => {
               const enabled = company?.enabledModules?.includes('ALL') || company?.enabledModules?.includes(key) || false;
               const { label, description } = MODULE_LABELS[key];
+              const isToggling = togglingModule === key;
               return (
-                <div
+                <button
                   key={key}
+                  type="button"
+                  onClick={() => handleToggleModule(key)}
+                  disabled={isToggling}
                   className={clsx(
-                    'p-3 rounded-lg border text-sm',
+                    'text-left p-3 rounded-lg border text-sm transition-all duration-150 disabled:opacity-50',
                     enabled
-                      ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10'
-                      : 'border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 opacity-50'
+                      ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+                      : 'border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 opacity-60 hover:opacity-100 hover:border-gray-300 dark:hover:border-slate-500'
                   )}
                 >
                   <div className="flex items-center gap-1.5 mb-0.5">
@@ -228,9 +259,10 @@ export default function CompanyDetailPage() {
                     <span className={clsx('font-medium', enabled ? 'text-gray-800 dark:text-slate-200' : 'text-gray-400 dark:text-slate-500')}>
                       {label}
                     </span>
+                    {isToggling && <span className="ml-auto text-[10px] text-gray-400">guardando…</span>}
                   </div>
                   <p className="text-xs text-gray-400 dark:text-slate-500 ml-4 leading-tight">{description}</p>
-                </div>
+                </button>
               );
             })}
           </div>

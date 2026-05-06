@@ -5,6 +5,10 @@ import {
   Landmark, BookOpen, Plus, ArrowRightLeft, ArrowRight,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores';
+import { usePermissions } from '../../hooks/usePermissions';
+import { useFeatures } from '../../hooks/useFeatures';
+import type { FeatureKey } from '../../utils/planFeatures';
+import type { UserRole } from '../../types';
 
 /* ── Types ────────────────────────────────────────────────────── */
 interface QuickAction {
@@ -13,6 +17,9 @@ interface QuickAction {
   icon: React.ElementType;
   color: string;
   bg: string;
+  moduleKey?: string;
+  featureKey?: FeatureKey;
+  requiredRoles?: readonly UserRole[];
 }
 
 interface ModuleItem {
@@ -22,30 +29,43 @@ interface ModuleItem {
   icon: React.ElementType;
   iconColor: string;
   iconBg: string;
+  featureKey?: FeatureKey;
+  requiredRoles?: readonly UserRole[];
 }
 
 interface ModuleGroup {
   label: string;
+  moduleKey?: string;
+  requiredRoles?: readonly UserRole[];
   items: ModuleItem[];
 }
 
 /* ── Data ─────────────────────────────────────────────────────── */
+const SALES_ROLES     = ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK', 'FINANCES'] as const;
+const PURCHASES_ROLES = ['ADMIN', 'FINANCES', 'PURCHASES'] as const;
+const FINANCES_ROLES  = ['ADMIN', 'FINANCES'] as const;
+const SALES_WRITE     = ['ADMIN', 'SELLER'] as const;
+const PURCHASES_WRITE = ['ADMIN', 'PURCHASES'] as const;
+const CATALOG_WRITE   = ['ADMIN', 'SELLER'] as const;
+
 const quickActions: QuickAction[] = [
-  { label: 'Nueva Factura',      to: '/invoices/new',    icon: FileText,    color: 'text-indigo-600', bg: 'bg-indigo-50' },
-  { label: 'Nuevo Presupuesto',  to: '/budgets/new',     icon: Calculator,  color: 'text-violet-600', bg: 'bg-violet-50' },
-  { label: 'Nuevo Cliente',      to: '/customers/new',   icon: Users,       color: 'text-blue-600',   bg: 'bg-blue-50' },
-  { label: 'Nuevo Proveedor',    to: '/suppliers/new',   icon: Truck,       color: 'text-orange-600', bg: 'bg-orange-50' },
-  { label: 'Nueva Compra',       to: '/purchases/new',   icon: ShoppingCart,color: 'text-amber-600',  bg: 'bg-amber-50' },
-  { label: 'Nuevo Producto',     to: '/products/new',    icon: Package,     color: 'text-emerald-600',bg: 'bg-emerald-50' },
-  { label: 'Transferir Stock',   to: '/stock/transfer',  icon: ArrowRightLeft, color: 'text-teal-600', bg: 'bg-teal-50' },
+  { label: 'Nueva Factura',      to: '/invoices/new',    icon: FileText,    color: 'text-indigo-600', bg: 'bg-indigo-50',   moduleKey: 'ventas',    requiredRoles: SALES_WRITE },
+  { label: 'Nuevo Presupuesto',  to: '/budgets/new',     icon: Calculator,  color: 'text-violet-600', bg: 'bg-violet-50',   moduleKey: 'ventas',    requiredRoles: SALES_WRITE,     featureKey: 'budgets' },
+  { label: 'Nuevo Cliente',      to: '/customers/new',   icon: Users,       color: 'text-blue-600',   bg: 'bg-blue-50',     moduleKey: 'ventas',    requiredRoles: SALES_WRITE },
+  { label: 'Nuevo Proveedor',    to: '/suppliers/new',   icon: Truck,       color: 'text-orange-600', bg: 'bg-orange-50',   moduleKey: 'compras',   requiredRoles: PURCHASES_WRITE },
+  { label: 'Nueva Compra',       to: '/purchases/new',   icon: ShoppingCart,color: 'text-amber-600',  bg: 'bg-amber-50',    moduleKey: 'compras',   requiredRoles: PURCHASES_WRITE },
+  { label: 'Nuevo Producto',     to: '/products/new',    icon: Package,     color: 'text-emerald-600',bg: 'bg-emerald-50',  moduleKey: 'catalogo',  requiredRoles: CATALOG_WRITE },
+  { label: 'Transferir Stock',   to: '/stock/transfer',  icon: ArrowRightLeft, color: 'text-teal-600', bg: 'bg-teal-50',    moduleKey: 'catalogo',  requiredRoles: CATALOG_WRITE,   featureKey: 'multi_warehouse' },
 ];
 
 const moduleGroups: ModuleGroup[] = [
   {
     label: 'Ventas',
+    moduleKey: 'ventas',
+    requiredRoles: SALES_ROLES,
     items: [
       { name: 'Clientes',       description: 'Gestión de clientes y contactos',  href: '/customers',        icon: Users,         iconColor: 'text-blue-600',   iconBg: 'bg-blue-50' },
-      { name: 'Presupuestos',   description: 'Cotizaciones y propuestas',         href: '/budgets',          icon: Calculator,    iconColor: 'text-violet-600', iconBg: 'bg-violet-50' },
+      { name: 'Presupuestos',   description: 'Cotizaciones y propuestas',         href: '/budgets',          icon: Calculator,    iconColor: 'text-violet-600', iconBg: 'bg-violet-50',   featureKey: 'budgets' },
       { name: 'Facturas',       description: 'Comprobantes de venta',             href: '/invoices',         icon: FileText,      iconColor: 'text-indigo-600', iconBg: 'bg-indigo-50' },
       { name: 'Remitos',        description: 'Entregas de mercadería',            href: '/remitos',          icon: ClipboardList, iconColor: 'text-teal-600',   iconBg: 'bg-teal-50' },
       { name: 'Recibos',        description: 'Pagos y cobros registrados',        href: '/recibos',          icon: Receipt,       iconColor: 'text-emerald-600',iconBg: 'bg-emerald-50' },
@@ -53,6 +73,8 @@ const moduleGroups: ModuleGroup[] = [
   },
   {
     label: 'Compras',
+    moduleKey: 'compras',
+    requiredRoles: PURCHASES_ROLES,
     items: [
       { name: 'Proveedores',    description: 'Gestión de proveedores',            href: '/suppliers',        icon: Truck,         iconColor: 'text-orange-600', iconBg: 'bg-orange-50' },
       { name: 'Compras',        description: 'Órdenes de compra e ingresos',      href: '/purchases',        icon: ShoppingCart,  iconColor: 'text-amber-600',  iconBg: 'bg-amber-50' },
@@ -60,6 +82,7 @@ const moduleGroups: ModuleGroup[] = [
   },
   {
     label: 'Catálogo',
+    moduleKey: 'catalogo',
     items: [
       { name: 'Productos',      description: 'Catálogo de artículos y servicios', href: '/products',         icon: Package,       iconColor: 'text-emerald-600',iconBg: 'bg-emerald-50' },
       { name: 'Stock',          description: 'Inventario y movimientos',          href: '/stock',            icon: PackageSearch, iconColor: 'text-lime-600',   iconBg: 'bg-lime-50' },
@@ -67,10 +90,12 @@ const moduleGroups: ModuleGroup[] = [
   },
   {
     label: 'Finanzas',
+    moduleKey: 'finanzas',
+    requiredRoles: FINANCES_ROLES,
     items: [
-      { name: 'Cuentas Corrientes', description: 'Saldos y deudas de clientes',  href: '/current-accounts', icon: CreditCard,    iconColor: 'text-rose-600',   iconBg: 'bg-rose-50' },
+      { name: 'Cuentas Corrientes', description: 'Saldos y deudas de clientes',  href: '/current-accounts', icon: CreditCard,    iconColor: 'text-rose-600',   iconBg: 'bg-rose-50',    featureKey: 'current_accounts' },
       { name: 'Cajas',              description: 'Administración de cajas',        href: '/cash-registers',   icon: Landmark,      iconColor: 'text-sky-600',    iconBg: 'bg-sky-50' },
-      { name: 'Libro IVA',          description: 'Registro de comprobantes IVA',   href: '/iva',              icon: BookOpen,      iconColor: 'text-slate-600',  iconBg: 'bg-slate-100' },
+      { name: 'Libro IVA',          description: 'Registro de comprobantes IVA',   href: '/iva',              icon: BookOpen,      iconColor: 'text-slate-600',  iconBg: 'bg-slate-100',  featureKey: 'iva_book' },
     ],
   },
 ];
@@ -78,11 +103,36 @@ const moduleGroups: ModuleGroup[] = [
 /* ── Component ────────────────────────────────────────────────── */
 export default function HomePage() {
   const { user } = useAuthStore();
+  const { role, isModuleEnabled } = usePermissions();
+  const { hasFeature } = useFeatures();
   const firstName = user?.name?.split(' ')[0] ?? 'usuario';
 
   if (user?.role === 'SUPER_ADMIN') {
     return <Navigate to="/companies" replace />;
   }
+
+  const visibleQuickActions = quickActions.filter((a) => {
+    if (a.moduleKey && !isModuleEnabled(a.moduleKey)) return false;
+    if (a.featureKey && !hasFeature(a.featureKey)) return false;
+    if (a.requiredRoles && !a.requiredRoles.includes(role)) return false;
+    return true;
+  });
+
+  const visibleModuleGroups = moduleGroups
+    .filter((g) => {
+      if (g.moduleKey && !isModuleEnabled(g.moduleKey)) return false;
+      if (g.requiredRoles && !g.requiredRoles.includes(role)) return false;
+      return true;
+    })
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => {
+        if (i.featureKey && !hasFeature(i.featureKey)) return false;
+        if (i.requiredRoles && !i.requiredRoles.includes(role)) return false;
+        return true;
+      }),
+    }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div className="space-y-8">
@@ -101,7 +151,7 @@ export default function HomePage() {
           <h2 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Acciones rápidas</h2>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
-          {quickActions.map((action) => (
+          {visibleQuickActions.map((action) => (
             <Link
               key={action.to}
               to={action.to}
@@ -120,7 +170,7 @@ export default function HomePage() {
 
       {/* Module groups */}
       <div className="space-y-6">
-        {moduleGroups.map((group) => (
+        {visibleModuleGroups.map((group) => (
           <section key={group.label}>
             <h2 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-3">
               {group.label}

@@ -264,11 +264,12 @@ export default function StockPage() {
     for (const [warehouseId, wStocks] of allWarehouseStocks) {
       for (const s of wStocks) {
         if (!s.product) continue;
-        if (!map.has(s.productId)) {
-          map.set(s.productId, {
+        const rowKey = `${s.productId}|${s.variantId ?? ''}`;
+        if (!map.has(rowKey)) {
+          map.set(rowKey, {
             productId: s.productId,
-            name: s.product.name,
-            sku: s.product.sku,
+            name: s.variant ? `${s.product.name} · ${s.variant.name}` : s.product.name,
+            sku: s.variant?.sku ?? s.product.sku,
             category: s.product.category?.name,
             categoryId: s.product.category?.id,
             brand: s.product.brand?.name,
@@ -277,7 +278,7 @@ export default function StockPage() {
             totalAvailable: 0,
           });
         }
-        const row = map.get(s.productId)!;
+        const row = map.get(rowKey)!;
         const qty = Number(s.quantity);
         const reserved = Number(s.reservedQuantity);
         const available = qty - reserved;

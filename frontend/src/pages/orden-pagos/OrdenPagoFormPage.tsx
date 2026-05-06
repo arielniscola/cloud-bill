@@ -323,7 +323,7 @@ export default function OrdenPagoFormPage() {
           <Button variant="outline" type="button" onClick={() => navigate('/orden-pagos')}>
             Cancelar
           </Button>
-          <Button type="submit" isLoading={isSubmitting} disabled={items.length === 0}>
+          <Button type="submit" isLoading={isSubmitting}>
             <Plus className="w-4 h-4 mr-2" />
             Emitir Orden de Pago
           </Button>

@@ -9,7 +9,8 @@ import { Button, Input, Select, Textarea } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { budgetsService, customersService, productsService, appSettingsService } from '../../services';
+import { budgetsService, customersService, productsService, appSettingsService, productVariantsService } from '../../services';
+import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
@@ -17,6 +18,7 @@ import type { Customer, Product, Currency, InvoiceType } from '../../types';
 
 const budgetItemSchema = z.object({
   productId: z.string().optional().nullable(),
+  variantId: z.string().nullable().optional(),
   description: z.string().min(1, 'Requerida'),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
@@ -174,6 +176,7 @@ export default function BudgetFormPage() {
           currency: budget.currency,
           items: budget.items.map((item) => ({
             productId: item.productId,
+            variantId: item.variantId ?? null,
             description: item.description,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
@@ -190,17 +193,53 @@ export default function BudgetFormPage() {
     fetchBudget();
   }, [id, isEditing, reset, navigate]);
 
+  const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariant[]>>({});
+
+  const loadVariantsFor = async (productId: string) => {
+    if (variantsByProduct[productId]) return;
+    try {
+      const list = await productVariantsService.getByProduct(productId);
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: list }));
+    } catch {
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: [] }));
+    }
+  };
+
   const handleProductChange = (index: number, productId: string) => {
     const product = products.find((p) => p.id === productId);
     if (product) {
       setValue(`items.${index}.productId`, productId);
+      (setValue as any)(`items.${index}.variantId`, null);
       setValue(`items.${index}.description`, product.name);
       setValue(`items.${index}.unitPrice`, currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price);
       setValue(`items.${index}.taxRate`, product.taxRate);
+      void loadVariantsFor(productId);
     } else {
       setValue(`items.${index}.productId`, null);
+      (setValue as any)(`items.${index}.variantId`, null);
     }
   };
+
+  const handleVariantChange = (index: number, variantId: string) => {
+    const item = items[index];
+    if (!item?.productId) return;
+    const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
+    (setValue as any)(`items.${index}.variantId`, variantId || null);
+    if (variant && variant.priceOverride !== null && variant.priceOverride !== undefined) {
+      setValue(`items.${index}.unitPrice`, Number(variant.priceOverride));
+    }
+    if (variant) {
+      const baseDesc = products.find((p) => p.id === item.productId)?.name ?? '';
+      setValue(`items.${index}.description`, `${baseDesc} · ${variant.name}`);
+    }
+  };
+
+  // Pre-cargar variantes en edit
+  useEffect(() => {
+    const pids = new Set<string>();
+    items.forEach((it: any) => { if (it.productId) pids.add(it.productId); });
+    pids.forEach((pid) => { if (!variantsByProduct[pid]) void loadVariantsFor(pid); });
+  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBarcodeAdd = (product: Product) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
@@ -312,6 +351,20 @@ export default function BudgetFormPage() {
                           onChange={(value) => handleProductChange(index, value)}
                           optional
                         />
+                        {items[index]?.productId && (variantsByProduct[items[index].productId!]?.length ?? 0) > 0 && (
+                          <select
+                            className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            value={(items[index] as any)?.variantId ?? ''}
+                            onChange={(e) => handleVariantChange(index, e.target.value)}
+                          >
+                            <option value="">— Sin variante —</option>
+                            {(variantsByProduct[items[index].productId!] ?? []).map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.name} ({v.sku})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
 
                       {/* Description */}
