@@ -314,12 +314,12 @@ export default function InvoiceFormPage() {
     }
   };
 
-  const handleBarcodeAdd = (product: Product) => {
+  const handleBarcodeAdd = (product: Product, qty: number = 1) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
-      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + 1);
+      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
     } else {
-      append({ productId: product.id, quantity: 1, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
+      append({ productId: product.id, quantity: qty, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
     }
   };
 

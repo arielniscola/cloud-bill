@@ -163,16 +163,18 @@ export class SyncController {
             updatedAt: true,
           },
         }),
-        // global tables — no companyId, include everything (or delta by updatedAt)
+        // categories/brands — scoped to the company (have companyId)
         prisma.category.findMany({
-          ...(afterDate && { where: { updatedAt: afterDate } }),
+          where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
         prisma.brand.findMany({
-          ...(afterDate && { where: { updatedAt: afterDate } }),
+          where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
-        // afip_config has no companyId — include all records
-        prisma.afipConfig.findMany(),
-        // app_settings — single row
+        // afip_config — scoped to the company (has companyId)
+        prisma.afipConfig.findMany({
+          where: { companyId },
+        }),
+        // app_settings — single global row (no companyId)
         prisma.appSettings.findMany(),
         // activity_logs — via user.companyId
         prisma.activityLog.findMany({

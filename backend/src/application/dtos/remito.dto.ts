@@ -10,7 +10,9 @@ const remitoItemSchema = z.object({
 
 export const createRemitoSchema = z.object({
   customerId: z.string().uuid(),
-  stockBehavior: z.enum(['DISCOUNT', 'RESERVE']),
+  // Optional: the controller derives stockBehavior from the source document
+  // (invoice/budget/ordenPedido) or defaults to DISCOUNT for standalone remitos.
+  stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).optional(),
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),

@@ -145,12 +145,12 @@ export default function RemitoFormPage() {
     load();
   }, [invoiceId, budgetId, setValue]);
 
-  const handleBarcodeAdd = (product: Product) => {
+  const handleBarcodeAdd = (product: Product, qty: number = 1) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
-      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + 1);
+      setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
     } else {
-      append({ productId: product.id, quantity: 1 });
+      append({ productId: product.id, quantity: qty });
     }
   };
 

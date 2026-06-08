@@ -105,14 +105,14 @@ export default function PurchaseFormPage() {
     }));
   };
 
-  const handleBarcodeAdd = (product: Product) => {
+  const handleBarcodeAdd = (product: Product, qty: number = 1) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
-      updateItem(existingIndex, 'quantity', Number(items[existingIndex].quantity) + 1);
+      updateItem(existingIndex, 'quantity', Number(items[existingIndex].quantity) + qty);
     } else {
       setItems((prev) => [
         ...prev,
-        { productId: product.id, description: product.name, quantity: 1, unitPrice: product.cost, taxRate: 0 },
+        { productId: product.id, description: product.name, quantity: qty, unitPrice: product.cost, taxRate: 0 },
       ]);
     }
   };

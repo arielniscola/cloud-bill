@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
@@ -16,6 +16,7 @@ import {
   Package,
   FolderTree,
   Tag,
+  Layers,
   PackageSearch,
   BarChart2,
   ArrowRightLeft,
@@ -34,8 +35,15 @@ import {
   FileStack,
   Banknote,
   Store,
+  Smartphone,
+  FileEdit,
+  Sliders,
+  Building2,
+  Crown,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../stores';
+import { usePermissions } from '../../hooks/usePermissions';
+import { useFeatures } from '../../hooks/useFeatures';
 import NotificationBell from '../notifications/NotificationBell';
 import { getNavTheme } from '../../utils/navThemes';
 
@@ -43,6 +51,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
+  featureKey?: string;
 }
 
 interface NavSection {
@@ -53,10 +62,26 @@ interface NavSection {
 interface NavDropdown {
   name: string;
   icon: React.ElementType;
+  moduleKey?: string;
+  featureKey?: string;
+  requiredRoles?: readonly string[];
   sections: NavSection[];
 }
 
-type NavEntry = ({ type: 'link' } & NavItem) | ({ type: 'dropdown' } & NavDropdown);
+interface NavLinkEntry extends NavItem {
+  moduleKey?: string;
+  requiredRoles?: readonly string[];
+}
+
+type NavEntry =
+  | ({ type: 'link' } & NavLinkEntry)
+  | ({ type: 'dropdown' } & NavDropdown);
+
+const superAdminNavigation: NavEntry[] = [
+  { type: 'link', name: 'Empresas', href: '/companies', icon: Building2 },
+  { type: 'link', name: 'Usuarios', href: '/users',     icon: Users },
+  { type: 'link', name: 'Planes',   href: '/plans',     icon: Crown },
+];
 
 const navigation: NavEntry[] = [
   { type: 'link', name: 'Inicio',       href: '/',          icon: Home },
@@ -65,12 +90,15 @@ const navigation: NavEntry[] = [
     type: 'dropdown',
     name: 'Ventas',
     icon: Store,
+    moduleKey: 'ventas',
+    requiredRoles: ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK', 'FINANCES'] as const,
     sections: [
       {
         heading: 'Clientes',
         items: [
           { name: 'Clientes',           href: '/customers',        icon: Users },
-          { name: 'Cuentas Corrientes', href: '/current-accounts', icon: CreditCard },
+          { name: 'Cuentas Corrientes', href: '/current-accounts', icon: CreditCard, featureKey: 'current_accounts' },
+          { name: 'Notas Internas',     href: '/internal-notes',   icon: FileEdit },
         ],
       },
       {
@@ -89,13 +117,17 @@ const navigation: NavEntry[] = [
     type: 'dropdown',
     name: 'Compras',
     icon: ShoppingCart,
+    moduleKey: 'compras',
+    requiredRoles: ['ADMIN', 'FINANCES', 'PURCHASES'] as const,
     sections: [
       {
         items: [
-          { name: 'Proveedores',       href: '/suppliers',     icon: Truck },
-          { name: 'Órdenes de Compra', href: '/orden-compras', icon: FileStack },
-          { name: 'Compras',           href: '/purchases',     icon: ShoppingCart },
-          { name: 'Órdenes de Pago',   href: '/orden-pagos',   icon: Banknote },
+          { name: 'Proveedores',         href: '/suppliers',                  icon: Truck },
+          { name: 'Ctas. Ctes.',         href: '/supplier-accounts',          icon: CreditCard, featureKey: 'supplier_accounts' },
+          { name: 'Órdenes de Compra',   href: '/orden-compras',              icon: FileStack },
+          { name: 'Compras',             href: '/purchases',                  icon: ShoppingCart },
+          { name: 'Reporte de facturas', href: '/reports/purchase-invoices',  icon: BarChart2, featureKey: 'reports' },
+          { name: 'Órdenes de Pago',     href: '/orden-pagos',                icon: Banknote },
         ],
       },
     ],
@@ -104,13 +136,16 @@ const navigation: NavEntry[] = [
     type: 'dropdown',
     name: 'Catálogo',
     icon: Package,
+    moduleKey: 'catalogo',
     sections: [
       {
         heading: 'Productos',
         items: [
-          { name: 'Lista',      href: '/products',   icon: Package },
-          { name: 'Categorías', href: '/categories', icon: FolderTree },
-          { name: 'Marcas',     href: '/brands',     icon: Tag },
+          { name: 'Lista',                 href: '/products',                icon: Package },
+          { name: 'Categorías',            href: '/categories',              icon: FolderTree },
+          { name: 'Marcas',                href: '/brands',                  icon: Tag },
+          { name: 'Rubros',                href: '/rubros',                  icon: Layers },
+          { name: 'Campos personalizados', href: '/products/custom-fields',  icon: Sliders },
         ],
       },
       {
@@ -118,10 +153,10 @@ const navigation: NavEntry[] = [
         items: [
           { name: 'Inventario',     href: '/stock',                icon: PackageSearch },
           { name: 'Movimientos',    href: '/stock/movements',      icon: BarChart2 },
-          { name: 'Transferencias', href: '/stock/transfer',       icon: ArrowRightLeft },
+          { name: 'Transferencias', href: '/stock/transfer',       icon: ArrowRightLeft, featureKey: 'multi_warehouse' },
           { name: 'Conteo físico',  href: '/stock/physical-count', icon: ClipboardCheck },
           { name: 'Almacenes',      href: '/warehouses',           icon: Warehouse },
-          { name: 'Inteligente',    href: '/stock/intelligence',   icon: Brain },
+          { name: 'Inteligente',    href: '/stock/intelligence',   icon: Brain, featureKey: 'stock_intelligence' },
         ],
       },
     ],
@@ -130,14 +165,18 @@ const navigation: NavEntry[] = [
     type: 'dropdown',
     name: 'Finanzas',
     icon: Landmark,
+    moduleKey: 'finanzas',
+    requiredRoles: ['ADMIN', 'FINANCES'] as const,
     sections: [
       {
         items: [
           { name: 'Cajas',             href: '/cash-registers', icon: Landmark },
-          { name: 'Banco de Cheques',  href: '/banco-cheques',  icon: Banknote },
-          { name: 'Cuentas Bancarias', href: '/banks',          icon: Landmark },
-          { name: 'Libro IVA',         href: '/iva',            icon: BookOpen },
-          { name: 'Reporte Ventas',    href: '/reports/sales',  icon: BarChart2 },
+          { name: 'Banco de Cheques',  href: '/banco-cheques',  icon: Banknote,   featureKey: 'bank_module' },
+          { name: 'Cuentas Bancarias', href: '/banks',          icon: Landmark,   featureKey: 'bank_module' },
+          { name: 'Tarjetas',          href: '/cards',          icon: CreditCard, featureKey: 'cards' },
+          { name: 'MercadoPago',       href: '/mercadopago',    icon: Smartphone, featureKey: 'mercadopago' },
+          { name: 'Libro IVA',         href: '/iva',            icon: BookOpen,   featureKey: 'iva_book' },
+          { name: 'Reportes',          href: '/reports',        icon: BarChart2,  featureKey: 'reports' },
         ],
       },
     ],
@@ -146,11 +185,14 @@ const navigation: NavEntry[] = [
     type: 'dropdown',
     name: 'Contabilidad',
     icon: BookMarked,
+    moduleKey: 'finanzas',
+    featureKey: 'accounting',
+    requiredRoles: ['ADMIN', 'FINANCES'] as const,
     sections: [
       {
         items: [
           { name: 'Asientos Contables', href: '/accounting/journal-entries', icon: BookOpen },
-          { name: 'Libro IVA',          href: '/iva',                        icon: BookOpen },
+          { name: 'Libro IVA',          href: '/iva',                        icon: BookOpen,   featureKey: 'iva_book' },
           { name: 'Plan de Cuentas',    href: '/accounting/accounts',        icon: BookMarked },
         ],
       },
@@ -161,6 +203,8 @@ const navigation: NavEntry[] = [
 export default function Navbar() {
   const { user, logout } = useAuthStore();
   const { navTheme } = useUIStore();
+  const { role, isModuleEnabled } = usePermissions();
+  const { hasFeature } = useFeatures();
   const theme = getNavTheme(navTheme);
   const navigate = useNavigate();
 
@@ -168,6 +212,34 @@ export default function Navbar() {
     logout();
     navigate('/login');
   };
+
+  const visibleEntries = useMemo<NavEntry[]>(() => {
+    if (role === 'SUPER_ADMIN') return superAdminNavigation;
+
+    const passes = (e: { moduleKey?: string; featureKey?: string; requiredRoles?: readonly string[] }) => {
+      if (e.requiredRoles && !e.requiredRoles.includes(role)) return false;
+      if (e.moduleKey && !isModuleEnabled(e.moduleKey)) return false;
+      if (e.featureKey && !hasFeature(e.featureKey as any)) return false;
+      return true;
+    };
+
+    return navigation.reduce<NavEntry[]>((acc, entry) => {
+      if (entry.type === 'link') {
+        if (passes(entry)) acc.push(entry);
+        return acc;
+      }
+      if (!passes(entry)) return acc;
+      const sections = entry.sections
+        .map((s) => ({
+          ...s,
+          items: s.items.filter((it) => !it.featureKey || hasFeature(it.featureKey as any)),
+        }))
+        .filter((s) => s.items.length > 0);
+      if (sections.length === 0) return acc;
+      acc.push({ ...entry, sections });
+      return acc;
+    }, []);
+  }, [role, isModuleEnabled, hasFeature]);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-40 border-b border-white/10" style={{ backgroundColor: theme.bg }}>
@@ -185,7 +257,7 @@ export default function Navbar() {
 
             {/* Navigation */}
             <div className="hidden lg:flex items-center gap-0.5">
-              {navigation.map((entry) =>
+              {visibleEntries.map((entry) =>
                 entry.type === 'link' ? (
                   <NavLink
                     key={entry.href}
@@ -315,34 +387,38 @@ export default function Navbar() {
                         <p className="text-xs text-gray-500 dark:text-slate-400 truncate">@{user?.username}</p>
                       </div>
 
-                      <Menu.Item>
-                        {({ active }) => (
-                          <NavLink
-                            to="/settings"
-                            className={clsx(
-                              'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
-                              active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
-                            )}
-                          >
-                            <Settings className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-                            Configuración
-                          </NavLink>
-                        )}
-                      </Menu.Item>
-                      <Menu.Item>
-                        {({ active }) => (
-                          <NavLink
-                            to="/activity"
-                            className={clsx(
-                              'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
-                              active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
-                            )}
-                          >
-                            <History className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-                            Historial
-                          </NavLink>
-                        )}
-                      </Menu.Item>
+                      {role !== 'SUPER_ADMIN' && (
+                        <Menu.Item>
+                          {({ active }) => (
+                            <NavLink
+                              to="/settings"
+                              className={clsx(
+                                'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
+                                active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
+                              )}
+                            >
+                              <Settings className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+                              Configuración
+                            </NavLink>
+                          )}
+                        </Menu.Item>
+                      )}
+                      {role !== 'SUPER_ADMIN' && hasFeature('activity_log' as any) && (
+                        <Menu.Item>
+                          {({ active }) => (
+                            <NavLink
+                              to="/activity"
+                              className={clsx(
+                                'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
+                                active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
+                              )}
+                            >
+                              <History className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+                              Historial
+                            </NavLink>
+                          )}
+                        </Menu.Item>
+                      )}
 
                       <div className="my-1 border-t border-gray-100 dark:border-slate-700" />
 
