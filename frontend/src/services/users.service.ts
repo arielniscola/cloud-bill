@@ -28,6 +28,7 @@ export interface UpdateUserDTO {
   email?: string;
   role?: AssignableRole;
   isActive?: boolean;
+  companyId?: string;
 }
 
 const usersService = {

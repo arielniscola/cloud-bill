@@ -8,7 +8,7 @@ export class BrandController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
-      const brand = await (repo as any).create({
+      const brand = await repo.create({
         name: req.body.name,
         isActive: req.body.isActive ?? true,
         companyId: req.companyId,
@@ -33,7 +33,7 @@ export class BrandController {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
       const brand = await repo.findById(req.params.id);
-      if (!brand) throw new NotFoundError('Brand');
+      if (!brand || brand.companyId !== req.companyId) throw new NotFoundError('Brand');
       res.json({ status: 'success', data: brand });
     } catch (error) {
       next(error);
@@ -43,7 +43,7 @@ export class BrandController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
-      const brands = await (repo as any).findAll(req.companyId);
+      const brands = await repo.findAll(req.companyId);
       res.json({ status: 'success', data: brands });
     } catch (error) {
       next(error);
@@ -54,7 +54,7 @@ export class BrandController {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
       const existing = await repo.findById(req.params.id);
-      if (!existing) throw new NotFoundError('Brand');
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Brand');
       const brand = await repo.update(req.params.id, {
         name: req.body.name,
         isActive: req.body.isActive,
@@ -79,7 +79,7 @@ export class BrandController {
     try {
       const repo = container.resolve<IBrandRepository>('BrandRepository');
       const existing = await repo.findById(req.params.id);
-      if (!existing) throw new NotFoundError('Brand');
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Brand');
       await repo.delete(req.params.id);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');

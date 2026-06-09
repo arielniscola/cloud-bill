@@ -9,7 +9,7 @@ export class CategoryController {
     try {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
 
-      const category = await (categoryRepository as any).create({
+      const category = await categoryRepository.create({
         name: req.body.name,
         parentId: req.body.parentId ?? null,
         companyId: req.companyId,
@@ -38,7 +38,7 @@ export class CategoryController {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
       const category = await categoryRepository.findById(req.params.id);
 
-      if (!category) {
+      if (!category || (category as any).companyId !== req.companyId) {
         throw new NotFoundError('Category');
       }
 
@@ -54,7 +54,7 @@ export class CategoryController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-      const categories = await (categoryRepository as any).findAll(req.companyId);
+      const categories = await categoryRepository.findAll(req.companyId);
 
       res.json({
         status: 'success',
@@ -70,7 +70,7 @@ export class CategoryController {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
 
       const existingCategory = await categoryRepository.findById(req.params.id);
-      if (!existingCategory) {
+      if (!existingCategory || (existingCategory as any).companyId !== req.companyId) {
         throw new NotFoundError('Category');
       }
 
@@ -102,7 +102,7 @@ export class CategoryController {
       const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
 
       const existingCategory = await categoryRepository.findById(req.params.id);
-      if (!existingCategory) {
+      if (!existingCategory || (existingCategory as any).companyId !== req.companyId) {
         throw new NotFoundError('Category');
       }
 

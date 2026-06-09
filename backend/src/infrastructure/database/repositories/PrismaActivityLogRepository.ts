@@ -50,6 +50,7 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
     const skip = (page - 1) * limit;
 
     const where: Prisma.ActivityLogWhereInput = {};
+    if (filters.companyId) where.user = { companyId: filters.companyId };
     if (filters.userId) where.userId = filters.userId;
     if (filters.action) where.action = filters.action;
     if (filters.entity) where.entity = filters.entity;
@@ -85,10 +86,18 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
     };
   }
 
-  async getDistinctEntities(): Promise<string[]> {
-    const rows = await this.prisma.$queryRaw<{ entity: string }[]>`
-      SELECT DISTINCT entity FROM activity_logs ORDER BY entity
-    `;
+  async getDistinctEntities(companyId?: string): Promise<string[]> {
+    const rows = companyId
+      ? await this.prisma.$queryRaw<{ entity: string }[]>`
+          SELECT DISTINCT al.entity
+          FROM activity_logs al
+          JOIN "users" u ON u.id = al."userId"
+          WHERE u."companyId" = ${companyId}
+          ORDER BY al.entity
+        `
+      : await this.prisma.$queryRaw<{ entity: string }[]>`
+          SELECT DISTINCT entity FROM activity_logs ORDER BY entity
+        `;
     return rows.map((r) => r.entity);
   }
 

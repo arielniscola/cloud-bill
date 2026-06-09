@@ -20,7 +20,7 @@ export class RubroController {
     try {
       const repo = container.resolve<IRubroRepository>('RubroRepository');
       const rubro = await repo.findById(req.params.id);
-      if (!rubro) throw new NotFoundError('Rubro');
+      if (!rubro || rubro.companyId !== req.companyId) throw new NotFoundError('Rubro');
       res.json({ status: 'success', data: rubro });
     } catch (error) {
       next(error);
@@ -43,7 +43,7 @@ export class RubroController {
     try {
       const repo = container.resolve<IRubroRepository>('RubroRepository');
       const existing = await repo.findById(req.params.id);
-      if (!existing) throw new NotFoundError('Rubro');
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Rubro');
       const data = updateRubroSchema.parse(req.body);
       const rubro = await repo.update(req.params.id, data);
       this._log(req, 'UPDATE', rubro.id, `Rubro "${rubro.name}" actualizado`);
@@ -57,7 +57,7 @@ export class RubroController {
     try {
       const repo = container.resolve<IRubroRepository>('RubroRepository');
       const existing = await repo.findById(req.params.id);
-      if (!existing) throw new NotFoundError('Rubro');
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Rubro');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Rubro "${existing.name}" eliminado`);
       res.status(204).send();

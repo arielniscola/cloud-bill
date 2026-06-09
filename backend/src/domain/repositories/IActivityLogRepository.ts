@@ -2,6 +2,7 @@ import { ActivityLog, CreateActivityLogInput, ActivityAction } from '../entities
 import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface ActivityLogFilters {
+  companyId?: string;
   userId?: string;
   action?: ActivityAction;
   entity?: string;
@@ -16,5 +17,5 @@ export interface IActivityLogRepository {
     pagination: PaginationParams,
     filters?: ActivityLogFilters
   ): Promise<PaginatedResult<ActivityLog>>;
-  getDistinctEntities(): Promise<string[]>;
+  getDistinctEntities(companyId?: string): Promise<string[]>;
 }

@@ -12,6 +12,7 @@ export class ActivityLogController {
       const result = await activityLogRepository.findAll(
         { page: Number(page) || 1, limit: Number(limit) || 20 },
         {
+          companyId: req.user?.companyId ?? undefined,
           userId: userId as string | undefined,
           action: action as ActivityAction | undefined,
           entity: entity as string | undefined,
@@ -30,10 +31,10 @@ export class ActivityLogController {
     }
   }
 
-  async getEntities(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getEntities(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const activityLogRepository = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-      const entities = await activityLogRepository.getDistinctEntities();
+      const entities = await activityLogRepository.getDistinctEntities(req.user?.companyId ?? undefined);
       res.json({ status: 'success', data: entities });
     } catch (error) {
       next(error);

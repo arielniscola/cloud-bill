@@ -21,6 +21,7 @@ const updateUserSchema = z.object({
   email:     z.string().email().optional().or(z.literal('')),
   role:      z.enum(['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).optional(),
   isActive:  z.boolean().optional(),
+  companyId: z.string().uuid('ID de empresa inválido').optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -109,6 +110,10 @@ export class UserController {
 
       const updateData: Record<string, unknown> = { ...data };
       if ('email' in data && data.email === '') updateData.email = null;
+      // Only SUPER_ADMIN may move a user to another company
+      if ('companyId' in updateData && req.user!.role !== 'SUPER_ADMIN') {
+        delete updateData.companyId;
+      }
 
       const updated = await repo.update(req.params.id, updateData as any);
 
