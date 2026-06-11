@@ -250,15 +250,27 @@ export default function BudgetFormPage() {
     }
   };
 
+  // Factura C does not carry IVA (no discrimination, no tax)
+  const isTypeC = type.endsWith('_C');
+  const itemGridCols = isTypeC
+    ? 'grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_88px_32px]'
+    : 'grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px]';
+  const headerGridCols = isTypeC
+    ? 'grid-cols-[2fr_3fr_72px_104px_88px_32px]'
+    : 'grid-cols-[2fr_3fr_72px_104px_60px_88px_32px]';
+  const headerLabels = isTypeC
+    ? ['Producto', 'Descripción', 'Cant.', 'Precio unit.', 'Total', '']
+    : ['Producto', 'Descripción', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''];
+
   const calcItemTotal = (item: typeof items[0]) => {
     const sub = item.quantity * item.unitPrice;
-    return sub + sub * (item.taxRate / 100);
+    return isTypeC ? sub : sub + sub * (item.taxRate / 100);
   };
 
   const totals = items.reduce(
     (acc, item) => {
       const sub = item.quantity * item.unitPrice;
-      const tax = sub * (item.taxRate / 100);
+      const tax = isTypeC ? 0 : sub * (item.taxRate / 100);
       return { subtotal: acc.subtotal + sub, taxAmount: acc.taxAmount + tax };
     },
     { subtotal: 0, taxAmount: 0 }
@@ -267,8 +279,8 @@ export default function BudgetFormPage() {
 
   const buildItemDTO = (item: typeof items[0]) => {
     const subtotal = item.quantity * item.unitPrice;
-    const taxAmount = subtotal * (item.taxRate / 100);
-    return { productId: item.productId || null, description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: item.taxRate, subtotal, taxAmount, total: subtotal + taxAmount };
+    const taxAmount = isTypeC ? 0 : subtotal * (item.taxRate / 100);
+    return { productId: item.productId || null, description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: isTypeC ? 0 : item.taxRate, subtotal, taxAmount, total: subtotal + taxAmount };
   };
 
   const onSubmit = async (data: BudgetFormData) => {
@@ -329,9 +341,9 @@ export default function BudgetFormPage() {
 
               <div className="px-5 py-3">
                 {/* Column headers */}
-                <div className="hidden md:grid grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
-                  {['Producto', 'Descripción', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''].map((h) => (
-                    <span key={h} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</span>
+                <div className={`hidden md:grid ${headerGridCols} gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700`}>
+                  {headerLabels.map((h, i) => (
+                    <span key={`${h}-${i}`} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</span>
                   ))}
                 </div>
 
@@ -340,7 +352,7 @@ export default function BudgetFormPage() {
                   {fields.map((field, index) => (
                     <div
                       key={field.id}
-                      className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 items-center py-3"
+                      className={`grid ${itemGridCols} gap-3 items-center py-3`}
                     >
                       {/* Product */}
                       <div>
@@ -409,17 +421,19 @@ export default function BudgetFormPage() {
                         />
                       </div>
 
-                      {/* Tax rate */}
-                      <div>
-                        <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">IVA %</label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="100"
-                          {...register(`items.${index}.taxRate`)}
-                        />
-                      </div>
+                      {/* Tax rate — hidden for Factura C (no IVA) */}
+                      {!isTypeC && (
+                        <div>
+                          <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">IVA %</label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            {...register(`items.${index}.taxRate`)}
+                          />
+                        </div>
+                      )}
 
                       {/* Total */}
                       <div className="text-right">
@@ -538,12 +552,14 @@ export default function BudgetFormPage() {
                     {formatCurrency(totals.subtotal, currency)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-500 dark:text-slate-400">IVA</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-slate-200 tabular-nums">
-                    {formatCurrency(totals.taxAmount, currency)}
-                  </span>
-                </div>
+                {!isTypeC && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500 dark:text-slate-400">IVA</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-slate-200 tabular-nums">
+                      {formatCurrency(totals.taxAmount, currency)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 dark:border-slate-700 mt-1">
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
                   <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">

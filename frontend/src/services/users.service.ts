@@ -52,6 +52,15 @@ const usersService = {
   async delete(id: string): Promise<void> {
     await api.delete(`/users/${id}`);
   },
+  // Accesos rápidos del dashboard del usuario actual (self-service, cualquier rol)
+  async getDashboardShortcuts(): Promise<string[] | null> {
+    const res = await api.get<{ data: { shortcuts: string[] | null } }>('/users/me/dashboard-shortcuts');
+    return res.data.data.shortcuts;
+  },
+  async saveDashboardShortcuts(shortcuts: string[]): Promise<string[]> {
+    const res = await api.put<{ data: { shortcuts: string[] } }>('/users/me/dashboard-shortcuts', { shortcuts });
+    return res.data.data.shortcuts;
+  },
 };
 
 export default usersService;

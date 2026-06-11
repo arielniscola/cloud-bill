@@ -145,6 +145,7 @@ export default function UserFormPage() {
       if (isEditing) {
         const payload: UpdateUserDTO = { name: form.name, username: form.username, role: form.role };
         if (form.email) payload.email = form.email;
+        if (isSuperAdmin && form.companyId) payload.companyId = form.companyId;
         await usersService.update(id!, payload);
         toast.success('Usuario actualizado');
       } else {

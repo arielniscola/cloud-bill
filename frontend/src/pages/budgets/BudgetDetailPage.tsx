@@ -151,6 +151,9 @@ export default function BudgetDetailPage() {
   );
 
   const isDraft = budget.status === 'DRAFT';
+  // Factura C does not discriminate IVA
+  const isTypeC = budget.type.endsWith('_C');
+  const footerColSpan = isTypeC ? 3 : 4;
   const canGenerateOP = budget.status === 'DRAFT' || budget.status === 'SENT' || budget.status === 'ACCEPTED';
   const isTerminal = budget.status === 'CONVERTED' || budget.status === 'REJECTED' || budget.status === 'EXPIRED';
 
@@ -307,7 +310,9 @@ export default function BudgetDetailPage() {
                     <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Descripción</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Cantidad</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Precio unit.</th>
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
+                    {!isTypeC && (
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
+                    )}
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Total</th>
                   </tr>
                 </thead>
@@ -327,7 +332,9 @@ export default function BudgetDetailPage() {
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">
                         {formatCurrency(Number(item.unitPrice), budget.currency)}
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
+                      {!isTypeC && (
+                        <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
+                      )}
                       <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white text-right tabular-nums">
                         {formatCurrency(Number(item.total), budget.currency)}
                       </td>
@@ -336,15 +343,17 @@ export default function BudgetDetailPage() {
                 </tbody>
                 <tfoot className="bg-gray-50/50 dark:bg-slate-700/30 border-t border-gray-200 dark:border-slate-700">
                   <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
+                    <td colSpan={footerColSpan} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
                     <td className="px-5 py-3 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(budget.subtotal), budget.currency)}</td>
                   </tr>
+                  {!isTypeC && (
+                    <tr>
+                      <td colSpan={footerColSpan} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
+                      <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(budget.taxAmount), budget.currency)}</td>
+                    </tr>
+                  )}
                   <tr>
-                    <td colSpan={4} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
-                    <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(budget.taxAmount), budget.currency)}</td>
-                  </tr>
-                  <tr>
-                    <td colSpan={4} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
+                    <td colSpan={footerColSpan} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
                     <td className="px-5 py-3 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{formatCurrency(Number(budget.total), budget.currency)}</td>
                   </tr>
                 </tfoot>

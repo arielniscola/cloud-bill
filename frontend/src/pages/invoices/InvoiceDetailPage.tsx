@@ -287,6 +287,10 @@ export default function InvoiceDetailPage() {
   const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
   const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
   const isFactura = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'].includes(invoice.type);
+  // Factura C does not discriminate IVA
+  const isTypeC = invoice.type.endsWith('_C');
+  const hasItemDiscount = invoice.items.some((i) => Number(i.discountPct) > 0);
+  const footerColSpan = (hasItemDiscount ? 4 : 3) + (isTypeC ? 0 : 1);
   const isNcNdStatus = ['ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status);
   const canGenerateNC = isFactura && isNcNdStatus;
   const canGenerateND = isFactura && isNcNdStatus;
@@ -464,7 +468,9 @@ export default function InvoiceDetailPage() {
                     {invoice.items.some((i) => Number(i.discountPct) > 0) && (
                       <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Desc.%</th>
                     )}
-                    <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
+                    {!isTypeC && (
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">IVA</th>
+                    )}
                     <th className="px-5 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Total</th>
                   </tr>
                 </thead>
@@ -496,7 +502,9 @@ export default function InvoiceDetailPage() {
                           }
                         </td>
                       )}
-                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
+                      {!isTypeC && (
+                        <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-400 text-right tabular-nums">{Number(item.taxRate)}%</td>
+                      )}
                       <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white text-right tabular-nums">
                         {formatCurrency(Number(item.total), invoice.currency)}
                       </td>
@@ -505,15 +513,17 @@ export default function InvoiceDetailPage() {
                 </tbody>
                 <tfoot className="bg-gray-50/50 dark:bg-slate-700/30 border-t border-gray-200 dark:border-slate-700">
                   <tr>
-                    <td colSpan={invoice.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
+                    <td colSpan={footerColSpan} className="px-5 py-3 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Subtotal</td>
                     <td className="px-5 py-3 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(invoice.subtotal), invoice.currency)}</td>
                   </tr>
+                  {!isTypeC && (
+                    <tr>
+                      <td colSpan={footerColSpan} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
+                      <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(invoice.taxAmount), invoice.currency)}</td>
+                    </tr>
+                  )}
                   <tr>
-                    <td colSpan={invoice.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-2 text-right text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-semibold">IVA</td>
-                    <td className="px-5 py-2 text-right text-sm font-medium text-gray-700 dark:text-slate-300 tabular-nums">{formatCurrency(Number(invoice.taxAmount), invoice.currency)}</td>
-                  </tr>
-                  <tr>
-                    <td colSpan={invoice.items.some((i) => Number(i.discountPct) > 0) ? 5 : 4} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
+                    <td colSpan={footerColSpan} className="px-5 py-3 text-right text-sm text-gray-900 dark:text-white font-bold uppercase tracking-wider">Total</td>
                     <td className="px-5 py-3 text-right text-base font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{formatCurrency(Number(invoice.total), invoice.currency)}</td>
                   </tr>
                 </tfoot>

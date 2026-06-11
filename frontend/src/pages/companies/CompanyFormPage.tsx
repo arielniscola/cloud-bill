@@ -26,6 +26,7 @@ export default function CompanyFormPage() {
   const [form, setForm] = useState({
     name: '', cuit: '', address: '', city: '', phone: '', email: '',
     taxCondition: 'RESPONSABLE_INSCRIPTO',
+    logoUrl: '',
     plan: 'PRO' as PlanName,
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +44,7 @@ export default function CompanyFormPage() {
         phone:        c.phone ?? '',
         email:        c.email ?? '',
         taxCondition: c.taxCondition,
+        logoUrl:      c.logoUrl ?? '',
         plan:         (c.plan as PlanName) ?? 'PRO',
       });
     }).catch(() => toast.error('Error al cargar empresa')).finally(() => setIsLoading(false));
@@ -59,6 +61,7 @@ export default function CompanyFormPage() {
       phone:        form.phone  || null,
       email:        form.email  || null,
       taxCondition: form.taxCondition,
+      logoUrl:      form.logoUrl || null,
     };
     try {
       if (isEditing) {
@@ -138,6 +141,22 @@ export default function CompanyFormPage() {
         <div className="grid grid-cols-2 gap-4">
           <Input label="Teléfono" value={form.phone} onChange={set('phone')} />
           <Input label="Email" type="email" value={form.email} onChange={set('email')} />
+        </div>
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <Input
+              label="Logo (URL)"
+              type="url"
+              placeholder="https://…/logo.png"
+              value={form.logoUrl}
+              onChange={set('logoUrl')}
+            />
+          </div>
+          {form.logoUrl && (
+            <div className="w-12 h-12 rounded-lg border border-gray-200 dark:border-slate-700 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img src={form.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 pt-2">

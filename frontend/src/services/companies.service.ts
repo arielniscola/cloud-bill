@@ -10,6 +10,11 @@ const companiesService = {
     const res = await api.get<{ data: Company }>(`/companies/${id}`);
     return res.data.data;
   },
+  // Empresa activa del usuario — accesible a cualquier rol (a diferencia de getById)
+  async getCurrent(): Promise<Company> {
+    const res = await api.get<{ data: Company }>('/companies/current');
+    return res.data.data;
+  },
   async create(data: CreateCompanyDTO): Promise<Company> {
     const res = await api.post<{ data: Company }>('/companies', data);
     return res.data.data;

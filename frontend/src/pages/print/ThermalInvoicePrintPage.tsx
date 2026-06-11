@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { invoicesService, afipService } from '../../services';
+import companiesService from '../../services/companies.service';
 import { formatCuit } from '../../utils/formatters';
 import type { Invoice } from '../../types';
 import type { AfipConfigSummary } from '../../types/afip.types';
+import type { Company } from '../../types/company.types';
 
 const fmt = (n: number | string) =>
   Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -17,12 +19,19 @@ export default function ThermalInvoicePrintPage() {
   const { id } = useParams<{ id: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [afip, setAfip] = useState<AfipConfigSummary | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([invoicesService.getById(id), afipService.getConfig()])
-      .then(([inv, cfg]) => { setInvoice(inv); setAfip(cfg); setReady(true); })
+    // La factura es obligatoria; config AFIP y empresa son tolerantes a fallo
+    // (p.ej. roles sin acceso a la config AFIP) para poder hacer fallback al header.
+    Promise.all([
+      invoicesService.getById(id),
+      afipService.getConfig().catch(() => null),
+      companiesService.getCurrent().catch(() => null),
+    ])
+      .then(([inv, cfg, comp]) => { setInvoice(inv); setAfip(cfg); setCompany(comp); setReady(true); })
       .catch(() => { document.title = 'Error'; });
   }, [id]);
 
@@ -42,6 +51,15 @@ export default function ThermalInvoicePrintPage() {
   }
 
   const typeLabel = invoice.type?.replace('FACTURA_', 'FACTURA ') ?? invoice.type ?? '';
+
+  // Encabezado de empresa: prioriza la config AFIP; si falta, cae a los datos de la empresa
+  const issuer = {
+    name:          afip?.businessName    || company?.name         || '',
+    address:       afip?.businessAddress || company?.address       || '',
+    cuit:          afip?.cuit            || company?.cuit          || '',
+    taxCondition:  afip?.taxCondition    || company?.taxCondition  || '',
+    activityStart: afip?.activityStartDate || '',
+  };
 
   return (
     <>
@@ -63,20 +81,20 @@ export default function ThermalInvoicePrintPage() {
       `}</style>
 
       {/* ── Company header ── */}
-      {afip?.businessName && (
-        <p className="c b lg">{afip.businessName}</p>
+      {issuer.name && (
+        <p className="c b lg">{issuer.name}</p>
       )}
-      {afip?.businessAddress && (
-        <p className="c sm">{afip.businessAddress}</p>
+      {issuer.address && (
+        <p className="c sm">{issuer.address}</p>
       )}
-      {afip?.cuit && (
-        <p className="c sm">CUIT: {formatCuit(afip.cuit)}</p>
+      {issuer.cuit && (
+        <p className="c sm">CUIT: {formatCuit(issuer.cuit)}</p>
       )}
-      {afip?.taxCondition && (
-        <p className="c sm">{afip.taxCondition.replace(/_/g, ' ')}</p>
+      {issuer.taxCondition && (
+        <p className="c sm">{issuer.taxCondition.replace(/_/g, ' ')}</p>
       )}
-      {afip?.activityStartDate && (
-        <p className="c sm">Inicio actividades: {fmtDate(afip.activityStartDate)}</p>
+      {issuer.activityStart && (
+        <p className="c sm">Inicio actividades: {fmtDate(issuer.activityStart)}</p>
       )}
 
       <div className="div" />

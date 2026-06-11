@@ -42,7 +42,6 @@ import {
   BookMarked,
   Sliders,
   Crown,
-  Cloud,
 } from "lucide-react";
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
@@ -232,6 +231,10 @@ export default function Sidebar() {
     role === 'SUPER_ADMIN'
       ? activeCompany()?.name ?? 'Cloud Bill'
       : user?.companyName ?? 'Cloud Bill';
+  const displayLogoUrl =
+    role === 'SUPER_ADMIN'
+      ? activeCompany()?.logoUrl ?? null
+      : user?.companyLogoUrl ?? null;
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -367,27 +370,36 @@ export default function Sidebar() {
               !showText && "md:justify-center",
             )}
           >
-            {showText ? (
-              <>
-                <div className="bg-white rounded-lg px-2 py-1 flex-shrink-0">
-                  <img
-                    src="/logo.png"
-                    alt="Cloud Bill"
-                    className="h-7 w-auto max-w-[120px] object-contain"
-                  />
+            {(() => {
+              const avatar = (
+                <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden">
+                  {displayLogoUrl ? (
+                    <img
+                      src={displayLogoUrl}
+                      alt={displayCompanyName}
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-base font-extrabold text-primary-600 uppercase">
+                      {displayCompanyName.charAt(0)}
+                    </span>
+                  )}
                 </div>
-                <span
-                  className="text-xs font-medium text-white/80 tracking-tight truncate"
-                  title={displayCompanyName}
-                >
-                  {displayCompanyName}
-                </span>
-              </>
-            ) : (
-              <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
-                <Cloud className="w-5 h-5 text-primary-600" strokeWidth={2.5} />
-              </div>
-            )}
+              );
+              return showText ? (
+                <>
+                  {avatar}
+                  <span
+                    className="text-sm font-semibold text-white tracking-tight truncate"
+                    title={displayCompanyName}
+                  >
+                    {displayCompanyName}
+                  </span>
+                </>
+              ) : (
+                avatar
+              );
+            })()}
           </div>
 
           {/* Actions */}

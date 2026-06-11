@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ordenPedidosService, afipService } from '../../services';
+import companiesService from '../../services/companies.service';
 import { formatCuit } from '../../utils/formatters';
 import type { OrdenPedido } from '../../types';
 import type { AfipConfigSummary } from '../../types/afip.types';
+import type { Company } from '../../types/company.types';
 
 const fmt = (n: number | string) =>
   Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15,12 +17,19 @@ export default function ThermalOrdenPedidoPrintPage() {
   const { id } = useParams<{ id: string }>();
   const [op, setOp] = useState<OrdenPedido | null>(null);
   const [afip, setAfip] = useState<AfipConfigSummary | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([ordenPedidosService.getById(id), afipService.getConfig()])
-      .then(([data, cfg]) => { setOp(data); setAfip(cfg); setReady(true); })
+    // La OP es obligatoria; config AFIP y empresa son tolerantes a fallo
+    // (p.ej. roles sin acceso a la config AFIP) para poder hacer fallback al header.
+    Promise.all([
+      ordenPedidosService.getById(id),
+      afipService.getConfig().catch(() => null),
+      companiesService.getCurrent().catch(() => null),
+    ])
+      .then(([data, cfg, comp]) => { setOp(data); setAfip(cfg); setCompany(comp); setReady(true); })
       .catch(() => { document.title = 'Error'; });
   }, [id]);
 
@@ -38,6 +47,14 @@ export default function ThermalOrdenPedidoPrintPage() {
       </div>
     );
   }
+
+  // Encabezado de empresa: prioriza la config AFIP; si falta, cae a los datos de la empresa
+  const issuer = {
+    name:          afip?.businessName    || company?.name    || '',
+    address:       afip?.businessAddress || company?.address  || '',
+    cuit:          afip?.cuit            || company?.cuit     || '',
+    activityStart: (afip as any)?.activityStartDate || '',
+  };
 
   return (
     <>
@@ -59,11 +76,11 @@ export default function ThermalOrdenPedidoPrintPage() {
       `}</style>
 
       {/* ── Company header ── */}
-      {afip?.businessName && <p className="c b lg">{afip.businessName}</p>}
-      {afip?.businessAddress && <p className="c sm">{afip.businessAddress}</p>}
-      {afip?.cuit && <p className="c sm">CUIT: {formatCuit(afip.cuit)}</p>}
-      {(afip as any)?.activityStartDate && (
-        <p className="c sm">Inicio actividades: {fmtDate((afip as any).activityStartDate)}</p>
+      {issuer.name && <p className="c b lg">{issuer.name}</p>}
+      {issuer.address && <p className="c sm">{issuer.address}</p>}
+      {issuer.cuit && <p className="c sm">CUIT: {formatCuit(issuer.cuit)}</p>}
+      {issuer.activityStart && (
+        <p className="c sm">Inicio actividades: {fmtDate(issuer.activityStart)}</p>
       )}
 
       <div className="div" />

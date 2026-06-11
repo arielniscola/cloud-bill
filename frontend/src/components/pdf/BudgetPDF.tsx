@@ -237,6 +237,8 @@ export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
   const issuerAddress = afipConfig?.businessAddress ?? '';
   const issuerCuit = afipConfig?.cuit ? fmtCuit(afipConfig.cuit) : '';
   const issuerTaxCondition = afipConfig?.taxCondition ?? 'Responsable Inscripto';
+  // Factura C does not discriminate IVA
+  const isTypeC = String(budget.type).endsWith('_C');
 
   const taxBreakdown = budget.items.reduce<Record<number, { base: number; tax: number }>>(
     (acc, item) => {
@@ -357,7 +359,7 @@ export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
             <Text style={[s.thCell, s.colDesc]}>Descripción</Text>
             <Text style={[s.thCell, s.colQty]}>Cant.</Text>
             <Text style={[s.thCell, s.colPrice]}>Precio Unit.</Text>
-            <Text style={[s.thCell, s.colTaxRate]}>IVA %</Text>
+            {!isTypeC && <Text style={[s.thCell, s.colTaxRate]}>IVA %</Text>}
             <Text style={[s.thCell, s.colTotal]}>Total</Text>
           </View>
 
@@ -373,7 +375,7 @@ export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
               <Text style={[s.tdCell, s.colPrice]}>
                 {fmtCurrency(Number(item.unitPrice), budget.currency)}
               </Text>
-              <Text style={[s.tdCell, s.colTaxRate]}>{Number(item.taxRate)}%</Text>
+              {!isTypeC && <Text style={[s.tdCell, s.colTaxRate]}>{Number(item.taxRate)}%</Text>}
               <Text style={[s.tdCell, s.colTotal]}>
                 {fmtCurrency(Number(item.total), budget.currency)}
               </Text>
@@ -384,26 +386,28 @@ export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
         {/* ── TOTALS ───────────────────────────────────────────── */}
         <View style={s.totalsWrapper}>
           <View style={s.totalsBox}>
-            {Object.entries(taxBreakdown).map(([rate, { base, tax }], i) => (
+            {!isTypeC && Object.entries(taxBreakdown).map(([rate, { base }], i) => (
               <View key={rate} style={[s.totalsRow, i === 0 ? s.totalsFirstRow : {}]}>
                 <Text style={s.totalsLabel}>Neto gravado ({rate}%)</Text>
                 <Text style={s.totalsValue}>{fmtCurrency(base, budget.currency)}</Text>
               </View>
             ))}
-            {Object.entries(taxBreakdown).map(([rate, { tax }]) => (
+            {!isTypeC && Object.entries(taxBreakdown).map(([rate, { tax }]) => (
               <View key={`iva-${rate}`} style={s.totalsRow}>
                 <Text style={s.totalsLabel}>IVA {rate}%</Text>
                 <Text style={s.totalsValue}>{fmtCurrency(tax, budget.currency)}</Text>
               </View>
             ))}
-            <View style={s.totalsRow}>
+            <View style={[s.totalsRow, isTypeC ? s.totalsFirstRow : {}]}>
               <Text style={s.totalsLabel}>Subtotal</Text>
               <Text style={s.totalsValue}>{fmtCurrency(Number(budget.subtotal), budget.currency)}</Text>
             </View>
-            <View style={s.totalsRow}>
-              <Text style={s.totalsLabel}>Total IVA</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(Number(budget.taxAmount), budget.currency)}</Text>
-            </View>
+            {!isTypeC && (
+              <View style={s.totalsRow}>
+                <Text style={s.totalsLabel}>Total IVA</Text>
+                <Text style={s.totalsValue}>{fmtCurrency(Number(budget.taxAmount), budget.currency)}</Text>
+              </View>
+            )}
             <View style={s.totalFinalRow}>
               <Text style={s.totalFinalLabel}>TOTAL</Text>
               <Text style={s.totalFinalValue}>{fmtCurrency(Number(budget.total), budget.currency)}</Text>

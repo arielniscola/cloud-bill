@@ -343,9 +343,21 @@ export default function InvoiceFormPage() {
     }
   };
 
+  // Factura C does not carry IVA (no discrimination, no tax)
+  const isTypeC = type.endsWith('_C');
+  const itemGridCols = isTypeC
+    ? 'grid-cols-1 md:grid-cols-[3fr_72px_104px_88px_32px]'
+    : 'grid-cols-1 md:grid-cols-[3fr_72px_104px_60px_88px_32px]';
+  const headerGridCols = isTypeC
+    ? 'grid-cols-[3fr_72px_104px_88px_32px]'
+    : 'grid-cols-[3fr_72px_104px_60px_88px_32px]';
+  const headerLabels = isTypeC
+    ? ['Producto', 'Cant.', 'Precio unit.', 'Total', '']
+    : ['Producto', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''];
+
   const calcItemTotal = (item: typeof items[0]) => {
     const base = item.quantity * item.unitPrice;
-    return base + base * (item.taxRate / 100);
+    return isTypeC ? base : base + base * (item.taxRate / 100);
   };
 
   const subtotalBase = items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
@@ -355,7 +367,7 @@ export default function InvoiceFormPage() {
   const totals = {
     subtotal: subtotalBase,
     discountAmount,
-    taxAmount: items.reduce((acc, item) => {
+    taxAmount: isTypeC ? 0 : items.reduce((acc, item) => {
       const base = item.quantity * item.unitPrice;
       const proportion = subtotalBase > 0 ? base / subtotalBase : 0;
       const taxable = base - discountAmount * proportion;
@@ -497,9 +509,9 @@ export default function InvoiceFormPage() {
 
               <div className="px-5 py-3">
                 {/* Column headers */}
-                <div className="hidden md:grid grid-cols-[3fr_72px_104px_60px_88px_32px] gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
-                  {['Producto', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''].map((h) => (
-                    <span key={h} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</span>
+                <div className={`hidden md:grid ${headerGridCols} gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700`}>
+                  {headerLabels.map((h, i) => (
+                    <span key={`${h}-${i}`} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</span>
                   ))}
                 </div>
 
@@ -508,7 +520,7 @@ export default function InvoiceFormPage() {
                   {fields.map((field, index) => (
                     <div
                       key={field.id}
-                      className="grid grid-cols-1 md:grid-cols-[3fr_72px_104px_60px_88px_32px] gap-3 items-center py-3"
+                      className={`grid ${itemGridCols} gap-3 items-center py-3`}
                     >
                       {/* Product */}
                       <div>
@@ -567,17 +579,19 @@ export default function InvoiceFormPage() {
                         />
                       </div>
 
-                      {/* Tax rate */}
-                      <div>
-                        <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">IVA %</label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="100"
-                          {...register(`items.${index}.taxRate`)}
-                        />
-                      </div>
+                      {/* Tax rate — hidden for Factura C (no IVA) */}
+                      {!isTypeC && (
+                        <div>
+                          <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">IVA %</label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            {...register(`items.${index}.taxRate`)}
+                          />
+                        </div>
+                      )}
 
                       {/* Total */}
                       <div className="text-right">
@@ -851,12 +865,14 @@ export default function InvoiceFormPage() {
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-500 dark:text-slate-400">IVA</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(totals.taxAmount, 'ARS')}
-                  </span>
-                </div>
+                {!isTypeC && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-500 dark:text-slate-400">IVA</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
+                      {formatCurrency(totals.taxAmount, 'ARS')}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 dark:border-slate-700">
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
                   <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">

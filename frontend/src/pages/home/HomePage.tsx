@@ -1,27 +1,26 @@
+import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   FileText, Users, Calculator, ClipboardList, Receipt,
   Truck, ShoppingCart, Package, PackageSearch, CreditCard,
-  Landmark, BookOpen, Plus, ArrowRightLeft, ArrowRight,
+  Landmark, BookOpen, ArrowRight, SlidersHorizontal,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useFeatures } from '../../hooks/useFeatures';
+import usersService from '../../services/users.service';
+import {
+  QUICK_ACCESS_CATALOG,
+  DEFAULT_QUICK_ACCESS_IDS,
+  QUICK_ACCESS_BY_ID,
+  type QuickAccessItem,
+} from '../../config/quickAccessCatalog';
+import QuickAccessConfigModal from '../../components/dashboard/QuickAccessConfigModal';
 import type { FeatureKey } from '../../utils/planFeatures';
 import type { UserRole } from '../../types';
 
 /* ── Types ────────────────────────────────────────────────────── */
-interface QuickAction {
-  label: string;
-  to: string;
-  icon: React.ElementType;
-  color: string;
-  bg: string;
-  moduleKey?: string;
-  featureKey?: FeatureKey;
-  requiredRoles?: readonly UserRole[];
-}
-
 interface ModuleItem {
   name: string;
   description: string;
@@ -44,19 +43,6 @@ interface ModuleGroup {
 const SALES_ROLES     = ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK', 'FINANCES'] as const;
 const PURCHASES_ROLES = ['ADMIN', 'FINANCES', 'PURCHASES'] as const;
 const FINANCES_ROLES  = ['ADMIN', 'FINANCES'] as const;
-const SALES_WRITE     = ['ADMIN', 'SELLER'] as const;
-const PURCHASES_WRITE = ['ADMIN', 'PURCHASES'] as const;
-const CATALOG_WRITE   = ['ADMIN', 'SELLER'] as const;
-
-const quickActions: QuickAction[] = [
-  { label: 'Nueva Factura',      to: '/invoices/new',    icon: FileText,    color: 'text-indigo-600', bg: 'bg-indigo-50',   moduleKey: 'ventas',    requiredRoles: SALES_WRITE },
-  { label: 'Nuevo Presupuesto',  to: '/budgets/new',     icon: Calculator,  color: 'text-violet-600', bg: 'bg-violet-50',   moduleKey: 'ventas',    requiredRoles: SALES_WRITE,     featureKey: 'budgets' },
-  { label: 'Nuevo Cliente',      to: '/customers/new',   icon: Users,       color: 'text-blue-600',   bg: 'bg-blue-50',     moduleKey: 'ventas',    requiredRoles: SALES_WRITE },
-  { label: 'Nuevo Proveedor',    to: '/suppliers/new',   icon: Truck,       color: 'text-orange-600', bg: 'bg-orange-50',   moduleKey: 'compras',   requiredRoles: PURCHASES_WRITE },
-  { label: 'Nueva Compra',       to: '/purchases/new',   icon: ShoppingCart,color: 'text-amber-600',  bg: 'bg-amber-50',    moduleKey: 'compras',   requiredRoles: PURCHASES_WRITE },
-  { label: 'Nuevo Producto',     to: '/products/new',    icon: Package,     color: 'text-emerald-600',bg: 'bg-emerald-50',  moduleKey: 'catalogo',  requiredRoles: CATALOG_WRITE },
-  { label: 'Transferir Stock',   to: '/stock/transfer',  icon: ArrowRightLeft, color: 'text-teal-600', bg: 'bg-teal-50',    moduleKey: 'catalogo',  requiredRoles: CATALOG_WRITE,   featureKey: 'multi_warehouse' },
-];
 
 const moduleGroups: ModuleGroup[] = [
   {
@@ -103,20 +89,55 @@ const moduleGroups: ModuleGroup[] = [
 /* ── Component ────────────────────────────────────────────────── */
 export default function HomePage() {
   const { user } = useAuthStore();
-  const { role, isModuleEnabled } = usePermissions();
+  const perms = usePermissions();
+  const { role, isModuleEnabled } = perms;
   const { hasFeature } = useFeatures();
   const firstName = user?.name?.split(' ')[0] ?? 'usuario';
+
+  // ── Accesos rápidos configurables por usuario ──
+  const [shortcutIds, setShortcutIds] = useState<string[] | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  // Catálogo filtrado por permisos de rol, plan (features) y módulos de empresa
+  const availableShortcuts: QuickAccessItem[] = QUICK_ACCESS_CATALOG.filter((it) => {
+    if (it.module && !perms.isModuleEnabled(it.module)) return false;
+    if (it.feature && !hasFeature(it.feature)) return false;
+    if (it.access === 'write' && !perms.canWrite) return false;
+    if (it.access === 'purchases' && !perms.canAccessPurchases) return false;
+    if (it.access === 'finances' && !perms.canAccessFinances) return false;
+    return true;
+  });
+  const availableIds = new Set(availableShortcuts.map((a) => a.id));
+
+  // Ids efectivos: los del usuario (o el default), siempre filtrados por disponibilidad
+  const effectiveIds = (shortcutIds ?? DEFAULT_QUICK_ACCESS_IDS).filter((id) => availableIds.has(id));
+  const visibleShortcuts = effectiveIds.map((id) => QUICK_ACCESS_BY_ID[id]).filter(Boolean) as QuickAccessItem[];
+
+  useEffect(() => {
+    usersService
+      .getDashboardShortcuts()
+      .then((ids) => setShortcutIds(ids ?? DEFAULT_QUICK_ACCESS_IDS))
+      .catch(() => setShortcutIds(DEFAULT_QUICK_ACCESS_IDS));
+  }, []);
+
+  const handleSaveShortcuts = async (ids: string[]) => {
+    setSavingConfig(true);
+    try {
+      const saved = await usersService.saveDashboardShortcuts(ids);
+      setShortcutIds(saved);
+      setConfigOpen(false);
+      toast.success('Accesos rápidos actualizados');
+    } catch {
+      toast.error('No se pudieron guardar los accesos rápidos');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   if (user?.role === 'SUPER_ADMIN') {
     return <Navigate to="/companies" replace />;
   }
-
-  const visibleQuickActions = quickActions.filter((a) => {
-    if (a.moduleKey && !isModuleEnabled(a.moduleKey)) return false;
-    if (a.featureKey && !hasFeature(a.featureKey)) return false;
-    if (a.requiredRoles && !a.requiredRoles.includes(role)) return false;
-    return true;
-  });
 
   const visibleModuleGroups = moduleGroups
     .filter((g) => {
@@ -144,28 +165,40 @@ export default function HomePage() {
         <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">¿Qué querés hacer hoy?</p>
       </div>
 
-      {/* Quick actions */}
+      {/* Accesos rápidos (configurables por usuario) */}
       <section>
-        <div className="flex items-center gap-2 mb-3">
-          <Plus className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-          <h2 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Acciones rápidas</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Accesos rápidos</h2>
+          <button
+            onClick={() => setConfigOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+            title="Configurar accesos rápidos"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Editar
+          </button>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
-          {visibleQuickActions.map((action) => (
-            <Link
-              key={action.to}
-              to={action.to}
-              className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-200 dark:hover:border-slate-600 hover:shadow-sm transition-all duration-150 group text-center"
-            >
-              <div className={`p-2.5 rounded-xl ${action.bg} group-hover:scale-105 transition-transform duration-150`}>
-                <action.icon className={`w-5 h-5 ${action.color}`} />
-              </div>
-              <span className="text-xs font-medium text-gray-600 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white leading-tight">
-                {action.label}
-              </span>
-            </Link>
-          ))}
-        </div>
+        {visibleShortcuts.length === 0 ? (
+          <button
+            onClick={() => setConfigOpen(true)}
+            className="w-full text-sm text-gray-400 dark:text-slate-500 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl py-6 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors"
+          >
+            No tenés accesos rápidos configurados. Hacé clic para agregar.
+          </button>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+            {visibleShortcuts.map(({ id, href, label, icon: Icon, bg, color }) => (
+              <Link key={id} to={href}>
+                <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex flex-col items-center gap-2.5 hover:shadow-sm hover:border-gray-200 dark:hover:border-slate-600 transition-all duration-150 text-center h-full group">
+                  <div className={`p-2.5 rounded-xl ${bg} flex-shrink-0 group-hover:scale-105 transition-transform duration-150`}>
+                    <Icon className={`w-5 h-5 ${color}`} />
+                  </div>
+                  <span className="text-xs font-medium text-gray-600 dark:text-slate-400 group-hover:text-gray-900 dark:group-hover:text-white leading-tight">{label}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Module groups */}
@@ -198,6 +231,15 @@ export default function HomePage() {
           </section>
         ))}
       </div>
+
+      <QuickAccessConfigModal
+        isOpen={configOpen}
+        onClose={() => setConfigOpen(false)}
+        available={availableShortcuts}
+        selectedIds={effectiveIds}
+        onSave={handleSaveShortcuts}
+        isSaving={savingConfig}
+      />
     </div>
   );
 }
