@@ -10,6 +10,7 @@ import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegis
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigRepository';
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
+import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { afipService } from '../../services/AfipService';
 import { pdvService } from '../../services/PdvService';
@@ -107,6 +108,31 @@ export class InvoiceController {
             }
           }
         }
+      }
+
+      // Auto-generate a delivered remito for immediate-discount sales.
+      // Stock was already moved above (SALE), so the linked remito performs no
+      // stock movement; the repository auto-marks DISCOUNT remitos as DELIVERED.
+      if (
+        req.body.type.startsWith('FACTURA') &&
+        (req.body.stockBehavior ?? 'DISCOUNT') === 'DISCOUNT' &&
+        req.body.customerId
+      ) {
+        const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
+        await remitoRepository.create({
+          customerId: req.body.customerId,
+          userId: req.user!.userId,
+          stockBehavior: 'DISCOUNT',
+          notes: `Auto-generado desde factura ${invoice.number}`,
+          invoiceId: invoice.id,
+          companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
+          items: invoice.items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity.toNumber(),
+            variantId: (item as any).variantId ?? null,
+          })),
+        } as any);
       }
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');

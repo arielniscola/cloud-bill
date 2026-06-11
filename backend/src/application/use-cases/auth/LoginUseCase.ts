@@ -18,6 +18,7 @@ interface LoginResult {
     role: string;
     companyId: string | null;
     companyName: string | null;
+    companyLogoUrl: string | null;
     enabledModules: string[];
     plan: string;
     features: string[];
@@ -55,15 +56,17 @@ export class LoginUseCase {
     let plan = 'ENTERPRISE';
     let features: string[] = [];
     let companyName: string | null = null;
+    let companyLogoUrl: string | null = null;
     if (companyId) {
-      const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string; name: string }[]>`
-        SELECT "enabledModules", "plan", "name" FROM companies WHERE id = ${companyId}
+      const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string; name: string; logoUrl: string | null }[]>`
+        SELECT "enabledModules", "plan", "name", "logoUrl" FROM companies WHERE id = ${companyId}
       `;
       const raw = rows[0]?.enabledModules;
       enabledModules = (!raw || raw === 'ALL') ? ['ALL'] : raw.split(',').filter(Boolean);
       plan = rows[0]?.plan ?? 'PRO';
       features = getFeaturesForPlan(plan);
       companyName = rows[0]?.name ?? null;
+      companyLogoUrl = rows[0]?.logoUrl ?? null;
     }
 
     const payload: JwtPayload = {
@@ -86,6 +89,7 @@ export class LoginUseCase {
         role:      user.role,
         companyId,
         companyName,
+        companyLogoUrl,
         enabledModules,
         plan,
         features,

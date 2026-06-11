@@ -7,6 +7,8 @@ const companyController = new CompanyController();
 
 router.use(authMiddleware);
 
+// Empresa activa del usuario — cualquier rol autenticado (debe ir antes de '/:id')
+router.get('/current', companyController.getCurrent.bind(companyController));
 router.get('/',       requireRoles('SUPER_ADMIN', 'ADMIN'), companyController.findAll.bind(companyController));
 router.get('/:id',    requireRoles('SUPER_ADMIN', 'ADMIN'), companyController.findById.bind(companyController));
 router.post('/',      requireRoles('SUPER_ADMIN'),           companyController.create.bind(companyController));

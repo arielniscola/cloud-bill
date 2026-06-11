@@ -37,16 +37,27 @@ export class DashboardController {
         customersWithDebtRows,
         lowStockRaw,
       ] = await Promise.all([
-        // Ventas del mes — facturas emitidas (no NC/ND, no borrador/canceladas)
+        // Ventas del mes — facturas emitidas + órdenes de pedido NO convertidas.
+        // Una OP convertida a factura ya se cuenta como su factura (invoiceId NOT NULL),
+        // por eso se excluye acá para no duplicar la venta.
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
-          FROM "invoices"
-          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
-            AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
-            AND currency = 'ARS'
-            AND "companyId" = ${companyId}
-            ${fmFilter}
-            AND date >= ${monthStart} AND date <= ${monthEnd}
+          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count FROM (
+            SELECT total FROM "invoices"
+            WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
+              AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
+              AND currency = 'ARS'
+              AND "companyId" = ${companyId}
+              ${fmFilter}
+              AND date >= ${monthStart} AND date <= ${monthEnd}
+            UNION ALL
+            SELECT total FROM "orden_pedidos"
+            WHERE status IN ('CONFIRMED', 'PARTIALLY_PAID', 'PAID')
+              AND "invoiceId" IS NULL
+              AND currency = 'ARS'
+              AND "companyId" = ${companyId}
+              ${fmFilter}
+              AND date >= ${monthStart} AND date <= ${monthEnd}
+          ) AS ventas
         `,
 
         // Cobros pendientes (facturas ISSUED/AUTHORIZED + PARTIALLY_PAID)
@@ -311,12 +322,22 @@ export class DashboardController {
         });
       }
 
-      const [invoiceRows, purchaseRows, reciboRows, ordenPagoRows] = await Promise.all([
+      const [invoiceRows, ordenPedidoVentaRows, purchaseRows, reciboRows, ordenPagoRows] = await Promise.all([
         // Ventas: facturas emitidas (no NC/ND)
         prisma.$queryRaw<{ date: Date; total: any }[]>`
           SELECT date, total FROM "invoices"
           WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
             AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
+            AND currency = 'ARS'
+            AND "companyId" = ${companyId}
+            ${fmFilter}
+            AND date >= ${months[0].start} AND date <= ${months[11].end}
+        `,
+        // Ventas: órdenes de pedido NO convertidas (las convertidas cuentan como su factura)
+        prisma.$queryRaw<{ date: Date; total: any }[]>`
+          SELECT date, total FROM "orden_pedidos"
+          WHERE status IN ('CONFIRMED', 'PARTIALLY_PAID', 'PAID')
+            AND "invoiceId" IS NULL
             AND currency = 'ARS'
             AND "companyId" = ${companyId}
             ${fmFilter}
@@ -354,7 +375,7 @@ export class DashboardController {
       const data = months.map(({ year, month, start, end }) => {
         const inRange = (d: Date) => d >= start && d <= end;
 
-        const ventas = invoiceRows
+        const ventas = [...invoiceRows, ...ordenPedidoVentaRows]
           .filter((r) => inRange(new Date(r.date)))
           .reduce((acc, r) => acc + Number(r.total), 0);
 

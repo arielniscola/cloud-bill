@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { AppError, NotFoundError, ConflictError, ForbiddenError } from '../../../shared/errors/AppError';
+import prisma from '../../database/prisma';
 
 const createUserSchema = z.object({
   name:      z.string().min(1),
@@ -26,6 +27,10 @@ const updateUserSchema = z.object({
 
 const changePasswordSchema = z.object({
   password: z.string().min(6, 'Mínimo 6 caracteres'),
+});
+
+const dashboardShortcutsSchema = z.object({
+  shortcuts: z.array(z.string().min(1).max(64)).max(40),
 });
 
 function omitPassword<T extends { password?: string }>(user: T) {
@@ -181,6 +186,39 @@ export class UserController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── Accesos rápidos del dashboard (self-service, cualquier rol) ──────────
+  async getMyDashboardShortcuts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const rows = await prisma.$queryRaw<{ dashboardShortcuts: string | null }[]>`
+        SELECT "dashboardShortcuts" FROM "users" WHERE id = ${req.user!.userId} LIMIT 1
+      `;
+      let shortcuts: string[] | null = null;
+      const raw = rows[0]?.dashboardShortcuts;
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) shortcuts = parsed.filter((x): x is string => typeof x === 'string');
+        } catch { /* JSON inválido → tratar como sin configurar */ }
+      }
+      res.json({ status: 'success', data: { shortcuts } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateMyDashboardShortcuts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { shortcuts } = dashboardShortcutsSchema.parse(req.body);
+      await prisma.$executeRaw`
+        UPDATE "users" SET "dashboardShortcuts" = ${JSON.stringify(shortcuts)}, "updatedAt" = NOW()
+        WHERE id = ${req.user!.userId}
+      `;
+      res.json({ status: 'success', data: { shortcuts } });
     } catch (error) {
       next(error);
     }

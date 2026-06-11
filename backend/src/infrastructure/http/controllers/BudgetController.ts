@@ -71,16 +71,18 @@ export class BudgetController {
         if (!customer.isActive) throw new AppError('El cliente está inactivo y no puede recibir nuevos presupuestos', 400);
       }
 
-      // Calculate totals from items
+      // Calculate totals from items — Factura C does not carry IVA
+      const isTypeC = data.type.endsWith('_C');
       let subtotal = 0;
       let taxAmount = 0;
       const items = data.items.map((item) => {
         const itemSubtotal = item.quantity * item.unitPrice;
-        const itemTax = itemSubtotal * (item.taxRate / 100);
+        const itemTax = isTypeC ? 0 : itemSubtotal * (item.taxRate / 100);
         subtotal += itemSubtotal;
         taxAmount += itemTax;
         return {
           ...item,
+          taxRate: isTypeC ? 0 : item.taxRate,
           subtotal: itemSubtotal,
           taxAmount: itemTax,
           total: itemSubtotal + itemTax,
@@ -135,15 +137,18 @@ export class BudgetController {
       let updateData: any = { ...data };
 
       if (data.items) {
+        // Factura C does not carry IVA — fall back to the existing type when not edited
+        const isTypeC = (data.type ?? budget.type).endsWith('_C');
         let subtotal = 0;
         let taxAmount = 0;
         const items = data.items.map((item) => {
           const itemSubtotal = item.quantity! * item.unitPrice!;
-          const itemTax = itemSubtotal * ((item.taxRate ?? 0) / 100);
+          const itemTax = isTypeC ? 0 : itemSubtotal * ((item.taxRate ?? 0) / 100);
           subtotal += itemSubtotal;
           taxAmount += itemTax;
           return {
             ...item,
+            taxRate: isTypeC ? 0 : item.taxRate,
             subtotal: itemSubtotal,
             taxAmount: itemTax,
             total: itemSubtotal + itemTax,

@@ -240,12 +240,16 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
   const typeLabel = TYPE_LABELS[inv.type] ?? inv.type;
   const currencySymbol = inv.currency === 'USD' ? 'U$D' : '$';
 
+  // Factura C does not discriminate IVA
+  const isTypeC = String(inv.type).endsWith('_C');
+  const footerColspan = isTypeC ? 3 : 4;
+
   const itemsRows = (inv.items as any[]).map((it) => `
     <tr>
       <td>${it.description}</td>
       <td class="text-right">${fmt(it.quantity, 0)}</td>
       <td class="text-right">${currencySymbol} ${fmt(it.unitPrice)}</td>
-      <td class="text-right">${fmt(Number(it.taxRate))}%</td>
+      ${isTypeC ? '' : `<td class="text-right">${fmt(Number(it.taxRate))}%</td>`}
       <td class="text-right">${currencySymbol} ${fmt(it.total)}</td>
     </tr>
   `).join('');
@@ -277,22 +281,22 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
           <th>Descripción</th>
           <th class="text-right">Cant.</th>
           <th class="text-right">Precio unit.</th>
-          <th class="text-right">IVA</th>
+          ${isTypeC ? '' : '<th class="text-right">IVA</th>'}
           <th class="text-right">Total</th>
         </tr>
       </thead>
       <tbody>${itemsRows}</tbody>
       <tfoot>
         <tr class="totals-row">
-          <td colspan="4" class="text-right">Subtotal</td>
+          <td colspan="${footerColspan}" class="text-right">Subtotal</td>
           <td class="text-right">${currencySymbol} ${fmt(inv.subtotal)}</td>
         </tr>
-        <tr>
-          <td colspan="4" class="text-right">IVA</td>
+        ${isTypeC ? '' : `<tr>
+          <td colspan="${footerColspan}" class="text-right">IVA</td>
           <td class="text-right">${currencySymbol} ${fmt(inv.taxAmount)}</td>
-        </tr>
+        </tr>`}
         <tr class="total-final">
-          <td colspan="4" class="text-right">TOTAL</td>
+          <td colspan="${footerColspan}" class="text-right">TOTAL</td>
           <td class="text-right">${currencySymbol} ${fmt(inv.total)}</td>
         </tr>
       </tfoot>
@@ -336,7 +340,7 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
 
   const rows = await prisma.$queryRaw<any[]>`
     SELECT
-      b.id, b.number, b.date, b."validUntil", b.subtotal, b."taxAmount", b.total,
+      b.id, b.number, b.type::text, b.date, b."validUntil", b.subtotal, b."taxAmount", b.total,
       b.currency, b.status, b.notes, b."paymentTerms",
       c.name AS "customerName", c.email AS "customerEmail", c."taxId" AS "customerTaxId",
       json_agg(
@@ -359,12 +363,16 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
   const bud = rows[0];
   const currencySymbol = bud.currency === 'USD' ? 'U$D' : '$';
 
+  // Factura C does not discriminate IVA
+  const isTypeC = String(bud.type).endsWith('_C');
+  const footerColspan = isTypeC ? 3 : 4;
+
   const itemsRows = (bud.items as any[]).map((it) => `
     <tr>
       <td>${it.description}</td>
       <td class="text-right">${fmt(it.quantity, 0)}</td>
       <td class="text-right">${currencySymbol} ${fmt(it.unitPrice)}</td>
-      <td class="text-right">${fmt(Number(it.taxRate))}%</td>
+      ${isTypeC ? '' : `<td class="text-right">${fmt(Number(it.taxRate))}%</td>`}
       <td class="text-right">${currencySymbol} ${fmt(it.total)}</td>
     </tr>
   `).join('');
@@ -388,22 +396,22 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
           <th>Descripción</th>
           <th class="text-right">Cant.</th>
           <th class="text-right">Precio unit.</th>
-          <th class="text-right">IVA</th>
+          ${isTypeC ? '' : '<th class="text-right">IVA</th>'}
           <th class="text-right">Total</th>
         </tr>
       </thead>
       <tbody>${itemsRows}</tbody>
       <tfoot>
         <tr class="totals-row">
-          <td colspan="4" class="text-right">Subtotal</td>
+          <td colspan="${footerColspan}" class="text-right">Subtotal</td>
           <td class="text-right">${currencySymbol} ${fmt(bud.subtotal)}</td>
         </tr>
-        <tr>
-          <td colspan="4" class="text-right">IVA</td>
+        ${isTypeC ? '' : `<tr>
+          <td colspan="${footerColspan}" class="text-right">IVA</td>
           <td class="text-right">${currencySymbol} ${fmt(bud.taxAmount)}</td>
-        </tr>
+        </tr>`}
         <tr class="total-final">
-          <td colspan="4" class="text-right">TOTAL</td>
+          <td colspan="${footerColspan}" class="text-right">TOTAL</td>
           <td class="text-right">${currencySymbol} ${fmt(bud.total)}</td>
         </tr>
       </tfoot>

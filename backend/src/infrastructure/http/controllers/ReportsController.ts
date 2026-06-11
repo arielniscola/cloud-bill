@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../../database/prisma';
 
@@ -58,6 +59,58 @@ export class ReportsController {
             productSku: item.product.sku, invoiceIds: new Set([item.invoice.id]),
             quantity: qty, subtotal: sub, taxAmount: tax, total: tot,
           });
+        }
+      }
+
+      // Órdenes de pedido NO convertidas también cuentan como ventas (mismo dedup que
+      // el dashboard: las convertidas ya están representadas por su factura). Se omiten
+      // cuando el filtro es específico de factura (type/status), porque las OP no los tienen.
+      const includeOPs = !type && !status;
+      if (includeOPs) {
+        const opConditions: Prisma.Sql[] = [
+          Prisma.sql`op."companyId" = ${companyId}`,
+          Prisma.sql`op.status IN ('CONFIRMED', 'PARTIALLY_PAID', 'PAID')`,
+          Prisma.sql`op."invoiceId" IS NULL`,
+          Prisma.sql`opi."productId" IS NOT NULL`,
+        ];
+        if (req.fiscalMode) opConditions.push(Prisma.sql`op."fiscalMode" = ${req.fiscalMode}`);
+        if (currency)       opConditions.push(Prisma.sql`op.currency::text = ${currency}`);
+        if (customerId)     opConditions.push(Prisma.sql`op."customerId" = ${customerId}`);
+        if (dateFrom)       opConditions.push(Prisma.sql`op.date >= ${new Date(dateFrom)}`);
+        if (dateTo)         opConditions.push(Prisma.sql`op.date <= ${new Date(dateTo)}`);
+        const opWhere = Prisma.join(opConditions, ' AND ');
+
+        const opRows = await prisma.$queryRaw<Array<{
+          ordenPedidoId: string; productId: string; productName: string; productSku: string;
+          quantity: Decimal; subtotal: Decimal; taxAmount: Decimal; total: Decimal;
+        }>>`
+          SELECT op.id AS "ordenPedidoId", opi."productId",
+                 p.name AS "productName", p.sku AS "productSku",
+                 opi.quantity, opi.subtotal, opi."taxAmount", opi.total
+          FROM "orden_pedido_items" opi
+          JOIN "orden_pedidos" op ON op.id = opi."ordenPedidoId"
+          JOIN "products" p ON p.id = opi."productId"
+          WHERE ${opWhere}
+        `;
+
+        for (const row of opRows) {
+          const qty = Number(row.quantity);
+          const sub = Number(row.subtotal);
+          const tax = Number(row.taxAmount);
+          const tot = Number(row.total);
+
+          const ex = map.get(row.productId);
+          if (ex) {
+            ex.invoiceIds.add(row.ordenPedidoId);
+            ex.quantity += qty; ex.subtotal += sub;
+            ex.taxAmount += tax; ex.total += tot;
+          } else {
+            map.set(row.productId, {
+              productId: row.productId, productName: row.productName,
+              productSku: row.productSku, invoiceIds: new Set([row.ordenPedidoId]),
+              quantity: qty, subtotal: sub, taxAmount: tax, total: tot,
+            });
+          }
         }
       }
 

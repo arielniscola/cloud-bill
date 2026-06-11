@@ -113,14 +113,18 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   async create(data: CreateInvoiceInput): Promise<InvoiceWithItems> {
     const invoiceNumber = await this.getNextInvoiceNumber(data.type);
 
+    // Factura C does not carry IVA (no discrimination, no tax)
+    const isTypeC = data.type.endsWith('_C');
+
     const computedItems = data.items.map((item) => {
       const base = new Decimal(item.quantity).times(item.unitPrice);
       const discountPct = new Decimal(item.discountPct ?? 0);
       const discountAmt = base.times(discountPct).dividedBy(100);
       const subtotal = base.minus(discountAmt);
-      const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
+      const effectiveTaxRate = isTypeC ? 0 : item.taxRate;
+      const taxAmount = subtotal.times(effectiveTaxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
@@ -164,14 +168,18 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   }
 
   async updateWithItems(id: string, data: CreateInvoiceInput): Promise<InvoiceWithItems> {
+    // Factura C does not carry IVA (no discrimination, no tax)
+    const isTypeC = data.type.endsWith('_C');
+
     const computedItems = data.items.map((item) => {
       const base = new Decimal(item.quantity).times(item.unitPrice);
       const discountPct = new Decimal(item.discountPct ?? 0);
       const discountAmt = base.times(discountPct).dividedBy(100);
       const subtotal = base.minus(discountAmt);
-      const taxAmount = subtotal.times(item.taxRate).dividedBy(100);
+      const effectiveTaxRate = isTypeC ? 0 : item.taxRate;
+      const taxAmount = subtotal.times(effectiveTaxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: item.taxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));

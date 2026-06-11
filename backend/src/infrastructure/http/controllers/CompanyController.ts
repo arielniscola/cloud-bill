@@ -25,6 +25,19 @@ export class CompanyController {
     } catch (error) { next(error); }
   }
 
+  // Datos de la empresa activa del usuario — accesible a cualquier rol autenticado.
+  // Se usa, p.ej., como fallback del encabezado en tickets/impresiones cuando la
+  // configuración AFIP está incompleta.
+  async getCurrent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.companyId) throw new NotFoundError('Empresa');
+      const repo = container.resolve<ICompanyRepository>('CompanyRepository');
+      const company = await repo.findById(req.companyId);
+      if (!company) throw new NotFoundError('Empresa');
+      res.json({ status: 'success', data: company });
+    } catch (error) { next(error); }
+  }
+
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICompanyRepository>('CompanyRepository');

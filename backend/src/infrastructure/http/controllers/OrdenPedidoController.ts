@@ -161,6 +161,27 @@ export class OrdenPedidoController {
         } as any);
       }
 
+      // Auto-generate a delivered remito for immediate-discount orders.
+      // Stock was already moved above (SALE); the repository auto-marks DISCOUNT
+      // remitos as DELIVERED. RESERVE orders get their (pending) remito on confirm.
+      if (stockBehavior === 'DISCOUNT' && op.customerId && itemsWithProduct.length > 0) {
+        const remitoRepo = container.resolve<IRemitoRepository>('RemitoRepository');
+        await remitoRepo.create({
+          customerId: op.customerId,
+          userId: req.user!.userId,
+          stockBehavior: 'DISCOUNT',
+          notes: `Auto-generado desde orden de pedido ${op.number}`,
+          ordenPedidoId: op.id,
+          companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
+          items: itemsWithProduct.map((item) => ({
+            productId: item.productId!,
+            quantity: Number(item.quantity),
+            variantId: (item as any).variantId ?? null,
+          })),
+        } as any);
+      }
+
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'CREATE',
@@ -302,11 +323,13 @@ export class OrdenPedidoController {
 
       const updated = await repo.update(req.params.id, { status });
 
-      // Auto-create Remito when confirming the OP
+      // Auto-create Remito when confirming the OP — but skip if one already
+      // exists (DISCOUNT orders generate their delivered remito at creation).
       if (status === 'CONFIRMED' && op.customerId) {
         const remitoRepo = container.resolve<IRemitoRepository>('RemitoRepository');
         const itemsWithProduct = op.items.filter((item) => item.productId);
-        if (itemsWithProduct.length > 0) {
+        const existingRemitos = await remitoRepo.findAll({ page: 1, limit: 1 }, { ordenPedidoId: op.id });
+        if (itemsWithProduct.length > 0 && existingRemitos.total === 0) {
           await remitoRepo.create({
             customerId: op.customerId,
             userId: req.user!.userId,

@@ -117,6 +117,7 @@ model User {
   role      UserRole @default(SELLER)
   isActive  Boolean  @default(true)
   companyId String?
+  dashboardShortcuts String? // JSON array de ids de accesos rápidos (NULL = default)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
