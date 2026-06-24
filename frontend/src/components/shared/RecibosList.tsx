@@ -12,6 +12,8 @@ interface RecibosListProps {
   onPay?: () => void;
   canPay: boolean;
   onCancel?: (recibo: Recibo) => void;
+  /** 'payment' = cobros (default) · 'refund' = devoluciones (Nota de Crédito) */
+  mode?: 'payment' | 'refund';
 }
 
 export function RecibosList({
@@ -21,7 +23,9 @@ export function RecibosList({
   onPay,
   canPay,
   onCancel,
+  mode = 'payment',
 }: RecibosListProps) {
+  const isRefund = mode === 'refund';
   const navigate = useNavigate();
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paid = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
@@ -30,11 +34,11 @@ export function RecibosList({
   return (
     <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Pagos / Recibos</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">{isRefund ? 'Devoluciones / Recibos' : 'Pagos / Recibos'}</h3>
         {canPay && remaining > 0.001 && onPay && (
           <Button size="sm" onClick={onPay}>
             <Banknote className="w-3.5 h-3.5 mr-1.5" />
-            Registrar pago
+            {isRefund ? 'Registrar devolución' : 'Registrar pago'}
           </Button>
         )}
       </div>

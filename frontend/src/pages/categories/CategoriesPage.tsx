@@ -6,16 +6,16 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { rubrosService } from '../../services';
-import type { Rubro } from '../../types';
+import { categoriesService } from '../../services';
+import type { Category } from '../../types';
 
-const rubroSchema = z.object({
+const categorySchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   description: z.string().optional().nullable(),
   isActive: z.boolean(),
   allowsVariants: z.boolean(),
 });
-type RubroFormData = z.infer<typeof rubroSchema>;
+type CategoryFormData = z.infer<typeof categorySchema>;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const AVATAR_COLORS = [
@@ -37,17 +37,17 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-// ── Rubro card ───────────────────────────────────────────────────
-function RubroCard({
-  rubro,
+// ── Category card ───────────────────────────────────────────────────
+function CategoryCard({
+  category,
   onEdit,
   onDelete,
 }: {
-  rubro: Rubro;
+  category: Category;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const color = avatarColor(rubro.name);
+  const color = avatarColor(category.name);
 
   return (
     <div
@@ -57,18 +57,18 @@ function RubroCard({
       <div
         className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ring-1 transition-all duration-150 group-hover:ring-2 ${color}`}
       >
-        {rubro.name.charAt(0).toUpperCase()}
+        {category.name.charAt(0).toUpperCase()}
       </div>
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400 truncate leading-tight transition-colors duration-150">
-          {rubro.name}
+          {category.name}
         </p>
-        {rubro.description && (
-          <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{rubro.description}</p>
+        {category.description && (
+          <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{category.description}</p>
         )}
-        <p className={`text-[11px] mt-0.5 leading-none font-medium ${rubro.isActive ? 'text-emerald-600' : 'text-gray-400 dark:text-slate-500'}`}>
-          {rubro.isActive ? 'Activo' : 'Inactivo'}
+        <p className={`text-[11px] mt-0.5 leading-none font-medium ${category.isActive ? 'text-emerald-600' : 'text-gray-400 dark:text-slate-500'}`}>
+          {category.isActive ? 'Activa' : 'Inactiva'}
         </p>
       </div>
 
@@ -120,10 +120,10 @@ function ModalToggle({ checked, onChange }: { checked: boolean; onChange: (v: bo
       </div>
       <div className="flex-1">
         <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600 dark:text-slate-300'}`}>
-          Rubro activo
+          CategorÃ­a activa
         </p>
         <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
-          Solo los rubros activos aparecen al cargar productos.
+          Solo las categorÃ­as activas aparecen al cargar productos.
         </p>
       </div>
       <div
@@ -143,14 +143,14 @@ function ModalToggle({ checked, onChange }: { checked: boolean; onChange: (v: bo
 
 type FilterTab = 'all' | 'active' | 'inactive';
 
-export default function RubrosPage() {
-  const [rubros, setRubros] = useState<Rubro[]>([]);
+export default function CategoriesPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingRubro, setEditingRubro] = useState<Rubro | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -162,52 +162,52 @@ export default function RubrosPage() {
     setValue,
     reset,
     formState: { errors },
-  } = useForm<RubroFormData>({
-    resolver: zodResolver(rubroSchema),
+  } = useForm<CategoryFormData>({
+    resolver: zodResolver(categorySchema),
     defaultValues: { isActive: true },
   });
 
   const isActiveVal = watch('isActive') ?? true;
   const allowsVariantsVal = watch('allowsVariants') ?? false;
 
-  const fetchRubros = useCallback(async () => {
+  const fetchCategories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await rubrosService.getAll();
-      setRubros(data);
+      const data = await categoriesService.getAll();
+      setCategories(data);
     } catch {
-      toast.error('Error al cargar rubros');
+      toast.error('Error al cargar categorías');
     } finally {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
   }, []);
 
-  useEffect(() => { fetchRubros(); }, [fetchRubros]);
+  useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
-  const activeCount = useMemo(() => rubros.filter((r) => r.isActive).length, [rubros]);
-  const inactiveCount = rubros.length - activeCount;
+  const activeCount = useMemo(() => categories.filter((r) => r.isActive).length, [categories]);
+  const inactiveCount = categories.length - activeCount;
 
   const filtered = useMemo(() => {
-    let base = rubros;
-    if (activeTab === 'active') base = rubros.filter((r) => r.isActive);
-    else if (activeTab === 'inactive') base = rubros.filter((r) => !r.isActive);
+    let base = categories;
+    if (activeTab === 'active') base = categories.filter((r) => r.isActive);
+    else if (activeTab === 'inactive') base = categories.filter((r) => !r.isActive);
     const q = search.trim().toLowerCase();
     if (!q) return base;
     return base.filter((r) => r.name.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q));
-  }, [rubros, activeTab, search]);
+  }, [categories, activeTab, search]);
 
-  const openModal = (rubro?: Rubro) => {
-    if (rubro) {
-      setEditingRubro(rubro);
+  const openModal = (category?: Category) => {
+    if (category) {
+      setEditingCategory(category);
       reset({
-        name: rubro.name,
-        description: rubro.description,
-        isActive: rubro.isActive,
-        allowsVariants: rubro.allowsVariants ?? false,
+        name: category.name,
+        description: category.description,
+        isActive: category.isActive,
+        allowsVariants: category.allowsVariants ?? false,
       });
     } else {
-      setEditingRubro(null);
+      setEditingCategory(null);
       reset({ name: '', description: null, isActive: true, allowsVariants: false });
     }
     setIsModalOpen(true);
@@ -215,25 +215,25 @@ export default function RubrosPage() {
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingRubro(null);
+    setEditingCategory(null);
     reset();
   };
 
-  const onSubmit = async (data: RubroFormData) => {
+  const onSubmit = async (data: CategoryFormData) => {
     setIsSaving(true);
     try {
-      if (editingRubro) {
-        await rubrosService.update(editingRubro.id, data);
-        toast.success('Rubro actualizado');
+      if (editingCategory) {
+        await categoriesService.update(editingCategory.id, data);
+        toast.success('CategorÃ­a actualizada');
       } else {
-        await rubrosService.create(data);
-        toast.success('Rubro creado');
+        await categoriesService.create(data);
+        toast.success('CategorÃ­a creada');
       }
       closeModal();
-      fetchRubros();
+      fetchCategories();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar rubro');
+      toast.error(err.response?.data?.message || 'Error al guardar categorÃ­a');
     } finally {
       setIsSaving(false);
     }
@@ -243,41 +243,41 @@ export default function RubrosPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await rubrosService.delete(deleteId);
-      toast.success('Rubro eliminado');
+      await categoriesService.delete(deleteId);
+      toast.success('CategorÃ­a eliminada');
       setDeleteId(null);
-      fetchRubros();
+      fetchCategories();
     } catch {
-      toast.error('Error al eliminar rubro. Verificá que no tenga productos asociados.');
+      toast.error('Error al eliminar categorÃ­a. Verificá que no tenga productos asociados.');
     } finally {
       setIsDeleting(false);
     }
   };
 
   const tabs: { id: FilterTab; label: string; count: number }[] = [
-    { id: 'all',      label: 'Todos',     count: rubros.length },
-    { id: 'active',   label: 'Activos',   count: activeCount },
-    { id: 'inactive', label: 'Inactivos', count: inactiveCount },
+    { id: 'all',      label: 'Todas',     count: categories.length },
+    { id: 'active',   label: 'Activas',   count: activeCount },
+    { id: 'inactive', label: 'Inactivas', count: inactiveCount },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Rubros"
+        title="CategorÃ­as"
         subtitle={
           isFirstLoad
             ? undefined
-            : `${rubros.length} ${rubros.length === 1 ? 'rubro' : 'rubros'} · ${activeCount} activos`
+            : `${categories.length} ${categories.length === 1 ? 'categoría' : 'categorías'} · ${activeCount} activas`
         }
         actions={
           <Button onClick={() => openModal()}>
             <Plus className="w-4 h-4 mr-2" />
-            Nuevo rubro
+            Nueva categorÃ­a
           </Button>
         }
       />
 
-      {!isFirstLoad && rubros.length > 0 && (
+      {!isFirstLoad && categories.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
             {tabs.map((tab) => (
@@ -308,7 +308,7 @@ export default function RubrosPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar rubros..."
+              placeholder="Buscar categorÃ­as..."
               className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg placeholder-gray-400 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
             />
           </div>
@@ -325,30 +325,30 @@ export default function RubrosPage() {
             <Layers className="w-7 h-7 text-gray-300 dark:text-slate-500" />
           </div>
           <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
-            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin rubros en esta categoría' : 'Sin rubros'}
+            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin categorÃ­as en esta vista' : 'Sin categorÃ­as'}
           </p>
           <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
             {search
-              ? `No se encontraron rubros para "${search}".`
+              ? `No se encontraron categorÃ­as para "${search}".`
               : activeTab !== 'all'
               ? 'Probá con otro filtro o creá uno nuevo.'
-              : 'Creá tu primer rubro para clasificar líneas de productos.'}
+              : 'Creá tu primera categoría para clasificar líneas de productos.'}
           </p>
           {!search && activeTab === 'all' && (
             <Button onClick={() => openModal()}>
               <Plus className="w-4 h-4 mr-2" />
-              Nuevo rubro
+              Nueva categorÃ­a
             </Button>
           )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filtered.map((rubro) => (
-            <RubroCard
-              key={rubro.id}
-              rubro={rubro}
-              onEdit={() => openModal(rubro)}
-              onDelete={() => setDeleteId(rubro.id)}
+          {filtered.map((category) => (
+            <CategoryCard
+              key={category.id}
+              category={category}
+              onEdit={() => openModal(category)}
+              onDelete={() => setDeleteId(category.id)}
             />
           ))}
           {activeTab === 'all' && !search && (
@@ -357,7 +357,7 @@ export default function RubrosPage() {
               className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl py-4 px-4 text-gray-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all duration-150 active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              <span className="text-xs font-medium">Nuevo rubro</span>
+              <span className="text-xs font-medium">Nueva categorÃ­a</span>
             </button>
           )}
         </div>
@@ -367,7 +367,7 @@ export default function RubrosPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingRubro ? `Editar "${editingRubro.name}"` : 'Nuevo rubro'}
+        title={editingCategory ? `Editar "${editingCategory.name}"` : 'Nueva categorÃ­a'}
         size="sm"
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -381,7 +381,7 @@ export default function RubrosPage() {
 
           <Input
             label="Descripción (opcional)"
-            placeholder="Breve descripción del rubro"
+            placeholder="Breve descripción de la categoría"
             {...register('description')}
           />
 
@@ -415,7 +415,7 @@ export default function RubrosPage() {
                 Admite variantes
               </p>
               <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-snug">
-                Activá si los productos de este rubro tienen talles, colores u otros atributos (ej. indumentaria).
+                Activá si los productos de esta categorÃ­a tienen talles, colores u otros atributos (ej. indumentaria).
               </p>
             </div>
             <div
@@ -440,7 +440,7 @@ export default function RubrosPage() {
 
           <div className="flex gap-2.5 pt-1">
             <Button type="submit" isLoading={isSaving}>
-              {editingRubro ? 'Guardar cambios' : 'Crear rubro'}
+              {editingCategory ? 'Guardar cambios' : 'Crear categorÃ­a'}
             </Button>
             <Button type="button" variant="outline" onClick={closeModal} disabled={isSaving}>
               Cancelar
@@ -454,8 +454,8 @@ export default function RubrosPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Eliminar rubro"
-        message="¿Eliminar este rubro? Los productos asociados quedarán sin rubro asignado."
+        title="Eliminar categorÃ­a"
+        message="¿Eliminar esta categoría? Los productos asociados quedarán sin categoría asignada."
         confirmText="Eliminar"
         isLoading={isDeleting}
       />

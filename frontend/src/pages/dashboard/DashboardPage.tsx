@@ -14,7 +14,6 @@ import {
   Truck,
   CheckCircle,
   CreditCard,
-  ClipboardList,
   Receipt,
   ChevronLeft,
   RotateCcw,
@@ -658,24 +657,6 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {isLoading ? <Skeleton className="w-10 h-5" /> : stats?.totalProveedores.toLocaleString('es-AR')}
                 </p>
-              </div>
-            </div>
-          </Card>
-        </Link>
-        <Link to="/orden-compras">
-          <Card className="hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 group">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex-shrink-0">
-                <ClipboardList className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-slate-400">OC pendientes</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {isLoading ? <Skeleton className="w-10 h-5" /> : (stats?.ocPendientes?.count ?? 0).toLocaleString('es-AR')}
-                </p>
-                {!isLoading && (stats?.ocPendientes?.total ?? 0) > 0 && (
-                  <p className="text-xs text-gray-400 dark:text-slate-500">{formatCurrency(stats!.ocPendientes.total)}</p>
-                )}
               </div>
             </div>
           </Card>

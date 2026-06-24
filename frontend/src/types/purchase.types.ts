@@ -6,6 +6,9 @@ export type PurchaseInvoiceStatus      = 'PENDING' | 'PAID';
 
 export type RetentionType = 'IIBB' | 'GANANCIAS' | 'IVA' | 'OTHER';
 
+// "Otros tributos" que SUMAN al total (percepciones, impuestos internos, otros)
+export type TributoType = 'PERCEPCION_IVA' | 'PERCEPCION_IIBB' | 'IMPUESTOS_INTERNOS' | 'OTRO';
+
 export interface PurchaseInvoiceItem {
   id:          string;
   description: string;
@@ -28,15 +31,39 @@ export interface PurchaseInvoiceRetencion {
   notes:        string | null;
 }
 
+export interface PurchaseInvoiceTributo {
+  id:           string;
+  type:         TributoType;
+  jurisdiction: string | null;
+  base:         number;
+  percentage:   number;
+  amount:       number;
+  description:  string | null;
+}
+
+export interface PurchaseInvoiceRemitoLink {
+  id: string;
+  number: string;
+  date: string;
+  status: string;
+}
+
 export interface PurchaseInvoice {
   id: string;
-  purchaseId: string;
+  purchaseId: string | null;           // legacy: compra vinculada (opcional)
+  supplierId: string | null;
+  supplier?: Pick<Supplier, 'id' | 'name' | 'cuit'>;
   number: string;
   type: string;
   subtotal: number;
   taxRate: number;
   taxAmount: number;
-  amount: number;          // total bruto (before retenciones)
+  amount: number;          // total del comprobante (neto + IVA + otros tributos)
+  paidAmount?: number;     // suma de OP pagadas que imputan a esta factura (computado en el listado)
+  currency: string;
+  exchangeRate?: number;
+  saleCondition: PurchaseSaleCondition;
+  date: string;
   dueDate: string | null;
   imputationDate: string | null;
   paymentMethod: string;
@@ -44,6 +71,10 @@ export interface PurchaseInvoice {
   notes: string | null;
   items: PurchaseInvoiceItem[];
   retenciones: PurchaseInvoiceRetencion[];
+  tributos: PurchaseInvoiceTributo[];
+  remitos?: PurchaseInvoiceRemitoLink[];
+  originInvoiceId?: string | null;
+  originInvoice?: { id: string; number: string; type: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,6 +96,15 @@ export interface CreatePurchaseInvoiceRetentionDTO {
   notes?:       string | null;
 }
 
+export interface CreatePurchaseInvoiceTributoDTO {
+  type:         TributoType;
+  jurisdiction?: string | null;
+  base:         number;
+  percentage:   number;
+  amount:       number;
+  description?: string | null;
+}
+
 export interface CreatePurchaseInvoiceDTO {
   number: string;
   type: string;
@@ -78,6 +118,28 @@ export interface CreatePurchaseInvoiceDTO {
   notes?: string | null;
   items?: CreatePurchaseInvoiceItemDTO[];
   retenciones?: CreatePurchaseInvoiceRetentionDTO[];
+  tributos?: CreatePurchaseInvoiceTributoDTO[];
+  // Standalone (documento de primer nivel)
+  supplierId?: string;
+  currency?: string;
+  saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
+  exchangeRate?: number;
+  date?: string | null;
+  remitoIds?: string[];
+  originInvoiceId?: string | null;
+}
+
+export interface PurchaseInvoiceFilters {
+  page?: number;
+  limit?: number;
+  supplierId?: string;
+  status?: PurchaseInvoiceStatus;
+  search?: string;
+  currency?: string;
+  saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
+  type?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 export type PurchasePaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 export type PurchaseSaleCondition = 'CONTADO' | 'CUENTA_CORRIENTE';
@@ -109,12 +171,15 @@ export interface Purchase {
   taxAmount: number;
   total: number;
   currency: Currency;
+  exchangeRate?: number;
   status: PurchaseStatus;
   paymentStatus: PurchasePaymentStatus;
   paidAmount: number;
   saleCondition: PurchaseSaleCondition;
   fiscalMode?: string;
   notes: string | null;
+  originPurchaseId?: string | null;
+  originPurchase?: { id: string; number: string; type: InvoiceType } | null;
   items: PurchaseItem[];
   supplierInvoices?: PurchaseInvoice[];
   createdAt: string;
@@ -137,8 +202,10 @@ export interface CreatePurchaseDTO {
   warehouseId?: string | null;
   date?: string;
   currency?: Currency;
+  exchangeRate?: number;
   saleCondition?: PurchaseSaleCondition;
   notes?: string;
+  originPurchaseId?: string | null;
   items: CreatePurchaseItemDTO[];
 }
 

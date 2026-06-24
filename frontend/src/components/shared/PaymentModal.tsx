@@ -7,6 +7,7 @@ import {
   ArrowLeftRight, CreditCard, FileText, Smartphone, CheckCircle2,
 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '../ui';
+import BancoSelect from './BancoSelect';
 import { cashRegistersService, appSettingsService, cardsService } from '../../services';
 import bankService from '../../services/bank.service';
 import { formatCurrency } from '../../utils/formatters';
@@ -57,6 +58,8 @@ interface PaymentModalProps {
   isLoading?: boolean;
   defaultCashRegisterId?: string | null;
   title?: string;
+  /** 'payment' = cobro (default) · 'refund' = devolución (Nota de Crédito) */
+  mode?: 'payment' | 'refund';
 }
 
 export function PaymentModal({
@@ -67,8 +70,16 @@ export function PaymentModal({
   currency,
   isLoading,
   defaultCashRegisterId,
-  title = 'Registrar pago',
+  title,
+  mode = 'payment',
 }: PaymentModalProps) {
+  const isRefund = mode === 'refund';
+  const L = {
+    title:    title ?? (isRefund ? 'Registrar devolución' : 'Registrar pago'),
+    amount:   isRefund ? 'Monto a devolver' : 'Monto a cobrar',
+    total:    isRefund ? 'Devolver total' : 'Cobrar total',
+    submit:   isRefund ? 'Confirmar devolución' : 'Confirmar pago',
+  };
   const isUSD = currency === 'USD';
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -230,7 +241,7 @@ export function PaymentModal({
     (needsBanco && bankAccounts.length === 0);
 
   return (
-    <Modal isOpen={open} onClose={onClose} title={title} size="md">
+    <Modal isOpen={open} onClose={onClose} title={L.title} size="md">
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-5">
 
         {/* ── Balance summary card ── */}
@@ -305,7 +316,7 @@ export function PaymentModal({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
-              {isUSD ? 'Monto a cobrar (USD)' : 'Monto a cobrar'}
+              {isUSD ? `${L.amount} (USD)` : L.amount}
             </label>
             {amount !== remaining && remaining > 0 && (
               <button
@@ -313,7 +324,7 @@ export function PaymentModal({
                 onClick={() => setValue('amount', remaining)}
                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 font-medium transition-colors"
               >
-                Cobrar total
+                {L.total}
               </button>
             )}
           </div>
@@ -418,10 +429,11 @@ export function PaymentModal({
               {...register('reference')}
             />
             {paymentMethod === 'BANK_TRANSFER' && (
-              <Input
+              <BancoSelect
                 label="Banco origen"
                 placeholder="Opcional"
-                {...register('bank')}
+                value={watch('bank')}
+                onChange={(v) => setValue('bank', v)}
               />
             )}
           </div>
@@ -434,9 +446,10 @@ export function PaymentModal({
               {...register('reference')}
               error={errors.reference?.message}
             />
-            <Input
+            <BancoSelect
               label="Banco emisor"
-              {...register('bank')}
+              value={watch('bank')}
+              onChange={(v) => setValue('bank', v)}
             />
             <div className="col-span-2">
               <Input
@@ -538,7 +551,7 @@ export function PaymentModal({
           </Button>
           <Button type="submit" isLoading={isLoading} disabled={submitDisabled} className="flex-2 justify-center flex-1">
             <Banknote className="w-4 h-4 mr-2" />
-            Confirmar pago
+            {L.submit}
           </Button>
         </div>
 

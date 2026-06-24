@@ -1,16 +1,16 @@
-export interface Category {
+export interface Rubro {
   id: string;
   name: string;
   parentId: string | null;
-  parent?: Category;
-  children?: Category[];
+  parent?: Rubro;
+  children?: Rubro[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CreateCategoryDTO {
+export interface CreateRubroDTO {
   name: string;
   parentId?: string | null;
 }
 
-export interface UpdateCategoryDTO extends Partial<CreateCategoryDTO> {}
+export interface UpdateRubroDTO extends Partial<CreateRubroDTO> {}

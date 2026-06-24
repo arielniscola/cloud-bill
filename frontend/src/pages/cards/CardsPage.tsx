@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Pencil, Trash2, CreditCard, X, Search, Power, Percent, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, BancoSelect } from '../../components/shared';
 import { Button, Input, Select, Modal } from '../../components/ui';
 import { cardsService } from '../../services';
 import type { Card } from '../../types/card.types';
@@ -175,7 +175,7 @@ function CardFormModal({
             value={watch('type')}
             onChange={(val) => setValue('type', val as 'CREDIT' | 'DEBIT')}
           />
-          <Input label="Banco (opcional)" placeholder="Ej: Galicia, Macro…" {...register('bank')} />
+          <BancoSelect label="Banco (opcional)" placeholder="Ej: Galicia, Macro…" value={watch('bank')} onChange={(v) => setValue('bank', v)} />
         </div>
 
         {/* Surcharges */}
@@ -523,7 +523,7 @@ export default function CardsPage() {
             <CreditCard className="w-7 h-7 text-gray-300 dark:text-slate-500" />
           </div>
           <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
-            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin tarjetas en esta categoría' : 'Sin tarjetas configuradas'}
+            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin tarjetas en esta vista' : 'Sin tarjetas configuradas'}
           </p>
           <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
             {search

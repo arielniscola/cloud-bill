@@ -102,8 +102,8 @@ function InsightRow({ item }: { item: StockInsight }) {
       <td className="px-4 py-3">
         <p className="font-medium text-gray-800 dark:text-slate-200 text-sm leading-tight">{item.productName}</p>
         <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">{item.sku}</p>
-        {item.categoryName && (
-          <p className="text-[11px] text-gray-400 dark:text-slate-500">{item.categoryName}</p>
+        {item.rubroName && (
+          <p className="text-[11px] text-gray-400 dark:text-slate-500">{item.rubroName}</p>
         )}
       </td>
       <td className="px-4 py-3 text-gray-600 dark:text-slate-400 whitespace-nowrap text-sm">{item.warehouseName}</td>

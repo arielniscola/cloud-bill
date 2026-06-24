@@ -100,7 +100,7 @@ export default function ProductSearchSelect({
         p.sku.toLowerCase().includes(q) ||
         p.name.toLowerCase().includes(q) ||
         (p.brand?.name ?? '').toLowerCase().includes(q) ||
-        (p.category?.name ?? '').toLowerCase().includes(q)
+        (p.rubro?.name ?? '').toLowerCase().includes(q)
     ).slice(0, 50);
   }, [products, query]);
 
@@ -169,9 +169,9 @@ export default function ProductSearchSelect({
                       <p className={`text-sm font-medium truncate leading-tight ${isSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-800 dark:text-slate-200'}`}>
                         {p.name}
                       </p>
-                      {(p.brand || p.category) && (
+                      {(p.brand || p.rubro) && (
                         <p className="text-xs text-gray-400 dark:text-slate-500 truncate leading-none mt-0.5">
-                          {[p.brand?.name, p.category?.name].filter(Boolean).join(' · ')}
+                          {[p.brand?.name, p.rubro?.name].filter(Boolean).join(' · ')}
                         </p>
                       )}
                     </div>

@@ -93,7 +93,7 @@ export interface ProfitabilityRow {
   productId:  string;
   sku:        string;
   name:       string;
-  category:   string;
+  rubro:   string;
   brand:      string;
   cost:       number;
   price:      number;
@@ -102,7 +102,7 @@ export interface ProfitabilityRow {
 }
 
 export interface ProfitabilityFilters {
-  categoryId?: string;
+  rubroId?: string;
   brandId?:    string;
 }
 
@@ -111,7 +111,7 @@ export interface StockValuationRow {
   productId:  string;
   sku:        string;
   name:       string;
-  category:   string;
+  rubro:   string;
   warehouse:  string;
   quantity:   number;
   unitCost:   number;
@@ -120,7 +120,7 @@ export interface StockValuationRow {
 
 export interface StockValuationFilters {
   warehouseId?: string;
-  categoryId?:  string;
+  rubroId?:  string;
 }
 
 // ── Accounts Receivable ───────────────────────────────────────────────────────

@@ -224,7 +224,7 @@ export default function WarehouseDetailPage() {
       (s) =>
         s.product?.name?.toLowerCase().includes(q) ||
         s.product?.sku?.toLowerCase().includes(q) ||
-        s.product?.category?.name?.toLowerCase().includes(q)
+        s.product?.rubro?.name?.toLowerCase().includes(q)
     );
   }, [stocks, activeTab, search, lowStockItems, reservedItems]);
 
@@ -254,11 +254,11 @@ export default function WarehouseDetailPage() {
       ),
     },
     {
-      key: 'product.category',
-      header: 'Categoría',
+      key: 'product.rubro',
+      header: 'Rubro',
       render: (s) =>
-        s.product?.category?.name
-          ? <span className="text-xs text-gray-500 dark:text-slate-400">{s.product.category.name}</span>
+        s.product?.rubro?.name
+          ? <span className="text-xs text-gray-500 dark:text-slate-400">{s.product.rubro.name}</span>
           : <span className="text-gray-300 dark:text-slate-600">—</span>,
     },
     {

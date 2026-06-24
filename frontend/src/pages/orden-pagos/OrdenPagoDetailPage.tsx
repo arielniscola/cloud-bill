@@ -194,6 +194,11 @@ export default function OrdenPagoDetailPage() {
           {/* Invoices paid */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Facturas pagadas</h3>
+            {(op.items?.length ?? 0) === 0 ? (
+              <div className="rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/40 dark:bg-indigo-900/10 px-4 py-3 text-sm text-indigo-700 dark:text-indigo-300">
+                Pago a cuenta — sin facturas imputadas. Queda como saldo a favor en la cuenta corriente del proveedor.
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50/80 dark:bg-slate-700/50">
@@ -235,7 +240,51 @@ export default function OrdenPagoDetailPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </Card>
+
+          {/* Ajustes (descuentos / intereses) */}
+          {(op.ajustes?.length ?? 0) > 0 && (
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Ajustes</h3>
+              <div className="space-y-1.5">
+                {op.ajustes!.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${a.type === 'SUMA' ? 'text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300' : 'text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-300'}`}>
+                      {a.type === 'SUMA' ? 'Interés' : 'Descuento'}
+                    </span>
+                    {a.accountCode && <span className="font-mono text-xs text-gray-400">{a.accountCode}</span>}
+                    <span className="text-sm text-gray-700 dark:text-slate-300 truncate">{a.description}</span>
+                    <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white ml-auto">
+                      {a.type === 'SUMA' ? '+' : '−'} {formatCurrency(Number(a.amount), op.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Cheques de la orden */}
+          {(op.cheques?.length ?? 0) > 0 && (
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Cheques</h3>
+              <div className="space-y-1.5">
+                {op.cheques!.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${c.type === 'EGRESO' ? 'text-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-300' : 'text-purple-700 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300'}`}>
+                      {c.type === 'EGRESO' ? 'Propio' : 'Endosado'}
+                    </span>
+                    <span className="font-mono text-xs font-semibold text-gray-800 dark:text-slate-200">{c.checkNumber ?? c.number}</span>
+                    <span className="text-xs text-gray-500 dark:text-slate-400">{c.bank ?? '—'}</span>
+                    <span className="text-xs text-gray-400 ml-auto tabular-nums">{c.dueDate ? `Vto ${formatDate(c.dueDate)}` : 'Sin vto'}</span>
+                    <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white w-28 text-right">
+                      {formatCurrency(Number(c.amount), op.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Total sidebar */}
@@ -245,6 +294,11 @@ export default function OrdenPagoDetailPage() {
             <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(Number(op.amount), op.currency)}
             </p>
+            {op.currency === 'USD' && Number(op.exchangeRate) > 1 && (
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 tabular-nums mt-1">
+                ≈ {formatCurrency(Number(op.amount) * Number(op.exchangeRate), 'ARS')} · cotiz. {Number(op.exchangeRate).toLocaleString('es-AR')}
+              </p>
+            )}
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-2">{op.currency === 'USD' ? 'Dólares' : 'Pesos argentinos'}</p>
           </Card>
 

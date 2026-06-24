@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown,
   Landmark, ArrowUpDown, ArrowUp, ArrowDown, Plus, ArrowDownCircle, ArrowUpCircle,
-  Trash2,
+  Trash2, Pencil, BookText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Select } from '../../components/ui';
-import { PageHeader, SearchInput, Pagination } from '../../components/shared';
+import { PageHeader, SearchInput, Pagination, BancoSelect } from '../../components/shared';
 import { recibosService, customersService, cashRegistersService, bankService, suppliersService } from '../../services';
 import chequesService from '../../services/cheques.service';
+import chequerasService from '../../services/chequeras.service';
+import type { Chequera, CreateChequeraDTO } from '../../types/chequera.types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { CHECK_STATUSES, CHECK_STATUS_COLORS } from '../../utils/constants';
 import {
@@ -133,11 +135,12 @@ function DepositModal({
 
 /* ── Manual cheque form modal ────────────────────────────────────── */
 function ChequeFormModal({
-  type, customers, suppliers, onClose, onCreated,
+  type, customers, suppliers, chequeras, onClose, onCreated,
 }: {
   type:      'INGRESO' | 'EGRESO';
   customers: Customer[];
   suppliers: { id: string; name: string }[];
+  chequeras: Chequera[];
   onClose:   () => void;
   onCreated: (c: Cheque) => void;
 }) {
@@ -150,6 +153,18 @@ function ChequeFormModal({
 
   const set = (field: keyof CreateChequeDTO, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  // Al elegir una chequera (egresos): hereda banco y sugiere el próximo N° de cheque.
+  const onChequera = (id: string) => {
+    const ch = chequeras.find((c) => c.id === id);
+    setForm((prev) => ({
+      ...prev,
+      chequeraId:  id || null,
+      bank:        ch ? ch.bank : prev.bank,
+      checkNumber: ch && ch.nextNumber != null ? String(ch.nextNumber) : prev.checkNumber,
+    }));
+  };
+  const activeChequeras = chequeras.filter((c) => c.isActive);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,6 +225,25 @@ function ChequeFormModal({
             </div>
           </div>
 
+          {/* Chequera (solo egresos): autocompleta banco y N° de cheque */}
+          {!isIngreso && activeChequeras.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Chequera (talonario propio)</label>
+              <select
+                value={form.chequeraId ?? ''}
+                onChange={(e) => onChequera(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Sin chequera (manual)</option>
+                {activeChequeras.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name ? `${c.name} · ` : ''}{c.bank} — Cta. {c.accountNumber}{c.nextNumber != null ? ` (próx. N° ${c.nextNumber})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* N° cheque + Banco */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -224,10 +258,9 @@ function ChequeFormModal({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Banco</label>
-              <input
-                type="text"
-                value={form.bank ?? ''}
-                onChange={(e) => set('bank', e.target.value)}
+              <BancoSelect
+                value={form.bank}
+                onChange={(v) => set('bank', v)}
                 placeholder="Ej: Galicia, Santander…"
                 className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -501,6 +534,182 @@ function ManualChequesTab({
   );
 }
 
+/* ── Chequera form modal ─────────────────────────────────────────── */
+function ChequeraFormModal({
+  existing, onClose, onSaved,
+}: {
+  existing: Chequera | null;
+  onClose:  () => void;
+  onSaved:  () => void;
+}) {
+  const [form, setForm] = useState<CreateChequeraDTO>({
+    name:          existing?.name ?? '',
+    bank:          existing?.bank ?? '',
+    accountNumber: existing?.accountNumber ?? '',
+    numberFrom:    existing?.numberFrom ?? null,
+    numberTo:      existing?.numberTo ?? null,
+    nextNumber:    existing?.nextNumber ?? null,
+    isActive:      existing?.isActive ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const num = (v: string): number | null => (v === '' ? null : parseInt(v, 10));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.bank?.trim()) { toast.error('Indicá el banco'); return; }
+    if (!form.accountNumber?.trim()) { toast.error('Indicá el número de cuenta'); return; }
+    setSaving(true);
+    try {
+      if (existing) await chequerasService.update(existing.id, form);
+      else          await chequerasService.create(form);
+      toast.success(existing ? 'Chequera actualizada' : 'Chequera creada');
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  const labelCls = 'block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-5">
+          {existing ? 'Editar chequera' : 'Nueva chequera'}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className={labelCls}>Alias / descripción (opcional)</label>
+            <input className={inputCls} value={form.name ?? ''} placeholder="Ej: Chequera Galicia operativa"
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Banco *</label>
+              <BancoSelect value={form.bank} onChange={(v) => setForm((p) => ({ ...p, bank: v }))} className={inputCls} placeholder="Banco" />
+            </div>
+            <div>
+              <label className={labelCls}>N° de cuenta *</label>
+              <input className={inputCls} value={form.accountNumber} placeholder="Ej: 1234-5/6"
+                onChange={(e) => setForm((p) => ({ ...p, accountNumber: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>Desde N°</label>
+              <input type="number" className={inputCls} value={form.numberFrom ?? ''}
+                onChange={(e) => setForm((p) => ({ ...p, numberFrom: num(e.target.value) }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Hasta N°</label>
+              <input type="number" className={inputCls} value={form.numberTo ?? ''}
+                onChange={(e) => setForm((p) => ({ ...p, numberTo: num(e.target.value) }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Próximo N°</label>
+              <input type="number" className={inputCls} value={form.nextNumber ?? ''} placeholder="auto"
+                onChange={(e) => setForm((p) => ({ ...p, nextNumber: num(e.target.value) }))} />
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 dark:text-slate-500">
+            El "Próximo N°" se usa al emitir un cheque de egreso desde esta chequera y se incrementa solo. Si lo dejás vacío arranca en "Desde N°".
+          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+            <input type="checkbox" checked={form.isActive ?? true}
+              onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />
+            Activa
+          </label>
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" isLoading={saving}>Guardar</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Chequeras tab ───────────────────────────────────────────────── */
+function ChequerasTab({
+  chequeras, isLoading, onNew, onEdit, onDelete,
+}: {
+  chequeras: Chequera[];
+  isLoading: boolean;
+  onNew:     () => void;
+  onEdit:    (c: Chequera) => void;
+  onDelete:  (c: Chequera) => void;
+}) {
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-gray-500 dark:text-slate-400">{chequeras.length} chequera{chequeras.length !== 1 ? 's' : ''}</p>
+        <Button onClick={onNew}><Plus className="w-4 h-4 mr-2" />Nueva chequera</Button>
+      </div>
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 space-y-3 animate-pulse">{[1, 2, 3].map((i) => <div key={i} className="h-12 bg-gray-100 dark:bg-slate-700 rounded-lg" />)}</div>
+        ) : chequeras.length === 0 ? (
+          <div className="p-12 text-center"><p className="text-gray-400 dark:text-slate-500 text-sm">No hay chequeras. Creá un talonario para numerar los cheques de egreso.</p></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Chequera</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Banco / Cuenta</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Rango</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Próximo N°</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Estado</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {chequeras.map((c) => (
+                  <tr key={c.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors">
+                    <td className="px-5 py-3.5 text-sm text-gray-800 dark:text-slate-200">{c.name || '—'}</td>
+                    <td className="px-5 py-3.5">
+                      <p className="text-sm text-gray-700 dark:text-slate-300">{c.bank}</p>
+                      <p className="text-xs text-gray-400 dark:text-slate-500">Cta. {c.accountNumber}</p>
+                    </td>
+                    <td className="px-5 py-3.5 text-center text-sm tabular-nums text-gray-600 dark:text-slate-400">
+                      {c.numberFrom != null || c.numberTo != null ? `${c.numberFrom ?? '?'} – ${c.numberTo ?? '?'}` : '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-center text-sm font-semibold tabular-nums text-gray-800 dark:text-slate-200">
+                      {c.nextNumber ?? '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-center">
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+                        {c.isActive ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button title="Editar" onClick={() => onEdit(c)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 transition-colors">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button title="Eliminar" onClick={() => onDelete(c)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Main page
 ═══════════════════════════════════════════════════════════════════ */
@@ -508,7 +717,7 @@ export default function BancoCheques() {
   const navigate = useNavigate();
 
   // ── Tab state ──────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'cobranzas' | 'ingreso' | 'egreso'>('cobranzas');
+  const [activeTab, setActiveTab] = useState<'cobranzas' | 'ingreso' | 'egreso' | 'chequeras'>('cobranzas');
 
   // ── Recibos (cobranzas CHECK) state ───────────────────────────
   const [checks,    setChecks]    = useState<Recibo[]>([]);
@@ -533,6 +742,13 @@ export default function BancoCheques() {
   const [manualTotal,    setManualTotal]    = useState(0);
   const [updatingManId,  setUpdatingManId]  = useState<string | null>(null);
   const [showFormType,   setShowFormType]   = useState<'INGRESO' | 'EGRESO' | null>(null);
+
+  // ── Chequeras state ────────────────────────────────────────────
+  const [chequeras,        setChequeras]        = useState<Chequera[]>([]);
+  const [isLoadingCheq,    setIsLoadingCheq]    = useState(false);
+  const [showChequeraForm, setShowChequeraForm] = useState(false);
+  const [editingChequera,  setEditingChequera]  = useState<Chequera | null>(null);
+  const [deleteChequera,   setDeleteChequera]   = useState<Chequera | null>(null);
 
   // ── Shared reference data ──────────────────────────────────────
   const [customers,     setCustomers]     = useState<Customer[]>([]);
@@ -579,12 +795,27 @@ export default function BancoCheques() {
     }
   }, []);
 
+  const loadChequeras = useCallback(async () => {
+    setIsLoadingCheq(true);
+    try {
+      setChequeras(await chequerasService.getAll());
+    } catch {
+      toast.error('Error al cargar chequeras');
+    } finally {
+      setIsLoadingCheq(false);
+    }
+  }, []);
+
   useEffect(() => { loadRecibos(); }, [loadRecibos]);
 
   useEffect(() => {
     if (activeTab === 'ingreso') loadManual('INGRESO');
     else if (activeTab === 'egreso') loadManual('EGRESO');
-  }, [activeTab, loadManual]);
+    else if (activeTab === 'chequeras') loadChequeras();
+  }, [activeTab, loadManual, loadChequeras]);
+
+  // Chequeras también se cargan al inicio para alimentar el selector de egresos
+  useEffect(() => { loadChequeras(); }, [loadChequeras]);
 
   useEffect(() => {
     customersService.getAll({ limit: 1000, isActive: true }).then((r) => setCustomers(r.data)).catch(() => {});
@@ -713,6 +944,7 @@ export default function BancoCheques() {
           { key: 'cobranzas', label: 'Cobranzas (recibos)', icon: Clock },
           { key: 'ingreso',   label: 'Ingresos manuales',   icon: ArrowDownCircle },
           { key: 'egreso',    label: 'Egresos manuales',    icon: ArrowUpCircle   },
+          { key: 'chequeras', label: 'Chequeras',           icon: BookText },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -929,6 +1161,17 @@ export default function BancoCheques() {
         </>
       )}
 
+      {/* ── Tab: Chequeras ── */}
+      {activeTab === 'chequeras' && (
+        <ChequerasTab
+          chequeras={chequeras}
+          isLoading={isLoadingCheq}
+          onNew={() => { setEditingChequera(null); setShowChequeraForm(true); }}
+          onEdit={(c) => { setEditingChequera(c); setShowChequeraForm(true); }}
+          onDelete={(c) => setDeleteChequera(c)}
+        />
+      )}
+
       {/* ── Modals ── */}
       {depositRecibo && (
         <DepositModal
@@ -948,12 +1191,52 @@ export default function BancoCheques() {
           type={showFormType}
           customers={customers}
           suppliers={suppliers}
+          chequeras={chequeras}
           onClose={() => setShowFormType(null)}
           onCreated={(created) => {
             setManualCheques((prev) => [created, ...prev]);
             setManualTotal((t) => t + 1);
+            // El N° de la chequera pudo avanzar: refrescamos el catálogo.
+            if (created.chequeraId) loadChequeras();
           }}
         />
+      )}
+
+      {showChequeraForm && (
+        <ChequeraFormModal
+          existing={editingChequera}
+          onClose={() => { setShowChequeraForm(false); setEditingChequera(null); }}
+          onSaved={loadChequeras}
+        />
+      )}
+
+      {deleteChequera && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-base font-bold text-gray-900 dark:text-white mb-2">Eliminar chequera</h2>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-5">
+              ¿Eliminar la chequera {deleteChequera.name ? `"${deleteChequera.name}"` : `de ${deleteChequera.bank}`}? No afecta los cheques ya emitidos.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setDeleteChequera(null)}>Cancelar</Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700"
+                onClick={async () => {
+                  try {
+                    await chequerasService.delete(deleteChequera.id);
+                    toast.success('Chequera eliminada');
+                    setDeleteChequera(null);
+                    loadChequeras();
+                  } catch {
+                    toast.error('Error al eliminar');
+                  }
+                }}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

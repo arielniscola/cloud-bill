@@ -38,7 +38,7 @@ const REPORTS: ReportCard[] = [
   },
   {
     title:       'Rentabilidad de productos',
-    description: 'Margen bruto por producto: precio de venta vs. costo. Filtrá por categoría o marca.',
+    description: 'Margen bruto por producto: precio de venta vs. costo. Filtrá por rubro o marca.',
     href:        '/reports/profitability',
     icon:        BarChart2,
     color:       'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',

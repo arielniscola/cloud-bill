@@ -13,13 +13,15 @@ interface Props {
   defaultCustomerId?: string;
   /** Pre-fill supplier (e.g. when opened from SupplierDetailPage) */
   defaultSupplierId?: string;
+  /** Preselecciona la entidad (sin bloquear) — ej. submenú Compras → SUPPLIER */
+  defaultEntity?: InternalNoteEntity;
 }
 
 const inputCls = 'w-full text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-700';
 const labelCls = 'block text-xs text-gray-500 dark:text-slate-400 mb-1';
 
-export default function CreateInternalNoteModal({ onClose, onCreated, defaultCustomerId, defaultSupplierId }: Props) {
-  const initialEntity: InternalNoteEntity = defaultSupplierId ? 'SUPPLIER' : 'CUSTOMER';
+export default function CreateInternalNoteModal({ onClose, onCreated, defaultCustomerId, defaultSupplierId, defaultEntity }: Props) {
+  const initialEntity: InternalNoteEntity = defaultSupplierId ? 'SUPPLIER' : defaultCustomerId ? 'CUSTOMER' : defaultEntity ?? 'CUSTOMER';
   const [entity, setEntity] = useState<InternalNoteEntity>(initialEntity);
 
   const [form, setForm] = useState<CreateInternalNoteDTO>({

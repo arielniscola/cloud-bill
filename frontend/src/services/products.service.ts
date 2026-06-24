@@ -39,6 +39,14 @@ export const productsService = {
     const response = await api.patch<{ status: string; updated: number }>('/products/bulk-price-update', { updates });
     return response.data;
   },
+
+  async bulkUpdate(
+    ids: string[],
+    data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; isActive?: boolean }
+  ): Promise<{ updated: number }> {
+    const response = await api.patch<{ status: string; updated: number }>('/products/bulk-update', { ids, data });
+    return response.data;
+  },
 };
 
 export default productsService;

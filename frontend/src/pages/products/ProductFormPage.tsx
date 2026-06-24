@@ -12,13 +12,13 @@ import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import {
   productsService,
-  categoriesService,
-  brandsService,
   rubrosService,
+  brandsService,
+  categoriesService,
   productCustomFieldsService,
 } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import type { Category, Brand, Rubro } from '../../types';
+import type { Rubro, Brand, Category } from '../../types';
 import type { ProductCustomField } from '../../types/product-custom-field.types';
 import ProductCustomFieldsSection from './ProductCustomFieldsSection';
 import ProductVariantsSection from './ProductVariantsSection';
@@ -46,9 +46,9 @@ const productSchema = z.object({
   sku: z.string().min(1, 'El SKU es requerido'),
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   description: z.string().optional().nullable(),
-  categoryId: z.string().optional().nullable(),
-  brandId: z.string().optional().nullable(),
   rubroId: z.string().optional().nullable(),
+  brandId: z.string().optional().nullable(),
+  categoryId: z.string().optional().nullable(),
   barcode: z.string().optional().nullable(),
   unit: z.string().optional().nullable(),
   internalNotes: z.string().optional().nullable(),
@@ -250,9 +250,9 @@ export default function ProductFormPage() {
   const { isModuleEnabled } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
   const [rubros, setRubros] = useState<Rubro[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [customFields, setCustomFields] = useState<ProductCustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string | undefined>>({});
@@ -268,9 +268,9 @@ export default function ProductFormPage() {
     defaultValues: { taxRate: 21, isActive: true },
   });
 
-  const categoryId = watch('categoryId') || '';
+  const rubroId = watch('rubroId') || '';
   const brandId    = watch('brandId')    || '';
-  const rubroId    = watch('rubroId')    || '';
+  const categoryId    = watch('categoryId')    || '';
   const unit       = watch('unit')       || '';
   const taxRate    = watch('taxRate')    ?? 21;
   const cost       = watch('cost')        ?? 0;
@@ -295,15 +295,15 @@ export default function ProductFormPage() {
   // Load dropdowns
   useEffect(() => {
     Promise.all([
-      categoriesService.getAll(),
-      brandsService.getAll(),
       rubrosService.getAll(),
+      brandsService.getAll(),
+      categoriesService.getAll(),
       productCustomFieldsService.getAll(true),
     ])
       .then(([cats, brnds, rbrs, fields]) => {
-        setCategories(cats);
+        setRubros(cats);
         setBrands(brnds.filter((b) => b.isActive));
-        setRubros((rbrs as Rubro[]).filter((r) => r.isActive));
+        setCategories((rbrs as Category[]).filter((r) => r.isActive));
         setCustomFields(fields);
       })
       .catch(() => {});
@@ -318,9 +318,9 @@ export default function ProductFormPage() {
         setValue('sku',           p.sku);
         setValue('name',          p.name);
         setValue('description',   p.description);
-        setValue('categoryId',    p.categoryId);
+        setValue('rubroId',    p.rubroId);
         setValue('brandId',       p.brandId);
-        setValue('rubroId',       (p as any).rubroId ?? null);
+        setValue('categoryId',       (p as any).categoryId ?? null);
         setValue('barcode',       p.barcode);
         setValue('unit',          p.unit);
         setValue('internalNotes', p.internalNotes);
@@ -370,9 +370,9 @@ export default function ProductFormPage() {
     try {
       const payload = {
         ...data,
-        categoryId:    data.categoryId    || null,
+        rubroId:    data.rubroId    || null,
         brandId:       data.brandId       || null,
-        rubroId:       data.rubroId       || null,
+        categoryId:       data.categoryId       || null,
         barcode:       data.barcode       || null,
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
@@ -395,9 +395,9 @@ export default function ProductFormPage() {
     }
   };
 
-  const categoryOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [{ value: '', label: 'Sin categoría' }];
-    const roots = categories.filter((c) => !c.parentId);
+  const rubroOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [{ value: '', label: 'Sin rubro' }];
+    const roots = rubros.filter((c) => !c.parentId);
     for (const root of roots) {
       opts.push({ value: root.id, label: root.name });
       for (const child of root.children ?? []) {
@@ -405,31 +405,31 @@ export default function ProductFormPage() {
       }
     }
     return opts;
-  }, [categories]);
+  }, [rubros]);
 
   const brandOptions = useMemo(() => [
     { value: '', label: 'Sin marca' },
     ...brands.map((b) => ({ value: b.id, label: b.name })),
   ], [brands]);
 
-  const rubroOptions = useMemo(() => [
-    { value: '', label: 'Sin rubro' },
-    ...rubros.map((r) => ({ value: r.id, label: r.name })),
-  ], [rubros]);
+  const categoryOptions = useMemo(() => [
+    { value: '', label: 'Sin category' },
+    ...categories.map((r) => ({ value: r.id, label: r.name })),
+  ], [categories]);
 
-  const selectedRubro = useMemo(
-    () => rubros.find((r) => r.id === rubroId) ?? null,
-    [rubros, rubroId],
+  const selectedCategory = useMemo(
+    () => categories.find((r) => r.id === categoryId) ?? null,
+    [categories, categoryId],
   );
   const variantsModuleEnabled = isModuleEnabled('variantes');
-  const variantsRubroEnabled  = !!selectedRubro?.allowsVariants;
-  const variantsEnabled       = variantsModuleEnabled && variantsRubroEnabled;
+  const variantsCategoryEnabled  = !!selectedCategory?.allowsVariants;
+  const variantsEnabled       = variantsModuleEnabled && variantsCategoryEnabled;
   const variantsDisabledReason = !variantsModuleEnabled
     ? 'El módulo de variantes no está habilitado para esta empresa.'
-    : !selectedRubro
-    ? 'Asigná un rubro al producto para habilitar variantes.'
-    : !variantsRubroEnabled
-    ? `El rubro "${selectedRubro.name}" no admite variantes. Activá "Admite variantes" en el rubro.`
+    : !selectedCategory
+    ? 'Asigná un category al producto para habilitar variantes.'
+    : !variantsCategoryEnabled
+    ? `El category "${selectedCategory.name}" no admite variantes. Activá "Admite variantes" en el category.`
     : undefined;
 
   if (isFetching) {
@@ -506,10 +506,10 @@ export default function ProductFormPage() {
                 <SectionHeader icon={<Layers className="w-3.5 h-3.5" />} label="Clasificación" />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Select
-                    label="Categoría"
-                    options={categoryOptions}
-                    value={categoryId}
-                    onChange={(v) => setValue('categoryId', v || null)}
+                    label="Rubro"
+                    options={rubroOptions}
+                    value={rubroId}
+                    onChange={(v) => setValue('rubroId', v || null)}
                   />
                   <Select
                     label="Marca"
@@ -518,10 +518,10 @@ export default function ProductFormPage() {
                     onChange={(v) => setValue('brandId', v || null)}
                   />
                   <Select
-                    label="Rubro"
-                    options={rubroOptions}
-                    value={rubroId}
-                    onChange={(v) => setValue('rubroId', v || null)}
+                    label="Categoría"
+                    options={categoryOptions}
+                    value={categoryId}
+                    onChange={(v) => setValue('categoryId', v || null)}
                   />
                 </div>
               </div>
@@ -561,7 +561,7 @@ export default function ProductFormPage() {
               />
 
               {/* ── Variantes (talles, colores) ── */}
-              {(variantsEnabled || (variantsModuleEnabled && selectedRubro && !variantsRubroEnabled)) && (
+              {(variantsEnabled || (variantsModuleEnabled && selectedCategory && !variantsCategoryEnabled)) && (
                 <ProductVariantsSection
                   productId={id ?? null}
                   enabled={variantsEnabled}

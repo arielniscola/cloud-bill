@@ -6,7 +6,7 @@ export interface StockInsight {
   sku:               string;
   warehouseId:       string;
   warehouseName:     string;
-  categoryName:      string | null;
+  rubroName:      string | null;
   quantity:          number;
   reservedQuantity:  number;
   availableStock:    number;

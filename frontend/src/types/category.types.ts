@@ -1,4 +1,4 @@
-export interface Rubro {
+export interface Category {
   id: string;
   name: string;
   description: string | null;
@@ -9,11 +9,11 @@ export interface Rubro {
   updatedAt: string;
 }
 
-export interface CreateRubroDTO {
+export interface CreateCategoryDTO {
   name: string;
   description?: string | null;
   isActive?: boolean;
   allowsVariants?: boolean;
 }
 
-export type UpdateRubroDTO = Partial<CreateRubroDTO>;
+export type UpdateCategoryDTO = Partial<CreateCategoryDTO>;

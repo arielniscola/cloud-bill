@@ -3,10 +3,10 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
@@ -106,6 +106,7 @@ export default function InvoiceFormPage() {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [stockWarnings, setStockWarnings] = useState<Array<{ productName: string; requested: number; available: number }>>([]);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [discountType, setDiscountType] = useState<'%' | '$'>('%');
   const [discountValue, setDiscountValue] = useState(0);
 
@@ -120,6 +121,7 @@ export default function InvoiceFormPage() {
       isService: false,
       stockBehavior: 'DISCOUNT',
       saleCondition: 'CONTADO',
+      paymentTerms: 'Contado',
       items: [{ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 }],
     },
   });
@@ -210,7 +212,7 @@ export default function InvoiceFormPage() {
       setValue('paymentTerms', 'Cuenta Corriente');
     } else {
       setValue('saleCondition', 'CONTADO');
-      setValue('paymentTerms', null);
+      setValue('paymentTerms', 'Contado');
     }
   }, [customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -493,6 +495,14 @@ export default function InvoiceFormPage() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h2>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCatalog(true)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    Buscar producto
+                  </button>
                   {!isEditing && !isNcNd && customerId && (
                     <button
                       type="button"
@@ -769,6 +779,9 @@ export default function InvoiceFormPage() {
                 <Input
                   label="Fecha de emisión"
                   type="date"
+                  readOnly
+                  title="La fecha de emisión no es editable"
+                  className="bg-gray-50 dark:bg-slate-800 cursor-not-allowed text-gray-500 dark:text-slate-400"
                   {...register('date')}
                 />
                 <Input
@@ -935,6 +948,13 @@ export default function InvoiceFormPage() {
         onClose={() => setShowImportModal(false)}
         customerId={customerId}
         onImport={handleImportFromOP}
+      />
+
+      <ProductCatalogModal
+        isOpen={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        products={products}
+        onAdd={handleBarcodeAdd}
       />
 
       <ConfirmDialog

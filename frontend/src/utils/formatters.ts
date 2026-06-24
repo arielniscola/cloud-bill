@@ -52,6 +52,27 @@ export function formatPercentage(value: number): string {
   return `${formatNumber(value, 2)}%`;
 }
 
+/** Formats an ARCA comprobante number: ptoVenta + cbteNro → "0001-00000042". */
+export function formatAfipNumber(ptoVenta: number, cbteNro: number): string {
+  return `${String(ptoVenta).padStart(4, '0')}-${String(cbteNro).padStart(8, '0')}`;
+}
+
+/**
+ * Display number for an invoice. Once autorizada por ARCA, el número oficial es
+ * el PtoVenta-CbteNro que asignó ARCA — ése es el que vale fiscalmente. Mientras
+ * sea borrador (sin CAE) mostramos la numeración interna del sistema.
+ */
+export function formatInvoiceNumber(invoice: {
+  number: string;
+  afipPtVenta?: number | null;
+  afipCbtNum?: number | null;
+}): string {
+  if (invoice.afipPtVenta && invoice.afipCbtNum) {
+    return formatAfipNumber(invoice.afipPtVenta, invoice.afipCbtNum);
+  }
+  return invoice.number;
+}
+
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return `${str.slice(0, length)}...`;

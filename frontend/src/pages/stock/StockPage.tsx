@@ -74,7 +74,7 @@ export default function StockPage() {
   // Filters — list tab
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [rubroFilter, setRubroFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
 
   // "Por depósito" tab
@@ -82,7 +82,7 @@ export default function StockPage() {
   const [isLoadingAll, setIsLoadingAll] = useState(false);
   const allLoadedRef = useRef(false);
   const [byWarehouseSearch, setByWarehouseSearch] = useState('');
-  const [byWarehouseCategoryFilter, setByWarehouseCategoryFilter] = useState('');
+  const [byWarehouseRubroFilter, setByWarehouseRubroFilter] = useState('');
   const [byWarehouseBrandFilter, setByWarehouseBrandFilter] = useState('');
 
   // Quick-adjust modal
@@ -137,7 +137,7 @@ export default function StockPage() {
   useEffect(() => { fetchStock(); }, [fetchStock]);
 
   useEffect(() => {
-    setCategoryFilter('');
+    setRubroFilter('');
     setBrandFilter('');
   }, [selectedWarehouse]);
 
@@ -168,10 +168,10 @@ export default function StockPage() {
   }, [activeTab, warehouses, loadAllWarehouseStocks]);
 
   // ── Computed — list tab ─────────────────────────────────────────
-  const categoriesInStock = useMemo(() => {
+  const rubrosInStock = useMemo(() => {
     const seen = new Map<string, string>();
     for (const s of stocks) {
-      const cat = s.product?.category;
+      const cat = s.product?.rubro;
       if (cat) seen.set(cat.id, cat.name);
     }
     return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -229,7 +229,7 @@ export default function StockPage() {
       });
     }
 
-    if (categoryFilter) result = result.filter((s) => s.product?.category?.id === categoryFilter);
+    if (rubroFilter) result = result.filter((s) => s.product?.rubro?.id === rubroFilter);
     if (brandFilter) result = result.filter((s) => s.product?.brandId === brandFilter);
 
     return [...result].sort((a, b) => {
@@ -241,20 +241,20 @@ export default function StockPage() {
       if (pA !== pB) return pA - pB;
       return availA - availB;
     });
-  }, [stocks, search, statusFilter, categoryFilter, brandFilter]);
+  }, [stocks, search, statusFilter, rubroFilter, brandFilter]);
 
-  const hasActiveFilters = !!(search || statusFilter || categoryFilter || brandFilter);
-  const clearFilters = () => { setSearch(''); setStatusFilter(''); setCategoryFilter(''); setBrandFilter(''); };
+  const hasActiveFilters = !!(search || statusFilter || rubroFilter || brandFilter);
+  const clearFilters = () => { setSearch(''); setStatusFilter(''); setRubroFilter(''); setBrandFilter(''); };
 
   // ── Computed — "por depósito" tab ───────────────────────────────
   type PivotRow = {
     productId: string;
     name: string;
     sku: string | undefined;
-    category: string | undefined;
+    rubro: string | undefined;
     brand: string | undefined;
     brandId: string | undefined;
-    categoryId: string | undefined;
+    rubroId: string | undefined;
     warehouseData: Map<string, { available: number; qty: number; reserved: number; minQty: number | null }>;
     totalAvailable: number;
   };
@@ -270,8 +270,8 @@ export default function StockPage() {
             productId: s.productId,
             name: s.variant ? `${s.product.name} · ${s.variant.name}` : s.product.name,
             sku: s.variant?.sku ?? s.product.sku,
-            category: s.product.category?.name,
-            categoryId: s.product.category?.id,
+            rubro: s.product.rubro?.name,
+            rubroId: s.product.rubro?.id,
             brand: s.product.brand?.name,
             brandId: s.product.brandId ?? undefined,
             warehouseData: new Map(),
@@ -289,9 +289,9 @@ export default function StockPage() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [allWarehouseStocks]);
 
-  const allCategoriesInPivot = useMemo(() => {
+  const allRubrosInPivot = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const r of pivotRows) if (r.categoryId && r.category) seen.set(r.categoryId, r.category);
+    for (const r of pivotRows) if (r.rubroId && r.rubro) seen.set(r.rubroId, r.rubro);
     return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [pivotRows]);
 
@@ -307,12 +307,12 @@ export default function StockPage() {
       const q = byWarehouseSearch.trim().toLowerCase();
       result = result.filter((r) => r.name.toLowerCase().includes(q) || r.sku?.toLowerCase().includes(q));
     }
-    if (byWarehouseCategoryFilter) result = result.filter((r) => r.categoryId === byWarehouseCategoryFilter);
+    if (byWarehouseRubroFilter) result = result.filter((r) => r.rubroId === byWarehouseRubroFilter);
     if (byWarehouseBrandFilter) result = result.filter((r) => r.brandId === byWarehouseBrandFilter);
     return result;
-  }, [pivotRows, byWarehouseSearch, byWarehouseCategoryFilter, byWarehouseBrandFilter]);
+  }, [pivotRows, byWarehouseSearch, byWarehouseRubroFilter, byWarehouseBrandFilter]);
 
-  const hasByWarehouseFilters = !!(byWarehouseSearch || byWarehouseCategoryFilter || byWarehouseBrandFilter);
+  const hasByWarehouseFilters = !!(byWarehouseSearch || byWarehouseRubroFilter || byWarehouseBrandFilter);
 
   // ── Handlers ─────────────────────────────────────────────────────
   const handleExport = async () => {
@@ -560,13 +560,13 @@ export default function StockPage() {
                 />
               </div>
 
-              {categoriesInStock.length > 0 && (
+              {rubrosInStock.length > 0 && (
                 <div className="w-40 shrink-0">
                   <Select
-                    label="Categoría"
-                    options={[{ value: '', label: 'Todas' }, ...categoriesInStock.map((c) => ({ value: c.id, label: c.name }))]}
-                    value={categoryFilter}
-                    onChange={setCategoryFilter}
+                    label="Rubro"
+                    options={[{ value: '', label: 'Todas' }, ...rubrosInStock.map((c) => ({ value: c.id, label: c.name }))]}
+                    value={rubroFilter}
+                    onChange={setRubroFilter}
                   />
                 </div>
               )}
@@ -640,7 +640,7 @@ export default function StockPage() {
                     const available = Number(stock.quantity) - Number(stock.reservedQuantity);
                     const status = getStatus(stock);
                     const isLow = status === 'low_stock';
-                    const category = stock.product?.category;
+                    const rubro = stock.product?.rubro;
                     const brand = stock.product?.brand;
                     const stockValue = Number(stock.quantity) * Number(stock.product?.cost ?? 0);
 
@@ -653,15 +653,15 @@ export default function StockPage() {
                           </span>
                         </td>
 
-                        {/* Producto + categoría + marca */}
+                        {/* Producto + rubro + marca */}
                         <td className="px-4 py-3 max-w-[220px]">
                           <div className="font-medium text-gray-900 dark:text-white leading-tight truncate">
                             {stock.product?.name ?? '—'}
                           </div>
                           <div className="flex flex-wrap gap-1 mt-0.5">
-                            {category && (
+                            {rubro && (
                               <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full leading-none">
-                                {category.name}
+                                {rubro.name}
                               </span>
                             )}
                             {brand && (
@@ -792,13 +792,13 @@ export default function StockPage() {
                 </div>
               </div>
 
-              {allCategoriesInPivot.length > 0 && (
+              {allRubrosInPivot.length > 0 && (
                 <div className="w-40 shrink-0">
                   <Select
-                    label="Categoría"
-                    options={[{ value: '', label: 'Todas' }, ...allCategoriesInPivot.map((c) => ({ value: c.id, label: c.name }))]}
-                    value={byWarehouseCategoryFilter}
-                    onChange={setByWarehouseCategoryFilter}
+                    label="Rubro"
+                    options={[{ value: '', label: 'Todas' }, ...allRubrosInPivot.map((c) => ({ value: c.id, label: c.name }))]}
+                    value={byWarehouseRubroFilter}
+                    onChange={setByWarehouseRubroFilter}
                   />
                 </div>
               )}
@@ -817,7 +817,7 @@ export default function StockPage() {
               {hasByWarehouseFilters && (
                 <div className="self-end">
                   <button
-                    onClick={() => { setByWarehouseSearch(''); setByWarehouseCategoryFilter(''); setByWarehouseBrandFilter(''); }}
+                    onClick={() => { setByWarehouseSearch(''); setByWarehouseRubroFilter(''); setByWarehouseBrandFilter(''); }}
                     className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2.5 py-[7px] rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-[background-color,color] duration-150 whitespace-nowrap"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -903,9 +903,9 @@ export default function StockPage() {
                         <td className="px-4 py-3 max-w-[200px]">
                           <div className="font-medium text-gray-900 dark:text-white leading-tight truncate">{row.name}</div>
                           <div className="flex flex-wrap gap-1 mt-0.5">
-                            {row.category && (
+                            {row.rubro && (
                               <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full leading-none">
-                                {row.category}
+                                {row.rubro}
                               </span>
                             )}
                             {row.brand && (

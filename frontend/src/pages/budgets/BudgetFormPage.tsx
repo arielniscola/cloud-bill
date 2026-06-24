@@ -3,10 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Calculator } from 'lucide-react';
+import { Plus, Trash2, Calculator, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { budgetsService, customersService, productsService, appSettingsService, productVariantsService } from '../../services';
@@ -73,6 +73,7 @@ export default function BudgetFormPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
 
   const {
     register, control, handleSubmit, setValue, watch, reset, getValues,
@@ -82,6 +83,7 @@ export default function BudgetFormPage() {
     defaultValues: {
       type: 'FACTURA_B',
       currency: 'ARS',
+      paymentTerms: 'Contado',
       items: [{ productId: null, description: '', quantity: 1, unitPrice: 0, taxRate: 21 }],
     },
   });
@@ -122,7 +124,7 @@ export default function BudgetFormPage() {
     if (customer?.saleCondition === 'CUENTA_CORRIENTE') {
       setValue('paymentTerms', 'Cuenta Corriente');
     } else {
-      setValue('paymentTerms', null);
+      setValue('paymentTerms', 'Contado');
     }
   }, [customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -336,7 +338,17 @@ export default function BudgetFormPage() {
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h2>
-                <BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCatalog(true)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    Buscar producto
+                  </button>
+                  <BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />
+                </div>
               </div>
 
               <div className="px-5 py-3">
@@ -598,6 +610,14 @@ export default function BudgetFormPage() {
         message="Los cambios que no hayas guardado se perderán."
         confirmText="Salir"
         cancelText="Seguir editando"
+      />
+
+      <ProductCatalogModal
+        isOpen={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        products={products}
+        onAdd={handleBarcodeAdd}
+        currency={currency}
       />
 
     </div>

@@ -10,7 +10,7 @@ import importService, { type ImportResult } from '../../services/import.service'
 const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: string[] }> = {
   products: {
     filename: 'template_productos.csv',
-    headers: ['sku', 'nombre', 'costo', 'precio', 'iva', 'unidad', 'descripcion', 'codigobarras', 'categoria', 'marca'],
+    headers: ['sku', 'nombre', 'costo', 'precio', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'marca'],
     example: ['PROD-001', 'Producto de ejemplo', '100', '150', '21', 'UN', 'Descripción opcional', '', 'Electrónica', 'MarcaX'],
   },
   customers: {
@@ -31,7 +31,7 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
       <li><span className="font-medium">sku, nombre, costo, precio</span> — requeridos</li>
       <li><span className="font-medium">iva</span> — porcentaje (ej: 21, 10.5, 0). Default: 21</li>
       <li><span className="font-medium">condicioniva</span> — RI · Monotributista · Exento · CF</li>
-      <li><span className="font-medium">categoria / marca</span> — deben existir en el sistema</li>
+      <li><span className="font-medium">rubro / marca</span> — deben existir en el sistema</li>
       <li>Si el SKU ya existe → <span className="italic">actualiza</span> el producto</li>
     </ul>
   ),

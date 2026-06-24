@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { Card, Button, Badge } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { ivaService } from '../../services';
+import { exportIvaComprasExcel, exportIvaVentasExcel } from '../../utils/ivaExcel';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES, SALE_CONDITIONS } from '../../utils/constants';
 import type { IvaVentasRow, IvaComprasRow } from '../../types';
@@ -73,12 +74,16 @@ export default function IvaPage() {
     setIsExporting(true);
     try {
       if (tab === 'ventas') {
-        await ivaService.exportVentasCSV(year, month);
+        const data = ventasRows.length ? ventasRows : await ivaService.getVentas(year, month);
+        if (data.length === 0) { toast.error('No hay comprobantes para exportar'); return; }
+        exportIvaVentasExcel(data, year, month);
       } else {
-        await ivaService.exportComprasCSV(year, month);
+        const data = comprasRows.length ? comprasRows : await ivaService.getCompras(year, month);
+        if (data.length === 0) { toast.error('No hay comprobantes para exportar'); return; }
+        exportIvaComprasExcel(data, year, month);
       }
     } catch {
-      toast.error('Error al exportar CSV');
+      toast.error('Error al exportar el Libro IVA');
     } finally {
       setIsExporting(false);
     }
@@ -108,7 +113,7 @@ export default function IvaPage() {
         actions={
           <Button onClick={handleExport} isLoading={isExporting} variant="outline">
             <Download className="w-4 h-4 mr-2" />
-            Exportar CSV
+            Exportar Excel
           </Button>
         }
       />
@@ -544,7 +549,7 @@ export default function IvaPage() {
 
                     {/* CTA */}
                     <button
-                      onClick={() => { setSelectedCompra(null); navigate(`/purchases/${selectedCompra.purchaseId}`); }}
+                      onClick={() => { setSelectedCompra(null); navigate('/purchase-invoices'); }}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5
                         rounded-xl text-sm font-medium
                         text-indigo-600 dark:text-indigo-400

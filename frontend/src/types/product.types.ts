@@ -1,6 +1,6 @@
-import type { Category } from './category.types';
-import type { Brand } from './brand.types';
 import type { Rubro } from './rubro.types';
+import type { Brand } from './brand.types';
+import type { Category } from './category.types';
 import type { ProductCustomFieldValue, ProductCustomFieldValueDTO } from './product-custom-field.types';
 
 export interface Product {
@@ -8,12 +8,12 @@ export interface Product {
   sku: string;
   name: string;
   description: string | null;
-  categoryId: string | null;
-  category?: Category;
-  brandId: string | null;
-  brand?: Brand;
   rubroId: string | null;
   rubro?: Rubro;
+  brandId: string | null;
+  brand?: Brand;
+  categoryId: string | null;
+  category?: Category;
   barcode: string | null;
   unit: string | null;
   internalNotes: string | null;
@@ -32,9 +32,9 @@ export interface CreateProductDTO {
   sku: string;
   name: string;
   description?: string | null;
-  categoryId?: string | null;
-  brandId?: string | null;
   rubroId?: string | null;
+  brandId?: string | null;
+  categoryId?: string | null;
   barcode?: string | null;
   unit?: string | null;
   internalNotes?: string | null;
@@ -52,9 +52,9 @@ export interface ProductFilters {
   page?: number;
   limit?: number;
   search?: string;
-  categoryId?: string;
-  brandId?: string;
   rubroId?: string;
+  brandId?: string;
+  categoryId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;

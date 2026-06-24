@@ -19,6 +19,12 @@ export type { BarcodeProductInputProps, BarcodeProductInputHandle } from './Barc
 export { default as ProductSearchSelect } from './ProductSearchSelect';
 export type { ProductSearchSelectProps } from './ProductSearchSelect';
 
+export { default as ProductCatalogModal } from './ProductCatalogModal';
+export type { ProductCatalogModalProps } from './ProductCatalogModal';
+
+export { default as AccountSearchSelect } from './AccountSearchSelect';
+export type { AccountSearchSelectProps } from './AccountSearchSelect';
+
 export { PaymentModal } from './PaymentModal';
 export { RecibosList } from './RecibosList';
 
@@ -34,5 +40,6 @@ export { default as CsvImportModal } from './CsvImportModal';
 export { default as CuitInput } from './CuitInput';
 export { ReceiveOrdenCompraModal } from './ReceiveOrdenCompraModal';
 export { AddPurchaseInvoiceModal } from './AddPurchaseInvoiceModal';
+export { default as BancoSelect } from './BancoSelect';
 export { default as CreateCustomerModal } from './CreateCustomerModal';
 export { default as FeatureGuard } from './FeatureGuard';

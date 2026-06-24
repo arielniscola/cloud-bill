@@ -33,15 +33,15 @@ export default function ProfitabilityReportPage() {
   const [data, setData]               = useState<ProfitabilityRow[]>([]);
   const [loading, setLoading]         = useState(false);
   const [hasGenerated, setGenerated]  = useState(false);
-  const [categories, setCategories]   = useState<SimpleOption[]>([]);
+  const [rubros, setRubros]   = useState<SimpleOption[]>([]);
   const [brands, setBrands]           = useState<SimpleOption[]>([]);
 
   useEffect(() => {
     Promise.all([
-      api.get<ApiResponse<{ id: string; name: string }[]>>('/categories'),
+      api.get<ApiResponse<{ id: string; name: string }[]>>('/rubros'),
       api.get<ApiResponse<{ id: string; name: string }[]>>('/brands'),
     ]).then(([catRes, brandRes]) => {
-      setCategories([{ value: '', label: 'Todas las categorías' }, ...(catRes.data.data ?? []).map((c) => ({ value: c.id, label: c.name }))]);
+      setRubros([{ value: '', label: 'Todos los rubros' }, ...(catRes.data.data ?? []).map((c) => ({ value: c.id, label: c.name }))]);
       setBrands([{ value: '', label: 'Todas las marcas' }, ...(brandRes.data.data ?? []).map((b) => ({ value: b.id, label: b.name }))]);
     }).catch(() => {});
   }, []);
@@ -69,7 +69,7 @@ export default function ProfitabilityReportPage() {
       [
         { header: 'SKU',        key: 'sku',       width: 14 },
         { header: 'Producto',   key: 'name',      width: 30 },
-        { header: 'Categoría',  key: 'category',  width: 18 },
+        { header: 'Rubro',  key: 'rubro',  width: 18 },
         { header: 'Marca',      key: 'brand',     width: 16 },
         { header: 'Costo',      key: 'cost',      width: 12, format: 'currency' },
         { header: 'Precio',     key: 'price',     width: 12, format: 'currency' },
@@ -104,8 +104,8 @@ export default function ProfitabilityReportPage() {
       <Card className="mb-4">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex flex-col gap-1 min-w-[200px]">
-            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Categoría</label>
-            <Select value={params.categoryId ?? ''} onChange={(v) => set('categoryId', v)} options={categories} />
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Rubro</label>
+            <Select value={params.rubroId ?? ''} onChange={(v) => set('rubroId', v)} options={rubros} />
           </div>
           <div className="flex flex-col gap-1 min-w-[200px]">
             <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Marca</label>
@@ -126,7 +126,7 @@ export default function ProfitabilityReportPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                   <tr>
-                    {['SKU', 'Producto', 'Categoría', 'Marca', 'Costo', 'Precio', 'Margen $', 'Margen %'].map((h) => (
+                    {['SKU', 'Producto', 'Rubro', 'Marca', 'Costo', 'Precio', 'Margen $', 'Margen %'].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -136,7 +136,7 @@ export default function ProfitabilityReportPage() {
                     <tr key={r.productId} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
                       <td className="px-4 py-3 font-mono text-xs text-gray-500 dark:text-slate-400">{r.sku}</td>
                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-[220px] truncate">{r.name}</td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-slate-300 text-xs">{r.category}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-slate-300 text-xs">{r.rubro}</td>
                       <td className="px-4 py-3 text-gray-600 dark:text-slate-300 text-xs">{r.brand}</td>
                       <td className="px-4 py-3 text-gray-700 dark:text-slate-300 text-right">{formatCurrency(r.cost)}</td>
                       <td className="px-4 py-3 text-gray-700 dark:text-slate-300 text-right">{formatCurrency(r.price)}</td>

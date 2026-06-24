@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search, Upload, Wand2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, DataTable, SearchInput, ConfirmDialog, CsvImportModal } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
-import { productsService, categoriesService, brandsService } from '../../services';
+import { productsService, rubrosService, brandsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
-import type { Product, Category, Brand } from '../../types';
+import type { Product, Rubro, Brand } from '../../types';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function margin(cost: number, price: number) {
@@ -197,7 +197,7 @@ export default function ProductsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [rubroFilter, setRubroFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
@@ -205,13 +205,13 @@ export default function ProductsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [rubros, setRubros] = useState<Rubro[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
 
-  // Load categories & brands for filter dropdowns
+  // Load rubros & brands for filter dropdowns
   useEffect(() => {
-    Promise.all([categoriesService.getAll(), brandsService.getAll()])
-      .then(([cats, brnds]) => { setCategories(cats); setBrands(brnds); })
+    Promise.all([rubrosService.getAll(), brandsService.getAll()])
+      .then(([cats, brnds]) => { setRubros(cats); setBrands(brnds); })
       .catch(() => {});
   }, []);
 
@@ -225,7 +225,7 @@ export default function ProductsPage() {
         limit,
         search,
         isActive: isActiveFilter,
-        categoryId: categoryFilter || undefined,
+        rubroId: rubroFilter || undefined,
         brandId: brandFilter || undefined,
       });
       setProducts(response.data);
@@ -235,7 +235,7 @@ export default function ProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, search, isActiveFilter, categoryFilter, brandFilter]);
+  }, [page, limit, search, isActiveFilter, rubroFilter, brandFilter]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -256,10 +256,10 @@ export default function ProductsPage() {
     }
   };
 
-  // Category options (flat with indent for subcategories)
-  const categoryOptions = useMemo(() => {
+  // Rubro options (flat with indent for subrubros)
+  const rubroOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
-    const roots = categories.filter((c) => !c.parentId);
+    const roots = rubros.filter((c) => !c.parentId);
     for (const root of roots) {
       opts.push({ value: root.id, label: root.name });
       for (const child of root.children ?? []) {
@@ -267,14 +267,14 @@ export default function ProductsPage() {
       }
     }
     return opts;
-  }, [categories]);
+  }, [rubros]);
 
   const brandOptions = useMemo(
     () => brands.map((b) => ({ value: b.id, label: b.name })),
     [brands]
   );
 
-  const activeFilterCount = [categoryFilter, brandFilter, statusFilter !== 'all'].filter(Boolean).length;
+  const activeFilterCount = [rubroFilter, brandFilter, statusFilter !== 'all'].filter(Boolean).length;
 
   const columns: Column<Product>[] = [
     {
@@ -294,8 +294,8 @@ export default function ProductsPage() {
               )}
             </div>
             <p className="text-sm font-medium text-gray-900 dark:text-white truncate leading-tight">{p.name}</p>
-            {p.category && (
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate leading-none">{p.category.name}</p>
+            {p.rubro && (
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate leading-none">{p.rubro.name}</p>
             )}
           </div>
         </div>
@@ -401,6 +401,10 @@ export default function ProductsPage() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Actualizar precios
             </Button>
+            <Button variant="outline" onClick={() => navigate('/products/bulk-update')}>
+              <Wand2 className="w-4 h-4 mr-2" />
+              Actualización masiva
+            </Button>
             <Button onClick={() => navigate('/products/new')}>
               <Plus className="w-4 h-4 mr-2" />
               Nuevo producto
@@ -430,13 +434,13 @@ export default function ProductsPage() {
               ))}
             </div>
 
-            {/* Category filter */}
-            {categoryOptions.length > 0 && (
+            {/* Rubro filter */}
+            {rubroOptions.length > 0 && (
               <FilterSelect
-                label="Categoría"
-                value={categoryFilter}
-                onChange={(v) => { setCategoryFilter(v); resetPage(); }}
-                options={categoryOptions}
+                label="Rubro"
+                value={rubroFilter}
+                onChange={(v) => { setRubroFilter(v); resetPage(); }}
+                options={rubroOptions}
               />
             )}
 
@@ -452,10 +456,10 @@ export default function ProductsPage() {
             {/* Active filter chips */}
             {activeFilterCount > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
-                {categoryFilter && (
+                {rubroFilter && (
                   <FilterChip
-                    label={categoryOptions.find((o) => o.value === categoryFilter)?.label ?? 'Categoría'}
-                    onRemove={() => { setCategoryFilter(''); resetPage(); }}
+                    label={rubroOptions.find((o) => o.value === rubroFilter)?.label ?? 'Rubro'}
+                    onRemove={() => { setRubroFilter(''); resetPage(); }}
                   />
                 )}
                 {brandFilter && (
@@ -471,7 +475,7 @@ export default function ProductsPage() {
                   />
                 )}
                 <button
-                  onClick={() => { setCategoryFilter(''); setBrandFilter(''); setStatusFilter('all'); resetPage(); }}
+                  onClick={() => { setRubroFilter(''); setBrandFilter(''); setStatusFilter('all'); resetPage(); }}
                   className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 underline ml-1"
                 >
                   Limpiar todo

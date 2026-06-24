@@ -14,7 +14,8 @@ import CustomerDetailPage from '../pages/customers/CustomerDetailPage';
 import ProductsPage from '../pages/products/ProductsPage';
 import ProductFormPage from '../pages/products/ProductFormPage';
 import BulkPriceUpdatePage from '../pages/products/BulkPriceUpdatePage';
-import CategoriesPage from '../pages/categories/CategoriesPage';
+import BulkProductUpdatePage from '../pages/products/BulkProductUpdatePage';
+import RubrosPage from '../pages/rubros/RubrosPage';
 import WarehousesPage from '../pages/warehouses/WarehousesPage';
 import WarehouseFormPage from '../pages/warehouses/WarehouseFormPage';
 import WarehouseDetailPage from '../pages/warehouses/WarehouseDetailPage';
@@ -40,9 +41,7 @@ import IvaPage from '../pages/iva/IvaPage';
 import SuppliersPage from '../pages/suppliers/SuppliersPage';
 import SupplierFormPage from '../pages/suppliers/SupplierFormPage';
 import SupplierDetailPage from '../pages/suppliers/SupplierDetailPage';
-import PurchasesPage from '../pages/purchases/PurchasesPage';
-import PurchaseFormPage from '../pages/purchases/PurchaseFormPage';
-import PurchaseDetailPage from '../pages/purchases/PurchaseDetailPage';
+import PurchaseInvoicesPage from '../pages/purchase-invoices/PurchaseInvoicesPage';
 import BrandsPage from '../pages/brands/BrandsPage';
 import BudgetsPage from '../pages/budgets/BudgetsPage';
 import BudgetFormPage from '../pages/budgets/BudgetFormPage';
@@ -60,9 +59,9 @@ import PurchaseInvoicesReportPage from '../pages/reports/PurchaseInvoicesReportP
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
 import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
 import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
-import OrdenComprasPage from '../pages/orden-compras/OrdenComprasPage';
-import OrdenCompraFormPage from '../pages/orden-compras/OrdenCompraFormPage';
-import OrdenCompraDetailPage from '../pages/orden-compras/OrdenCompraDetailPage';
+import PurchaseRemitosPage from '../pages/purchase-remitos/PurchaseRemitosPage';
+import PurchaseRemitoFormPage from '../pages/purchase-remitos/PurchaseRemitoFormPage';
+import PurchaseRemitoDetailPage from '../pages/purchase-remitos/PurchaseRemitoDetailPage';
 import BancoCheques from '../pages/banco-cheques/BancoCheques';
 import ThermalInvoicePrintPage from '../pages/print/ThermalInvoicePrintPage';
 import ThermalOrdenPedidoPrintPage from '../pages/print/ThermalOrdenPedidoPrintPage';
@@ -80,7 +79,8 @@ import BankAccountsPage from '../pages/banks/BankAccountsPage';
 import BankAccountDetailPage from '../pages/banks/BankAccountDetailPage';
 import MercadoPagoPage from '../pages/mercadopago/MercadoPagoPage';
 import CardsPage from '../pages/cards/CardsPage';
-import RubrosPage from '../pages/rubros/RubrosPage';
+import BancosPage from '../pages/bancos/BancosPage';
+import CategoriesPage from '../pages/categories/CategoriesPage';
 import ProductCustomFieldsPage from '../pages/product-custom-fields/ProductCustomFieldsPage';
 import PlansPage from '../pages/plans/PlansPage';
 import InternalNotesPage from '../pages/internal-notes/InternalNotesPage';
@@ -129,9 +129,9 @@ export default function AppRoutes() {
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
-        <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/brands" element={<BrandsPage />} />
         <Route path="/rubros" element={<RubrosPage />} />
+        <Route path="/brands" element={<BrandsPage />} />
+        <Route path="/categories" element={<CategoriesPage />} />
         <Route element={<RoleGuard allowed={['ADMIN']} />}>
           <Route path="/products/custom-fields" element={<ProductCustomFieldsPage />} />
         </Route>
@@ -161,6 +161,7 @@ export default function AppRoutes() {
           <Route path="/customers/:id/edit" element={<CustomerFormPage />} />
           <Route path="/products/new" element={<ProductFormPage />} />
           <Route path="/products/bulk-price-update" element={<BulkPriceUpdatePage />} />
+          <Route path="/products/bulk-update" element={<BulkProductUpdatePage />} />
           <Route path="/products/:id/edit" element={<ProductFormPage />} />
           <Route path="/warehouses/new" element={<WarehouseFormPage />} />
           <Route path="/warehouses/:id/edit" element={<WarehouseFormPage />} />
@@ -205,15 +206,13 @@ export default function AppRoutes() {
             <Route path="/supplier-accounts/:supplierId" element={<SupplierAccountDetailPage />} />
           </Route>
 
-          <Route path="/purchases" element={<PurchasesPage />} />
-          <Route path="/purchases/new" element={<PurchaseFormPage />} />
-          <Route path="/purchases/:id" element={<PurchaseDetailPage />} />
+          {/* Facturas de compra (documento de primer nivel — reemplaza a Compras) */}
+          <Route path="/purchase-invoices" element={<PurchaseInvoicesPage />} />
 
-          {/* Órdenes de Compra — ADMIN only */}
-          <Route path="/orden-compras" element={<OrdenComprasPage />} />
-          <Route path="/orden-compras/new" element={<OrdenCompraFormPage />} />
-          <Route path="/orden-compras/:id" element={<OrdenCompraDetailPage />} />
-          <Route path="/orden-compras/:id/edit" element={<OrdenCompraFormPage />} />
+          {/* Remitos de compra (recepción de mercadería) */}
+          <Route path="/purchase-remitos" element={<PurchaseRemitosPage />} />
+          <Route path="/purchase-remitos/new" element={<PurchaseRemitoFormPage />} />
+          <Route path="/purchase-remitos/:id" element={<PurchaseRemitoDetailPage />} />
 
           {/* Órdenes de Pago — ADMIN only */}
           <Route path="/orden-pagos" element={<OrdenPagosPage />} />
@@ -225,6 +224,9 @@ export default function AppRoutes() {
             <Route path="/banks" element={<BankAccountsPage />} />
             <Route path="/banks/:id" element={<BankAccountDetailPage />} />
           </Route>
+
+          {/* Catálogo de bancos (parametrización) — sin feature gate */}
+          <Route path="/bancos" element={<BancosPage />} />
 
           {/* MercadoPago */}
           <Route element={<FeatureRouteGuard feature="mercadopago" />}>

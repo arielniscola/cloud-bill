@@ -342,7 +342,7 @@ export default function BrandsPage() {
             <Tag className="w-7 h-7 text-gray-300 dark:text-slate-500" />
           </div>
           <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
-            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin marcas en esta categoría' : 'Sin marcas'}
+            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin marcas en esta vista' : 'Sin marcas'}
           </p>
           <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
             {search

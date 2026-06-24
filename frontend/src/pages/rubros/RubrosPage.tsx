@@ -9,23 +9,23 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { categoriesService } from '../../services';
-import type { Category } from '../../types';
+import { rubrosService } from '../../services';
+import type { Rubro } from '../../types';
 
-const categorySchema = z.object({
+const rubroSchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   parentId: z.string().optional().nullable(),
 });
 
-type CategoryFormData = z.infer<typeof categorySchema>;
+type RubroFormData = z.infer<typeof rubroSchema>;
 
-// ── Subcategory card ─────────────────────────────────────────────
-function SubcategoryCard({
-  category,
+// ── Subrubro card ─────────────────────────────────────────────
+function SubrubroCard({
+  rubro,
   onEdit,
   onDelete,
 }: {
-  category: Category;
+  rubro: Rubro;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -34,7 +34,7 @@ function SubcategoryCard({
       <div className="flex items-start gap-2.5 pr-5 min-w-0">
         <FolderTree className="w-4 h-4 text-gray-400 dark:text-slate-500 group-hover:text-indigo-400 flex-shrink-0 mt-0.5 transition-colors duration-150" />
         <span className="text-sm font-medium text-gray-800 dark:text-slate-200 group-hover:text-gray-900 dark:group-hover:text-white leading-snug break-words min-w-0">
-          {category.name}
+          {rubro.name}
         </span>
       </div>
       {/* Actions — appear on hover */}
@@ -74,14 +74,14 @@ function LeftSkeleton() {
 }
 
 // ── Main component ───────────────────────────────────────────────
-export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
+export default function RubrosPage() {
+  const [rubros, setRubros] = useState<Rubro[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedRootId, setSelectedRootId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingRubro, setEditingRubro] = useState<Rubro | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -93,65 +93,65 @@ export default function CategoriesPage() {
     watch,
     reset,
     formState: { errors },
-  } = useForm<CategoryFormData>({
-    resolver: zodResolver(categorySchema),
+  } = useForm<RubroFormData>({
+    resolver: zodResolver(rubroSchema),
   });
 
   const parentIdValue = watch('parentId') || '';
 
   // ── Data fetching ────────────────────────────────────────────
-  const fetchCategories = useCallback(async () => {
+  const fetchRubros = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await categoriesService.getAll();
-      setCategories(data);
+      const data = await rubrosService.getAll();
+      setRubros(data);
     } catch {
-      toast.error('Error al cargar categorías');
+      toast.error('Error al cargar rubros');
     } finally {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
   }, []);
 
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  useEffect(() => { fetchRubros(); }, [fetchRubros]);
 
   // ── Computed ─────────────────────────────────────────────────
-  const rootCategories = useMemo(
-    () => categories.filter((c) => !c.parentId),
-    [categories]
+  const rootRubros = useMemo(
+    () => rubros.filter((c) => !c.parentId),
+    [rubros]
   );
 
   const filteredRoots = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rootCategories;
-    return rootCategories.filter(
+    if (!q) return rootRubros;
+    return rootRubros.filter(
       (root) =>
         root.name.toLowerCase().includes(q) ||
         root.children?.some((c) => c.name.toLowerCase().includes(q))
     );
-  }, [rootCategories, search]);
+  }, [rootRubros, search]);
 
   const selectedRoot = useMemo(
     () => filteredRoots.find((c) => c.id === selectedRootId) ?? null,
     [filteredRoots, selectedRootId]
   );
 
-  const subcategories = useMemo(
+  const subrubros = useMemo(
     () => selectedRoot?.children ?? [],
     [selectedRoot]
   );
 
   const totalSub = useMemo(
-    () => rootCategories.reduce((s, r) => s + (r.children?.length ?? 0), 0),
-    [rootCategories]
+    () => rootRubros.reduce((s, r) => s + (r.children?.length ?? 0), 0),
+    [rootRubros]
   );
 
   // Auto-select first root when list loads for the first time
   useEffect(() => {
-    if (!isFirstLoad && rootCategories.length > 0 && !selectedRootId) {
-      setSelectedRootId(rootCategories[0].id);
+    if (!isFirstLoad && rootRubros.length > 0 && !selectedRootId) {
+      setSelectedRootId(rootRubros[0].id);
     }
-  }, [isFirstLoad, rootCategories, selectedRootId]);
+  }, [isFirstLoad, rootRubros, selectedRootId]);
 
   // Deselect if the selected root is filtered out by search
   useEffect(() => {
@@ -161,12 +161,12 @@ export default function CategoriesPage() {
   }, [filteredRoots, selectedRootId]);
 
   // ── Modal helpers ────────────────────────────────────────────
-  const openModal = (category?: Category, presetParentId?: string | null) => {
-    if (category) {
-      setEditingCategory(category);
-      reset({ name: category.name, parentId: category.parentId ?? '' });
+  const openModal = (rubro?: Rubro, presetParentId?: string | null) => {
+    if (rubro) {
+      setEditingRubro(rubro);
+      reset({ name: rubro.name, parentId: rubro.parentId ?? '' });
     } else {
-      setEditingCategory(null);
+      setEditingRubro(null);
       reset({
         name: '',
         parentId: presetParentId !== undefined ? (presetParentId ?? '') : '',
@@ -177,28 +177,28 @@ export default function CategoriesPage() {
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingCategory(null);
+    setEditingRubro(null);
     reset();
   };
 
-  const onSubmit = async (data: CategoryFormData) => {
+  const onSubmit = async (data: RubroFormData) => {
     setIsSaving(true);
     try {
       const payload = { name: data.name, parentId: data.parentId || null };
-      if (editingCategory) {
-        await categoriesService.update(editingCategory.id, payload);
-        toast.success('Categoría actualizada');
+      if (editingRubro) {
+        await rubrosService.update(editingRubro.id, payload);
+        toast.success('Rubro actualizado');
       } else {
-        const created = await categoriesService.create(payload);
-        toast.success('Categoría creada');
+        const created = await rubrosService.create(payload);
+        toast.success('Rubro creado');
         // Auto-select newly created root
         if (!payload.parentId) setSelectedRootId(created.id);
       }
       closeModal();
-      fetchCategories();
+      fetchRubros();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar categoría');
+      toast.error(err.response?.data?.message || 'Error al guardar rubro');
     } finally {
       setIsSaving(false);
     }
@@ -208,44 +208,44 @@ export default function CategoriesPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await categoriesService.delete(deleteId);
-      toast.success('Categoría eliminada');
+      await rubrosService.delete(deleteId);
+      toast.success('Rubro eliminado');
       if (deleteId === selectedRootId) setSelectedRootId(null);
       setDeleteId(null);
-      fetchCategories();
+      fetchRubros();
     } catch {
-      toast.error('Error al eliminar categoría. Verificá que no tenga productos asociados.');
+      toast.error('Error al eliminar rubro. Verificá que no tenga productos asociados.');
     } finally {
       setIsDeleting(false);
     }
   };
 
   const parentOptions = [
-    { value: '', label: 'Sin categoría padre (raíz)' },
-    ...rootCategories
-      .filter((cat) => cat.id !== editingCategory?.id)
+    { value: '', label: 'Sin rubro padre (raíz)' },
+    ...rootRubros
+      .filter((cat) => cat.id !== editingRubro?.id)
       .map((cat) => ({ value: cat.id, label: cat.name })),
   ];
 
-  const modalTitle = editingCategory
-    ? `Editar "${editingCategory.name}"`
+  const modalTitle = editingRubro
+    ? `Editar "${editingRubro.name}"`
     : parentIdValue
-    ? 'Nueva subcategoría'
-    : 'Nueva categoría raíz';
+    ? 'Nuevo subrubro'
+    : 'Nuevo rubro raíz';
 
   return (
     <div>
       <PageHeader
-        title="Categorías"
+        title="Rubros"
         subtitle={
           isFirstLoad
             ? undefined
-            : `${rootCategories.length} ${rootCategories.length === 1 ? 'categoría raíz' : 'categorías raíz'} · ${totalSub} subcategorías`
+            : `${rootRubros.length} ${rootRubros.length === 1 ? 'rubro raíz' : 'rubros raíz'} · ${totalSub} subrubros`
         }
         actions={
           <Button onClick={() => openModal()}>
             <Plus className="w-4 h-4 mr-2" />
-            Nueva categoría
+            Nuevo rubro
           </Button>
         }
       />
@@ -253,7 +253,7 @@ export default function CategoriesPage() {
       {/* ── Two-panel card ── */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden flex min-h-[560px]">
 
-        {/* ── Left: root category list ── */}
+        {/* ── Left: root rubro list ── */}
         <div className="w-56 xl:w-64 flex-shrink-0 border-r border-gray-100 dark:border-slate-700 flex flex-col">
 
           {/* Search */}
@@ -277,7 +277,7 @@ export default function CategoriesPage() {
             ) : filteredRoots.length === 0 ? (
               <div className="px-4 py-6 text-center">
                 <p className="text-xs text-gray-400 dark:text-slate-500">
-                  {search ? 'Sin resultados' : 'Sin categorías aún'}
+                  {search ? 'Sin resultados' : 'Sin rubros aún'}
                 </p>
               </div>
             ) : (
@@ -335,19 +335,19 @@ export default function CategoriesPage() {
                 <FolderTree className="w-5 h-5 text-gray-400 dark:text-slate-500" />
               </div>
               <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">
-                {rootCategories.length === 0
-                  ? 'Sin categorías'
-                  : 'Seleccioná una categoría'}
+                {rootRubros.length === 0
+                  ? 'Sin rubros'
+                  : 'Seleccioná un rubro'}
               </p>
               <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed">
-                {rootCategories.length === 0
-                  ? 'Creá categorías raíz para organizar el catálogo de productos.'
-                  : 'Hacé clic en una categoría para ver y gestionar sus subcategorías.'}
+                {rootRubros.length === 0
+                  ? 'Creá rubros raíz para organizar el catálogo de productos.'
+                  : 'Hacé clic en un rubro para ver y gestionar sus subrubros.'}
               </p>
-              {rootCategories.length === 0 && (
+              {rootRubros.length === 0 && (
                 <Button className="mt-5" onClick={() => openModal()}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Crear primera categoría
+                  Crear primer rubro
                 </Button>
               )}
             </div>
@@ -363,9 +363,9 @@ export default function CategoriesPage() {
                     {selectedRoot.name}
                   </h2>
                   <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 leading-none">
-                    {subcategories.length === 0
-                      ? 'Sin subcategorías'
-                      : `${subcategories.length} subcategor${subcategories.length === 1 ? 'ía' : 'ías'}`}
+                    {subrubros.length === 0
+                      ? 'Sin subrubros'
+                      : `${subrubros.length} subrubro${subrubros.length === 1 ? '' : 's'}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -381,11 +381,11 @@ export default function CategoriesPage() {
                     className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Subcategoría</span>
+                    <span className="hidden sm:inline">Subrubro</span>
                   </button>
                   <button
                     onClick={() => setDeleteId(selectedRoot.id)}
-                    title="Eliminar categoría"
+                    title="Eliminar rubro"
                     className="p-1.5 rounded-lg text-gray-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -393,16 +393,16 @@ export default function CategoriesPage() {
                 </div>
               </div>
 
-              {/* Subcategories grid */}
+              {/* Subrubros grid */}
               <div className="flex-1 p-6 overflow-y-auto [scrollbar-width:thin]">
-                {subcategories.length === 0 ? (
+                {subrubros.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center py-10">
                     <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-3">
                       <Layers className="w-4 h-4 text-gray-400 dark:text-slate-500" />
                     </div>
-                    <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin subcategorías</p>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin subrubros</p>
                     <p className="text-xs text-gray-400 dark:text-slate-500 mb-4 max-w-xs leading-relaxed">
-                      Agregá subcategorías para clasificar los productos dentro de{' '}
+                      Agregá subrubros para clasificar los productos dentro de{' '}
                       <span className="font-medium text-gray-600 dark:text-slate-300">{selectedRoot.name}</span>.
                     </p>
                     <button
@@ -410,15 +410,15 @@ export default function CategoriesPage() {
                       className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
                     >
                       <Plus className="w-4 h-4" />
-                      Agregar primera subcategoría
+                      Agregar primer subrubro
                     </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                    {subcategories.map((sub) => (
-                      <SubcategoryCard
+                    {subrubros.map((sub) => (
+                      <SubrubroCard
                         key={sub.id}
-                        category={sub}
+                        rubro={sub}
                         onEdit={() => openModal(sub)}
                         onDelete={() => setDeleteId(sub.id)}
                       />
@@ -455,7 +455,7 @@ export default function CategoriesPage() {
           />
 
           <Select
-            label="Categoría padre"
+            label="Rubro padre"
             options={parentOptions}
             value={parentIdValue}
             onChange={(value) => setValue('parentId', value || null)}
@@ -465,9 +465,9 @@ export default function CategoriesPage() {
             <div className="flex items-start gap-2 text-xs text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg px-3 py-2.5">
               <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span>
-                Se creará como subcategoría de{' '}
+                Se creará como subrubro de{' '}
                 <strong>
-                  {rootCategories.find((c) => c.id === parentIdValue)?.name ?? parentIdValue}
+                  {rootRubros.find((c) => c.id === parentIdValue)?.name ?? parentIdValue}
                 </strong>.
               </span>
             </div>
@@ -475,7 +475,7 @@ export default function CategoriesPage() {
 
           <div className="flex gap-2.5 pt-2">
             <Button type="submit" isLoading={isSaving}>
-              {editingCategory ? 'Guardar cambios' : 'Crear'}
+              {editingRubro ? 'Guardar cambios' : 'Crear'}
             </Button>
             <Button type="button" variant="outline" onClick={closeModal} disabled={isSaving}>
               Cancelar
@@ -489,11 +489,11 @@ export default function CategoriesPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Eliminar categoría"
+        title="Eliminar rubro"
         message={
           deleteId === selectedRootId
-            ? `¿Eliminar "${selectedRoot?.name}"? Todas sus subcategorías también serán eliminadas y los productos asociados quedarán sin categoría.`
-            : '¿Eliminar esta subcategoría? Los productos asociados quedarán sin categoría.'
+            ? `¿Eliminar "${selectedRoot?.name}"? Todos sus subrubros también serán eliminados y los productos asociados quedarán sin rubro.`
+            : '¿Eliminar este subrubro? Los productos asociados quedarán sin rubro.'
         }
         confirmText="Eliminar"
         isLoading={isDeleting}

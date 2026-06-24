@@ -1,7 +1,7 @@
 import {
   FilePlus, FileText, Calculator, ShoppingBag, Truck, Receipt, Users, UserPlus,
   Package, PackagePlus, Boxes, Warehouse, Brain, ClipboardCheck, ShoppingCart,
-  ClipboardList, Banknote, Wallet, Landmark, BookOpen, BarChart2, CreditCard,
+  Banknote, Wallet, Landmark, BookOpen, BarChart2, CreditCard,
   CircleDollarSign, ArrowLeftRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -48,9 +48,8 @@ export const QUICK_ACCESS_CATALOG: QuickAccessItem[] = [
   { id: 'conteo-fisico',     label: 'Conteo Físico',    href: '/stock/physical-count', icon: ClipboardCheck, bg: 'bg-amber-50 dark:bg-amber-900/30',   color: 'text-amber-500',  module: 'catalogo' },
 
   // ── Compras ──
-  { id: 'compras',           label: 'Compras',          href: '/purchases',     icon: ShoppingCart, bg: 'bg-purple-50 dark:bg-purple-900/30',   color: 'text-purple-500',  module: 'compras', access: 'purchases' },
+  { id: 'compras',           label: 'Facturas Compra',  href: '/purchase-invoices', icon: ShoppingCart, bg: 'bg-purple-50 dark:bg-purple-900/30', color: 'text-purple-500',  module: 'compras', access: 'purchases' },
   { id: 'proveedores',       label: 'Proveedores',      href: '/suppliers',     icon: Truck,        bg: 'bg-purple-50 dark:bg-purple-900/30',   color: 'text-purple-500',  module: 'compras', access: 'purchases' },
-  { id: 'orden-compras',     label: 'Órdenes Compra',   href: '/orden-compras', icon: ClipboardList, bg: 'bg-purple-50 dark:bg-purple-900/30',  color: 'text-purple-500',  module: 'compras', access: 'purchases' },
   { id: 'orden-pagos',       label: 'Órdenes Pago',     href: '/orden-pagos',   icon: Banknote,     bg: 'bg-purple-50 dark:bg-purple-900/30',   color: 'text-purple-500',  module: 'compras', access: 'purchases' },
 
   // ── Finanzas ──

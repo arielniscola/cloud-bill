@@ -13,7 +13,7 @@ type ResultItem = {
   badgeColor?: string;
   href: string;
   icon: React.ReactNode;
-  category: string;
+  rubro: string;
 };
 
 const OP_STATUS_LABELS: Record<string, string> = {
@@ -50,7 +50,7 @@ function buildItems(data: SearchResult): ResultItem[] {
       badgeColor: INVOICE_STATUS_COLORS[inv.status as keyof typeof INVOICE_STATUS_COLORS] ?? '',
       href: `/invoices/${inv.id}`,
       icon: <FileText className="w-4 h-4 text-indigo-500" />,
-      category: 'Facturas',
+      rubro: 'Facturas',
     });
   });
 
@@ -61,7 +61,7 @@ function buildItems(data: SearchResult): ResultItem[] {
       sublabel: c.taxId ?? c.email ?? undefined,
       href: `/customers`,
       icon: <Users className="w-4 h-4 text-emerald-500" />,
-      category: 'Clientes',
+      rubro: 'Clientes',
     });
   });
 
@@ -74,7 +74,7 @@ function buildItems(data: SearchResult): ResultItem[] {
       badgeColor: 'bg-gray-100 text-gray-700',
       href: `/products`,
       icon: <Package className="w-4 h-4 text-amber-500" />,
-      category: 'Productos',
+      rubro: 'Productos',
     });
   });
 
@@ -87,7 +87,7 @@ function buildItems(data: SearchResult): ResultItem[] {
       badgeColor: BUDGET_STATUS_COLORS[b.status] ?? '',
       href: `/budgets/${b.id}`,
       icon: <ClipboardList className="w-4 h-4 text-violet-500" />,
-      category: 'Presupuestos',
+      rubro: 'Presupuestos',
     });
   });
 
@@ -100,7 +100,7 @@ function buildItems(data: SearchResult): ResultItem[] {
       badgeColor: OP_STATUS_COLORS[op.status] ?? '',
       href: `/orden-pedidos/${op.id}`,
       icon: <ShoppingCart className="w-4 h-4 text-orange-500" />,
-      category: 'Órdenes de Pedido',
+      rubro: 'Órdenes de Pedido',
     });
   });
 
@@ -176,15 +176,15 @@ export function GlobalSearch() {
 
   if (!open) return null;
 
-  // Group by category for rendering
+  // Group by rubro for rendering
   const grouped: Record<string, ResultItem[]> = {};
   results.forEach((item) => {
-    if (!grouped[item.category]) grouped[item.category] = [];
-    grouped[item.category].push(item);
+    if (!grouped[item.rubro]) grouped[item.rubro] = [];
+    grouped[item.rubro].push(item);
   });
-  const categories = Object.keys(grouped);
+  const rubros = Object.keys(grouped);
   // Build flat ordered list for keyboard nav index tracking
-  const flat = categories.flatMap((c) => grouped[c]);
+  const flat = rubros.flatMap((c) => grouped[c]);
 
   return (
     <>
@@ -234,7 +234,7 @@ export function GlobalSearch() {
               </div>
             ) : (
               <div className="py-2">
-                {categories.map((cat) => (
+                {rubros.map((cat) => (
                   <div key={cat}>
                     <div className="px-4 pt-3 pb-1">
                       <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">

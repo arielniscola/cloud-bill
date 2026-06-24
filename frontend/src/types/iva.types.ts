@@ -5,6 +5,13 @@ export interface IvaItemRow {
   taxRate: number;
   subtotal: number;
   total: number;
+  superRubro?: string;
+}
+
+export interface IvaAlicuota {
+  rate: number;
+  neto: number;
+  iva: number;
 }
 
 export interface IvaVentasRow {
@@ -17,12 +24,14 @@ export interface IvaVentasRow {
   cuitCliente: string;
   condicionIva: string;
   neto: number;
+  exento: number;
   iva: number;
   total: number;
   cae: string;
   status: string;
   saleCondition: string;
   paymentTerms: string | null;
+  alicuotas: IvaAlicuota[];
   items: IvaItemRow[];
 }
 
@@ -34,11 +43,16 @@ export interface IvaComprasRow {
   proveedor: string;
   cuitProveedor: string;
   neto: number;
+  exento: number;
   iva: number;
+  percepcionIva: number;
+  percepcionIIBB: number;
+  otrosTributos: number;
   total: number;
   status: string;
   paymentStatus: string | null;
   saleCondition: string;
+  alicuotas: IvaAlicuota[];
   items: IvaItemRow[];
 }
 

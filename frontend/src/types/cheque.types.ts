@@ -1,5 +1,5 @@
 export type ChequeType   = 'INGRESO' | 'EGRESO';
-export type ChequeStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED';
+export type ChequeStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED' | 'ENDOSADO';
 
 export interface Cheque {
   id:             string;
@@ -19,6 +19,8 @@ export interface Cheque {
   supplierId:     string | null;
   bankAccountId:  string | null;
   cashRegisterId: string | null;
+  chequeraId:     string | null;
+  ordenPagoId:    string | null;
   userId:         string;
   companyId:      string;
   fiscalMode:     string;
@@ -43,6 +45,7 @@ export interface CreateChequeDTO {
   supplierId?:     string | null;
   bankAccountId?:  string | null;
   cashRegisterId?: string | null;
+  chequeraId?:     string | null;
 }
 
 export const CHEQUE_STATUS_LABELS: Record<ChequeStatus, string> = {
@@ -51,6 +54,7 @@ export const CHEQUE_STATUS_LABELS: Record<ChequeStatus, string> = {
   CLEARED:   'Acreditado',
   BOUNCED:   'Rechazado',
   RETURNED:  'Devuelto',
+  ENDOSADO:  'Endosado',
 };
 
 export const CHEQUE_STATUS_COLORS: Record<ChequeStatus, string> = {
@@ -59,6 +63,7 @@ export const CHEQUE_STATUS_COLORS: Record<ChequeStatus, string> = {
   CLEARED:   'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
   BOUNCED:   'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
   RETURNED:  'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300',
+  ENDOSADO:  'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
 };
 
 // Allowed transitions per status
@@ -76,4 +81,6 @@ export const CHEQUE_NEXT_STATUSES: Record<ChequeStatus, Array<{ value: ChequeSta
   CLEARED:  [],
   BOUNCED:  [{ value: 'PENDING', label: 'Volver a cartera' }],
   RETURNED: [{ value: 'PENDING', label: 'Volver a cartera' }],
+  // Cheque endosado a proveedor: estado terminal desde la cartera (se gestiona vía la OP)
+  ENDOSADO: [],
 };

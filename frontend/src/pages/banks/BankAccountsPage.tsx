@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Landmark, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Input, Select } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, BancoSelect } from '../../components/shared';
 import { bankService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import type { BankAccount, CreateBankAccountDTO } from '../../types';
@@ -46,7 +46,7 @@ function AccountFormModal({
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input label="Nombre de la cuenta *" value={form.name} onChange={set('name')} required />
-          <Input label="Banco *" value={form.bank} onChange={set('bank')} required placeholder="Ej: Banco Nación" />
+          <BancoSelect label="Banco *" value={form.bank} onChange={(v) => setForm(p => ({ ...p, bank: v }))} placeholder="Ej: Banco Nación" />
           <Input label="N° de cuenta / CBU" value={form.accountNumber ?? ''} onChange={set('accountNumber')} />
           <Select
             label="Moneda"

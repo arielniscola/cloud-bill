@@ -1,5 +1,5 @@
 import api from './api';
-import type { OrdenPago, CreateOrdenPagoDTO, OrdenPagoFilters, SupplierAccount } from '../types/ordenPago.types';
+import type { OrdenPago, CreateOrdenPagoDTO, OrdenPagoFilters, SupplierAccount, SupplierMovementFilters } from '../types/ordenPago.types';
 import type { PaginatedResponse } from '../types/api.types';
 
 const ordenPagosService = {
@@ -23,8 +23,10 @@ const ordenPagosService = {
     return api.delete(`/orden-pagos/${id}`).then((r) => r.data.data);
   },
 
-  getSupplierAccount(supplierId: string, params?: { page?: number; limit?: number }): Promise<SupplierAccount> {
-    return api.get(`/orden-pagos/supplier/${supplierId}/account`, { params }).then((r) => r.data.data);
+  getSupplierAccount(supplierId: string, params?: SupplierMovementFilters): Promise<SupplierAccount> {
+    const { kinds, ...rest } = params ?? {};
+    const query = { ...rest, kinds: kinds && kinds.length > 0 ? kinds.join(',') : undefined };
+    return api.get(`/orden-pagos/supplier/${supplierId}/account`, { params: query }).then((r) => r.data.data);
   },
 };
 

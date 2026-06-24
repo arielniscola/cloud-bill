@@ -11,7 +11,7 @@ import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } 
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { invoicesService, recibosService, afipService, appSettingsService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
 import type { Invoice, Recibo, CreateReciboDTO, AfipError } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
@@ -287,6 +287,8 @@ export default function InvoiceDetailPage() {
   const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
   const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
   const isFactura = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'].includes(invoice.type);
+  // Una NC no se cobra: su "pago" es una devolución al cliente.
+  const isCreditNote = invoice.type.startsWith('NOTA_CREDITO');
   // Factura C does not discriminate IVA
   const isTypeC = invoice.type.endsWith('_C');
   const hasItemDiscount = invoice.items.some((i) => Number(i.discountPct) > 0);
@@ -303,7 +305,7 @@ export default function InvoiceDetailPage() {
   return (
     <div>
       <PageHeader
-        title={`Factura ${invoice.number}`}
+        title={`Factura ${formatInvoiceNumber(invoice)}`}
         subtitle={INVOICE_TYPES[invoice.type]}
         backTo="/invoices"
         actions={
@@ -335,10 +337,10 @@ export default function InvoiceDetailPage() {
             {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && (
               <Button variant="outline" onClick={() => setShowPayModal(true)}>
                 <Banknote className="w-4 h-4 mr-2" />
-                Registrar pago
+                {isCreditNote ? 'Registrar devolución' : 'Registrar pago'}
               </Button>
             )}
-            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && (
+            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && !isCreditNote && (
               <Button variant="outline" onClick={() => setShowMpModal(true)}>
                 <Smartphone className="w-4 h-4 mr-2" />
                 Cobrar con MP
@@ -546,6 +548,7 @@ export default function InvoiceDetailPage() {
             canPay={canMarkAsPaid}
             onPay={() => setShowPayModal(true)}
             onCancel={(r) => setCancelReciboId(r.id)}
+            mode={isCreditNote ? 'refund' : 'payment'}
           />
 
           {/* AFIP / ARCA Error History */}
@@ -730,6 +733,7 @@ export default function InvoiceDetailPage() {
         currency={invoice.currency}
         isLoading={isPayLoading}
         defaultCashRegisterId={undefined}
+        mode={isCreditNote ? 'refund' : 'payment'}
       />
 
       <ConfirmDialog
@@ -747,14 +751,14 @@ export default function InvoiceDetailPage() {
         onClose={() => setShowMpModal(false)}
         onPaymentRegistered={loadData}
         invoiceId={invoice.id}
-        title={`Cobrar Factura ${invoice.number} con MP`}
+        title={`Cobrar Factura ${formatInvoiceNumber(invoice)} con MP`}
       />
 
       <SendEmailModal
         isOpen={showEmailModal}
         onClose={() => setShowEmailModal(false)}
         defaultEmail={(invoice as any)?.customer?.email ?? ''}
-        documentLabel={invoice ? `${INVOICE_TYPES[invoice.type]} ${invoice.number}` : ''}
+        documentLabel={invoice ? `${INVOICE_TYPES[invoice.type]} ${formatInvoiceNumber(invoice)}` : ''}
         onSend={async (to) => {
           const blob = await generateInvoicePdfBlob();
           await invoicesService.sendEmail(invoice!.id, to, blob);

@@ -8,7 +8,7 @@ import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import Pagination from '../../components/shared/Pagination';
 import { invoicesService, customersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatInvoiceNumber } from '../../utils/formatters';
 import {
   INVOICE_TYPES,
   INVOICE_STATUSES,
@@ -395,9 +395,17 @@ export default function InvoicesPage() {
                           </span>
                         </td>
 
-                        {/* Número */}
+                        {/* Número — oficial de ARCA si está autorizada, si no la interna */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{inv.number}</span>
+                          <span className="font-mono text-xs text-gray-600 dark:text-slate-400">{formatInvoiceNumber(inv)}</span>
+                          {inv.cae && (
+                            <span
+                              title={`CAE: ${inv.cae}`}
+                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold ring-1 ring-inset text-emerald-700 bg-emerald-50 ring-emerald-200/60 dark:text-emerald-300 dark:bg-emerald-900/30 dark:ring-emerald-800 leading-none"
+                            >
+                              CAE
+                            </span>
+                          )}
                           <FiscalModeBadge mode={(inv as any).fiscalMode} className="ml-1.5" />
                         </td>
 

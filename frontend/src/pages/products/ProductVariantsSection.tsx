@@ -7,7 +7,7 @@ import type { ProductVariant } from '../../types/product-variant.types';
 
 interface Props {
   productId: string | null;
-  enabled: boolean;            // rubro.allowsVariants AND empresa con módulo 'variantes'
+  enabled: boolean;            // category.allowsVariants AND empresa con módulo 'variantes'
   disabledReason?: string;     // mensaje si !enabled
 }
 

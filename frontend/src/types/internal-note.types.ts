@@ -37,6 +37,7 @@ export interface InternalNoteFilters {
   limit?:      number;
   customerId?: string;
   supplierId?: string;
+  entity?:     InternalNoteEntity;
   type?:       InternalNoteType | '';
   status?:     InternalNoteStatus | '';
   currency?:   string;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { X, Plus, FileEdit, CheckCircle2, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge } from '../../components/ui';
@@ -30,6 +31,11 @@ function SkeletonRow() {
 
 export default function InternalNotesPage() {
   const { canWrite } = usePermissions();
+  const [searchParams] = useSearchParams();
+  const lockedEntity = (() => {
+    const e = searchParams.get('entity');
+    return e === 'SUPPLIER' || e === 'CUSTOMER' ? e : null;
+  })();
 
   const [notes,      setNotes]      = useState<InternalNote[]>([]);
   const [customers,  setCustomers]  = useState<Customer[]>([]);
@@ -45,7 +51,7 @@ export default function InternalNotesPage() {
   const [statusFilter,   setStatusFilter]   = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
-  const [entityFilter,   setEntityFilter]   = useState<'' | 'CUSTOMER' | 'SUPPLIER'>('');
+  const [entityFilter,   setEntityFilter]   = useState<'' | 'CUSTOMER' | 'SUPPLIER'>(lockedEntity ?? '');
   const [dateFrom,       setDateFrom]       = useState('');
   const [dateTo,         setDateTo]         = useState('');
 
@@ -60,11 +66,19 @@ export default function InternalNotesPage() {
     setStatusFilter('');
     setCustomerFilter('');
     setSupplierFilter('');
-    setEntityFilter('');
+    setEntityFilter(lockedEntity ?? '');
     setDateFrom('');
     setDateTo('');
     setPage(1);
   };
+
+  // Sincroniza con el submenú (Ventas → CUSTOMER, Compras → SUPPLIER)
+  useEffect(() => {
+    setEntityFilter(lockedEntity ?? '');
+    setCustomerFilter('');
+    setSupplierFilter('');
+    setPage(1);
+  }, [lockedEntity]);
 
   const fetchNotes = useCallback(async () => {
     setIsLoading(true);
@@ -74,6 +88,7 @@ export default function InternalNotesPage() {
         limit,
         type:       typeFilter       as InternalNoteType | '' || undefined,
         status:     statusFilter     as InternalNoteStatus | '' || undefined,
+        entity:     entityFilter     || undefined,
         customerId: customerFilter   || undefined,
         supplierId: supplierFilter   || undefined,
         dateFrom:   dateFrom         || undefined,
@@ -87,7 +102,7 @@ export default function InternalNotesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, typeFilter, statusFilter, customerFilter, supplierFilter, dateFrom, dateTo]);
+  }, [page, limit, typeFilter, statusFilter, entityFilter, customerFilter, supplierFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     customersService.getAll({ limit: 500 })
@@ -124,7 +139,7 @@ export default function InternalNotesPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Notas Internas"
+        title={lockedEntity === 'SUPPLIER' ? 'Notas Internas — Proveedores' : lockedEntity === 'CUSTOMER' ? 'Notas Internas — Clientes' : 'Notas Internas'}
         subtitle={`${total} nota${total !== 1 ? 's' : ''}`}
         actions={
           canWrite && (
@@ -149,21 +164,23 @@ export default function InternalNotesPage() {
             <option value="ACTIVE">Activa</option>
             <option value="CANCELLED">Anulada</option>
           </select>
-          <select
-            className={selectCls}
-            value={entityFilter}
-            onChange={(e) => {
-              const v = e.target.value as '' | 'CUSTOMER' | 'SUPPLIER';
-              setEntityFilter(v);
-              if (v !== 'CUSTOMER') setCustomerFilter('');
-              if (v !== 'SUPPLIER') setSupplierFilter('');
-              setPage(1);
-            }}
-          >
-            <option value="">Clientes y proveedores</option>
-            <option value="CUSTOMER">Solo clientes</option>
-            <option value="SUPPLIER">Solo proveedores</option>
-          </select>
+          {!lockedEntity && (
+            <select
+              className={selectCls}
+              value={entityFilter}
+              onChange={(e) => {
+                const v = e.target.value as '' | 'CUSTOMER' | 'SUPPLIER';
+                setEntityFilter(v);
+                if (v !== 'CUSTOMER') setCustomerFilter('');
+                if (v !== 'SUPPLIER') setSupplierFilter('');
+                setPage(1);
+              }}
+            >
+              <option value="">Clientes y proveedores</option>
+              <option value="CUSTOMER">Solo clientes</option>
+              <option value="SUPPLIER">Solo proveedores</option>
+            </select>
+          )}
           {entityFilter !== 'SUPPLIER' && (
             <div className="w-64">
               <CustomerSearchSelect
@@ -311,6 +328,7 @@ export default function InternalNotesPage() {
         <CreateInternalNoteModal
           onClose={() => setShowModal(false)}
           onCreated={handleCreated}
+          defaultEntity={lockedEntity ?? undefined}
         />
       )}
 

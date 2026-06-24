@@ -9,6 +9,7 @@ const internalNotesService = {
     if (filters.limit)      params.set('limit',      String(filters.limit));
     if (filters.customerId) params.set('customerId', filters.customerId);
     if (filters.supplierId) params.set('supplierId', filters.supplierId);
+    if (filters.entity)     params.set('entity',     filters.entity);
     if (filters.type)       params.set('type',       filters.type);
     if (filters.status)     params.set('status',     filters.status);
     if (filters.currency)   params.set('currency',   filters.currency);

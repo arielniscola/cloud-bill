@@ -31,7 +31,6 @@ import {
   Brain,
   Receipt,
   ShoppingBag,
-  FileStack,
   Store,
   Banknote,
   Building2,
@@ -105,7 +104,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Recibos",           href: "/recibos",          icon: Receipt },
           { name: "Clientes",          href: "/customers",        icon: Users },
           { name: "Cuentas Corrientes",href: "/current-accounts", icon: CreditCard, featureKey: "current_accounts" },
-          { name: "Notas Internas",    href: "/internal-notes",  icon: FileEdit },
+          { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER",  icon: FileEdit },
         ],
       },
     ],
@@ -117,13 +116,14 @@ const navigationGroups: NavGroup[] = [
     items: [
       {
         name: "Compras",
-        href: "/purchases",
+        href: "/purchase-invoices",
         icon: ShoppingCart,
         children: [
           { name: "Proveedores",       href: "/suppliers",         icon: Truck },
           { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard, featureKey: "supplier_accounts" },
-          { name: "Órdenes de Compra", href: "/orden-compras",     icon: FileStack },
-          { name: "Compras",           href: "/purchases",         icon: ShoppingCart },
+          { name: "Facturas",          href: "/purchase-invoices", icon: FileText },
+          { name: "Remitos de Compra", href: "/purchase-remitos",  icon: PackageSearch },
+          { name: "Notas Internas",    href: "/internal-notes?entity=SUPPLIER", icon: FileEdit },
           { name: "Reporte de facturas",href: "/reports/purchase-invoices", icon: BarChart2, featureKey: "reports" },
           { name: "Órdenes de Pago",   href: "/orden-pagos",       icon: Banknote },
         ],
@@ -140,9 +140,9 @@ const navigationGroups: NavGroup[] = [
         icon: Package,
         children: [
           { name: "Lista",      href: "/products",   icon: Package },
-          { name: "Categorías", href: "/categories", icon: FolderTree },
+          { name: "Rubros", href: "/rubros", icon: FolderTree },
           { name: "Marcas",     href: "/brands",     icon: Tag },
-          { name: "Rubros",     href: "/rubros",     icon: Layers },
+          { name: "Categorías",     href: "/categories",     icon: Layers },
           { name: "Campos personalizados", href: "/products/custom-fields", icon: Sliders },
         ],
       },
@@ -172,6 +172,7 @@ const navigationGroups: NavGroup[] = [
         icon: Landmark,
         children: [
           { name: "Cajas",             href: "/cash-registers", icon: Landmark },
+          { name: "Bancos",            href: "/bancos",         icon: Building2 },
           { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  featureKey: "bank_module" },
           { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  featureKey: "bank_module" },
           { name: "Tarjetas",          href: "/cards",          icon: CreditCard, featureKey: "cards" },
@@ -238,6 +239,19 @@ export default function Sidebar() {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
+  // href puede incluir query (?entity=...): separamos el path para comparar.
+  const hrefPath = (h: string) => { const i = h.indexOf('?'); return i >= 0 ? h.slice(0, i) : h; };
+  const childIsActive = (href: string) => {
+    const i = href.indexOf('?');
+    const path = i >= 0 ? href.slice(0, i) : href;
+    if (location.pathname !== path) return false;
+    if (i < 0) return true;
+    const target = new URLSearchParams(href.slice(i + 1));
+    const current = new URLSearchParams(location.search);
+    for (const [k, v] of target) if (current.get(k) !== v) return false;
+    return true;
+  };
+
   const visibleGroups = role === 'SUPER_ADMIN'
     ? superAdminGroups
     : navigationGroups.filter((g) => {
@@ -295,8 +309,8 @@ export default function Sidebar() {
       if (!item.children) return;
       const childActive = item.children.some(
         (c) =>
-          location.pathname === c.href ||
-          location.pathname.startsWith(c.href + "/"),
+          location.pathname === hrefPath(c.href) ||
+          location.pathname.startsWith(hrefPath(c.href) + "/"),
       );
       if (childActive) initial[item.name] = true;
     });
@@ -309,8 +323,8 @@ export default function Sidebar() {
       if (!item.children) return;
       const childActive = item.children.some(
         (c) =>
-          location.pathname === c.href ||
-          location.pathname.startsWith(c.href + "/"),
+          location.pathname === hrefPath(c.href) ||
+          location.pathname.startsWith(hrefPath(c.href) + "/"),
       );
       setOpenMenus((prev) => {
         if (childActive && !prev[item.name]) return { ...prev, [item.name]: true };
@@ -539,7 +553,7 @@ export default function Sidebar() {
                             !showText && "md:justify-center",
                             (location.pathname.startsWith(item.href) ||
                               item.children.some(
-                                (c) => location.pathname === c.href || location.pathname.startsWith(c.href + "/"),
+                                (c) => location.pathname === hrefPath(c.href) || location.pathname.startsWith(hrefPath(c.href) + "/"),
                               ))
                               ? "bg-white/[0.12] text-white"
                               : "text-white/60 hover:bg-white/10 hover:text-white",
@@ -571,16 +585,14 @@ export default function Sidebar() {
                                 <NavLink
                                   to={child.href}
                                   end
-                                  className={({ isActive }) =>
-                                    clsx(
-                                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm",
-                                      "transition-[background-color,color,transform] duration-150 ease-out",
-                                      "active:scale-[0.98]",
-                                      isActive
-                                        ? "bg-indigo-500/20 text-indigo-300 font-semibold"
-                                        : "text-white/50 hover:bg-white/10 hover:text-white font-medium",
-                                    )
-                                  }
+                                  className={clsx(
+                                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm",
+                                    "transition-[background-color,color,transform] duration-150 ease-out",
+                                    "active:scale-[0.98]",
+                                    childIsActive(child.href)
+                                      ? "bg-indigo-500/20 text-indigo-300 font-semibold"
+                                      : "text-white/50 hover:bg-white/10 hover:text-white font-medium",
+                                  )}
                                 >
                                   <child.icon className="w-[15px] h-[15px] flex-shrink-0" />
                                   <span>{child.name}</span>

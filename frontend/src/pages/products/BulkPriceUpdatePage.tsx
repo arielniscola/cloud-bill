@@ -5,9 +5,9 @@ import { TrendingUp, TrendingDown, Save, RefreshCw, CheckSquare, Square, Chevron
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
 import { PageHeader, SearchInput } from '../../components/shared';
-import { productsService, categoriesService, brandsService, suppliersService } from '../../services';
+import { productsService, rubrosService, brandsService, suppliersService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import type { Product, Category, Brand, Supplier } from '../../types';
+import type { Product, Rubro, Brand, Supplier } from '../../types';
 
 // ── Types ────────────────────────────────────────────────────────
 interface RowState {
@@ -193,27 +193,27 @@ export default function BulkPriceUpdatePage() {
 
   // Filter state
   const [supplierId, setSupplierId]       = useState('');
-  const [categoryId, setCategoryId]       = useState('');
-  const [subcategoryId, setSubcategoryId] = useState('');
+  const [rubroId, setRubroId]       = useState('');
+  const [subrubroId, setSubrubroId] = useState('');
   const [brandId, setBrandId]             = useState('');
   const [search, setSearch]               = useState('');
 
   // Options
   const [suppliers, setSuppliers]         = useState<Supplier[]>([]);
-  const [categories, setCategories]       = useState<Category[]>([]);
+  const [rubros, setRubros]       = useState<Rubro[]>([]);
   const [brands, setBrands]               = useState<Brand[]>([]);
 
-  // Derived: root categories and subcategories of selected category
-  const rootCategories  = useMemo(() => categories.filter((c) => !c.parentId), [categories]);
-  const subcategories   = useMemo(
-    () => (categoryId ? categories.filter((c) => c.parentId === categoryId) : []),
-    [categories, categoryId],
+  // Derived: root rubros and subrubros of selected rubro
+  const rootRubros  = useMemo(() => rubros.filter((c) => !c.parentId), [rubros]);
+  const subrubros   = useMemo(
+    () => (rubroId ? rubros.filter((c) => c.parentId === rubroId) : []),
+    [rubros, rubroId],
   );
 
-  // When category changes, reset subcategory
-  const handleCategoryChange = (id: string) => {
-    setCategoryId(id);
-    setSubcategoryId('');
+  // When rubro changes, reset subrubro
+  const handleRubroChange = (id: string) => {
+    setRubroId(id);
+    setSubrubroId('');
   };
 
   // Rows (product id → RowState)
@@ -230,11 +230,11 @@ export default function BulkPriceUpdatePage() {
   useEffect(() => {
     Promise.all([
       suppliersService.getAll({ limit: 200, isActive: true }),
-      categoriesService.getAll(),
+      rubrosService.getAll(),
       brandsService.getAll(),
     ]).then(([s, c, b]) => {
       setSuppliers(s.data);
-      setCategories(c);
+      setRubros(c);
       setBrands(b);
     });
   }, []);
@@ -243,15 +243,15 @@ export default function BulkPriceUpdatePage() {
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      // When a subcategory is selected → filter by it directly.
-      // When only a parent category is selected → don't filter by categoryId in the API
-      // (products live in subcategories); we'll filter client-side across all children.
-      const apiCategoryId = subcategoryId || (!subcategoryId && subcategories.length === 0 ? categoryId : undefined);
+      // When a subrubro is selected → filter by it directly.
+      // When only a parent rubro is selected → don't filter by rubroId in the API
+      // (products live in subrubros); we'll filter client-side across all children.
+      const apiRubroId = subrubroId || (!subrubroId && subrubros.length === 0 ? rubroId : undefined);
 
       const [result, supplierProds] = await Promise.all([
         productsService.getAll({
           limit: 500,
-          categoryId: apiCategoryId || undefined,
+          rubroId: apiRubroId || undefined,
           brandId:    brandId       || undefined,
           isActive:   true,
         }),
@@ -260,10 +260,10 @@ export default function BulkPriceUpdatePage() {
 
       let filtered = result.data;
 
-      // Client-side category filter when parent has children
-      if (categoryId && !subcategoryId && subcategories.length > 0) {
-        const allowedIds = new Set([categoryId, ...subcategories.map((c) => c.id)]);
-        filtered = filtered.filter((p) => p.categoryId != null && allowedIds.has(p.categoryId));
+      // Client-side rubro filter when parent has children
+      if (rubroId && !subrubroId && subrubros.length > 0) {
+        const allowedIds = new Set([rubroId, ...subrubros.map((c) => c.id)]);
+        filtered = filtered.filter((p) => p.rubroId != null && allowedIds.has(p.rubroId));
       }
 
       if (supplierProds) {
@@ -293,7 +293,7 @@ export default function BulkPriceUpdatePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [supplierId, categoryId, subcategoryId, subcategories, brandId, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supplierId, rubroId, subrubroId, subrubros, brandId, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -402,17 +402,17 @@ export default function BulkPriceUpdatePage() {
           options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
         />
         <FilterSearchSelect
-          placeholder="Categoría"
-          value={categoryId}
-          onChange={handleCategoryChange}
-          options={rootCategories.map((c) => ({ value: c.id, label: c.name }))}
+          placeholder="Rubro"
+          value={rubroId}
+          onChange={handleRubroChange}
+          options={rootRubros.map((c) => ({ value: c.id, label: c.name }))}
         />
-        {subcategories.length > 0 && (
+        {subrubros.length > 0 && (
           <FilterSearchSelect
-            placeholder="Subcategoría"
-            value={subcategoryId}
-            onChange={setSubcategoryId}
-            options={subcategories.map((c) => ({ value: c.id, label: c.name }))}
+            placeholder="Subrubro"
+            value={subrubroId}
+            onChange={setSubrubroId}
+            options={subrubros.map((c) => ({ value: c.id, label: c.name }))}
           />
         )}
         <FilterSelect

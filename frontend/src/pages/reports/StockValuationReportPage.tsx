@@ -20,15 +20,15 @@ export default function StockValuationReportPage() {
   const [loading, setLoading]         = useState(false);
   const [hasGenerated, setGenerated]  = useState(false);
   const [warehouses, setWarehouses]   = useState<SimpleOption[]>([]);
-  const [categories, setCategories]   = useState<SimpleOption[]>([]);
+  const [rubros, setRubros]   = useState<SimpleOption[]>([]);
 
   useEffect(() => {
     Promise.all([
       api.get<ApiResponse<{ id: string; name: string }[]>>('/warehouses'),
-      api.get<ApiResponse<{ id: string; name: string }[]>>('/categories'),
+      api.get<ApiResponse<{ id: string; name: string }[]>>('/rubros'),
     ]).then(([wRes, cRes]) => {
       setWarehouses([{ value: '', label: 'Todos los depósitos' }, ...(wRes.data.data ?? []).map((w) => ({ value: w.id, label: w.name }))]);
-      setCategories([{ value: '', label: 'Todas las categorías' }, ...(cRes.data.data ?? []).map((c) => ({ value: c.id, label: c.name }))]);
+      setRubros([{ value: '', label: 'Todos los rubros' }, ...(cRes.data.data ?? []).map((c) => ({ value: c.id, label: c.name }))]);
     }).catch(() => {});
   }, []);
 
@@ -56,14 +56,14 @@ export default function StockValuationReportPage() {
       [
         { header: 'SKU',          key: 'sku',        width: 14 },
         { header: 'Producto',     key: 'name',       width: 30 },
-        { header: 'Categoría',    key: 'category',   width: 18 },
+        { header: 'Rubro',    key: 'rubro',   width: 18 },
         { header: 'Depósito',     key: 'warehouse',  width: 18 },
         { header: 'Cantidad',     key: 'quantity',   width: 10, format: 'number' },
         { header: 'Costo unit.',  key: 'unitCost',   width: 12, format: 'currency' },
         { header: 'Valor total',  key: 'totalValue', width: 14, format: 'currency' },
       ],
       data,
-      { sku: 'TOTAL', name: '', category: '', warehouse: '', quantity: data.reduce((a, r) => a + r.quantity, 0), unitCost: '', totalValue: totalCapital } as any,
+      { sku: 'TOTAL', name: '', rubro: '', warehouse: '', quantity: data.reduce((a, r) => a + r.quantity, 0), unitCost: '', totalValue: totalCapital } as any,
     );
   };
 
@@ -93,8 +93,8 @@ export default function StockValuationReportPage() {
             <Select value={params.warehouseId ?? ''} onChange={(v) => set('warehouseId', v)} options={warehouses} />
           </div>
           <div className="flex flex-col gap-1 min-w-[200px]">
-            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Categoría</label>
-            <Select value={params.categoryId ?? ''} onChange={(v) => set('categoryId', v)} options={categories} />
+            <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Rubro</label>
+            <Select value={params.rubroId ?? ''} onChange={(v) => set('rubroId', v)} options={rubros} />
           </div>
           <Button onClick={handleGenerate} isLoading={loading}>
             <Search className="w-4 h-4 mr-2" /> Generar
@@ -126,7 +126,7 @@ export default function StockValuationReportPage() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                     <tr>
-                      {['SKU', 'Producto', 'Categoría', 'Depósito', 'Cantidad', 'Costo unit.', 'Valor total'].map((h) => (
+                      {['SKU', 'Producto', 'Rubro', 'Depósito', 'Cantidad', 'Costo unit.', 'Valor total'].map((h) => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -136,7 +136,7 @@ export default function StockValuationReportPage() {
                       <tr key={`${r.productId}-${r.warehouse}`} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
                         <td className="px-4 py-3 font-mono text-xs text-gray-500 dark:text-slate-400">{r.sku}</td>
                         <td className="px-4 py-3 font-medium text-gray-900 dark:text-white max-w-[200px] truncate">{r.name}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{r.category}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{r.rubro}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 dark:text-slate-400">{r.warehouse}</td>
                         <td className="px-4 py-3 text-right text-gray-700 dark:text-slate-300">{r.quantity}</td>
                         <td className="px-4 py-3 text-right text-gray-700 dark:text-slate-300">{formatCurrency(r.unitCost)}</td>
