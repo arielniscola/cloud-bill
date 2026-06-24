@@ -1,5 +1,5 @@
 import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput } from '../entities/OrdenPago';
-import { SupplierAccountMovement, CreateSupplierMovementInput } from '../entities/SupplierAccountMovement';
+import { SupplierAccountMovement, CreateSupplierMovementInput, SupplierMovementFilters } from '../entities/SupplierAccountMovement';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface OrdenPagoFilters {
@@ -22,7 +22,9 @@ export interface IOrdenPagoRepository {
 
   // Supplier current account
   getSupplierBalance(supplierId: string, companyId?: string): Promise<number>;
-  getSupplierMovements(supplierId: string, pagination: PaginationParams, companyId?: string): Promise<PaginatedResult<SupplierAccountMovement>>;
+  getSupplierMovements(supplierId: string, pagination: PaginationParams, companyId?: string, filters?: SupplierMovementFilters): Promise<PaginatedResult<SupplierAccountMovement>>;
   createSupplierMovement(data: CreateSupplierMovementInput): Promise<SupplierAccountMovement>;
   cancelSupplierMovement(ordenPagoId: string): Promise<void>;
+  reverseSupplierMovementByPurchase(purchaseId: string): Promise<void>;
+  syncPurchaseInvoiceMovements(purchaseInvoiceId: string): Promise<void>;
 }

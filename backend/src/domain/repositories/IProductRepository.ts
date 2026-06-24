@@ -3,7 +3,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface ProductFilters {
   search?: string;
-  categoryId?: string;
+  rubroId?: string;
   brandId?: string;
   isActive?: boolean;
   minPrice?: number;

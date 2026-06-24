@@ -73,13 +73,13 @@ export class PrismaStockRepository implements IStockRepository {
       SELECT
         s.*,
         p.id    AS "p_id", p.sku AS "p_sku", p.name AS "p_name", p.cost AS "p_cost",
-        p."categoryId" AS "p_categoryId", p."brandId" AS "p_brandId",
+        p."rubroId" AS "p_rubroId", p."brandId" AS "p_brandId",
         c.name  AS "cat_name", b.name AS "brand_name",
         v.id    AS "v_id", v.sku AS "v_sku", v.name AS "v_name", v.attributes AS "v_attributes",
         v."priceOverride" AS "v_priceOverride", v."costOverride" AS "v_costOverride"
       FROM "stocks" s
       LEFT JOIN "products" p          ON p.id = s."productId"
-      LEFT JOIN "categories" c        ON c.id = p."categoryId"
+      LEFT JOIN "rubros" c        ON c.id = p."rubroId"
       LEFT JOIN "brands" b            ON b.id = p."brandId"
       LEFT JOIN "product_variants" v  ON v.id = s."variantId"
       WHERE s."warehouseId" = ${warehouseId}
@@ -97,7 +97,7 @@ export class PrismaStockRepository implements IStockRepository {
       product: r.p_id ? {
         id: r.p_id, sku: r.p_sku, name: r.p_name,
         cost: new Decimal(r.p_cost ?? 0),
-        category: r.cat_name ? { name: r.cat_name } : null,
+        rubro: r.cat_name ? { name: r.cat_name } : null,
         brand: r.brand_name ? { name: r.brand_name } : null,
       } : null,
       variant: r.v_id ? {
@@ -407,14 +407,14 @@ export class PrismaStockRepository implements IStockRepository {
              v.sku AS "v_sku", v.name AS "v_name"
       FROM "stocks" s
       LEFT JOIN "products" p ON p.id = s."productId"
-      LEFT JOIN "categories" c ON c.id = p."categoryId"
+      LEFT JOIN "rubros" c ON c.id = p."rubroId"
       LEFT JOIN "brands" b ON b.id = p."brandId"
       LEFT JOIN "product_variants" v ON v.id = s."variantId"
       WHERE s."warehouseId" = ${warehouseId}
       ORDER BY p.name ASC, v.name ASC
     `;
 
-    const header = 'SKU,Variante,Nombre,Categoría,Marca,Stock Total,Reservado,Disponible,Stock Mínimo,Costo Unitario,Valor Total';
+    const header = 'SKU,Variante,Nombre,Rubro,Marca,Stock Total,Reservado,Disponible,Stock Mínimo,Costo Unitario,Valor Total';
 
     const csvRows = rows.map((s) => {
       const qty = new Decimal(s.quantity);

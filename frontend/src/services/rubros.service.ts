@@ -1,30 +1,35 @@
 import api from './api';
-import type { Rubro, CreateRubroDTO, UpdateRubroDTO } from '../types/rubro.types';
+import type {
+  Category,
+  CreateCategoryDTO,
+  UpdateCategoryDTO,
+  ApiResponse,
+} from '../types';
 
-const rubrosService = {
-  async getAll(): Promise<Rubro[]> {
-    const res = await api.get<{ status: string; data: Rubro[] }>('/rubros');
-    return res.data.data;
+export const categoriesService = {
+  async getAll(): Promise<Category[]> {
+    const response = await api.get<ApiResponse<Category[]>>('/categories');
+    return response.data.data;
   },
 
-  async getById(id: string): Promise<Rubro> {
-    const res = await api.get<{ status: string; data: Rubro }>(`/rubros/${id}`);
-    return res.data.data;
+  async getById(id: string): Promise<Category> {
+    const response = await api.get<ApiResponse<Category>>(`/categories/${id}`);
+    return response.data.data;
   },
 
-  async create(data: CreateRubroDTO): Promise<Rubro> {
-    const res = await api.post<{ status: string; data: Rubro }>('/rubros', data);
-    return res.data.data;
+  async create(data: CreateCategoryDTO): Promise<Category> {
+    const response = await api.post<ApiResponse<Category>>('/categories', data);
+    return response.data.data;
   },
 
-  async update(id: string, data: UpdateRubroDTO): Promise<Rubro> {
-    const res = await api.put<{ status: string; data: Rubro }>(`/rubros/${id}`, data);
-    return res.data.data;
+  async update(id: string, data: UpdateCategoryDTO): Promise<Category> {
+    const response = await api.put<ApiResponse<Category>>(`/categories/${id}`, data);
+    return response.data.data;
   },
 
   async delete(id: string): Promise<void> {
-    await api.delete(`/rubros/${id}`);
+    await api.delete(`/categories/${id}`);
   },
 };
 
-export default rubrosService;
+export default categoriesService;

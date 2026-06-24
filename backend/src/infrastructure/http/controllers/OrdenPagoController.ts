@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRepository';
+import { SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
 import { createOrdenPagoSchema, ordenPagoQuerySchema } from '../../../application/dtos/ordenPago.dto';
@@ -67,6 +68,10 @@ export class OrdenPagoController {
         checkDueDate:   body.checkDueDate ? new Date(body.checkDueDate) : undefined,
         notes:          body.notes,
         items:          body.items,
+        amount:         body.amount,
+        ajustes:        body.ajustes,
+        chequesEnCartera: body.chequesEnCartera,
+        chequesPropios:   body.chequesPropios,
       } as any);
 
       await activityLogRepo.create({
@@ -175,14 +180,25 @@ export class OrdenPagoController {
     try {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
       const { supplierId } = req.params;
-      const { page, limit } = req.query;
+      const { page, limit, type, kinds, dateFrom, dateTo, search } = req.query;
+
+      const filters: SupplierMovementFilters = {
+        type: type === 'DEBIT' || type === 'CREDIT' ? type : undefined,
+        kinds: typeof kinds === 'string' && kinds.length > 0
+          ? (kinds.split(',') as any[])
+          : undefined,
+        dateFrom: typeof dateFrom === 'string' ? dateFrom : undefined,
+        dateTo: typeof dateTo === 'string' ? dateTo : undefined,
+        search: typeof search === 'string' && search.trim() ? search.trim() : undefined,
+      };
 
       const [balance, movements] = await Promise.all([
         repo.getSupplierBalance(supplierId, req.companyId),
         repo.getSupplierMovements(
           supplierId,
           { page: Number(page) || 1, limit: Number(limit) || 20 },
-          req.companyId
+          req.companyId,
+          filters
         ),
       ]);
 

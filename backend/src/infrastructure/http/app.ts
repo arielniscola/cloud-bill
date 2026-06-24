@@ -1,11 +1,12 @@
 import 'reflect-metadata';
 import express, { Application } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import { errorMiddleware } from './middlewares/errorMiddleware';
 import { authRoutes } from './routes/authRoutes';
 import { customerRoutes } from './routes/customerRoutes';
 import { productRoutes } from './routes/productRoutes';
-import { categoryRoutes } from './routes/categoryRoutes';
+import { rubroRoutes } from './routes/rubroRoutes';
 import { warehouseRoutes } from './routes/warehouseRoutes';
 import { stockRoutes } from './routes/stockRoutes';
 import { invoiceRoutes } from './routes/invoiceRoutes';
@@ -17,6 +18,7 @@ import { afipRoutes } from './routes/afipRoutes';
 import { ivaRoutes } from './routes/ivaRoutes';
 import { supplierRoutes } from './routes/supplierRoutes';
 import { purchaseRoutes } from './routes/purchaseRoutes';
+import { purchaseInvoiceRoutes } from './routes/purchaseInvoiceRoutes';
 import { dashboardRoutes } from './routes/dashboardRoutes';
 import { brandRoutes } from './routes/brandRoutes';
 import { budgetRoutes } from './routes/budgetRoutes';
@@ -24,7 +26,7 @@ import { appSettingsRoutes } from './routes/appSettingsRoutes';
 import { stockIntelligenceRoutes } from './routes/stockIntelligenceRoutes';
 import { reciboRoutes } from './routes/reciboRoutes';
 import { ordenPedidoRoutes } from './routes/ordenPedidoRoutes';
-import { ordenCompraRoutes } from './routes/ordenCompraRoutes';
+import { purchaseRemitoRoutes } from './routes/purchaseRemitoRoutes';
 import { userRoutes } from './routes/userRoutes';
 import { companyRoutes } from './routes/companyRoutes';
 import { ordenPagoRoutes } from './routes/ordenPagoRoutes';
@@ -35,7 +37,9 @@ import { syncRoutes } from './routes/syncRoutes';
 import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
 import { cardRoutes } from './routes/cardRoutes';
-import { rubroRoutes } from './routes/rubroRoutes';
+import { bancoRoutes } from './routes/bancoRoutes';
+import { chequeraRoutes } from './routes/chequeraRoutes';
+import { categoryRoutes } from './routes/categoryRoutes';
 import { productVariantRoutes, productVariantStandaloneRoutes } from './routes/productVariantRoutes';
 import { productCustomFieldRoutes } from './routes/productCustomFieldRoutes';
 import { internalNoteRoutes } from './routes/internalNoteRoutes';
@@ -46,6 +50,9 @@ import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
 
 export function createApp(): Application {
   const app = express();
+
+  // Security headers
+  app.use(helmet());
 
   // Middleware
   const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -78,7 +85,7 @@ export function createApp(): Application {
   app.use('/api/products/:productId/variants', productVariantRoutes);
   app.use('/api/product-variants', productVariantStandaloneRoutes);
   app.use('/api/products', productRoutes);
-  app.use('/api/categories', categoryRoutes);
+  app.use('/api/rubros', rubroRoutes);
   app.use('/api/warehouses', warehouseRoutes);
   app.use('/api/stock', stockRoutes);
   app.use('/api/invoices', invoiceRoutes);
@@ -90,6 +97,7 @@ export function createApp(): Application {
   app.use('/api/iva', ivaRoutes);
   app.use('/api/suppliers', supplierRoutes);
   app.use('/api/purchases', purchaseRoutes);
+  app.use('/api/purchase-invoices', purchaseInvoiceRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/brands', brandRoutes);
   app.use('/api/budgets', budgetRoutes);
@@ -97,7 +105,7 @@ export function createApp(): Application {
   app.use('/api/stock-intelligence', stockIntelligenceRoutes);
   app.use('/api/recibos', reciboRoutes);
   app.use('/api/orden-pedidos', ordenPedidoRoutes);
-  app.use('/api/orden-compras', ordenCompraRoutes);
+  app.use('/api/purchase-remitos', purchaseRemitoRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/companies', companyRoutes);
   app.use('/api/orden-pagos', ordenPagoRoutes);
@@ -108,7 +116,9 @@ export function createApp(): Application {
   app.use('/api/reports', reportsRoutes);
   app.use('/api/mercadopago', mpRoutes);
   app.use('/api/cards', cardRoutes);
-  app.use('/api/rubros', rubroRoutes);
+  app.use('/api/bancos', bancoRoutes);
+  app.use('/api/chequeras', chequeraRoutes);
+  app.use('/api/categories', categoryRoutes);
   app.use('/api/product-custom-fields', productCustomFieldRoutes);
   app.use('/api/internal-notes', internalNoteRoutes);
   app.use('/api/accounting', accountingRoutes);

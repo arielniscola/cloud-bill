@@ -1,5 +1,6 @@
 export type ChequeType   = 'INGRESO' | 'EGRESO';
-export type ChequeStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED';
+// ENDOSADO = cheque de tercero entregado/endosado a un proveedor en una Orden de Pago
+export type ChequeStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED' | 'ENDOSADO';
 
 export interface Cheque {
   id:             string;
@@ -19,6 +20,8 @@ export interface Cheque {
   supplierId:     string | null;
   bankAccountId:  string | null;
   cashRegisterId: string | null;
+  chequeraId:     string | null;
+  ordenPagoId:    string | null;
   userId:         string;
   companyId:      string;
   fiscalMode:     string;
@@ -44,5 +47,7 @@ export interface CreateChequeInput {
   supplierId?:    string;
   bankAccountId?: string;
   cashRegisterId?:string;
+  chequeraId?:    string;
+  ordenPagoId?:   string;
   fiscalMode?:    string;
 }

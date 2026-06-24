@@ -4,6 +4,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 export interface InternalNoteFilters {
   customerId?: string;
   supplierId?: string;
+  entity?:     'CUSTOMER' | 'SUPPLIER';  // filtra por presencia de cliente/proveedor
   type?:       string;
   status?:     string;
   currency?:   string;

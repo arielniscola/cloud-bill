@@ -3,14 +3,31 @@ import { container } from 'tsyringe';
 import { IRubroRepository } from '../../../domain/repositories/IRubroRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
-import { createRubroSchema, updateRubroSchema } from '../../../application/dtos/rubro.dto';
 
 export class RubroController {
-  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const repo = container.resolve<IRubroRepository>('RubroRepository');
-      const rubros = await repo.findAll(req.companyId);
-      res.json({ status: 'success', data: rubros });
+      const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
+
+      const rubro = await rubroRepository.create({
+        name: req.body.name,
+        parentId: req.body.parentId ?? null,
+        companyId: req.companyId,
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'Rubro',
+        entityId: rubro.id,
+        description: `Rubro ${rubro.name} creada`,
+      });
+
+      res.status(201).json({
+        status: 'success',
+        data: rubro,
+      });
     } catch (error) {
       next(error);
     }
@@ -18,22 +35,31 @@ export class RubroController {
 
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const repo = container.resolve<IRubroRepository>('RubroRepository');
-      const rubro = await repo.findById(req.params.id);
-      if (!rubro || rubro.companyId !== req.companyId) throw new NotFoundError('Rubro');
-      res.json({ status: 'success', data: rubro });
+      const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
+      const rubro = await rubroRepository.findById(req.params.id);
+
+      if (!rubro || (rubro as any).companyId !== req.companyId) {
+        throw new NotFoundError('Rubro');
+      }
+
+      res.json({
+        status: 'success',
+        data: rubro,
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const repo = container.resolve<IRubroRepository>('RubroRepository');
-      const data = createRubroSchema.parse(req.body);
-      const rubro = await repo.create({ ...data, description: data.description ?? null, companyId: req.companyId! });
-      this._log(req, 'CREATE', rubro.id, `Rubro "${rubro.name}" creado`);
-      res.status(201).json({ status: 'success', data: rubro });
+      const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
+      const rubros = await rubroRepository.findAll(req.companyId);
+
+      res.json({
+        status: 'success',
+        data: rubros,
+      });
     } catch (error) {
       next(error);
     }
@@ -41,13 +67,31 @@ export class RubroController {
 
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const repo = container.resolve<IRubroRepository>('RubroRepository');
-      const existing = await repo.findById(req.params.id);
-      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Rubro');
-      const data = updateRubroSchema.parse(req.body);
-      const rubro = await repo.update(req.params.id, data);
-      this._log(req, 'UPDATE', rubro.id, `Rubro "${rubro.name}" actualizado`);
-      res.json({ status: 'success', data: rubro });
+      const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
+
+      const existingRubro = await rubroRepository.findById(req.params.id);
+      if (!existingRubro || (existingRubro as any).companyId !== req.companyId) {
+        throw new NotFoundError('Rubro');
+      }
+
+      const rubro = await rubroRepository.update(req.params.id, {
+        name: req.body.name,
+        parentId: req.body.parentId,
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Rubro',
+        entityId: rubro.id,
+        description: `Rubro ${rubro.name} actualizada`,
+      });
+
+      res.json({
+        status: 'success',
+        data: rubro,
+      });
     } catch (error) {
       next(error);
     }
@@ -55,20 +99,27 @@ export class RubroController {
 
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const repo = container.resolve<IRubroRepository>('RubroRepository');
-      const existing = await repo.findById(req.params.id);
-      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Rubro');
-      await repo.delete(req.params.id);
-      this._log(req, 'DELETE', req.params.id, `Rubro "${existing.name}" eliminado`);
+      const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
+
+      const existingRubro = await rubroRepository.findById(req.params.id);
+      if (!existingRubro || (existingRubro as any).companyId !== req.companyId) {
+        throw new NotFoundError('Rubro');
+      }
+
+      await rubroRepository.delete(req.params.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Rubro',
+        entityId: req.params.id,
+        description: `Rubro ${existingRubro.name} eliminada`,
+      });
+
       res.status(204).send();
     } catch (error) {
       next(error);
     }
-  }
-
-  private _log(req: Request, action: 'CREATE' | 'UPDATE' | 'DELETE', entityId: string, description: string): void {
-    const logRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-    logRepo.create({ userId: req.user!.userId, action, entity: 'Rubro', entityId, description })
-      .catch(() => { /* log failure is non-critical */ });
   }
 }

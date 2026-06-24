@@ -3,31 +3,14 @@ import { container } from 'tsyringe';
 import { ICategoryRepository } from '../../../domain/repositories/ICategoryRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
+import { createCategorySchema, updateCategorySchema } from '../../../application/dtos/category.dto';
 
 export class CategoryController {
-  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-
-      const category = await categoryRepository.create({
-        name: req.body.name,
-        parentId: req.body.parentId ?? null,
-        companyId: req.companyId,
-      });
-
-      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-      await activityLogRepo.create({
-        userId: req.user!.userId,
-        action: 'CREATE',
-        entity: 'Category',
-        entityId: category.id,
-        description: `Categoría ${category.name} creada`,
-      });
-
-      res.status(201).json({
-        status: 'success',
-        data: category,
-      });
+      const repo = container.resolve<ICategoryRepository>('CategoryRepository');
+      const categories = await repo.findAll(req.companyId);
+      res.json({ status: 'success', data: categories });
     } catch (error) {
       next(error);
     }
@@ -35,31 +18,22 @@ export class CategoryController {
 
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-      const category = await categoryRepository.findById(req.params.id);
-
-      if (!category || (category as any).companyId !== req.companyId) {
-        throw new NotFoundError('Category');
-      }
-
-      res.json({
-        status: 'success',
-        data: category,
-      });
+      const repo = container.resolve<ICategoryRepository>('CategoryRepository');
+      const category = await repo.findById(req.params.id);
+      if (!category || category.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      res.json({ status: 'success', data: category });
     } catch (error) {
       next(error);
     }
   }
 
-  async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-      const categories = await categoryRepository.findAll(req.companyId);
-
-      res.json({
-        status: 'success',
-        data: categories,
-      });
+      const repo = container.resolve<ICategoryRepository>('CategoryRepository');
+      const data = createCategorySchema.parse(req.body);
+      const category = await repo.create({ ...data, description: data.description ?? null, companyId: req.companyId! });
+      this._log(req, 'CREATE', category.id, `Category "${category.name}" creado`);
+      res.status(201).json({ status: 'success', data: category });
     } catch (error) {
       next(error);
     }
@@ -67,31 +41,13 @@ export class CategoryController {
 
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-
-      const existingCategory = await categoryRepository.findById(req.params.id);
-      if (!existingCategory || (existingCategory as any).companyId !== req.companyId) {
-        throw new NotFoundError('Category');
-      }
-
-      const category = await categoryRepository.update(req.params.id, {
-        name: req.body.name,
-        parentId: req.body.parentId,
-      });
-
-      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-      await activityLogRepo.create({
-        userId: req.user!.userId,
-        action: 'UPDATE',
-        entity: 'Category',
-        entityId: category.id,
-        description: `Categoría ${category.name} actualizada`,
-      });
-
-      res.json({
-        status: 'success',
-        data: category,
-      });
+      const repo = container.resolve<ICategoryRepository>('CategoryRepository');
+      const existing = await repo.findById(req.params.id);
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      const data = updateCategorySchema.parse(req.body);
+      const category = await repo.update(req.params.id, data);
+      this._log(req, 'UPDATE', category.id, `Category "${category.name}" actualizado`);
+      res.json({ status: 'success', data: category });
     } catch (error) {
       next(error);
     }
@@ -99,27 +55,20 @@ export class CategoryController {
 
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const categoryRepository = container.resolve<ICategoryRepository>('CategoryRepository');
-
-      const existingCategory = await categoryRepository.findById(req.params.id);
-      if (!existingCategory || (existingCategory as any).companyId !== req.companyId) {
-        throw new NotFoundError('Category');
-      }
-
-      await categoryRepository.delete(req.params.id);
-
-      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-      await activityLogRepo.create({
-        userId: req.user!.userId,
-        action: 'DELETE',
-        entity: 'Category',
-        entityId: req.params.id,
-        description: `Categoría ${existingCategory.name} eliminada`,
-      });
-
+      const repo = container.resolve<ICategoryRepository>('CategoryRepository');
+      const existing = await repo.findById(req.params.id);
+      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      await repo.delete(req.params.id);
+      this._log(req, 'DELETE', req.params.id, `Category "${existing.name}" eliminado`);
       res.status(204).send();
     } catch (error) {
       next(error);
     }
+  }
+
+  private _log(req: Request, action: 'CREATE' | 'UPDATE' | 'DELETE', entityId: string, description: string): void {
+    const logRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+    logRepo.create({ userId: req.user!.userId, action, entity: 'Category', entityId, description })
+      .catch(() => { /* log failure is non-critical */ });
   }
 }

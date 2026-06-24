@@ -355,6 +355,50 @@ export async function recordPaymentReceived(recibo: {
 }
 
 /**
+ * Records journal entry when a credit-note refund is paid out to a customer.
+ * Mirror of recordPaymentReceived (money leaves the company):
+ *   DR Clientes        — amount  (cancels the credit owed to the customer)
+ *   CR Caja | Bancos   — amount  (cash/bank outflow)
+ */
+export async function recordRefundPaid(recibo: {
+  id: string;
+  number: string;
+  amount: number;
+  paymentMethod: string;
+  companyId: string;
+  userId: string;
+  invoiceNumber?: string;
+}): Promise<void> {
+  try {
+    if (!(await companyHasFeature(recibo.companyId, 'accounting'))) return;
+    const amount = Math.round(recibo.amount * 100) / 100;
+
+    const cashAccount =
+      recibo.paymentMethod === 'BANK_TRANSFER' ? ACCOUNT_CODES.BANCOS :
+      recibo.paymentMethod === 'CHECK'          ? ACCOUNT_CODES.CHEQUES :
+      ACCOUNT_CODES.CAJA; // CASH | CARD
+
+    const desc = recibo.invoiceNumber
+      ? `${recibo.number} (${recibo.invoiceNumber})`
+      : recibo.number;
+
+    await createEntry(
+      `Devolución ${recibo.number}`,
+      'PAYMENT',
+      recibo.id,
+      recibo.companyId,
+      recibo.userId,
+      [
+        { code: ACCOUNT_CODES.CLIENTES, debit: amount, credit: 0,      description: desc },
+        { code: cashAccount,            debit: 0,      credit: amount, description: desc },
+      ]
+    );
+  } catch (err) {
+    console.error('[AccountingService] recordRefundPaid error:', err);
+  }
+}
+
+/**
  * Records journal entry when a purchase is created.
  *   DR Mercaderías     — net amount (excl. IVA)
  *   DR IVA Crédito     — IVA amount

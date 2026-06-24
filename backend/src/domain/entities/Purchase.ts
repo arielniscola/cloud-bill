@@ -28,8 +28,10 @@ export interface Purchase {
   taxAmount: Decimal;
   total: Decimal;
   currency: Currency;
+  exchangeRate: Decimal;
   status: PurchaseStatus;
   notes: string | null;
+  originPurchaseId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +40,7 @@ export interface PurchaseWithItems extends Purchase {
   items: PurchaseItem[];
   supplier?: { id: string; name: string; cuit: string | null };
   user?: { id: string; name: string; email: string };
+  originPurchase?: { id: string; number: string; type: InvoiceType } | null;
 }
 
 export interface CreatePurchaseItemInput {
@@ -57,7 +60,9 @@ export interface CreatePurchaseInput {
   warehouseId?: string;
   date?: Date;
   currency?: Currency;
+  exchangeRate?: number;
   notes?: string;
+  originPurchaseId?: string;
   items: CreatePurchaseItemInput[];
 }
 

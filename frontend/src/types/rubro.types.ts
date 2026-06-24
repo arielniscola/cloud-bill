@@ -1,19 +1,16 @@
-export interface Rubro {
+export interface Category {
   id: string;
   name: string;
-  description: string | null;
-  isActive: boolean;
-  allowsVariants: boolean;
-  companyId: string;
+  parentId: string | null;
+  parent?: Category;
+  children?: Category[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CreateRubroDTO {
+export interface CreateCategoryDTO {
   name: string;
-  description?: string | null;
-  isActive?: boolean;
-  allowsVariants?: boolean;
+  parentId?: string | null;
 }
 
-export type UpdateRubroDTO = Partial<CreateRubroDTO>;
+export interface UpdateCategoryDTO extends Partial<CreateCategoryDTO> {}

@@ -57,7 +57,7 @@ export class SyncController {
         bankAccounts,
         bankMovements,
         users,
-        categories,
+        rubros,
         brands,
         afipConfig,
         appSettings,
@@ -163,8 +163,8 @@ export class SyncController {
             updatedAt: true,
           },
         }),
-        // categories/brands — scoped to the company (have companyId)
-        prisma.category.findMany({
+        // rubros/brands — scoped to the company (have companyId)
+        prisma.rubro.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
         prisma.brand.findMany({
@@ -220,7 +220,7 @@ export class SyncController {
           bankAccounts,
           bankMovements,
           users,
-          categories,
+          rubros,
           brands,
           afipConfig,
           appSettings,

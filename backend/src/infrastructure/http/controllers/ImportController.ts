@@ -65,12 +65,12 @@ export class ImportController {
         return;
       }
 
-      // Pre-load categories and brands by name for this company
-      const [categories, brands] = await Promise.all([
-        prisma.category.findMany({ where: { companyId }, select: { id: true, name: true } }),
+      // Pre-load rubros and brands by name for this company
+      const [rubros, brands] = await Promise.all([
+        prisma.rubro.findMany({ where: { companyId }, select: { id: true, name: true } }),
         prisma.brand.findMany({ where: { companyId }, select: { id: true, name: true } }),
       ]);
-      const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+      const rubroMap = new Map(rubros.map((c) => [c.name.toLowerCase(), c.id]));
       const brandMap    = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
 
       let imported = 0;
@@ -96,9 +96,9 @@ export class ImportController {
         const taxRateStr = pick(row, 'iva', 'taxrate', 'tasaiva');
         const taxRate    = parseFloat(taxRateStr || '21');
 
-        const categoryName = pick(row, 'categoria', 'category').toLowerCase();
+        const rubroName = pick(row, 'rubro', 'rubro').toLowerCase();
         const brandName    = pick(row, 'marca', 'brand').toLowerCase();
-        const categoryId   = categoryName ? (categoryMap.get(categoryName) ?? null) : null;
+        const rubroId   = rubroName ? (rubroMap.get(rubroName) ?? null) : null;
         const brandId      = brandName    ? (brandMap.get(brandName)       ?? null) : null;
 
         const unit        = pick(row, 'unidad', 'unit')               || 'UN';
@@ -119,7 +119,7 @@ export class ImportController {
                 taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
                 unit,
                 ...(barcode     && { barcode }),
-                ...(categoryId  && { categoryId }),
+                ...(rubroId  && { rubroId }),
                 ...(brandId     && { brandId }),
               },
             });
@@ -134,7 +134,7 @@ export class ImportController {
                 taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
                 unit,
                 barcode:    barcode    ?? undefined,
-                categoryId: categoryId ?? undefined,
+                rubroId: rubroId ?? undefined,
                 brandId:    brandId    ?? undefined,
                 companyId,
               },

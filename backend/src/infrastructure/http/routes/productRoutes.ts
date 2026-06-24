@@ -18,6 +18,7 @@ router.use(authMiddleware);
 router.post('/import', requireRoles('ADMIN', 'SELLER'), importController.importProducts);
 router.post('/', requireRoles('ADMIN', 'SELLER'), validate({ body: createProductSchema }), productController.create);
 router.patch('/bulk-price-update', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdatePrices);
+router.patch('/bulk-update', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdate);
 router.get('/', validate({ query: productQuerySchema }), productController.findAll);
 router.get('/:id', productController.findById);
 router.put('/:id', requireRoles('ADMIN', 'SELLER'), validate({ body: updateProductSchema }), productController.update);

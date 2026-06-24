@@ -36,9 +36,9 @@ export class ProductController {
         name: req.body.name,
         companyId: req.companyId,
         description: req.body.description ?? null,
-        categoryId: req.body.categoryId ?? null,
-        brandId: req.body.brandId ?? null,
         rubroId: req.body.rubroId ?? null,
+        brandId: req.body.brandId ?? null,
+        categoryId: req.body.categoryId ?? null,
         barcode: req.body.barcode ?? null,
         unit: req.body.unit ?? null,
         internalNotes: req.body.internalNotes ?? null,
@@ -139,9 +139,9 @@ export class ProductController {
       if (req.body.sku !== undefined) updateData.sku = req.body.sku;
       if (req.body.name !== undefined) updateData.name = req.body.name;
       if (req.body.description !== undefined) updateData.description = req.body.description;
-      if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
-      if (req.body.brandId !== undefined) updateData.brandId = req.body.brandId;
       if (req.body.rubroId !== undefined) updateData.rubroId = req.body.rubroId;
+      if (req.body.brandId !== undefined) updateData.brandId = req.body.brandId;
+      if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
       if (req.body.barcode !== undefined) updateData.barcode = req.body.barcode;
       if (req.body.unit !== undefined) updateData.unit = req.body.unit;
       if (req.body.internalNotes !== undefined) updateData.internalNotes = req.body.internalNotes;
@@ -198,6 +198,46 @@ export class ProductController {
       );
 
       res.json({ status: 'success', updated: updates.length });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Bulk-set fields (marca, alícuota, rubro/subrubro, estado) on many products at once. */
+  async bulkUpdate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const productRepository = container.resolve<IProductRepository>('ProductRepository');
+      const ids: string[] = req.body.ids;
+      const data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; isActive?: boolean } = req.body.data ?? {};
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ status: 'error', message: 'No hay productos seleccionados' });
+        return;
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (data.brandId  !== undefined) patch.brandId  = data.brandId || null;
+      if (data.rubroId  !== undefined) patch.rubroId  = data.rubroId || null;
+      if (data.taxRate  !== undefined) patch.taxRate  = new Decimal(data.taxRate);
+      if (data.isActive !== undefined) patch.isActive = data.isActive;
+
+      if (Object.keys(patch).length === 0) {
+        res.status(400).json({ status: 'error', message: 'No hay campos para actualizar' });
+        return;
+      }
+
+      await Promise.all(ids.map((id) => productRepository.update(id, patch as any)));
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Product',
+        entityId: ids[0],
+        description: `Actualización masiva de ${ids.length} producto(s): ${Object.keys(patch).join(', ')}`,
+      }).catch(() => { /* log no crítico */ });
+
+      res.json({ status: 'success', updated: ids.length });
     } catch (error) {
       next(error);
     }

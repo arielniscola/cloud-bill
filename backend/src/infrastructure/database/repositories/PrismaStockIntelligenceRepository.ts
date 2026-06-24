@@ -21,7 +21,7 @@ interface StockWithIncludes {
     name:         string;
     cost:         { toString(): string };
     leadTimeDays: number | null;
-    category:     { name: string } | null;
+    rubro:     { name: string } | null;
   };
   warehouse: {
     id:   string;
@@ -59,7 +59,7 @@ export class PrismaStockIntelligenceRepository implements IStockIntelligenceRepo
             name:         true,
             cost:         true,
             leadTimeDays: true,
-            category:     { select: { name: true } },
+            rubro:     { select: { name: true } },
           },
         },
         warehouse: { select: { id: true, name: true } },
@@ -168,7 +168,7 @@ export class PrismaStockIntelligenceRepository implements IStockIntelligenceRepo
         sku:               stock.product.sku,
         warehouseId:       stock.warehouseId,
         warehouseName:     stock.warehouse.name,
-        categoryName:      stock.product.category?.name ?? null,
+        rubroName:      stock.product.rubro?.name ?? null,
 
         quantity,
         reservedQuantity:  reservedQty,

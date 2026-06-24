@@ -14,7 +14,7 @@ export class PrismaProductRepository implements IProductRepository {
   }
 
   async findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id }, include: { category: true, brand: true, rubro: true } } as any);
+    return this.prisma.product.findUnique({ where: { id }, include: { rubro: true, brand: true, category: true } } as any);
   }
 
   async findBySku(sku: string, companyId: string): Promise<Product | null> {
@@ -38,13 +38,13 @@ export class PrismaProductRepository implements IProductRepository {
       ];
     }
 
-    if (filters.categoryId) {
-      const children = await this.prisma.category.findMany({
-        where: { parentId: filters.categoryId },
+    if (filters.rubroId) {
+      const children = await this.prisma.rubro.findMany({
+        where: { parentId: filters.rubroId },
         select: { id: true },
       });
-      const categoryIds = [filters.categoryId, ...children.map((c) => c.id)];
-      (where as any).categoryId = { in: categoryIds };
+      const rubroIds = [filters.rubroId, ...children.map((c) => c.id)];
+      (where as any).rubroId = { in: rubroIds };
     }
 
     if (filters.brandId) {
@@ -75,7 +75,7 @@ export class PrismaProductRepository implements IProductRepository {
         skip,
         take: limit,
         orderBy: { name: 'asc' },
-        include: { category: true, brand: true, rubro: true } as any,
+        include: { rubro: true, brand: true, category: true } as any,
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -96,7 +96,7 @@ export class PrismaProductRepository implements IProductRepository {
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",
         cost, price, "salePriceUSD", "taxRate", "isActive",
-        "priceUpdatedAt", "categoryId", "brandId", "rubroId", "companyId",
+        "priceUpdatedAt", "rubroId", "brandId", "categoryId", "companyId",
         "createdAt", "updatedAt"
       ) VALUES (
         gen_random_uuid(),
@@ -104,7 +104,7 @@ export class PrismaProductRepository implements IProductRepository {
         ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
         ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
         ${d.isActive ?? true}, NOW(),
-        ${d.categoryId ?? null}, ${d.brandId ?? null}, ${d.rubroId ?? null}, ${companyId},
+        ${d.rubroId ?? null}, ${d.brandId ?? null}, ${d.categoryId ?? null}, ${companyId},
         NOW(), NOW()
       )
       RETURNING id
@@ -129,9 +129,9 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.taxRate       !== undefined) setClauses.push(Prisma.sql`"taxRate" = ${d.taxRate}`);
     if (d.isActive      !== undefined) setClauses.push(Prisma.sql`"isActive" = ${d.isActive}`);
     if (d.leadTimeDays  !== undefined) setClauses.push(Prisma.sql`"leadTimeDays" = ${d.leadTimeDays}`);
-    if (d.categoryId    !== undefined) setClauses.push(Prisma.sql`"categoryId" = ${d.categoryId}`);
+    if (d.rubroId    !== undefined) setClauses.push(Prisma.sql`"rubroId" = ${d.rubroId}`);
     if (d.brandId       !== undefined) setClauses.push(Prisma.sql`"brandId" = ${d.brandId}`);
-    if (d.rubroId       !== undefined) setClauses.push(Prisma.sql`"rubroId" = ${d.rubroId}`);
+    if (d.categoryId       !== undefined) setClauses.push(Prisma.sql`"categoryId" = ${d.categoryId}`);
     if (priceChanged)                  setClauses.push(Prisma.sql`"priceUpdatedAt" = NOW()`);
 
     setClauses.push(Prisma.sql`"updatedAt" = NOW()`);

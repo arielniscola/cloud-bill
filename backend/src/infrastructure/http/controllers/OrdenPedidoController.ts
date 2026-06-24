@@ -10,6 +10,7 @@ import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepositor
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
+import { effectiveSaleCondition } from '../../../shared/utils/paymentTerms';
 import { sendOrdenPedidoEmail } from '../../services/EmailService';
 import {
   createOrdenPedidoSchema,
@@ -92,7 +93,7 @@ export class OrdenPedidoController {
         exchangeRate: data.exchangeRate,
         notes: data.notes ?? null,
         paymentTerms: data.paymentTerms ?? null,
-        saleCondition: data.saleCondition ?? 'CONTADO',
+        saleCondition: effectiveSaleCondition(data.saleCondition, data.paymentTerms),
         stockBehavior: data.stockBehavior ?? 'DISCOUNT',
         cashRegisterId: data.cashRegisterId ?? null,
         invoiceCashRegisterId: data.invoiceCashRegisterId ?? null,
@@ -145,8 +146,8 @@ export class OrdenPedidoController {
         }
       }
 
-      // Create DEBIT account movement if cuenta corriente
-      if (data.saleCondition === 'CUENTA_CORRIENTE' && op.customerId) {
+      // Create DEBIT account movement if cuenta corriente (incl. pago a X días)
+      if (effectiveSaleCondition(data.saleCondition, data.paymentTerms) === 'CUENTA_CORRIENTE' && op.customerId) {
         const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
         let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
         if (!currentAccount) {
@@ -306,7 +307,7 @@ export class OrdenPedidoController {
         }
 
         // Si había débito en cuenta corriente al crear la OP, lo revertimos con un CRÉDITO.
-        if ((op as any).saleCondition === 'CUENTA_CORRIENTE' && op.customerId) {
+        if (effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE' && op.customerId) {
           const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
           const ca = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
           if (ca) {
@@ -531,7 +532,7 @@ export class OrdenPedidoController {
 
       const exchangeRate = paymentData.exchangeRate ?? 1;
       const arsAmount = Number(paymentData.amount) * exchangeRate;
-      const isCC = (op as any).saleCondition === 'CUENTA_CORRIENTE';
+      const isCC = effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE';
 
       if (isCC) {
         let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);

@@ -1,8 +1,9 @@
-import { injectable } from 'tsyringe';
+import { injectable, container } from 'tsyringe';
 import { Prisma } from '@prisma/client';
 import { IOrdenPagoRepository, OrdenPagoFilters } from '../../../domain/repositories/IOrdenPagoRepository';
-import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput } from '../../../domain/entities/OrdenPago';
-import { SupplierAccountMovement, CreateSupplierMovementInput } from '../../../domain/entities/SupplierAccountMovement';
+import { IChequeRepository } from '../../../domain/repositories/IChequeRepository';
+import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput, OrdenPagoCheque, OrdenPagoAjuste } from '../../../domain/entities/OrdenPago';
+import { SupplierAccountMovement, CreateSupplierMovementInput, SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 
@@ -19,7 +20,7 @@ type RawOrdenPago = {
 };
 
 type RawItem = {
-  id: string; ordenPagoId: string; purchaseId: string; purchaseInvoiceId: string | null; amount: any;
+  id: string; ordenPagoId: string; purchaseId: string | null; purchaseInvoiceId: string | null; amount: any;
   purchaseNumber?: string; purchaseTotal?: any; purchasePaidAmount?: any; purchaseDate?: Date;
   invoiceNumber?: string; invoiceType?: string; invoiceAmount?: any; invoiceStatus?: string;
 };
@@ -65,7 +66,7 @@ function mapOrdenPago(row: RawOrdenPago, items: RawItem[]): OrdenPagoWithRelatio
       purchaseInvoiceId: i.purchaseInvoiceId ?? null,
       amount: i.amount,
       purchase: i.purchaseNumber
-        ? { id: i.purchaseId, number: i.purchaseNumber, total: i.purchaseTotal, paidAmount: i.purchasePaidAmount, date: i.purchaseDate! }
+        ? { id: i.purchaseId!, number: i.purchaseNumber, total: i.purchaseTotal, paidAmount: i.purchasePaidAmount, date: i.purchaseDate! }
         : undefined,
       invoice: i.invoiceNumber
         ? { id: i.purchaseInvoiceId!, number: i.invoiceNumber, type: i.invoiceType!, amount: i.invoiceAmount, status: i.invoiceStatus! }
@@ -116,7 +117,34 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       ${ITEMS_SELECT}
       WHERE opi."ordenPagoId" = ${id}
     `;
-    return mapOrdenPago(rows[0], items);
+
+    const chequeRows = await prisma.$queryRaw<{
+      id: string; number: string; type: string; checkNumber: string | null;
+      bank: string | null; amount: any; dueDate: Date | null; status: string;
+    }[]>`
+      SELECT id, number, type, "checkNumber", bank, amount, "dueDate", status
+      FROM "cheques" WHERE "ordenPagoId" = ${id}
+      ORDER BY "createdAt" ASC
+    `;
+    const cheques: OrdenPagoCheque[] = chequeRows.map((c) => ({
+      id: c.id, number: c.number, type: c.type, checkNumber: c.checkNumber,
+      bank: c.bank, amount: c.amount, dueDate: c.dueDate, status: c.status,
+    }));
+
+    const ajusteRows = await prisma.$queryRaw<{
+      id: string; ordenPagoId: string; accountId: string | null; accountCode: string | null;
+      description: string; type: string; amount: any;
+    }[]>`
+      SELECT id, "ordenPagoId", "accountId", "accountCode", description, type, amount
+      FROM "orden_pago_ajustes" WHERE "ordenPagoId" = ${id}
+      ORDER BY "createdAt" ASC
+    `;
+    const ajustes: OrdenPagoAjuste[] = ajusteRows.map((a) => ({
+      id: a.id, ordenPagoId: a.ordenPagoId, accountId: a.accountId, accountCode: a.accountCode,
+      description: a.description, type: a.type as any, amount: a.amount,
+    }));
+
+    return { ...mapOrdenPago(rows[0], items), cheques, ajustes };
   }
 
   async findAll(
@@ -186,6 +214,17 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const effectiveCashRegisterId = data.paymentMethod === 'CHECK' ? null : (data.cashRegisterId ?? null);
 
     const fiscalMode = (data as any).fiscalMode ?? 'FORMAL';
+    // Monto base: suma de facturas seleccionadas o, si es pago a cuenta, el importe explícito.
+    const baseAmount = data.items.length > 0
+      ? data.items.reduce((s, i) => s + i.amount, 0)
+      : Number(data.amount ?? 0);
+    // Ajustes: descuentos (RESTA) e intereses (SUMA) modifican el total a pagar.
+    const ajustes = data.ajustes ?? [];
+    const ajustesNet = ajustes.reduce((s, a) => s + (a.type === 'SUMA' ? a.amount : -a.amount), 0);
+    const totalAmount = baseAmount + ajustesNet;
+    if (totalAmount <= 0) {
+      throw new Error('El total a pagar debe ser mayor a 0 luego de aplicar los ajustes');
+    }
     await prisma.$executeRaw`
       INSERT INTO "orden_pagos" (
         "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
@@ -194,7 +233,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       ) VALUES (
         ${opId}, ${number}, ${data.supplierId}, ${data.userId},
         ${effectiveCashRegisterId}, ${companyId}, ${date},
-        ${data.items.reduce((s, i) => s + i.amount, 0)},
+        ${totalAmount},
         ${currency}, ${exchangeRate}, ${data.paymentMethod},
         ${data.reference ?? null}, ${data.bank ?? null},
         ${data.checkDueDate ?? null}, ${data.notes ?? null},
@@ -217,7 +256,83 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       `;
     }
 
+    // Ajustes (descuentos / intereses)
+    for (const aj of ajustes) {
+      const ajId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
+      await prisma.$executeRaw`
+        INSERT INTO "orden_pago_ajustes" ("id", "ordenPagoId", "accountId", "accountCode", "description", "type", "amount")
+        VALUES (${ajId[0].id}, ${opId}, ${aj.accountId ?? null}, ${aj.accountCode ?? null}, ${aj.description}, ${aj.type}, ${aj.amount})
+      `;
+    }
+
+    // Pago con cheques — solo cuando el método es CHECK
+    if (data.paymentMethod === 'CHECK') {
+      await this._attachCheques(opId, companyId, fiscalMode, data, currency);
+    }
+
     return this.findById(opId) as Promise<OrdenPagoWithRelations>;
+  }
+
+  /**
+   * Vincula cheques a la Orden de Pago:
+   *  - chequesEnCartera: cheques de tercero (INGRESO) que se endosan al proveedor →
+   *    quedan ENDOSADO, ligados a la OP y reasignados al proveedor.
+   *  - chequesPropios: cheques propios (EGRESO) que se emiten, tomando la numeración
+   *    de la chequera indicada (vía PrismaChequeRepository → consumeNextNumber).
+   */
+  private async _attachCheques(
+    opId: string,
+    companyId: string,
+    fiscalMode: string,
+    data: CreateOrdenPagoInput,
+    currency: string
+  ): Promise<void> {
+    // 1. Endosar cheques de tercero en cartera
+    for (const chequeId of data.chequesEnCartera ?? []) {
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "cheques"
+        WHERE id = ${chequeId} AND "companyId" = ${companyId}
+          AND "type" = 'INGRESO' AND "status" = 'PENDING' AND "ordenPagoId" IS NULL
+      `;
+      if (!rows[0]) {
+        throw new Error(`El cheque seleccionado no está disponible en cartera para endosar`);
+      }
+      await prisma.$executeRaw`
+        UPDATE "cheques"
+        SET "status" = 'ENDOSADO',
+            "ordenPagoId" = ${opId},
+            "supplierId" = ${data.supplierId},
+            "updatedAt" = NOW()
+        WHERE id = ${chequeId} AND "companyId" = ${companyId}
+      `;
+    }
+
+    // 2. Emitir cheques propios desde la chequera (numeración automática)
+    const propios = data.chequesPropios ?? [];
+    if (propios.length > 0) {
+      const supRows = await prisma.$queryRaw<{ name: string }[]>`
+        SELECT name FROM "suppliers" WHERE id = ${data.supplierId} LIMIT 1
+      `;
+      const supplierName = supRows[0]?.name;
+      const chequeRepo = container.resolve<IChequeRepository>('ChequeRepository');
+      for (const ch of propios) {
+        await chequeRepo.create({
+          type:        'EGRESO',
+          checkNumber: ch.checkNumber,
+          bank:        ch.bank,
+          amount:      ch.amount,
+          currency,
+          dueDate:     ch.dueDate,
+          beneficiary: supplierName,
+          supplierId:  data.supplierId,
+          chequeraId:  ch.chequeraId,
+          ordenPagoId: opId,
+          userId:      data.userId,
+          companyId,
+          fiscalMode,
+        });
+      }
+    }
   }
 
   async pay(id: string): Promise<OrdenPagoWithRelations> {
@@ -231,24 +346,16 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           UPDATE "purchase_invoices" SET status = 'PAID', "updatedAt" = NOW()
           WHERE id = ${item.purchaseInvoiceId} AND status != 'PAID'
         `;
-        await this._recalcPurchasePaymentStatus(item.purchaseId);
+        if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
       }
     }
 
-    // Only create supplier account movement if the underlying purchases are on cuenta corriente
-    const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId))];
-    let hasCuentaCorriente = false;
-    if (purchaseIds.length > 0) {
-      const ccRows = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "purchases"
-        WHERE id IN (${Prisma.join(purchaseIds)})
-          AND "saleCondition" = 'CUENTA_CORRIENTE'
-        LIMIT 1
-      `;
-      hasCuentaCorriente = ccRows.length > 0;
-    }
+    // Movimiento de cuenta corriente: si las facturas pagadas son de cuenta
+    // corriente, o si es un pago a cuenta (sin facturas) → genera CREDIT.
+    const isPagoACuenta = op.items.length === 0;
+    const hasCuentaCorriente = await this._opHasCuentaCorriente(op);
 
-    if (hasCuentaCorriente) {
+    if (isPagoACuenta || hasCuentaCorriente) {
       const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
         SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
       `;
@@ -260,7 +367,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           type: 'CREDIT',
           amount: totalAmount,
           currency: op.currency,
-          description: `Orden de Pago ${op.number}`,
+          description: isPagoACuenta ? `Pago a cuenta ${op.number}` : `Orden de Pago ${op.number}`,
           companyId: op.companyId,
           fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
         });
@@ -294,7 +401,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           UPDATE "purchase_invoices" SET status = 'PENDING', "updatedAt" = NOW()
           WHERE id = ${item.purchaseInvoiceId}
         `;
-        await this._recalcPurchasePaymentStatus(item.purchaseId);
+        if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
       } else {
         // Backward compat: items without purchaseInvoiceId use old paidAmount logic
         const amount = Number(item.amount);
@@ -312,18 +419,9 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       }
     }
 
-    // Only reverse supplier account movement if purchases were on cuenta corriente
-    const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId))];
-    if (purchaseIds.length > 0) {
-      const ccRows = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "purchases"
-        WHERE id IN (${Prisma.join(purchaseIds)})
-          AND "saleCondition" = 'CUENTA_CORRIENTE'
-        LIMIT 1
-      `;
-      if (ccRows.length > 0) {
-        await this.cancelSupplierMovement(id);
-      }
+    // Reverse supplier account movement for CC invoices or pago a cuenta (no invoices)
+    if (op.items.length === 0 || await this._opHasCuentaCorriente(op)) {
+      await this.cancelSupplierMovement(id);
     }
 
     await prisma.$executeRaw`
@@ -334,6 +432,31 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       SELECT * FROM "orden_pagos" WHERE id = ${id}
     `;
     return rows[0] as any as OrdenPago;
+  }
+
+  // True when any invoice (or, for legacy items, any purchase) paid by this OP is
+  // on cuenta corriente. The invoice is the source of truth for the debt now.
+  private async _opHasCuentaCorriente(op: OrdenPagoWithRelations): Promise<boolean> {
+    const invoiceIds = [...new Set(op.items.map((i) => i.purchaseInvoiceId).filter(Boolean) as string[])];
+    if (invoiceIds.length > 0) {
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "purchase_invoices"
+        WHERE id IN (${Prisma.join(invoiceIds)}) AND "saleCondition" = 'CUENTA_CORRIENTE'
+        LIMIT 1
+      `;
+      if (rows.length > 0) return true;
+    }
+    // Legacy fallback: items linked only to a purchase
+    const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId).filter(Boolean) as string[])];
+    if (purchaseIds.length > 0) {
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "purchases"
+        WHERE id IN (${Prisma.join(purchaseIds)}) AND "saleCondition" = 'CUENTA_CORRIENTE'
+        LIMIT 1
+      `;
+      if (rows.length > 0) return true;
+    }
+    return false;
   }
 
   private async _recalcPurchasePaymentStatus(purchaseId: string): Promise<void> {
@@ -372,23 +495,62 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   async getSupplierMovements(
     supplierId: string,
     pagination: PaginationParams,
-    companyId?: string
+    companyId?: string,
+    filters?: SupplierMovementFilters
   ): Promise<PaginatedResult<SupplierAccountMovement>> {
     const { page = 1, limit = 20 } = pagination;
     const offset = (page - 1) * limit;
 
-    const conditions: Prisma.Sql[] = [Prisma.sql`"supplierId" = ${supplierId}`];
-    if (companyId) conditions.push(Prisma.sql`"companyId" = ${companyId}`);
+    // Clasificación del origen (consistente entre WHERE y SELECT)
+    const kindExpr = Prisma.sql`
+      CASE
+        WHEN sam."internalNoteId" IS NOT NULL          THEN 'NOTE'
+        WHEN sam.description ILIKE 'Retenciones%'       THEN 'RETENTION'
+        WHEN pi.type LIKE 'NOTA_CREDITO%'               THEN 'NC'
+        WHEN pi.type LIKE 'NOTA_DEBITO%'                THEN 'ND'
+        WHEN pi.id IS NOT NULL                          THEN 'FC'
+        WHEN sam."ordenPagoId" IS NOT NULL              THEN 'OP'
+        WHEN sam."purchaseId" IS NOT NULL               THEN 'PURCHASE'
+        ELSE 'OTHER'
+      END`;
+
+    const conditions: Prisma.Sql[] = [Prisma.sql`sam."supplierId" = ${supplierId}`];
+    if (companyId) conditions.push(Prisma.sql`sam."companyId" = ${companyId}`);
+    if (filters?.type) conditions.push(Prisma.sql`sam.type = ${filters.type}`);
+    if (filters?.dateFrom) conditions.push(Prisma.sql`sam."createdAt" >= ${new Date(filters.dateFrom)}`);
+    if (filters?.dateTo) {
+      const to = new Date(filters.dateTo);
+      to.setHours(23, 59, 59, 999);
+      conditions.push(Prisma.sql`sam."createdAt" <= ${to}`);
+    }
+    if (filters?.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(Prisma.sql`(
+        sam.description ILIKE ${term} OR op.number ILIKE ${term}
+        OR pi.number ILIKE ${term} OR pu.number ILIKE ${term} OR inn.number ILIKE ${term}
+      )`);
+    }
+    if (filters?.kinds && filters.kinds.length > 0) {
+      conditions.push(Prisma.sql`(${kindExpr}) IN (${Prisma.join(filters.kinds)})`);
+    }
     const where = Prisma.join(conditions, ' AND ');
 
+    const joins = Prisma.sql`
+      FROM "supplier_account_movements" sam
+      LEFT JOIN "orden_pagos"        op  ON op.id  = sam."ordenPagoId"
+      LEFT JOIN "purchase_invoices"  pi  ON pi.id  = sam."purchaseInvoiceId"
+      LEFT JOIN "purchases"          pu  ON pu.id  = sam."purchaseId"
+      LEFT JOIN "internal_notes"     inn ON inn.id = sam."internalNoteId"
+      WHERE ${where}`;
+
     const [countRows, rows] = await Promise.all([
-      prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) AS count FROM "supplier_account_movements" WHERE ${where}
-      `,
-      prisma.$queryRaw<RawMovement[]>`
-        SELECT * FROM "supplier_account_movements"
-        WHERE ${where}
-        ORDER BY "createdAt" DESC
+      prisma.$queryRaw<{ count: bigint }[]>`SELECT COUNT(*) AS count ${joins}`,
+      prisma.$queryRaw<(RawMovement & { kind: string; purchaseInvoiceId: string | null; docNumber: string | null })[]>`
+        SELECT sam.*,
+               (${kindExpr}) AS kind,
+               COALESCE(op.number, pi.number, pu.number, inn.number) AS "docNumber"
+        ${joins}
+        ORDER BY sam."createdAt" DESC
         LIMIT ${limit} OFFSET ${offset}
       `,
     ]);
@@ -415,11 +577,11 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
     await prisma.$executeRaw`
       INSERT INTO "supplier_account_movements" (
-        "id", "supplierId", "ordenPagoId", "purchaseId",
+        "id", "supplierId", "ordenPagoId", "purchaseId", "purchaseInvoiceId",
         "type", "amount", "currency", "balance", "description", "companyId", "fiscalMode"
       ) VALUES (
         ${movId[0].id}, ${data.supplierId},
-        ${data.ordenPagoId ?? null}, ${data.purchaseId ?? null},
+        ${data.ordenPagoId ?? null}, ${data.purchaseId ?? null}, ${data.purchaseInvoiceId ?? null},
         ${data.type}, ${data.amount}, ${currency},
         ${newBalance}, ${data.description ?? null}, ${companyId}, ${fiscalMode}
       )
@@ -451,5 +613,105 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     await prisma.$executeRaw`
       DELETE FROM "supplier_account_movements" WHERE "ordenPagoId" = ${ordenPagoId}
     `;
+  }
+
+  // Reverses the supplier account movement(s) generated by a purchase / NC / ND
+  // when that purchase is cancelled. Adds an opposite-sign movement preserving
+  // history (does not delete the original).
+  async reverseSupplierMovementByPurchase(purchaseId: string): Promise<void> {
+    const rows = await prisma.$queryRaw<RawMovement[]>`
+      SELECT * FROM "supplier_account_movements"
+      WHERE "purchaseId" = ${purchaseId} AND "description" NOT LIKE 'Reversión:%'
+    `;
+    for (const original of rows) {
+      await this.createSupplierMovement({
+        supplierId: original.supplierId,
+        purchaseId,
+        type: original.type === 'CREDIT' ? 'DEBIT' : 'CREDIT',
+        amount: Number(original.amount),
+        currency: original.currency,
+        description: `Reversión: ${original.description ?? ''}`.trim(),
+        companyId: original.companyId,
+        fiscalMode: (original.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
+      });
+    }
+  }
+
+  // Re-syncs the supplier current-account movements derived from a purchase invoice.
+  // The invoice is now the document that drives the debt:
+  //   * Main movement: Factura/Nota de Débito → DEBIT (we owe more);
+  //     Nota de Crédito → CREDIT (we owe less). `amount` already includes
+  //     percepciones / otros tributos (folded in by the form), so no separate
+  //     tributos movement is needed.
+  //   * Retenciones → opposite sign of the main movement (reduce what we pay the
+  //     supplier, since they are withheld and paid to AFIP on their behalf).
+  // Idempotent: deletes existing movements for this invoice first. Only applies
+  // when the invoice's saleCondition is CUENTA_CORRIENTE.
+  async syncPurchaseInvoiceMovements(purchaseInvoiceId: string): Promise<void> {
+    // Always clear previous movements for this invoice (balance is recomputed on read)
+    await prisma.$executeRaw`
+      DELETE FROM "supplier_account_movements" WHERE "purchaseInvoiceId" = ${purchaseInvoiceId}
+    `;
+
+    // Read the invoice's own fields; fall back to the (legacy) linked purchase
+    // for supplier/currency/saleCondition when the invoice predates standalone mode.
+    const rows = await prisma.$queryRaw<{
+      number: string; purchaseId: string | null; companyId: string; fiscalMode: string | null;
+      type: string; amount: any; supplierId: string | null; saleCondition: string | null; currency: string | null;
+    }[]>`
+      SELECT pi.number, pi."purchaseId", pi."companyId", pi."fiscalMode", pi.type, pi.amount,
+             COALESCE(pi."supplierId", p."supplierId")          AS "supplierId",
+             COALESCE(pi."saleCondition", p."saleCondition")    AS "saleCondition",
+             COALESCE(pi.currency, p.currency::text, 'ARS')     AS currency
+      FROM "purchase_invoices" pi
+      LEFT JOIN "purchases" p ON p.id = pi."purchaseId"
+      WHERE pi.id = ${purchaseInvoiceId}
+    `;
+    const inv = rows[0];
+    if (!inv || !inv.supplierId || inv.saleCondition !== 'CUENTA_CORRIENTE') return;
+
+    const isNC = String(inv.type).startsWith('NOTA_CREDITO');
+    const isND = String(inv.type).startsWith('NOTA_DEBITO');
+    const mainType: 'DEBIT' | 'CREDIT' = isNC ? 'CREDIT' : 'DEBIT';
+    const oppType:  'DEBIT' | 'CREDIT' = isNC ? 'DEBIT'  : 'CREDIT';
+    const docLabel = isNC ? 'Nota de Crédito' : isND ? 'Nota de Débito' : 'Factura';
+
+    const fiscalMode = (inv.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
+    const currency = inv.currency ?? 'ARS';
+
+    // Main movement: full invoice amount (incl. percepciones / otros tributos)
+    const amount = Number(inv.amount);
+    if (amount > 0) {
+      await this.createSupplierMovement({
+        supplierId: inv.supplierId,
+        purchaseId: inv.purchaseId ?? undefined,
+        purchaseInvoiceId,
+        type: mainType,
+        amount,
+        currency,
+        description: `${docLabel} en CC: ${inv.number}`,
+        companyId: inv.companyId,
+        fiscalMode,
+      });
+    }
+
+    // Retenciones → opposite sign (reduce what we pay the supplier)
+    const [retRow] = await prisma.$queryRaw<{ total: any }[]>`
+      SELECT COALESCE(SUM(amount), 0) AS total FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = ${purchaseInvoiceId}
+    `;
+    const totalRet = Number(retRow?.total ?? 0);
+    if (totalRet > 0) {
+      await this.createSupplierMovement({
+        supplierId: inv.supplierId,
+        purchaseId: inv.purchaseId ?? undefined,
+        purchaseInvoiceId,
+        type: oppType,
+        amount: totalRet,
+        currency,
+        description: `Retenciones ${inv.number}`,
+        companyId: inv.companyId,
+        fiscalMode,
+      });
+    }
   }
 }

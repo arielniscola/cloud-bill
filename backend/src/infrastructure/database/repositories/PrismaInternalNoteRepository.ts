@@ -78,6 +78,8 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
     if (filters.companyId)  conditions.push(Prisma.sql`n."companyId" = ${filters.companyId}`);
     if (filters.customerId) conditions.push(Prisma.sql`n."customerId" = ${filters.customerId}`);
     if (filters.supplierId) conditions.push(Prisma.sql`n."supplierId" = ${filters.supplierId}`);
+    if (filters.entity === 'CUSTOMER') conditions.push(Prisma.sql`n."customerId" IS NOT NULL`);
+    if (filters.entity === 'SUPPLIER') conditions.push(Prisma.sql`n."supplierId" IS NOT NULL`);
     if (filters.type)       conditions.push(Prisma.sql`n.type = ${filters.type}`);
     if (filters.status)     conditions.push(Prisma.sql`n.status = ${filters.status}`);
     if (filters.currency)   conditions.push(Prisma.sql`n.currency = ${filters.currency}`);

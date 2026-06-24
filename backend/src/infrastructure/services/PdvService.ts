@@ -55,14 +55,23 @@ export class PdvService {
   /**
    * Gets the next sequential number for a PdV + invoice type.
    *
-   * Strategy:
-   *  1. If counter doesn't exist or hasn't been synced with AFIP → fetch last number
-   *     from AFIP's FECompUltimoAutorizado (outside transaction — avoids holding DB lock during IO)
-   *  2. Atomically increment the counter using SELECT FOR UPDATE (prevents race conditions
-   *     between concurrent terminals on the same PdV)
+   * ARCA es la ÚNICA fuente de verdad sobre qué número fue autorizado. Siempre
+   * consultamos FECompUltimoAutorizado y devolvemos `afipLast + 1`. NO usamos el
+   * contador local para numerar.
    *
-   * The number is committed BEFORE calling AFIP for the CAE. If AFIP fails,
-   * the invoice stays DRAFT with the assigned number — retrying uses the same number.
+   * Por qué NO el contador local: si una emisión previa falló por un motivo que
+   * NO es de numeración (validación, timeout luego de incrementar, etc.), el
+   * contador local quedaría adelantado respecto a ARCA. Un `GREATEST(local, afip)+1`
+   * mandaría afipLast+2 → ARCA lo rechaza con [10016] "el numero no se corresponde
+   * con el proximo a autorizar". Numerando directo desde ARCA, un reintento tras
+   * un fallo vuelve a calcular el mismo afipLast+1 correcto.
+   *
+   * Concurrencia: este método se invoca SIEMPRE dentro de `runWithPdvLock`, que
+   * mantiene un advisory lock de Postgres por (pdv, tipo) durante sync+numeración
+   * +emisión. Eso serializa terminales concurrentes del mismo PdV, así que no hace
+   * falta un contador transaccional acá — cada emisión lee un afipLast fresco.
+   *
+   * El contador local se persiste sólo para trazabilidad/diagnóstico; no numera.
    */
   async getNextNumber(
     pdvId: string,
@@ -71,44 +80,20 @@ export class PdvService {
     config: AfipConfig,
     ta: { token: string; sign: string }
   ): Promise<number> {
-    // ── Step 1: Always sync with AFIP before assigning a number ───────────────
-    // ARCA error 10016 (numero no se corresponde con el proximo) ocurre si nuestro
-    // contador local quedó desfasado (otra app emitió, retry tras CAE perdido, etc).
-    // Llamamos FECompUltimoAutorizado y usamos GREATEST(local, afip).
     const afipLast = await this._fetchAfipLastNumber(pdvNumber, invoiceType, config, ta);
+    const nextNumber = afipLast + 1;
 
+    // Persistimos para trazabilidad — NO se usa para numerar (ARCA manda).
     await prisma.$executeRaw`
       INSERT INTO "pdv_counters" ("id","pdvId","invoiceType","lastNumber","syncedFromAfip","updatedAt")
-      VALUES (${randomUUID()}, ${pdvId}, ${invoiceType}, ${afipLast}, true, NOW())
+      VALUES (${randomUUID()}, ${pdvId}, ${invoiceType}, ${nextNumber}, true, NOW())
       ON CONFLICT ("pdvId","invoiceType") DO UPDATE
-        SET "lastNumber"     = GREATEST("pdv_counters"."lastNumber", EXCLUDED."lastNumber"),
+        SET "lastNumber"     = ${nextNumber},
             "syncedFromAfip" = true,
             "updatedAt"      = NOW()
     `;
 
-    // ── Step 2: Atomic increment inside a serializable transaction ───────────
-    const result = await prisma.$transaction(async (tx) => {
-      // FOR UPDATE locks this specific row — concurrent terminals on same PdV
-      // will block here and get the next number in sequence
-      const rows = await tx.$queryRaw<{ lastNumber: number }[]>`
-        SELECT "lastNumber" FROM "pdv_counters"
-        WHERE "pdvId" = ${pdvId} AND "invoiceType" = ${invoiceType}
-        FOR UPDATE
-      `;
-
-      const lastNumber = Number(rows[0]?.lastNumber ?? 0);
-      const nextNumber = lastNumber + 1;
-
-      await tx.$executeRaw`
-        UPDATE "pdv_counters"
-        SET "lastNumber" = ${nextNumber}, "updatedAt" = NOW()
-        WHERE "pdvId" = ${pdvId} AND "invoiceType" = ${invoiceType}
-      `;
-
-      return nextNumber;
-    });
-
-    return result;
+    return nextNumber;
   }
 
   /**

@@ -53,11 +53,30 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
       prisma.purchase.count({ where }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return { data: data as unknown as Purchase[], total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findById(id: string): Promise<PurchaseWithItems | null> {
-    return prisma.purchase.findUnique({ where: { id }, include: includeRelations }) as Promise<PurchaseWithItems | null>;
+    const purchase = await prisma.purchase.findUnique({ where: { id }, include: includeRelations }) as unknown as PurchaseWithItems | null;
+    if (!purchase) return null;
+
+    // originPurchaseId + origin reference + exchangeRate via raw SQL (stale Prisma client workaround)
+    const rows = await prisma.$queryRaw<{ originPurchaseId: string | null; originNumber: string | null; originType: string | null; exchangeRate: any }[]>`
+      SELECT p."originPurchaseId", p."exchangeRate",
+             o.number AS "originNumber",
+             o.type::text AS "originType"
+      FROM "purchases" p
+      LEFT JOIN "purchases" o ON o.id = p."originPurchaseId"
+      WHERE p.id = ${id}
+    `;
+    const row = rows[0];
+    purchase.originPurchaseId = row?.originPurchaseId ?? null;
+    (purchase as any).exchangeRate = row?.exchangeRate ?? 1;
+    purchase.originPurchase = row?.originPurchaseId
+      ? { id: row.originPurchaseId, number: row.originNumber ?? '', type: (row.originType as any) ?? 'FACTURA_A' }
+      : null;
+
+    return purchase;
   }
 
   async findAllByPeriod(year: number, month: number, companyId?: string, fiscalMode?: string): Promise<PurchaseWithItems[]> {
@@ -73,7 +92,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
       },
       include: includeRelations,
       orderBy: { date: 'asc' },
-    }) as Promise<PurchaseWithItems[]>;
+    }) as unknown as Promise<PurchaseWithItems[]>;
   }
 
   async create(data: CreatePurchaseInput): Promise<PurchaseWithItems> {
@@ -117,7 +136,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
         items: { create: itemsForPrisma },
       },
       include: includeRelations,
-    }) as PurchaseWithItems;
+    }) as unknown as PurchaseWithItems;
 
     // Backfill variantId via raw SQL.
     // Items in `created.items` come back in insertion order; they're 1-to-1 with input.
@@ -137,7 +156,7 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
   }
 
   async update(id: string, data: UpdatePurchaseInput): Promise<Purchase> {
-    return prisma.purchase.update({ where: { id }, data });
+    return prisma.purchase.update({ where: { id }, data }) as unknown as Purchase;
   }
 
   async delete(id: string): Promise<void> {

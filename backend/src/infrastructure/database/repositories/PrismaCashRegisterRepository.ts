@@ -128,9 +128,15 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       }));
     }
 
+    // Recibos contado en caja física (cobros = ingreso, devoluciones NC = egreso)
+    const reciboMovements = await this._getReciboCashMovements(cashRegisterId, filters);
+
     // Merge and sort by createdAt desc, then paginate
-    const all = [...(accountMovements as unknown as CashRegisterMovement[]), ...opMovements]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const all = [
+      ...(accountMovements as unknown as CashRegisterMovement[]),
+      ...opMovements,
+      ...reciboMovements,
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const total = all.length;
     const data = all.slice(skip, skip + limit);
@@ -158,6 +164,87 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     return { total: Number(rows[0]?.total ?? 0), count: Number(rows[0]?.count ?? 0) };
   }
 
+  /**
+   * Recibos que impactan la caja física (efectivo / tarjeta) y que NO están ya
+   * representados por un AccountMovement (los de cuenta corriente se cuentan vía
+   * account_movements). Cobros = INGRESO; devoluciones de NC = EGRESO.
+   */
+  private _reciboCashWhere(
+    cashRegisterId: string,
+    opts: { fiscalMode?: string; startDate?: string; endDate?: string; fromDate?: Date | null }
+  ): Prisma.ReciboWhereInput {
+    const where: Prisma.ReciboWhereInput = {
+      cashRegisterId,
+      status: 'EMITTED',
+      paymentMethod: { notIn: ['CHECK', 'BANK_TRANSFER', 'MERCADO_PAGO'] },
+      accountMovement: { is: null },
+    };
+    if (opts.fiscalMode) (where as any).fiscalMode = opts.fiscalMode;
+    if (opts.startDate || opts.endDate || opts.fromDate) {
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (opts.fromDate) createdAt.gt = opts.fromDate;
+      if (opts.startDate) createdAt.gte = new Date(opts.startDate);
+      if (opts.endDate) {
+        const end = new Date(opts.endDate);
+        end.setHours(23, 59, 59, 999);
+        createdAt.lte = end;
+      }
+      where.createdAt = createdAt;
+    }
+    return where;
+  }
+
+  private async _getReciboCashMovements(
+    cashRegisterId: string,
+    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string }
+  ): Promise<CashRegisterMovement[]> {
+    const where = this._reciboCashWhere(cashRegisterId, filters);
+    const recibos = await this.prisma.recibo.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { invoice: { select: { id: true, type: true, number: true } } },
+    });
+    const mapped: CashRegisterMovement[] = recibos.map((r) => {
+      const isNC = (r.invoice?.type ?? '').startsWith('NOTA_CREDITO');
+      return {
+        id: r.id,
+        currentAccountId: null,
+        type: (isNC ? 'DEBIT' : 'CREDIT') as 'DEBIT' | 'CREDIT',
+        amount: r.amount,
+        balance: new Decimal(0),
+        description: `${isNC ? 'Devolución' : 'Cobro'} ${r.number}${r.invoice ? ` (${r.invoice.number})` : ''}`,
+        invoiceId: r.invoiceId ?? null,
+        cashRegisterId: r.cashRegisterId ?? null,
+        createdAt: r.createdAt,
+        currentAccount: undefined,
+        invoice: r.invoice ?? undefined,
+      };
+    });
+    if (filters.type === 'CREDIT') return mapped.filter((m) => m.type === 'CREDIT');
+    if (filters.type === 'DEBIT') return mapped.filter((m) => m.type === 'DEBIT');
+    return mapped;
+  }
+
+  private async _getReciboCashTotals(
+    cashRegisterId: string,
+    fromDate: Date | null,
+    fiscalMode?: string
+  ): Promise<{ totalIn: number; totalOut: number; count: number }> {
+    const where = this._reciboCashWhere(cashRegisterId, { fiscalMode, fromDate });
+    const recibos = await this.prisma.recibo.findMany({
+      where,
+      select: { amount: true, invoice: { select: { type: true } } },
+    });
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const r of recibos) {
+      const isNC = (r.invoice?.type ?? '').startsWith('NOTA_CREDITO');
+      if (isNC) totalOut += r.amount.toNumber();
+      else totalIn += r.amount.toNumber();
+    }
+    return { totalIn, totalOut, count: recibos.length };
+  }
+
   private async buildClosePeriodWhere(cashRegisterId: string, fiscalMode?: string): Promise<{
     where: Prisma.AccountMovementWhereInput;
     fromDate: Date | null;
@@ -180,22 +267,23 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
   async getClosePreview(cashRegisterId: string, fiscalMode?: string): Promise<CashRegisterClosePreview> {
     const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
-    const [movements, opOutflows] = await Promise.all([
+    const [movements, opOutflows, reciboTotals] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
       this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
+      this._getReciboCashTotals(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements
       .filter((m) => m.type === 'CREDIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0);
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn;
 
     const totalOut = movements
       .filter((m) => m.type === 'DEBIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut;
 
     return {
       fromDate,
-      movementsCount: movements.length + opOutflows.count,
+      movementsCount: movements.length + opOutflows.count + reciboTotals.count,
       totalIn,
       totalOut,
       netTotal: totalIn - totalOut,
@@ -209,18 +297,19 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
   ): Promise<CashRegisterClose> {
     const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
-    const [movements, opOutflows] = await Promise.all([
+    const [movements, opOutflows, reciboTotals] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
       this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
+      this._getReciboCashTotals(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements
       .filter((m) => m.type === 'CREDIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0);
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn;
 
     const totalOut = movements
       .filter((m) => m.type === 'DEBIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut;
 
     const result = await (this.prisma as any).cashRegisterClose.create({
       data: {
@@ -229,7 +318,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
         totalIn: new Decimal(totalIn),
         totalOut: new Decimal(totalOut),
         netTotal: new Decimal(totalIn - totalOut),
-        movementsCount: movements.length + opOutflows.count,
+        movementsCount: movements.length + opOutflows.count + reciboTotals.count,
         notes: data.notes,
         userId: data.userId,
       },

@@ -1,156 +1,87 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Edit, Trash2, Layers, Search, Power, Shirt } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, FolderTree, Search,
+  FolderOpen, Folder, Layers, ChevronRight,
+} from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { Button, Modal, Input } from '../../components/ui';
+import { Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
-import { rubrosService } from '../../services';
-import type { Rubro } from '../../types';
+import { categoriesService } from '../../services';
+import type { Category } from '../../types';
 
-const rubroSchema = z.object({
+const categorySchema = z.object({
   name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  description: z.string().optional().nullable(),
-  isActive: z.boolean(),
-  allowsVariants: z.boolean(),
+  parentId: z.string().optional().nullable(),
 });
-type RubroFormData = z.infer<typeof rubroSchema>;
 
-// ── Helpers ──────────────────────────────────────────────────────
-const AVATAR_COLORS = [
-  'bg-violet-100 text-violet-700 ring-violet-200',
-  'bg-blue-100 text-blue-700 ring-blue-200',
-  'bg-emerald-100 text-emerald-700 ring-emerald-200',
-  'bg-amber-100 text-amber-700 ring-amber-200',
-  'bg-rose-100 text-rose-700 ring-rose-200',
-  'bg-cyan-100 text-cyan-700 ring-cyan-200',
-  'bg-orange-100 text-orange-700 ring-orange-200',
-  'bg-pink-100 text-pink-700 ring-pink-200',
-  'bg-indigo-100 text-indigo-700 ring-indigo-200',
-  'bg-teal-100 text-teal-700 ring-teal-200',
-];
+type CategoryFormData = z.infer<typeof categorySchema>;
 
-function avatarColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
-// ── Rubro card ───────────────────────────────────────────────────
-function RubroCard({
-  rubro,
+// ── Subcategory card ─────────────────────────────────────────────
+function SubcategoryCard({
+  category,
   onEdit,
   onDelete,
 }: {
-  rubro: Rubro;
+  category: Category;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const color = avatarColor(rubro.name);
-
   return (
-    <div
-      onClick={onEdit}
-      className="group relative bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md rounded-xl p-4 cursor-pointer transition-all duration-150 select-none flex items-center gap-3"
-    >
-      <div
-        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base font-bold ring-1 transition-all duration-150 group-hover:ring-2 ${color}`}
-      >
-        {rubro.name.charAt(0).toUpperCase()}
+    <div className="group relative bg-gray-50 dark:bg-slate-700/50 hover:bg-indigo-50/70 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-slate-600 hover:border-indigo-200 dark:hover:border-indigo-500 rounded-xl p-4 transition-all duration-150 cursor-default select-none">
+      <div className="flex items-start gap-2.5 pr-5 min-w-0">
+        <FolderTree className="w-4 h-4 text-gray-400 dark:text-slate-500 group-hover:text-indigo-400 flex-shrink-0 mt-0.5 transition-colors duration-150" />
+        <span className="text-sm font-medium text-gray-800 dark:text-slate-200 group-hover:text-gray-900 dark:group-hover:text-white leading-snug break-words min-w-0">
+          {category.name}
+        </span>
       </div>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-700 dark:group-hover:text-indigo-400 truncate leading-tight transition-colors duration-150">
-          {rubro.name}
-        </p>
-        {rubro.description && (
-          <p className="text-xs text-gray-400 dark:text-slate-500 truncate mt-0.5">{rubro.description}</p>
-        )}
-        <p className={`text-[11px] mt-0.5 leading-none font-medium ${rubro.isActive ? 'text-emerald-600' : 'text-gray-400 dark:text-slate-500'}`}>
-          {rubro.isActive ? 'Activo' : 'Inactivo'}
-        </p>
-      </div>
-
-      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex-shrink-0">
+      {/* Actions — appear on hover */}
+      <div className="absolute top-2.5 right-2.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
         <button
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          onClick={onEdit}
           title="Editar"
-          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.92]"
+          className="p-1 rounded-md text-gray-400 dark:text-slate-500 hover:text-indigo-600 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.95]"
         >
-          <Edit className="w-3.5 h-3.5" />
+          <Edit className="w-3 h-3" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onClick={onDelete}
           title="Eliminar"
-          className="p-1.5 rounded-lg text-gray-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 active:scale-[0.92]"
+          className="p-1 rounded-md text-gray-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 active:scale-[0.95]"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="w-3 h-3" />
         </button>
       </div>
     </div>
   );
 }
 
-function SkeletonCard() {
+// ── Left panel skeleton ──────────────────────────────────────────
+function LeftSkeleton() {
   return (
-    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 flex items-center gap-3 animate-pulse">
-      <div className="w-10 h-10 bg-gray-100 dark:bg-slate-700 rounded-xl flex-shrink-0" />
-      <div className="flex-1">
-        <div className="h-3.5 w-28 bg-gray-100 dark:bg-slate-700 rounded mb-2" />
-        <div className="h-2.5 w-16 bg-gray-100 dark:bg-slate-700 rounded" />
-      </div>
+    <div className="p-2 space-y-1 animate-pulse">
+      {[80, 60, 90, 70, 50].map((w, i) => (
+        <div key={i} className="flex items-center gap-2.5 px-3 py-2.5">
+          <div className="w-4 h-4 bg-gray-100 dark:bg-slate-700 rounded flex-shrink-0" />
+          <div className={`h-3.5 bg-gray-100 dark:bg-slate-700 rounded flex-1`} style={{ maxWidth: `${w}%` }} />
+          <div className="w-5 h-3.5 bg-gray-100 dark:bg-slate-700 rounded-full flex-shrink-0" />
+        </div>
+      ))}
     </div>
   );
 }
 
-function ModalToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label
-      className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
-        checked
-          ? 'bg-emerald-50/70 border-emerald-200'
-          : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600'
-      }`}
-    >
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-        checked ? 'bg-emerald-100 text-emerald-600' : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
-      }`}>
-        <Power className="w-3.5 h-3.5" />
-      </div>
-      <div className="flex-1">
-        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600 dark:text-slate-300'}`}>
-          Rubro activo
-        </p>
-        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
-          Solo los rubros activos aparecen al cargar productos.
-        </p>
-      </div>
-      <div
-        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-slate-600'}`}
-        style={{ width: 36, height: 20 }}
-      >
-        <span
-          className={`absolute top-[3px] w-[14px] h-[14px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
-            checked ? 'translate-x-[17px]' : 'translate-x-[3px]'
-          }`}
-        />
-      </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
-    </label>
-  );
-}
-
-type FilterTab = 'all' | 'active' | 'inactive';
-
-export default function RubrosPage() {
-  const [rubros, setRubros] = useState<Rubro[]>([]);
+// ── Main component ───────────────────────────────────────────────
+export default function CategoriesPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [selectedRootId, setSelectedRootId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingRubro, setEditingRubro] = useState<Rubro | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -158,82 +89,116 @@ export default function RubrosPage() {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
+    watch,
     reset,
     formState: { errors },
-  } = useForm<RubroFormData>({
-    resolver: zodResolver(rubroSchema),
-    defaultValues: { isActive: true },
+  } = useForm<CategoryFormData>({
+    resolver: zodResolver(categorySchema),
   });
 
-  const isActiveVal = watch('isActive') ?? true;
-  const allowsVariantsVal = watch('allowsVariants') ?? false;
+  const parentIdValue = watch('parentId') || '';
 
-  const fetchRubros = useCallback(async () => {
+  // ── Data fetching ────────────────────────────────────────────
+  const fetchCategories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await rubrosService.getAll();
-      setRubros(data);
+      const data = await categoriesService.getAll();
+      setCategories(data);
     } catch {
-      toast.error('Error al cargar rubros');
+      toast.error('Error al cargar categorías');
     } finally {
       setIsLoading(false);
       setIsFirstLoad(false);
     }
   }, []);
 
-  useEffect(() => { fetchRubros(); }, [fetchRubros]);
+  useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
-  const activeCount = useMemo(() => rubros.filter((r) => r.isActive).length, [rubros]);
-  const inactiveCount = rubros.length - activeCount;
+  // ── Computed ─────────────────────────────────────────────────
+  const rootCategories = useMemo(
+    () => categories.filter((c) => !c.parentId),
+    [categories]
+  );
 
-  const filtered = useMemo(() => {
-    let base = rubros;
-    if (activeTab === 'active') base = rubros.filter((r) => r.isActive);
-    else if (activeTab === 'inactive') base = rubros.filter((r) => !r.isActive);
+  const filteredRoots = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter((r) => r.name.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q));
-  }, [rubros, activeTab, search]);
+    if (!q) return rootCategories;
+    return rootCategories.filter(
+      (root) =>
+        root.name.toLowerCase().includes(q) ||
+        root.children?.some((c) => c.name.toLowerCase().includes(q))
+    );
+  }, [rootCategories, search]);
 
-  const openModal = (rubro?: Rubro) => {
-    if (rubro) {
-      setEditingRubro(rubro);
-      reset({
-        name: rubro.name,
-        description: rubro.description,
-        isActive: rubro.isActive,
-        allowsVariants: rubro.allowsVariants ?? false,
-      });
+  const selectedRoot = useMemo(
+    () => filteredRoots.find((c) => c.id === selectedRootId) ?? null,
+    [filteredRoots, selectedRootId]
+  );
+
+  const subcategories = useMemo(
+    () => selectedRoot?.children ?? [],
+    [selectedRoot]
+  );
+
+  const totalSub = useMemo(
+    () => rootCategories.reduce((s, r) => s + (r.children?.length ?? 0), 0),
+    [rootCategories]
+  );
+
+  // Auto-select first root when list loads for the first time
+  useEffect(() => {
+    if (!isFirstLoad && rootCategories.length > 0 && !selectedRootId) {
+      setSelectedRootId(rootCategories[0].id);
+    }
+  }, [isFirstLoad, rootCategories, selectedRootId]);
+
+  // Deselect if the selected root is filtered out by search
+  useEffect(() => {
+    if (selectedRootId && !filteredRoots.find((c) => c.id === selectedRootId)) {
+      setSelectedRootId(filteredRoots[0]?.id ?? null);
+    }
+  }, [filteredRoots, selectedRootId]);
+
+  // ── Modal helpers ────────────────────────────────────────────
+  const openModal = (category?: Category, presetParentId?: string | null) => {
+    if (category) {
+      setEditingCategory(category);
+      reset({ name: category.name, parentId: category.parentId ?? '' });
     } else {
-      setEditingRubro(null);
-      reset({ name: '', description: null, isActive: true, allowsVariants: false });
+      setEditingCategory(null);
+      reset({
+        name: '',
+        parentId: presetParentId !== undefined ? (presetParentId ?? '') : '',
+      });
     }
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingRubro(null);
+    setEditingCategory(null);
     reset();
   };
 
-  const onSubmit = async (data: RubroFormData) => {
+  const onSubmit = async (data: CategoryFormData) => {
     setIsSaving(true);
     try {
-      if (editingRubro) {
-        await rubrosService.update(editingRubro.id, data);
-        toast.success('Rubro actualizado');
+      const payload = { name: data.name, parentId: data.parentId || null };
+      if (editingCategory) {
+        await categoriesService.update(editingCategory.id, payload);
+        toast.success('Categoría actualizada');
       } else {
-        await rubrosService.create(data);
-        toast.success('Rubro creado');
+        const created = await categoriesService.create(payload);
+        toast.success('Categoría creada');
+        // Auto-select newly created root
+        if (!payload.parentId) setSelectedRootId(created.id);
       }
       closeModal();
-      fetchRubros();
+      fetchCategories();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar rubro');
+      toast.error(err.response?.data?.message || 'Error al guardar categoría');
     } finally {
       setIsSaving(false);
     }
@@ -243,204 +208,274 @@ export default function RubrosPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await rubrosService.delete(deleteId);
-      toast.success('Rubro eliminado');
+      await categoriesService.delete(deleteId);
+      toast.success('Categoría eliminada');
+      if (deleteId === selectedRootId) setSelectedRootId(null);
       setDeleteId(null);
-      fetchRubros();
+      fetchCategories();
     } catch {
-      toast.error('Error al eliminar rubro. Verificá que no tenga productos asociados.');
+      toast.error('Error al eliminar categoría. Verificá que no tenga productos asociados.');
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const tabs: { id: FilterTab; label: string; count: number }[] = [
-    { id: 'all',      label: 'Todos',     count: rubros.length },
-    { id: 'active',   label: 'Activos',   count: activeCount },
-    { id: 'inactive', label: 'Inactivos', count: inactiveCount },
+  const parentOptions = [
+    { value: '', label: 'Sin categoría padre (raíz)' },
+    ...rootCategories
+      .filter((cat) => cat.id !== editingCategory?.id)
+      .map((cat) => ({ value: cat.id, label: cat.name })),
   ];
+
+  const modalTitle = editingCategory
+    ? `Editar "${editingCategory.name}"`
+    : parentIdValue
+    ? 'Nueva subcategoría'
+    : 'Nueva categoría raíz';
 
   return (
     <div>
       <PageHeader
-        title="Rubros"
+        title="Categorías"
         subtitle={
           isFirstLoad
             ? undefined
-            : `${rubros.length} ${rubros.length === 1 ? 'rubro' : 'rubros'} · ${activeCount} activos`
+            : `${rootCategories.length} ${rootCategories.length === 1 ? 'categoría raíz' : 'categorías raíz'} · ${totalSub} subcategorías`
         }
         actions={
           <Button onClick={() => openModal()}>
             <Plus className="w-4 h-4 mr-2" />
-            Nuevo rubro
+            Nueva categoría
           </Button>
         }
       />
 
-      {!isFirstLoad && rubros.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
-                  activeTab === tab.id
-                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                    activeTab === tab.id ? 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300' : 'bg-gray-200 dark:bg-slate-600 text-gray-500 dark:text-slate-400'
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
+      {/* ── Two-panel card ── */}
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden flex min-h-[560px]">
+
+        {/* ── Left: root category list ── */}
+        <div className="w-56 xl:w-64 flex-shrink-0 border-r border-gray-100 dark:border-slate-700 flex flex-col">
+
+          {/* Search */}
+          <div className="p-3 border-b border-gray-100 dark:border-slate-700 flex-shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar..."
+                className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg placeholder-gray-400 dark:placeholder-slate-500 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
+              />
+            </div>
           </div>
 
-          <div className="relative w-52">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar rubros..."
-              className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg placeholder-gray-400 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
-            />
+          {/* Root list */}
+          <div className="flex-1 overflow-y-auto py-1 [scrollbar-width:thin]">
+            {isFirstLoad && isLoading ? (
+              <LeftSkeleton />
+            ) : filteredRoots.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  {search ? 'Sin resultados' : 'Sin categorías aún'}
+                </p>
+              </div>
+            ) : (
+              filteredRoots.map((root) => {
+                const isSelected = selectedRootId === root.id;
+                const count = root.children?.length ?? 0;
+                return (
+                  <button
+                    key={root.id}
+                    onClick={() => setSelectedRootId(root.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-[background-color,color] duration-150 active:scale-[0.99] group ${
+                      isSelected
+                        ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                        : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/50 hover:text-gray-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {isSelected
+                      ? <FolderOpen className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                      : <Folder className="w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0 group-hover:text-gray-500 transition-colors duration-150" />
+                    }
+                    <span className="text-sm font-medium flex-1 truncate leading-none">
+                      {root.name}
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none flex-shrink-0 ${
+                      isSelected
+                        ? 'bg-indigo-100 dark:bg-indigo-800 text-indigo-600 dark:text-indigo-300'
+                        : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
-        </div>
-      )}
 
-      {isFirstLoad && isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-center py-20">
-          <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
-            <Layers className="w-7 h-7 text-gray-300 dark:text-slate-500" />
-          </div>
-          <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
-            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin rubros en esta categoría' : 'Sin rubros'}
-          </p>
-          <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
-            {search
-              ? `No se encontraron rubros para "${search}".`
-              : activeTab !== 'all'
-              ? 'Probá con otro filtro o creá uno nuevo.'
-              : 'Creá tu primer rubro para clasificar líneas de productos.'}
-          </p>
-          {!search && activeTab === 'all' && (
-            <Button onClick={() => openModal()}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nuevo rubro
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filtered.map((rubro) => (
-            <RubroCard
-              key={rubro.id}
-              rubro={rubro}
-              onEdit={() => openModal(rubro)}
-              onDelete={() => setDeleteId(rubro.id)}
-            />
-          ))}
-          {activeTab === 'all' && !search && (
+          {/* Add root button */}
+          <div className="p-3 border-t border-gray-100 dark:border-slate-700 flex-shrink-0">
             <button
               onClick={() => openModal()}
-              className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl py-4 px-4 text-gray-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all duration-150 active:scale-[0.98]"
+              className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98] w-full"
             >
-              <Plus className="w-4 h-4" />
-              <span className="text-xs font-medium">Nuevo rubro</span>
+              <Plus className="w-4 h-4 flex-shrink-0" />
+              Nueva raíz
             </button>
+          </div>
+        </div>
+
+        {/* ── Right: detail panel ── */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {!selectedRoot ? (
+            /* Nothing selected */
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+              <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-4">
+                <FolderTree className="w-5 h-5 text-gray-400 dark:text-slate-500" />
+              </div>
+              <p className="text-sm font-semibold text-gray-800 dark:text-slate-200 mb-1">
+                {rootCategories.length === 0
+                  ? 'Sin categorías'
+                  : 'Seleccioná una categoría'}
+              </p>
+              <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed">
+                {rootCategories.length === 0
+                  ? 'Creá categorías raíz para organizar el catálogo de productos.'
+                  : 'Hacé clic en una categoría para ver y gestionar sus subcategorías.'}
+              </p>
+              {rootCategories.length === 0 && (
+                <Button className="mt-5" onClick={() => openModal()}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Crear primera categoría
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Selected root header */}
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center gap-4 flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                  <FolderOpen className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white truncate leading-tight">
+                    {selectedRoot.name}
+                  </h2>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 leading-none">
+                    {subcategories.length === 0
+                      ? 'Sin subcategorías'
+                      : `${subcategories.length} subcategor${subcategories.length === 1 ? 'ía' : 'ías'}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => openModal(selectedRoot)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-[background-color,color] duration-150 active:scale-[0.98]"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Editar</span>
+                  </button>
+                  <button
+                    onClick={() => openModal(undefined, selectedRoot.id)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-2.5 py-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Subcategoría</span>
+                  </button>
+                  <button
+                    onClick={() => setDeleteId(selectedRoot.id)}
+                    title="Eliminar categoría"
+                    className="p-1.5 rounded-lg text-gray-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Subcategories grid */}
+              <div className="flex-1 p-6 overflow-y-auto [scrollbar-width:thin]">
+                {subcategories.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center py-10">
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center mb-3">
+                      <Layers className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin subcategorías</p>
+                    <p className="text-xs text-gray-400 dark:text-slate-500 mb-4 max-w-xs leading-relaxed">
+                      Agregá subcategorías para clasificar los productos dentro de{' '}
+                      <span className="font-medium text-gray-600 dark:text-slate-300">{selectedRoot.name}</span>.
+                    </p>
+                    <button
+                      onClick={() => openModal(undefined, selectedRoot.id)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-[background-color,color] duration-150 active:scale-[0.98]"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Agregar primera subcategoría
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                    {subcategories.map((sub) => (
+                      <SubcategoryCard
+                        key={sub.id}
+                        category={sub}
+                        onEdit={() => openModal(sub)}
+                        onDelete={() => setDeleteId(sub.id)}
+                      />
+                    ))}
+                    {/* Dashed "add" tile */}
+                    <button
+                      onClick={() => openModal(undefined, selectedRoot.id)}
+                      className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl py-5 px-3 text-gray-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all duration-150 active:scale-[0.97]"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span className="text-xs font-medium">Nueva</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
-      )}
+      </div>
 
-      {/* ── Modal ── */}
+      {/* ── Modal form ── */}
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingRubro ? `Editar "${editingRubro.name}"` : 'Nuevo rubro'}
+        title={modalTitle}
         size="sm"
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <Input
             label="Nombre *"
-            placeholder="Ej: Electrónica, Indumentaria, Alimentos…"
             {...register('name')}
             error={errors.name?.message}
             autoFocus
           />
 
-          <Input
-            label="Descripción (opcional)"
-            placeholder="Breve descripción del rubro"
-            {...register('description')}
+          <Select
+            label="Categoría padre"
+            options={parentOptions}
+            value={parentIdValue}
+            onChange={(value) => setValue('parentId', value || null)}
           />
 
-          <ModalToggle
-            checked={isActiveVal}
-            onChange={(v) => setValue('isActive', v)}
-          />
+          {parentIdValue && (
+            <div className="flex items-start gap-2 text-xs text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg px-3 py-2.5">
+              <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                Se creará como subcategoría de{' '}
+                <strong>
+                  {rootCategories.find((c) => c.id === parentIdValue)?.name ?? parentIdValue}
+                </strong>.
+              </span>
+            </div>
+          )}
 
-          <label
-            className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
-              allowsVariantsVal
-                ? 'bg-violet-50/70 border-violet-200'
-                : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600'
-            }`}
-          >
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-                allowsVariantsVal
-                  ? 'bg-violet-100 text-violet-600'
-                  : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
-              }`}
-            >
-              <Shirt className="w-3.5 h-3.5" />
-            </div>
-            <div className="flex-1">
-              <p
-                className={`text-sm font-medium leading-none ${
-                  allowsVariantsVal ? 'text-violet-800' : 'text-gray-600 dark:text-slate-300'
-                }`}
-              >
-                Admite variantes
-              </p>
-              <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-snug">
-                Activá si los productos de este rubro tienen talles, colores u otros atributos (ej. indumentaria).
-              </p>
-            </div>
-            <div
-              className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${
-                allowsVariantsVal ? 'bg-violet-500' : 'bg-gray-200 dark:bg-slate-600'
-              }`}
-              style={{ width: 36, height: 20 }}
-            >
-              <span
-                className={`absolute top-[3px] w-[14px] h-[14px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                  allowsVariantsVal ? 'translate-x-[17px]' : 'translate-x-[3px]'
-                }`}
-              />
-            </div>
-            <input
-              type="checkbox"
-              checked={allowsVariantsVal}
-              onChange={(e) => setValue('allowsVariants', e.target.checked)}
-              className="sr-only"
-            />
-          </label>
-
-          <div className="flex gap-2.5 pt-1">
+          <div className="flex gap-2.5 pt-2">
             <Button type="submit" isLoading={isSaving}>
-              {editingRubro ? 'Guardar cambios' : 'Crear rubro'}
+              {editingCategory ? 'Guardar cambios' : 'Crear'}
             </Button>
             <Button type="button" variant="outline" onClick={closeModal} disabled={isSaving}>
               Cancelar
@@ -454,8 +489,12 @@ export default function RubrosPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Eliminar rubro"
-        message="¿Eliminar este rubro? Los productos asociados quedarán sin rubro asignado."
+        title="Eliminar categoría"
+        message={
+          deleteId === selectedRootId
+            ? `¿Eliminar "${selectedRoot?.name}"? Todas sus subcategorías también serán eliminadas y los productos asociados quedarán sin categoría.`
+            : '¿Eliminar esta subcategoría? Los productos asociados quedarán sin categoría.'
+        }
         confirmText="Eliminar"
         isLoading={isDeleting}
       />

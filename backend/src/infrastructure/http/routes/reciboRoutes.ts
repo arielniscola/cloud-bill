@@ -7,11 +7,12 @@ const reciboController = new ReciboController();
 
 router.use(authMiddleware);
 
-router.get('/', reciboController.findAll);
-router.get('/checks/list', reciboController.findChecks);
-router.get('/:id', reciboController.findById);
-router.patch('/:id/check-status',  requireRoles('ADMIN', 'SELLER'), reciboController.updateCheckStatus);
-router.patch('/:id/deposit-cash',  requireRoles('ADMIN', 'SELLER'), reciboController.depositCheckToCash);
-router.delete('/:id', requireRoles('ADMIN', 'SELLER'), reciboController.cancel);
+// Arrow wrappers preserve `this` (cancel() uses this._recalculate*).
+router.get('/', (req, res, next) => reciboController.findAll(req, res, next));
+router.get('/checks/list', (req, res, next) => reciboController.findChecks(req, res, next));
+router.get('/:id', (req, res, next) => reciboController.findById(req, res, next));
+router.patch('/:id/check-status',  requireRoles('ADMIN', 'SELLER'), (req, res, next) => reciboController.updateCheckStatus(req, res, next));
+router.patch('/:id/deposit-cash',  requireRoles('ADMIN', 'SELLER'), (req, res, next) => reciboController.depositCheckToCash(req, res, next));
+router.delete('/:id', requireRoles('ADMIN', 'SELLER'), (req, res, next) => reciboController.cancel(req, res, next));
 
 export { router as reciboRoutes };

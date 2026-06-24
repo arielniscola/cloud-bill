@@ -187,16 +187,16 @@ export class ReportsController {
   async profitability(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
-      const { categoryId, brandId } = req.query as Record<string, string>;
+      const { rubroId, brandId } = req.query as Record<string, string>;
 
       const where: Record<string, unknown> = { companyId, isActive: true };
-      if (categoryId) where.categoryId = categoryId;
+      if (rubroId) where.rubroId = rubroId;
       if (brandId)    where.brandId    = brandId;
 
       const products = await prisma.product.findMany({
         where,
         include: {
-          category: { select: { name: true } },
+          rubro: { select: { name: true } },
           brand:    { select: { name: true } },
         },
       });
@@ -211,7 +211,7 @@ export class ReportsController {
             productId:  p.id,
             sku:        p.sku,
             name:       p.name,
-            category:   (p as any).category?.name ?? '—',
+            rubro:   (p as any).rubro?.name ?? '—',
             brand:      (p as any).brand?.name    ?? '—',
             cost:       round2(cost),
             price:      round2(price),
@@ -229,19 +229,19 @@ export class ReportsController {
   async stockValuation(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
-      const { warehouseId, categoryId } = req.query as Record<string, string>;
+      const { warehouseId, rubroId } = req.query as Record<string, string>;
 
       const stockWhere: Record<string, unknown> = {
         warehouse: { companyId },
         quantity:  { gt: 0 },
       };
       if (warehouseId) stockWhere.warehouseId = warehouseId;
-      if (categoryId)  stockWhere.product = { categoryId };
+      if (rubroId)  stockWhere.product = { rubroId };
 
       const stocks = await prisma.stock.findMany({
         where: stockWhere,
         include: {
-          product:   { include: { category: { select: { name: true } } } },
+          product:   { include: { rubro: { select: { name: true } } } },
           warehouse: { select: { name: true } },
         },
       });
@@ -254,7 +254,7 @@ export class ReportsController {
             productId:   s.product.id,
             sku:         s.product.sku,
             name:        s.product.name,
-            category:    (s.product as any).category?.name ?? '—',
+            rubro:    (s.product as any).rubro?.name ?? '—',
             warehouse:   s.warehouse.name,
             quantity:    round2(qty),
             unitCost:    round2(cost),

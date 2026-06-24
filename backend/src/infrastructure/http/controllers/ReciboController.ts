@@ -7,8 +7,10 @@ import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepositor
 import { IOrdenPedidoRepository } from '../../../domain/repositories/IOrdenPedidoRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
+import { IStockRepository, IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
+import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
 import prisma from '../../database/prisma';
 
 export class ReciboController {
@@ -85,15 +87,34 @@ export class ReciboController {
       if (recibo.paymentMethod !== 'CHECK') throw new AppError('Solo se puede cambiar el estado de cheques', 400);
       if (recibo.status === 'CANCELLED') throw new AppError('El recibo está cancelado', 400);
 
+      const oldStatus = (recibo as any).checkStatus;
       const { checkStatus } = updateCheckStatusSchema.parse(req.body);
       const updated = await repo.updateCheckStatus(req.params.id, checkStatus);
+
+      // Débito interno al cliente cuando el cheque de cobranza se rechaza
+      // (y reversión si se vuelve atrás desde Rechazado).
+      const enteringBounced = checkStatus === 'BOUNCED' && oldStatus !== 'BOUNCED';
+      const leavingBounced  = oldStatus === 'BOUNCED' && checkStatus !== 'BOUNCED';
+      if ((enteringBounced || leavingBounced) && (recibo as any).customerId) {
+        await recordChequeBounceMovement({
+          customerId: (recibo as any).customerId,
+          amount:     Number((recibo as any).amount),
+          currency:   (recibo as any).currency ?? 'ARS',
+          reference:  (recibo as any).reference || recibo.number,
+          direction:  enteringBounced ? 'DEBIT' : 'CREDIT',
+          companyId:  req.companyId!,
+          fiscalMode: req.fiscalMode,
+        });
+      }
 
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'UPDATE',
         entity: 'Recibo',
         entityId: recibo.id,
-        description: `Cheque ${recibo.number} actualizado a estado ${checkStatus}`,
+        description: enteringBounced
+          ? `Cheque ${recibo.number} rechazado — débito al cliente`
+          : `Cheque ${recibo.number} actualizado a estado ${checkStatus}`,
       });
 
       res.json({ status: 'success', data: updated });
@@ -207,6 +228,37 @@ export class ReciboController {
           invoiceId: recibo.invoiceId ?? undefined,
           cashRegisterId: recibo.cashRegisterId ?? undefined,
         });
+      }
+
+      // Si es la devolución de una Nota de Crédito que estaba totalmente devuelta,
+      // la mercadería ya había reingresado al stock (RETURN al llegar a PAID).
+      // Al anular la devolución hay que sacar nuevamente ese stock.
+      if (recibo.invoiceId) {
+        const invoice = await invoiceRepo.findById(recibo.invoiceId);
+        if (invoice && invoice.type.startsWith('NOTA_CREDITO') && invoice.status === 'PAID') {
+          const stockRepo = container.resolve<IStockRepository>('StockRepository');
+          const warehouseRepo = container.resolve<IWarehouseRepository>('WarehouseRepository');
+          const defaultWarehouse = await warehouseRepo.findDefault((invoice as any).companyId);
+          if (defaultWarehouse) {
+            for (const item of invoice.items) {
+              if (!item.productId) continue;
+              try {
+                await stockRepo.addMovement({
+                  productId: item.productId,
+                  variantId: (item as any).variantId ?? null,
+                  warehouseId: defaultWarehouse.id,
+                  type: 'ADJUSTMENT_OUT',
+                  quantity: item.quantity.toNumber(),
+                  reason: `Anulación devolución NC ${invoice.number}`,
+                  referenceId: invoice.id,
+                  userId: req.user!.userId,
+                });
+              } catch (stockError) {
+                console.error(`Stock reversal failed for product ${item.productId}:`, stockError);
+              }
+            }
+          }
+        }
       }
 
       // Cancel the recibo

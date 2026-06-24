@@ -12,6 +12,7 @@ import { IAfipConfigRepository } from '../../../domain/repositories/IAfipConfigR
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
+import { effectiveSaleCondition } from '../../../shared/utils/paymentTerms';
 import { afipService } from '../../services/AfipService';
 import { pdvService } from '../../services/PdvService';
 import { sendInvoiceEmail } from '../../services/EmailService';
@@ -19,7 +20,7 @@ import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
-import { recordInvoiceCreated, recordPaymentReceived } from '../../services/AccountingService';
+import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
 
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -34,7 +35,9 @@ export class InvoiceController {
       const currency: Currency = req.body.currency || 'ARS';
       const exchangeRate: number = req.body.exchangeRate || 1;
 
-      const saleCondition: string = req.body.saleCondition ?? 'CONTADO';
+      // Una venta "a X días" (pago diferido) se trata como cuenta corriente:
+      // genera el movimiento aunque el front no haya seteado CUENTA_CORRIENTE.
+      const saleCondition: string = effectiveSaleCondition(req.body.saleCondition, req.body.paymentTerms);
 
       if (req.body.customerId) {
         const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
@@ -303,7 +306,7 @@ export class InvoiceController {
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,
         paymentTerms: req.body.paymentTerms ?? null,
-        saleCondition: req.body.saleCondition ?? 'CONTADO',
+        saleCondition: effectiveSaleCondition(req.body.saleCondition, req.body.paymentTerms),
         originInvoiceId: req.body.originInvoiceId ?? null,
         currency,
         exchangeRate,
@@ -360,11 +363,15 @@ export class InvoiceController {
       const invoice = await invoiceRepository.findById(req.params.id);
       if (!invoice) throw new NotFoundError('Invoice');
 
+      // Una Nota de Crédito no se "cobra": su pago es una DEVOLUCIÓN al cliente
+      // (sale plata de caja/banco, DEBIT en cuenta corriente y reingreso de stock).
+      const isCreditNote = invoice.type.startsWith('NOTA_CREDITO');
+
       if (invoice.status === 'PAID') {
-        throw new AppError('La factura ya está pagada', 400);
+        throw new AppError(isCreditNote ? 'La nota de crédito ya fue devuelta' : 'La factura ya está pagada', 400);
       }
       if (invoice.status === 'CANCELLED') {
-        throw new AppError('No se puede pagar una factura cancelada', 400);
+        throw new AppError(isCreditNote ? 'No se puede devolver una nota de crédito cancelada' : 'No se puede pagar una factura cancelada', 400);
       }
 
       const paymentData = createReciboSchema.parse(req.body);
@@ -419,31 +426,33 @@ export class InvoiceController {
         fiscalMode: ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
       } as any);
 
-      // For BANK_TRANSFER with a bankAccountId, create a bank movement
+      // For BANK_TRANSFER with a bankAccountId, create a bank movement.
+      // NC → es una devolución: DEBIT (sale plata) y baja el saldo del banco.
       if (isBankTransfer && (paymentData as any).bankAccountId) {
         const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
         const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
         const customerName = (invoice as any).customer?.name ?? '';
-        const bankDescription = `Cobro ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
+        const bankDescription = `${isCreditNote ? 'Devolución' : 'Cobro'} ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
         await (prisma as any).bankMovement.create({
           data: {
             bankAccountId: (paymentData as any).bankAccountId,
-            type: 'CREDIT',
+            type: isCreditNote ? 'DEBIT' : 'CREDIT',
             amount: amountARS,
             description: bankDescription,
             reciboId: recibo.id,
             companyId: req.companyId,
           },
         });
-        // Update bank account balance
+        // Update bank account balance (+ cobro / − devolución)
+        const signedAmount = isCreditNote ? -amountARS : amountARS;
         await (prisma as any).$executeRaw`
-          UPDATE "bank_accounts" SET balance = balance + ${amountARS}, "updatedAt" = NOW()
+          UPDATE "bank_accounts" SET balance = balance + ${signedAmount}, "updatedAt" = NOW()
           WHERE id = ${(paymentData as any).bankAccountId}
         `;
       }
 
-      // Record payment in current account only for cuenta corriente
-      if ((invoice as any).saleCondition === 'CUENTA_CORRIENTE') {
+      // Record payment in current account only for cuenta corriente (incl. pago a X días)
+      if (effectiveSaleCondition((invoice as any).saleCondition, (invoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
         const currentAccount = await currentAccountRepository.findByCustomerId(
           invoice.customerId,
           invoice.currency,
@@ -452,9 +461,9 @@ export class InvoiceController {
         if (currentAccount) {
           const movement = await currentAccountRepository.addMovement({
             currentAccountId: currentAccount.id,
-            type: 'CREDIT',
+            type: isCreditNote ? 'DEBIT' : 'CREDIT',
             amount: paymentData.amount,
-            description: `Pago ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
+            description: `${isCreditNote ? 'Devolución' : 'Pago'} ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
             invoiceId: invoice.id,
             cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
           });
@@ -479,16 +488,47 @@ export class InvoiceController {
 
       const updated = await invoiceRepository.update(req.params.id, { status: newStatus });
 
+      // Reingreso de mercadería devuelta: cuando la NC queda totalmente devuelta,
+      // los ítems con producto vuelven al stock (movimiento RETURN). Se hace una
+      // sola vez (al llegar a PAID) para no duplicar ante devoluciones parciales.
+      if (isCreditNote && newStatus === 'PAID') {
+        const stockRepository = container.resolve<IStockRepository>('StockRepository');
+        const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
+        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
+        if (defaultWarehouse) {
+          for (const item of invoice.items) {
+            if (!item.productId) continue;
+            try {
+              await stockRepository.addMovement({
+                productId: item.productId,
+                variantId: (item as any).variantId ?? null,
+                warehouseId: defaultWarehouse.id,
+                type: 'RETURN',
+                quantity: item.quantity.toNumber(),
+                reason: `Devolución NC ${invoice.number}`,
+                referenceId: invoice.id,
+                userId: req.user!.userId,
+              });
+            } catch (stockError) {
+              console.error(`Stock return failed for product ${item.productId}:`, stockError);
+            }
+          }
+        }
+      }
+
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'PAYMENT',
         entity: 'Invoice',
         entityId: invoice.id,
-        description: `Pago ${recibo.number} registrado en factura ${invoice.number}`,
+        description: isCreditNote
+          ? `Devolución ${recibo.number} registrada en NC ${invoice.number}`
+          : `Pago ${recibo.number} registrado en factura ${invoice.number}`,
       });
 
-      // Auto-generate journal entry for payment
-      await recordPaymentReceived({
+      // Auto-generate journal entry (cobro de factura / devolución de NC)
+      const recordEntry = isCreditNote ? recordRefundPaid : recordPaymentReceived;
+      await recordEntry({
         id: recibo.id,
         number: recibo.number,
         amount: paymentData.amount,
@@ -598,8 +638,8 @@ export class InvoiceController {
         throw new AppError('Invoice is already cancelled', 400);
       }
 
-      // Reverse current account movement only for cuenta corriente
-      if ((existingInvoice as any).saleCondition === 'CUENTA_CORRIENTE') {
+      // Reverse current account movement only for cuenta corriente (incl. pago a X días)
+      if (effectiveSaleCondition((existingInvoice as any).saleCondition, (existingInvoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
         const currentAccount = await currentAccountRepository.findByCustomerId(
           existingInvoice.customerId,
           existingInvoice.currency,

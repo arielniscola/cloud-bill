@@ -27,7 +27,7 @@ export class InternalNoteController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IInternalNoteRepository>('InternalNoteRepository');
-      const { page, limit, customerId, supplierId, type, status, currency, dateFrom, dateTo } = req.query;
+      const { page, limit, customerId, supplierId, entity, type, status, currency, dateFrom, dateTo } = req.query;
 
       const result = await repo.findAll(
         { page: Number(page) || 1, limit: Number(limit) || 20 },
@@ -35,6 +35,7 @@ export class InternalNoteController {
           companyId:  req.companyId,
           customerId: customerId as string | undefined,
           supplierId: supplierId as string | undefined,
+          entity:     entity === 'CUSTOMER' || entity === 'SUPPLIER' ? entity : undefined,
           type:       type       as string | undefined,
           status:     status     as string | undefined,
           currency:   currency   as string | undefined,
