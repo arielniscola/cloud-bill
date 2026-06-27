@@ -404,7 +404,7 @@ export default function Sidebar() {
                 <>
                   {avatar}
                   <span
-                    className="text-sm font-semibold text-white tracking-tight truncate"
+                    className="text-sm font-semibold text-white tracking-tight leading-tight break-words line-clamp-2"
                     title={displayCompanyName}
                   >
                     {displayCompanyName}
