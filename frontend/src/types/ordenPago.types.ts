@@ -31,6 +31,7 @@ export interface PendingPurchaseInvoice {
   purchaseNumber: string | null;
   purchaseDate: string | null;
   currency: string;
+  paidAmount?: number; // ya imputado por OP pagadas (saldo = amount - paidAmount)
 }
 
 export interface OrdenPago {
@@ -102,10 +103,12 @@ export interface SupplierAccountMovement {
   updatedAt: string;
   kind?: SupplierMovementKind;
   docNumber?: string | null;
+  docDate?: string | null; // fecha del comprobante de origen (createdAt = fecha imputable)
 }
 
 export interface SupplierAccount {
   balance: number;
+  openingBalance: number; // saldo previo a dateFrom (0 si no hay filtro de fecha)
   data: SupplierAccountMovement[];
   total: number;
   page: number;

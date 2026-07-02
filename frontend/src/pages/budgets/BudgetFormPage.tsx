@@ -207,8 +207,8 @@ export default function BudgetFormPage() {
     }
   };
 
-  const handleProductChange = (index: number, productId: string) => {
-    const product = products.find((p) => p.id === productId);
+  const handleProductChange = (index: number, productId: string, picked?: Product) => {
+    const product = picked ?? products.find((p) => p.id === productId);
     if (product) {
       setValue(`items.${index}.productId`, productId);
       (setValue as any)(`items.${index}.variantId`, null);
@@ -247,6 +247,18 @@ export default function BudgetFormPage() {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
+      return;
+    }
+    // Reutilizar la fila vacía inicial: si queda, su descripción requerida bloquea el submit
+    const emptyIndex = items.findIndex(
+      (item) => !item.productId && !item.description?.trim() && !Number(item.unitPrice)
+    );
+    if (emptyIndex >= 0) {
+      setValue(`items.${emptyIndex}.productId`, product.id);
+      setValue(`items.${emptyIndex}.description`, product.name);
+      setValue(`items.${emptyIndex}.quantity`, qty);
+      setValue(`items.${emptyIndex}.unitPrice`, product.price);
+      setValue(`items.${emptyIndex}.taxRate`, product.taxRate);
     } else {
       append({ productId: product.id, description: product.name, quantity: qty, unitPrice: product.price, taxRate: product.taxRate });
     }
@@ -372,8 +384,9 @@ export default function BudgetFormPage() {
                         <ProductSearchSelect
                           products={products}
                           value={items[index]?.productId || ''}
-                          onChange={(value) => handleProductChange(index, value)}
+                          onChange={(value, picked) => handleProductChange(index, value, picked)}
                           optional
+                          serverSearch
                         />
                         {items[index]?.productId && (variantsByProduct[items[index].productId!]?.length ?? 0) > 0 && (
                           <select

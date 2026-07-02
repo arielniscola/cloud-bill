@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone,
+  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
@@ -70,6 +70,8 @@ export default function InvoiceDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const [isPayLoading, setIsPayLoading] = useState(false);
   const [showIssueDialog, setShowIssueDialog] = useState(false);
@@ -130,6 +132,21 @@ export default function InvoiceDetailPage() {
       toast.error(err.response?.data?.message || 'Error al cancelar factura');
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    setIsDeleting(true);
+    try {
+      await invoicesService.delete(id);
+      toast.success('Factura eliminada');
+      setShowDeleteDialog(false);
+      navigate('/invoices');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al eliminar factura');
+      setIsDeleting(false);
     }
   };
 
@@ -385,7 +402,13 @@ export default function InvoiceDetailPage() {
                 Generar ND
               </Button>
             )}
-            {canCancel && (
+            {isDraft && (
+              <Button variant="danger" onClick={() => setShowDeleteDialog(true)}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Eliminar
+              </Button>
+            )}
+            {canCancel && !isDraft && (
               <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
                 <XCircle className="w-4 h-4 mr-2" />
                 Cancelar
@@ -705,11 +728,20 @@ export default function InvoiceDetailPage() {
         isLoading={isCanceling}
       />
       <ConfirmDialog
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleDelete}
+        title="Eliminar borrador"
+        message="¿Eliminar esta factura en borrador? Como no fue emitida, no generó movimientos. Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        isLoading={isDeleting}
+      />
+      <ConfirmDialog
         isOpen={showIssueDialog}
         onClose={() => setShowIssueDialog(false)}
         onConfirm={handleIssue}
         title="Emitir factura"
-        message="¿Confirmás que deseas emitir esta factura? Una vez emitida no podrás editar los ítems."
+        message="¿Confirmás que deseas emitir esta factura? Al emitirla se generan los movimientos de stock y cuenta corriente, y ya no podrás editar los ítems."
         confirmText="Emitir"
         variant="info"
         isLoading={isUpdating}

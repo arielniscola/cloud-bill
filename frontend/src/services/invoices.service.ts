@@ -56,6 +56,11 @@ export const invoicesService = {
     return response.data.data;
   },
 
+  // Elimina una factura en borrador (solo permitido en estado DRAFT).
+  async delete(id: string): Promise<void> {
+    await api.delete(`/invoices/${id}`);
+  },
+
   async sendEmail(id: string, to: string, pdfBlob?: Blob): Promise<void> {
     let pdfBase64: string | undefined;
     if (pdfBlob) {

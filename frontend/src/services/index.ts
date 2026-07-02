@@ -39,4 +39,5 @@ export { default as categoriesService } from './categories.service';
 export { default as productVariantsService } from './product-variants.service';
 export { default as productCustomFieldsService } from './product-custom-fields.service';
 export { default as internalNotesService } from './internal-notes.service';
+export { default as chequesService } from './cheques.service';
 export { accountingService } from './accounting.service';

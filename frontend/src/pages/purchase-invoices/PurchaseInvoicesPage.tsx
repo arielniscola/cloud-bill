@@ -6,21 +6,24 @@ import { Card, Button } from '../../components/ui';
 import { PageHeader, Pagination, ConfirmDialog } from '../../components/shared';
 import { AddPurchaseInvoiceModal } from '../../components/shared/AddPurchaseInvoiceModal';
 import type { RemitoPrefill } from '../../components/shared/AddPurchaseInvoiceModal';
+import { PurchaseInvoiceDetailModal } from '../../components/shared/PurchaseInvoiceDetailModal';
 import { purchaseInvoicesService, suppliersService } from '../../services';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceStatus, PurchaseInvoiceFilters } from '../../types';
 
 const STATUS_CFG: Record<PurchaseInvoiceStatus, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  PENDING: { label: 'Pendiente', className: 'text-amber-700 bg-amber-50 border-amber-200',   icon: Clock },
-  PAID:    { label: 'Pagada',    className: 'text-emerald-700 bg-emerald-50 border-emerald-200', icon: CheckCircle2 },
+  PENDING:        { label: 'Pendiente',  className: 'text-amber-700 bg-amber-50 border-amber-200',     icon: Clock },
+  PARTIALLY_PAID: { label: 'Pago parcial', className: 'text-blue-700 bg-blue-50 border-blue-200',      icon: Clock },
+  PAID:           { label: 'Pagada',     className: 'text-emerald-700 bg-emerald-50 border-emerald-200', icon: CheckCircle2 },
 };
 
 type Tab = 'all' | PurchaseInvoiceStatus;
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'all',     label: 'Todas' },
-  { key: 'PENDING', label: 'Pendientes' },
-  { key: 'PAID',    label: 'Pagadas' },
+  { key: 'all',            label: 'Todas' },
+  { key: 'PENDING',        label: 'Pendientes' },
+  { key: 'PARTIALLY_PAID', label: 'Pago parcial' },
+  { key: 'PAID',           label: 'Pagadas' },
 ];
 
 const TYPE_FILTER_OPTIONS = [
@@ -66,6 +69,7 @@ export default function PurchaseInvoicesPage() {
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PurchaseInvoice | null>(null);
+  const [viewing, setViewing] = useState<PurchaseInvoice | null>(null);
   const [prefill, setPrefill] = useState<RemitoPrefill | null>(null);
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<PurchaseInvoice | null>(null);
@@ -130,7 +134,38 @@ export default function PurchaseInvoicesPage() {
   }, [remitoState]);
 
   const openNew = () => { setEditing(null); setPrefill(null); setModalOpen(true); };
-  const openEdit = (inv: PurchaseInvoice) => { setEditing(inv); setPrefill(null); setModalOpen(true); };
+  // Una factura con pagos imputados (pagada / parcialmente pagada) no se edita.
+  const canModify = (inv: PurchaseInvoice) =>
+    inv.status !== 'PAID' && inv.status !== 'PARTIALLY_PAID';
+
+  // Clic en la fila: editable → form de edición; con pagos imputados → vista de detalle.
+  const openRow = (inv: PurchaseInvoice) => (canModify(inv) ? openEdit(inv) : openView(inv));
+
+  // Traemos la factura completa (con ítems/retenciones/tributos) porque la fila
+  // de la lista no los incluye — sin esto el modal abría sin ítems.
+  const openEdit = async (inv: PurchaseInvoice) => {
+    setPrefill(null);
+    try {
+      const full = await purchaseInvoicesService.getById(inv.id);
+      setEditing(full);
+    } catch {
+      toast.error('No se pudo cargar la factura');
+      setEditing(inv);
+    }
+    setModalOpen(true);
+  };
+
+  // Vista de detalle (solo lectura). Preservamos paidAmount de la fila del listado
+  // porque el getById no lo computa.
+  const openView = async (inv: PurchaseInvoice) => {
+    try {
+      const full = await purchaseInvoicesService.getById(inv.id);
+      setViewing({ ...full, paidAmount: inv.paidAmount });
+    } catch {
+      toast.error('No se pudo cargar la factura');
+      setViewing(inv);
+    }
+  };
 
   // Registrar mercadería (remito de compra) a partir de una factura: trae la factura
   // completa (con ítems) y abre el form de remito prefijado.
@@ -160,6 +195,7 @@ export default function PurchaseInvoicesPage() {
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al guardar la factura');
+      throw e; // el modal usa el rechazo para NO limpiar el borrador si falló
     } finally {
       setSaving(false);
     }
@@ -289,7 +325,7 @@ export default function PurchaseInvoicesPage() {
                   const cfg = STATUS_CFG[inv.status];
                   const StatusIcon = cfg.icon;
                   return (
-                    <tr key={inv.id} onClick={() => openEdit(inv)}
+                    <tr key={inv.id} onClick={() => openRow(inv)}
                       className="cursor-pointer hover:bg-indigo-50/30 dark:hover:bg-slate-700/50 transition-colors">
                       <td className="px-4 py-3.5">
                         <p className="text-sm font-medium text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -366,7 +402,7 @@ export default function PurchaseInvoicesPage() {
                             title="Registrar mercadería (remito de compra)">
                             <PackagePlus className="w-4 h-4" />
                           </button>
-                          {inv.status !== 'PAID' && (
+                          {canModify(inv) && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setToDelete(inv); }}
                               className="w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-300 hover:text-red-500 transition-colors"
@@ -406,6 +442,14 @@ export default function PurchaseInvoicesPage() {
         onSave={handleSave}
         isLoading={saving}
       />
+
+      {viewing && (
+        <PurchaseInvoiceDetailModal
+          invoice={viewing}
+          onClose={() => setViewing(null)}
+          onGenerateRemito={(inv) => { setViewing(null); handleGenerateRemito(inv); }}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={!!toDelete}

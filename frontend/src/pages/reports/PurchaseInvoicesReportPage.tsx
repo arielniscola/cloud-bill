@@ -21,15 +21,16 @@ const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth()
 
 const DATE_FIELD_OPTIONS = [
   { value: 'imputationDate', label: 'Imputación' },
-  { value: 'purchaseDate',   label: 'Compra' },
+  { value: 'date',           label: 'Fecha factura' },
   { value: 'dueDate',        label: 'Vencimiento' },
   { value: 'createdAt',      label: 'Alta' },
 ];
 
 const STATUS_OPTIONS = [
-  { value: '',        label: 'Todos los estados' },
-  { value: 'PENDING', label: 'Pendiente' },
-  { value: 'PAID',    label: 'Pagada' },
+  { value: '',               label: 'Todos los estados' },
+  { value: 'PENDING',        label: 'Pendiente' },
+  { value: 'PARTIALLY_PAID', label: 'Pago parcial' },
+  { value: 'PAID',           label: 'Pagada' },
 ];
 
 const PAYMENT_METHOD_OPTIONS = [
@@ -38,13 +39,15 @@ const PAYMENT_METHOD_OPTIONS = [
 ];
 
 const STATUS_BADGE: Record<string, string> = {
-  PENDING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  PAID:    'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  PENDING:        'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  PARTIALLY_PAID: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  PAID:           'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Pendiente',
-  PAID:    'Pagada',
+  PENDING:        'Pendiente',
+  PARTIALLY_PAID: 'Pago parcial',
+  PAID:           'Pagada',
 };
 
 export default function PurchaseInvoicesReportPage() {
@@ -244,12 +247,16 @@ export default function PurchaseInvoicesReportPage() {
                 <tbody className="divide-y divide-gray-50 dark:divide-slate-700/50">
                   {data.map((r) => (
                     <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
-                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 whitespace-nowrap">{r.imputationDate ?? '—'}</td>
+                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 whitespace-nowrap">{r.imputationDate ?? r.invoiceDate ?? '—'}</td>
                       <td className="px-3 py-3 font-medium text-gray-900 dark:text-white whitespace-nowrap">{r.number}</td>
                       <td className="px-3 py-3 whitespace-nowrap">
-                        <Link to={`/purchases/${r.purchaseId}`} className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono text-xs">
-                          {r.purchaseNumber}
-                        </Link>
+                        {r.purchaseId && r.purchaseNumber ? (
+                          <Link to={`/purchases/${r.purchaseId}`} className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono text-xs">
+                            {r.purchaseNumber}
+                          </Link>
+                        ) : (
+                          <span className="text-gray-300 dark:text-slate-600 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-gray-700 dark:text-slate-300">
                         <div className="font-medium text-gray-900 dark:text-white">{r.supplierName}</div>

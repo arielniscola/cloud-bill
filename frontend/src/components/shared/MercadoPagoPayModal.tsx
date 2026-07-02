@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, ExternalLink, Copy, CheckCircle, Smartphone, QrCode, RefreshCw } from 'lucide-react';
+import { X, ExternalLink, Copy, CheckCircle, Smartphone, QrCode, RefreshCw, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
 import { Button } from '../ui';
 import { formatCurrency } from '../../utils/formatters';
 import { mercadoPagoService } from '../../services';
-import type { MpPreferenceResult, CreateMpPreferenceDTO } from '../../types/mercadopago.types';
+import type { MpPreferenceResult, MpQrResult, CreateMpPreferenceDTO } from '../../types/mercadopago.types';
 
 interface Props {
   open: boolean;
@@ -34,21 +34,36 @@ export default function MercadoPagoPayModal({
   const [isLoading,  setIsLoading]  = useState(false);
   const [tab,        setTab]        = useState<'link' | 'qr'>('link');
   const [copied,     setCopied]     = useState(false);
+  const [qr,         setQr]         = useState<MpQrResult | null>(null);
+  const [qrLoading,  setQrLoading]  = useState(false);
+  const [qrError,    setQrError]    = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Generación lazy por pestaña: el link y el QR se crean recién al ver su
+  // pestaña (evita generar ambos comprobantes si sólo se usa uno). Al cerrar se
+  // resetea todo para que el próximo open regenere con el saldo actual.
   useEffect(() => {
-    if (open && !preference) generatePreference();
-  }, [open]);
+    if (!open) {
+      setPreference(null);
+      setQr(null);
+      setQrError(null);
+      setTab('link');
+      return;
+    }
+    if (tab === 'link' && !preference && !isLoading) generatePreference();
+    if (tab === 'qr'   && !qr && !qrLoading && !qrError) generateQr();
+  }, [open, tab]);
 
+  // Renderiza el qr_data (string EMV) en el canvas.
   useEffect(() => {
-    if (preference && tab === 'qr' && canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, preference.payUrl, {
+    if (qr && tab === 'qr' && canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, qr.qrData, {
         width: 240,
         margin: 2,
         color: { dark: '#000000', light: '#ffffff' },
       }).catch(() => {});
     }
-  }, [preference, tab]);
+  }, [qr, tab]);
 
   const generatePreference = async () => {
     setIsLoading(true);
@@ -67,6 +82,23 @@ export default function MercadoPagoPayModal({
     }
   };
 
+  const generateQr = async () => {
+    setQrLoading(true);
+    setQrError(null);
+    try {
+      const dto: CreateMpPreferenceDTO = { cashRegisterId };
+      if (invoiceId)     dto.invoiceId     = invoiceId;
+      if (budgetId)      dto.budgetId      = budgetId;
+      if (ordenPedidoId) dto.ordenPedidoId = ordenPedidoId;
+      const result = await mercadoPagoService.createQrOrder(dto);
+      setQr(result);
+    } catch (err: any) {
+      setQrError(err?.response?.data?.message ?? 'Error al generar el QR presencial');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
   const handleCopy = async () => {
     if (!preference) return;
     await navigator.clipboard.writeText(preference.payUrl);
@@ -80,8 +112,14 @@ export default function MercadoPagoPayModal({
   };
 
   const handleRefresh = () => {
-    setPreference(null);
-    generatePreference();
+    if (tab === 'qr') {
+      setQr(null);
+      setQrError(null);
+      generateQr();
+    } else {
+      setPreference(null);
+      generatePreference();
+    }
   };
 
   if (!open) return null;
@@ -180,16 +218,33 @@ export default function MercadoPagoPayModal({
 
               {tab === 'qr' && (
                 <div className="space-y-4">
-                  <div className="flex justify-center">
-                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                      <canvas ref={canvasRef} className="block" />
+                  {qrLoading ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-3">
+                      <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm text-gray-500 dark:text-slate-400">Generando QR presencial...</p>
                     </div>
-                  </div>
+                  ) : qrError ? (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40 rounded-lg p-4 text-xs text-amber-700 dark:text-amber-400 flex gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium mb-0.5">No se pudo generar el QR</p>
+                        <p>{qrError}</p>
+                      </div>
+                    </div>
+                  ) : qr ? (
+                    <>
+                      <div className="flex justify-center">
+                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                          <canvas ref={canvasRef} className="block" />
+                        </div>
+                      </div>
 
-                  <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800/40 rounded-lg p-3 text-xs text-sky-700 dark:text-sky-400">
-                    <p className="font-medium mb-0.5">Pago presencial</p>
-                    <p>Mostrá este QR al cliente para que lo escanee con la app de MercadoPago. El pago se registrará automáticamente al confirmar.</p>
-                  </div>
+                      <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800/40 rounded-lg p-3 text-xs text-sky-700 dark:text-sky-400">
+                        <p className="font-medium mb-0.5">Pago presencial (posnet)</p>
+                        <p>Mostrá este QR al cliente para que lo escanee con la app de MercadoPago. El pago aparece dentro de la app y se registra automáticamente al confirmar.</p>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               )}
 
@@ -205,7 +260,7 @@ export default function MercadoPagoPayModal({
                   className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 transition-colors"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  Regenerar link
+                  {tab === 'qr' ? 'Regenerar QR' : 'Regenerar link'}
                 </button>
                 {onPaymentRegistered && (
                   <Button variant="outline" size="sm" onClick={() => { onPaymentRegistered(); onClose(); }}>

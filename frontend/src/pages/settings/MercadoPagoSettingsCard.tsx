@@ -10,6 +10,7 @@ export default function MercadoPagoSettingsCard() {
     mpPublicKey:     '',
     mpWebhookSecret: '',
     mpMode:          'test' as 'test' | 'production',
+    mpPosId:         '',
   });
   const [showToken,   setShowToken]   = useState(false);
   const [showSecret,  setShowSecret]  = useState(false);
@@ -23,6 +24,7 @@ export default function MercadoPagoSettingsCard() {
         mpPublicKey:     s.mpPublicKey     ?? '',
         mpWebhookSecret: s.mpWebhookSecret ?? '',
         mpMode:          s.mpMode          ?? 'test',
+        mpPosId:         s.mpPosId         ?? '',
       }))
       .catch(() => {})
       .finally(() => setIsLoading(false));
@@ -39,6 +41,7 @@ export default function MercadoPagoSettingsCard() {
         mpPublicKey:     form.mpPublicKey     || null,
         mpWebhookSecret: form.mpWebhookSecret || null,
         mpMode:          form.mpMode,
+        mpPosId:         form.mpPosId || null,
       });
       toast.success('Configuración de MercadoPago guardada');
     } catch {
@@ -168,6 +171,20 @@ export default function MercadoPagoSettingsCard() {
               {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1.5">
+            ID de caja / POS <span className="text-gray-400 font-normal">(para QR presencial tipo posnet)</span>
+          </label>
+          <Input
+            value={form.mpPosId}
+            onChange={(e) => set('mpPosId', e.target.value)}
+            placeholder="External ID de la caja creada en el panel de MP"
+          />
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5">
+            En MercadoPago → Tu negocio → Sucursales y cajas, creá una caja y pegá acá su identificación externa.
+          </p>
         </div>
       </div>
 

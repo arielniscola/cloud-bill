@@ -54,13 +54,16 @@ export interface PurchaseInvoiceReportRow {
   amount:         number;
   retenciones:    number;
   net:            number;
+  paid:           number;
+  pending:        number;
   dueDate:        string | null;
   imputationDate: string | null;
+  invoiceDate:    string | null;
   paymentMethod:  string;
-  status:         'PENDING' | 'PAID';
+  status:         'PENDING' | 'PARTIALLY_PAID' | 'PAID';
   notes:          string | null;
-  purchaseId:     string;
-  purchaseNumber: string;
+  purchaseId:     string | null;
+  purchaseNumber: string | null;
   purchaseDate:   string | null;
   currency:       string;
   supplierId:     string;
@@ -79,7 +82,7 @@ export interface PurchaseInvoiceReportTotals {
   paid:         number;
 }
 
-export type PurchaseInvoiceDateField = 'imputationDate' | 'dueDate' | 'createdAt' | 'purchaseDate';
+export type PurchaseInvoiceDateField = 'imputationDate' | 'dueDate' | 'createdAt' | 'date' | 'purchaseDate';
 
 export interface PurchaseInvoicesReportFilters extends DateRangeParams {
   supplierId?:    string;

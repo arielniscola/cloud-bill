@@ -288,8 +288,8 @@ export default function InvoiceFormPage() {
     }
   };
 
-  const handleProductChange = (index: number, productId: string) => {
-    const product = products.find((p) => p.id === productId);
+  const handleProductChange = (index: number, productId: string, picked?: Product) => {
+    const product = picked ?? products.find((p) => p.id === productId);
     if (product) {
       setValue(`items.${index}.productId`, productId);
       setValue(`items.${index}.variantId`, null);
@@ -320,6 +320,16 @@ export default function InvoiceFormPage() {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
+      return;
+    }
+    // Reutilizar la fila vacía inicial: si queda, su producto requerido bloquea el submit
+    const emptyIndex = items.findIndex((item) => !item.productId && !Number(item.unitPrice));
+    if (emptyIndex >= 0) {
+      setValue(`items.${emptyIndex}.productId`, product.id);
+      setValue(`items.${emptyIndex}.quantity`, qty);
+      setValue(`items.${emptyIndex}.unitPrice`, product.price);
+      setValue(`items.${emptyIndex}.discountPct`, 0);
+      setValue(`items.${emptyIndex}.taxRate`, product.taxRate);
     } else {
       append({ productId: product.id, quantity: qty, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
     }
@@ -538,8 +548,9 @@ export default function InvoiceFormPage() {
                         <ProductSearchSelect
                           products={products}
                           value={items[index]?.productId || ''}
-                          onChange={(value) => handleProductChange(index, value)}
+                          onChange={(value, picked) => handleProductChange(index, value, picked)}
                           error={errors.items?.[index]?.productId?.message}
+                          serverSearch
                         />
                         {items[index]?.productId && (variantsByProduct[items[index].productId]?.length ?? 0) > 0 && (
                           <select

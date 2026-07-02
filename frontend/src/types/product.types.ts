@@ -21,6 +21,7 @@ export interface Product {
   price: number;
   salePriceUSD: number | null;
   taxRate: number;
+  trackStock: boolean;
   priceUpdatedAt: string | null;
   isActive: boolean;
   createdAt: string;
@@ -42,6 +43,7 @@ export interface CreateProductDTO {
   price: number;
   salePriceUSD?: number | null;
   taxRate?: number;
+  trackStock?: boolean;
   isActive?: boolean;
   customFields?: ProductCustomFieldValueDTO[];
 }

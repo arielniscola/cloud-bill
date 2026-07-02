@@ -12,10 +12,10 @@ const today          = new Date().toISOString().substring(0, 10);
 const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().substring(0, 10);
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'Todos los estados' },
-  { value: 'REGISTERED', label: 'Registrado' },
-  { value: 'PAID',       label: 'Pagado' },
-  { value: 'CANCELLED',  label: 'Cancelado' },
+  { value: '',               label: 'Todos los estados' },
+  { value: 'PENDING',        label: 'Pendiente' },
+  { value: 'PARTIALLY_PAID', label: 'Pago parcial' },
+  { value: 'PAID',           label: 'Pagada' },
 ];
 
 export default function PurchasesReportPage() {
@@ -55,7 +55,7 @@ export default function PurchasesReportPage() {
       [
         { header: 'Proveedor',     key: 'supplierName',  width: 28 },
         { header: 'CUIT',          key: 'supplierCuit',  width: 16 },
-        { header: 'N° compras',    key: 'purchaseCount', width: 12 },
+        { header: 'N° facturas',   key: 'purchaseCount', width: 12 },
         { header: 'Subtotal',      key: 'subtotal',      width: 14, format: 'currency' },
         { header: 'IVA',           key: 'taxAmount',     width: 14, format: 'currency' },
         { header: 'Total',         key: 'total',         width: 14, format: 'currency' },
@@ -119,7 +119,7 @@ export default function PurchasesReportPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                   <tr>
-                    {['Proveedor', 'CUIT', 'N° compras', 'Subtotal', 'IVA', 'Total'].map((h) => (
+                    {['Proveedor', 'CUIT', 'N° facturas', 'Subtotal', 'IVA', 'Total'].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>

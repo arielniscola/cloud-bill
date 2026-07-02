@@ -2,7 +2,7 @@ import type { InvoiceType, Currency } from './invoice.types';
 import type { Supplier } from './supplier.types';
 
 export type PurchaseStatus             = 'REGISTERED' | 'CANCELLED';
-export type PurchaseInvoiceStatus      = 'PENDING' | 'PAID';
+export type PurchaseInvoiceStatus      = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 
 export type RetentionType = 'IIBB' | 'GANANCIAS' | 'IVA' | 'OTHER';
 

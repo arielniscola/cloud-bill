@@ -6,7 +6,12 @@ import { Button, Input, Select } from '../../components/ui';
 import { PageHeader, ProductSearchSelect } from '../../components/shared';
 import { purchaseRemitosService, suppliersService, warehousesService, productsService, purchaseInvoicesService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import type { CreatePurchaseRemitoItemDTO, Supplier, Warehouse, Product, PurchaseInvoice } from '../../types';
+import type { CreatePurchaseRemitoItemDTO, Supplier, Warehouse, Product, PurchaseInvoice, PurchaseRemito } from '../../types';
+
+// Límite por línea de la factura: cuánto trae la FC y cuánto ya se recibió en remitos previos.
+interface InvoiceLimit { description: string; invoiceQty: number; received: number; }
+
+const normDesc = (d: string) => d.trim().toLowerCase();
 
 const defaultItem: CreatePurchaseRemitoItemDTO = {
   productId: null,
@@ -31,6 +36,9 @@ export default function PurchaseRemitoFormPage() {
     notes:       '',
   });
   const [items, setItems] = useState<CreatePurchaseRemitoItemDTO[]>([{ ...defaultItem }]);
+  // Remitos ya generados para la FC + límites por línea (para no recibir de más).
+  const [priorRemitos, setPriorRemitos] = useState<PurchaseRemito[]>([]);
+  const [invoiceLimits, setInvoiceLimits] = useState<Record<string, InvoiceLimit>>({});
 
   useEffect(() => {
     Promise.all([
@@ -38,7 +46,7 @@ export default function PurchaseRemitoFormPage() {
       warehousesService.getAll(),
       productsService.getAll({ limit: 1000, isActive: true }),
     ])
-      .then(([suppRes, wareRes, prodRes]) => {
+      .then(async ([suppRes, wareRes, prodRes]) => {
         setSuppliers(suppRes.data);
         setWarehouses(wareRes);
         setProducts(prodRes.data);
@@ -51,19 +59,56 @@ export default function PurchaseRemitoFormPage() {
             supplierId: fromInvoice.supplierId ?? '',
             notes: `Mercadería de factura ${fromInvoice.number}`,
           }));
-          const prefill = (fromInvoice.items ?? []).map((it) => {
-            // Auto-vincula el producto si el nombre coincide exactamente (para que mueva stock)
-            const match = prodRes.data.find(
-              (p) => p.name.trim().toLowerCase() === it.description.trim().toLowerCase()
-            );
-            return {
-              productId: match?.id ?? null,
+
+          // Cantidades ya recibidas en remitos previos (no cancelados) de esta factura,
+          // para que una FC con N remitos parciales no vuelva a ingresar todo el stock.
+          const priorLinks = (fromInvoice.remitos ?? []).filter((r) => r.status !== 'CANCELLED');
+          const received = new Map<string, number>(); // key: descripción normalizada
+          try {
+            const details = await Promise.all(priorLinks.map((r) => purchaseRemitosService.getById(r.id)));
+            setPriorRemitos(details);
+            for (const d of details) {
+              for (const it of d.items ?? []) {
+                const key = normDesc(it.description);
+                received.set(key, (received.get(key) ?? 0) + Number(it.quantity));
+              }
+            }
+          } catch { /* si no se pueden leer los remitos previos, asumimos 0 recibido */ }
+
+          // Límites por línea de la factura (para validar que no se reciba de más).
+          const limits: Record<string, InvoiceLimit> = {};
+          for (const it of fromInvoice.items ?? []) {
+            const key = normDesc(it.description);
+            const prev = limits[key];
+            limits[key] = {
               description: it.description,
-              quantity: Number(it.quantity),
-              unitPrice: Number(it.unitPrice),
+              invoiceQty: (prev?.invoiceQty ?? 0) + Number(it.quantity),
+              received: received.get(key) ?? 0,
             };
-          });
-          if (prefill.length > 0) setItems(prefill);
+          }
+          setInvoiceLimits(limits);
+
+          const prefill = Object.values(limits)
+            .map((lim) => {
+              const key = normDesc(lim.description);
+              const pending = lim.invoiceQty - lim.received;
+              // Auto-vincula el producto si el nombre coincide exactamente (para que mueva stock)
+              const match = prodRes.data.find((p) => p.name.trim().toLowerCase() === key);
+              const invItem = (fromInvoice.items ?? []).find((it) => normDesc(it.description) === key);
+              return {
+                productId: match?.id ?? null,
+                description: lim.description,
+                quantity: pending,
+                unitPrice: Number(invItem?.unitPrice ?? 0),
+              };
+            })
+            .filter((it) => it.quantity > 0);
+
+          if (prefill.length > 0) {
+            setItems(prefill);
+          } else {
+            toast('Esta factura ya tiene toda la mercadería recibida en remitos previos', { icon: 'ℹ️' });
+          }
         }
       })
       .catch(() => toast.error('Error al cargar datos'));
@@ -74,8 +119,8 @@ export default function PurchaseRemitoFormPage() {
   const updateItem = (index: number, field: keyof CreatePurchaseRemitoItemDTO, value: string | number | null) =>
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
 
-  const handleProductSelect = (index: number, productId: string) => {
-    const product = products.find((p) => p.id === productId);
+  const handleProductSelect = (index: number, productId: string, picked?: Product) => {
+    const product = picked ?? products.find((p) => p.id === productId);
     setItems((prev) =>
       prev.map((item, i) =>
         i === index
@@ -90,6 +135,34 @@ export default function PurchaseRemitoFormPage() {
   const itemTotal = (item: CreatePurchaseRemitoItemDTO) => item.quantity * (item.unitPrice ?? 0);
   const grandTotal = items.reduce((acc, item) => acc + itemTotal(item), 0);
 
+  // Pendiente de recibir para una línea de la factura (cantidad de la FC − ya recibido).
+  const pendingForDesc = (description: string): number | null => {
+    const lim = invoiceLimits[normDesc(description)];
+    return lim ? lim.invoiceQty - lim.received : null;
+  };
+
+  // Valida que, viniendo de una factura, no se reciba más de lo que la FC tiene pendiente.
+  // Devuelve un mensaje de error o null si está todo bien.
+  const validateAgainstInvoice = (): string | null => {
+    if (!fromInvoice) return null;
+    const byDesc = new Map<string, number>();
+    for (const it of items) {
+      const key = normDesc(it.description);
+      byDesc.set(key, (byDesc.get(key) ?? 0) + Number(it.quantity));
+    }
+    for (const [key, qty] of byDesc) {
+      const lim = invoiceLimits[key];
+      if (!lim) {
+        return `"${items.find((i) => normDesc(i.description) === key)?.description}" no pertenece a la factura ${fromInvoice.number}`;
+      }
+      const pending = lim.invoiceQty - lim.received;
+      if (qty > pending + 0.0001) {
+        return `No podés recibir ${qty} de "${lim.description}": la factura solo tiene ${pending} pendiente`;
+      }
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.supplierId)  { toast.error('Seleccione un proveedor'); return; }
@@ -98,6 +171,8 @@ export default function PurchaseRemitoFormPage() {
       toast.error('Complete todos los ítems correctamente');
       return;
     }
+    const invoiceError = validateAgainstInvoice();
+    if (invoiceError) { toast.error(invoiceError); return; }
 
     setIsSaving(true);
     try {
@@ -134,6 +209,38 @@ export default function PurchaseRemitoFormPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
           {/* Items */}
           <div className="space-y-4 min-w-0">
+            {/* Remitos ya generados para esta factura */}
+            {fromInvoice && priorRemitos.length > 0 && (
+              <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-indigo-500" />
+                  <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">
+                    Remitos ya generados ({priorRemitos.length})
+                  </h2>
+                </div>
+                <div className="divide-y divide-gray-100 dark:divide-slate-700">
+                  {priorRemitos.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => navigate(`/purchase-remitos/${r.id}`)}
+                      className="w-full flex items-center justify-between px-5 py-2.5 text-left hover:bg-indigo-50/40 dark:hover:bg-slate-700/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-mono text-sm text-gray-800 dark:text-slate-200">{r.number}</span>
+                        <span className="text-xs text-gray-400 dark:text-slate-500">
+                          {new Date(r.date).toLocaleDateString('es-AR')}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0">
+                        {(r.items ?? []).reduce((s, it) => s + Number(it.quantity), 0)} u. · {(r.items?.length ?? 0)} ít.
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Mercadería recibida</h2>
@@ -150,8 +257,10 @@ export default function PurchaseRemitoFormPage() {
                       <ProductSearchSelect
                         products={products}
                         value={item.productId ?? ''}
-                        onChange={(pid) => handleProductSelect(index, pid)}
+                        onChange={(pid, picked) => handleProductSelect(index, pid, picked)}
                         optional
+                        serverSearch
+                        searchParams={{ isActive: true }}
                       />
                       <input
                         type="text"
@@ -161,12 +270,30 @@ export default function PurchaseRemitoFormPage() {
                         onChange={(e) => updateItem(index, 'description', e.target.value)}
                         required
                       />
-                      <input
-                        type="number" min="0.01" step="0.01"
-                        className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                      />
+                      {(() => {
+                        const pending = fromInvoice ? pendingForDesc(item.description) : null;
+                        const over = pending !== null && item.quantity > pending + 0.0001;
+                        return (
+                          <div>
+                            <input
+                              type="number" min="0.01" step="0.01"
+                              max={pending ?? undefined}
+                              className={`w-full border rounded-lg px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 ${
+                                over
+                                  ? 'border-red-400 focus:ring-red-500'
+                                  : 'border-gray-300 dark:border-slate-600 focus:ring-indigo-500'
+                              }`}
+                              value={item.quantity}
+                              onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                            />
+                            {pending !== null && (
+                              <span className={`block text-right text-[10px] mt-0.5 ${over ? 'text-red-500 font-medium' : 'text-gray-400 dark:text-slate-500'}`}>
+                                {over ? `máx. ${pending}` : `pend. ${pending}`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <input
                         type="number" min="0" step="0.01"
                         className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"

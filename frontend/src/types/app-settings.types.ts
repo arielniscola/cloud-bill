@@ -23,6 +23,7 @@ export interface AppSettings {
   mpPublicKey:                  string | null;
   mpWebhookSecret:              string | null;
   mpMode:                       'test' | 'production';
+  mpPosId:                      string | null;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -51,4 +52,5 @@ export interface UpdateAppSettingsDTO {
   mpPublicKey?:                  string | null;
   mpWebhookSecret?:              string | null;
   mpMode?:                       'test' | 'production';
+  mpPosId?:                      string | null;
 }

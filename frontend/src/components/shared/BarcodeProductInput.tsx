@@ -2,6 +2,7 @@ import { useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { Barcode, CheckCircle, XCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { Product } from '../../types';
+import { productsService } from '../../services/products.service';
 
 export interface BarcodeProductInputProps {
   products: Product[];
@@ -88,7 +89,10 @@ const BarcodeProductInput = forwardRef<BarcodeProductInputHandle, BarcodeProduct
       focus: () => inputRef.current?.focus(),
     }));
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const matchesCode = (p: Product, code: string) =>
+      (p.barcode && p.barcode === code) || p.sku.toLowerCase() === code.toLowerCase();
+
+    const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
 
@@ -109,11 +113,17 @@ const BarcodeProductInput = forwardRef<BarcodeProductInputHandle, BarcodeProduct
       }
       lastScanRef.current = { code, ts: now };
 
-      const product = products.find(
-        (p) =>
-          (p.barcode && p.barcode === code) ||
-          p.sku.toLowerCase() === code.toLowerCase()
-      );
+      // 1) Lista precargada (rápido). 2) Fallback al backend: el catálogo puede
+      // superar el límite precargado y el producto no estar en `products`.
+      let product = products.find((p) => matchesCode(p, code));
+      if (!product) {
+        try {
+          const res = await productsService.getAll({ search: code, limit: 10 });
+          product = res.data.find((p) => matchesCode(p, code) && p.isActive);
+        } catch {
+          // sin red / error del server → se informa como no encontrado
+        }
+      }
 
       if (product) {
         onAdd(product, qty);

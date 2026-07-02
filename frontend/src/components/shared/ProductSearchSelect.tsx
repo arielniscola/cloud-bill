@@ -1,16 +1,24 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, ChevronDown, Package } from 'lucide-react';
-import type { Product } from '../../types';
+import { Search, X, ChevronDown, Package, Loader2 } from 'lucide-react';
+import { productsService } from '../../services';
+import type { Product, ProductFilters } from '../../types';
 
 export interface ProductSearchSelectProps {
   products: Product[];
   value: string;                       // productId or ''
-  onChange: (productId: string) => void;
+  // El 2do argumento trae el producto elegido (útil con serverSearch, cuando
+  // puede no estar en el array `products` precargado). '' al limpiar.
+  onChange: (productId: string, product?: Product) => void;
   placeholder?: string;
   error?: string;
   optional?: boolean;                  // shows "Sin producto" clear option
   disabled?: boolean;
+  // Cuando hay más productos que los precargados, busca contra el backend a
+  // medida que se tipea (en vez de filtrar solo el array `products` en memoria).
+  serverSearch?: boolean;
+  // Filtros extra para la búsqueda remota (p.ej. { isActive: true }).
+  searchParams?: ProductFilters;
 }
 
 export default function ProductSearchSelect({
@@ -21,17 +29,25 @@ export default function ProductSearchSelect({
   error,
   optional = false,
   disabled = false,
+  serverSearch = false,
+  searchParams,
 }: ProductSearchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Resultados de la búsqueda remota (null = aún no se buscó / query vacío).
+  const [remoteResults, setRemoteResults] = useState<Product[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  // Cache de productos traídos del backend, para resolver el rótulo del
+  // seleccionado aunque no esté en el array `products` precargado.
+  const [fetchedById, setFetchedById] = useState<Record<string, Product>>({});
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
-    () => products.find((p) => p.id === value) ?? null,
-    [products, value]
+    () => products.find((p) => p.id === value) ?? fetchedById[value] ?? null,
+    [products, value, fetchedById]
   );
 
   // Calculate and set dropdown position based on trigger rect
@@ -80,20 +96,61 @@ export default function ProductSearchSelect({
     return () => document.removeEventListener('mousedown', handler);
   }, [isOpen]);
 
-  // Close on scroll or resize to avoid stale positioning
+  // Close on outer scroll or resize to avoid stale positioning.
+  // Ignora el scroll DENTRO del propio dropdown (su lista tiene overflow-y-auto),
+  // si no, scrollear los resultados cerraba el menú.
   useEffect(() => {
     if (!isOpen) return;
     const close = () => { setIsOpen(false); setQuery(''); };
-    window.addEventListener('scroll', close, true);
+    const onScroll = (e: Event) => {
+      const target = e.target as Node | null;
+      if (target && dropdownRef.current?.contains(target)) return; // scroll interno: mantener abierto
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [isOpen]);
 
+  // Búsqueda remota (debounce) cuando serverSearch está activo.
+  useEffect(() => {
+    if (!serverSearch) return;
+    const q = query.trim();
+    if (!q) { setRemoteResults(null); setIsSearching(false); return; }
+
+    let cancelled = false;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await productsService.getAll({ ...searchParams, search: q, limit: 50 });
+        if (cancelled) return;
+        setRemoteResults(res.data);
+        setFetchedById((prev) => {
+          const next = { ...prev };
+          for (const p of res.data) next[p.id] = p;
+          return next;
+        });
+      } catch {
+        if (!cancelled) setRemoteResults([]);
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, serverSearch]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (serverSearch) {
+      // Sin texto: mostramos lo precargado. Con texto: resultados del backend.
+      if (!q) return products.slice(0, 50);
+      return (remoteResults ?? []).slice(0, 50);
+    }
     if (!q) return products.slice(0, 50);
     return products.filter(
       (p) =>
@@ -102,10 +159,10 @@ export default function ProductSearchSelect({
         (p.brand?.name ?? '').toLowerCase().includes(q) ||
         (p.rubro?.name ?? '').toLowerCase().includes(q)
     ).slice(0, 50);
-  }, [products, query]);
+  }, [products, query, serverSearch, remoteResults]);
 
   const handleSelect = (product: Product) => {
-    onChange(product.id);
+    onChange(product.id, product);
     setIsOpen(false);
     setQuery('');
   };
@@ -142,7 +199,12 @@ export default function ProductSearchSelect({
           )}
 
           <div className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
-            {filtered.length === 0 ? (
+            {isSearching ? (
+              <div className="px-4 py-6 text-center">
+                <Loader2 className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2 animate-spin" />
+                <p className="text-sm text-gray-400 dark:text-slate-500">Buscando…</p>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="px-4 py-6 text-center">
                 <Package className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-400 dark:text-slate-500">
@@ -184,7 +246,7 @@ export default function ProductSearchSelect({
             )}
           </div>
 
-          {filtered.length === 50 && (
+          {!isSearching && filtered.length === 50 && (
             <div className="px-3 py-2 border-t border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
               <p className="text-[11px] text-gray-400 dark:text-slate-500 text-center">
                 Mostrando 50 resultados · refiná la búsqueda para ver más

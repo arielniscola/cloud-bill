@@ -149,6 +149,13 @@ export default function RemitoFormPage() {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
+      return;
+    }
+    // Reutilizar la fila vacía inicial: si queda, su producto requerido bloquea el submit
+    const emptyIndex = items.findIndex((item) => !item.productId);
+    if (emptyIndex >= 0) {
+      setValue(`items.${emptyIndex}.productId`, product.id);
+      setValue(`items.${emptyIndex}.quantity`, qty);
     } else {
       append({ productId: product.id, quantity: qty });
     }

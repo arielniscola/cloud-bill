@@ -4,14 +4,15 @@ import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { Button } from '../ui';
 import importService, { type ImportResult } from '../../services/import.service';
+import { excelFileToCsv } from '../../utils/importExcel';
 
 // ── Templates ──────────────────────────────────────────────────────────────
 
 const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: string[] }> = {
   products: {
     filename: 'template_productos.csv',
-    headers: ['sku', 'nombre', 'costo', 'precio', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'marca'],
-    example: ['PROD-001', 'Producto de ejemplo', '100', '150', '21', 'UN', 'Descripción opcional', '', 'Electrónica', 'MarcaX'],
+    headers: ['sku', 'nombre', 'costo', 'precio', 'preciousd', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'superrubro', 'marca'],
+    example: ['PROD-001', 'Producto de ejemplo', '100', '150', '12.5', '21', 'UN', 'Descripción opcional', '', 'Hortaliza Hibrida', 'Semilla', 'MarcaX'],
   },
   customers: {
     filename: 'template_clientes.csv',
@@ -28,10 +29,11 @@ const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: 
 const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
   products: (
     <ul className="space-y-1 text-xs text-gray-500 dark:text-slate-400">
+      <li>Acepta <span className="font-medium">Excel (.xlsx/.xlsm)</span> — lee la hoja "BASE DE DATOS"</li>
       <li><span className="font-medium">sku, nombre, costo, precio</span> — requeridos</li>
-      <li><span className="font-medium">iva</span> — porcentaje (ej: 21, 10.5, 0). Default: 21</li>
-      <li><span className="font-medium">condicioniva</span> — RI · Monotributista · Exento · CF</li>
-      <li><span className="font-medium">rubro / marca</span> — deben existir en el sistema</li>
+      <li><span className="font-medium">preciousd</span> — precio de venta en USD (opcional)</li>
+      <li><span className="font-medium">iva</span> — % o fracción (21 o 0.21). Default: 21</li>
+      <li><span className="font-medium">rubro / superrubro / marca</span> — deben existir (no se crean)</li>
       <li>Si el SKU ya existe → <span className="italic">actualiza</span> el producto</li>
     </ul>
   ),
@@ -97,21 +99,32 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.name.endsWith('.csv') && !file.name.endsWith('.txt')) {
-      toast.error('Solo se aceptan archivos CSV');
+  const handleFile = useCallback(async (file: File) => {
+    const lower = file.name.toLowerCase();
+    const isExcel = /\.(xlsx|xlsm|xls)$/.test(lower);
+    const isCsv   = /\.(csv|txt)$/.test(lower);
+    if (!isExcel && !isCsv) {
+      toast.error('Se aceptan archivos CSV o Excel (.xlsx / .xlsm)');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
+    try {
+      let text: string;
+      if (isExcel) {
+        const { csv, sheetName, rowCount } = await excelFileToCsv(file, entity);
+        text = csv;
+        toast.success(`Hoja "${sheetName}" — ${rowCount} ${rowCount === 1 ? 'fila' : 'filas'}`);
+      } else {
+        text = await file.text();
+      }
       setCsvText(text);
       setFileName(file.name);
       setPreview(parsePreview(text));
       setResult(null);
-    };
-    reader.readAsText(file, 'UTF-8');
-  }, []);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'No se pudo leer el archivo';
+      toast.error(msg);
+    }
+  }, [entity]);
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -204,7 +217,7 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
                   : 'border-gray-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-gray-50 dark:hover:bg-slate-700/30'
               )}
             >
-              <input ref={fileRef} type="file" accept=".csv,.txt" onChange={onFileChange} className="hidden" />
+              <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xlsm,.xls" onChange={onFileChange} className="hidden" />
               {csvText ? (
                 <div className="flex flex-col items-center gap-2">
                   <FileText className="w-8 h-8 text-emerald-500" />
@@ -217,9 +230,9 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-8 h-8 text-gray-300 dark:text-slate-600" />
                   <p className="text-sm font-medium text-gray-600 dark:text-slate-300">
-                    Arrastrá tu CSV aquí o hacé click
+                    Arrastrá tu archivo aquí o hacé click
                   </p>
-                  <p className="text-xs text-gray-400 dark:text-slate-500">Archivos .csv</p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500">CSV o Excel (.xlsx / .xlsm)</p>
                 </div>
               )}
             </div>

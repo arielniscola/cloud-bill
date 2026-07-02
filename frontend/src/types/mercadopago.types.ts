@@ -39,6 +39,15 @@ export interface MpMovementsResult {
   total: number;
 }
 
+export interface MpQrResult {
+  /** String EMV a renderizar como QR (NO es una URL) */
+  qrData: string;
+  inStoreOrderId: string | null;
+  amount: number;
+  title: string;
+  mode: 'test' | 'production';
+}
+
 export interface CreateMpPreferenceDTO {
   invoiceId?:      string;
   budgetId?:       string;

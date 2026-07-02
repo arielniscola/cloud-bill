@@ -6,7 +6,7 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import {
   Tag, Layers, DollarSign, FileText,
-  Power, Barcode, Ruler, TrendingUp,
+  Power, Barcode, Ruler, TrendingUp, Boxes,
 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
@@ -56,6 +56,7 @@ const productSchema = z.object({
   price: z.coerce.number().min(0, 'El precio debe ser ≥ 0'),
   salePriceUSD: z.coerce.number().min(0).optional().nullable(),
   taxRate: z.coerce.number().min(0).max(100).default(21),
+  trackStock: z.boolean(),
   isActive: z.boolean(),
 });
 
@@ -204,6 +205,40 @@ function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: b
   );
 }
 
+// ── Track stock toggle ───────────────────────────────────────────
+function TrackStockToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
+      checked ? 'bg-indigo-50/70 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+    }`}>
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+        checked ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
+      }`}>
+        <Boxes className="w-4 h-4" />
+      </div>
+      <div className="flex-1">
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-indigo-800 dark:text-indigo-300' : 'text-gray-600 dark:text-slate-300'}`}>
+          Controla stock
+        </p>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5 leading-snug">
+          {checked
+            ? 'Se descuenta y valida inventario al facturar, remitir y comprar.'
+            : 'Producto no inventariado (servicios, mano de obra): no genera ni valida stock.'}
+        </p>
+      </div>
+      <div
+        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-slate-600'}`}
+        style={{ width: 40, height: 22 }}
+      >
+        <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
+          checked ? 'translate-x-[19px]' : 'translate-x-[3px]'
+        }`} />
+      </div>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
+    </label>
+  );
+}
+
 // ── Skeleton ─────────────────────────────────────────────────────
 function FormSkeleton() {
   return (
@@ -265,7 +300,7 @@ export default function ProductFormPage() {
     formState: { errors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema) as any,
-    defaultValues: { taxRate: 21, isActive: true },
+    defaultValues: { taxRate: 21, trackStock: true, isActive: true },
   });
 
   const rubroId = watch('rubroId') || '';
@@ -277,6 +312,7 @@ export default function ProductFormPage() {
   const price      = watch('price')       ?? 0;
   const salePriceUSD = watch('salePriceUSD') ?? 0;
   const isActiveVal = watch('isActive');
+  const trackStockVal = watch('trackStock');
 
   // Derived margin state — not saved, just a calculation helper
   const [marginPct, setMarginPct] = useState<string>('');
@@ -328,6 +364,7 @@ export default function ProductFormPage() {
         setValue('price',         p.price);
         setValue('salePriceUSD',  p.salePriceUSD ?? null);
         setValue('taxRate',       p.taxRate);
+        setValue('trackStock',    p.trackStock ?? true);
         setValue('isActive',      p.isActive);
         if (p.customFieldValues && p.customFieldValues.length > 0) {
           const map: Record<string, string> = {};
@@ -645,6 +682,12 @@ export default function ProductFormPage() {
 
                 <PricePreview cost={Number(cost)} price={Number(price)} taxRate={Number(taxRate)} />
               </div>
+
+              {/* ── Inventario ── */}
+              <TrackStockToggle
+                checked={trackStockVal}
+                onChange={(v) => setValue('trackStock', v)}
+              />
 
               {/* ── Estado ── */}
               <ActiveToggle

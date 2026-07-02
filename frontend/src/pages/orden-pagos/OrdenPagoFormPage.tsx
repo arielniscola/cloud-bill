@@ -191,11 +191,14 @@ export default function OrdenPagoFormPage() {
   const invCurrency = (invoiceId: string) => invoices.find((x) => x.id === invoiceId)?.currency || 'ARS';
 
   // Se pueden mezclar monedas: las facturas en USD se convierten a ARS con la cotización.
+  // Saldo pendiente de la factura = total menos lo ya imputado por OP pagadas.
+  const invoiceBalance = (inv: PendingPurchaseInvoice) => Number(inv.amount) - Number(inv.paidAmount ?? 0);
+
   const toggleInvoice = (inv: PendingPurchaseInvoice) => {
     const exists = items.some((i) => i.purchaseInvoiceId === inv.id);
     setItems((prev) => exists
       ? prev.filter((i) => i.purchaseInvoiceId !== inv.id)
-      : [...prev, { purchaseInvoiceId: inv.id, amount: Number(inv.amount).toFixed(2) }]);
+      : [...prev, { purchaseInvoiceId: inv.id, amount: invoiceBalance(inv).toFixed(2) }]);
     // Al sumar una factura en USD, proponer la cotización del día si todavía no se cargó
     if (!exists && (inv.currency || 'ARS') === 'USD' && (!exchangeRate || exchangeRate === '1') && usdRate) {
       setExchangeRate(String(usdRate));
@@ -652,6 +655,11 @@ export default function OrdenPagoFormPage() {
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-800 dark:text-slate-200">
                           {formatCurrency(Number(inv.amount), inv.currency)}
+                          {Number(inv.paidAmount ?? 0) > 0 && (
+                            <p className="text-[10px] font-normal text-amber-600 dark:text-amber-400 mt-0.5">
+                              saldo {formatCurrency(invoiceBalance(inv), inv.currency)}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           {selected && (
@@ -659,7 +667,7 @@ export default function OrdenPagoFormPage() {
                               <input
                                 type="number"
                                 min="0.01"
-                                max={Number(inv.amount)}
+                                max={invoiceBalance(inv)}
                                 step="0.01"
                                 value={selected.amount}
                                 onChange={(e) => updateAmount(inv.id, e.target.value)}

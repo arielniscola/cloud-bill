@@ -5,6 +5,7 @@ import type {
   MpPreferenceResult,
   MpBalance,
   MpMovementsResult,
+  MpQrResult,
   CreateMpPreferenceDTO,
   LinkMpPaymentDTO,
 } from '../types/mercadopago.types';
@@ -17,6 +18,11 @@ const mercadoPagoService = {
 
   async createPreference(data: CreateMpPreferenceDTO): Promise<MpPreferenceResult> {
     const res = await api.post<ApiResponse<MpPreferenceResult>>('/mercadopago/preference', data);
+    return res.data.data;
+  },
+
+  async createQrOrder(data: CreateMpPreferenceDTO): Promise<MpQrResult> {
+    const res = await api.post<ApiResponse<MpQrResult>>('/mercadopago/qr', data);
     return res.data.data;
   },
 

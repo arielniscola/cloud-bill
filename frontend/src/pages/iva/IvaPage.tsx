@@ -46,6 +46,7 @@ export default function IvaPage() {
   const [comprasRows, setComprasRows] = useState<IvaComprasRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingTxt, setIsExportingTxt] = useState(false);
   const [selectedVenta, setSelectedVenta] = useState<IvaVentasRow | null>(null);
   const [selectedCompra, setSelectedCompra] = useState<IvaComprasRow | null>(null);
 
@@ -89,6 +90,22 @@ export default function IvaPage() {
     }
   };
 
+  const handleExportIvaDigital = async () => {
+    setIsExportingTxt(true);
+    try {
+      const count = await ivaService.exportComprasIvaDigital(year, month);
+      if (count === 0) {
+        toast.error('No hay comprobantes para exportar en este período');
+      } else {
+        toast.success(`Libro IVA Digital generado (${count} comprobantes)`);
+      }
+    } catch {
+      toast.error('Error al generar el Libro IVA Digital');
+    } finally {
+      setIsExportingTxt(false);
+    }
+  };
+
   const totalNeto = tab === 'ventas'
     ? ventasRows.reduce((s, r) => s + r.neto, 0)
     : comprasRows.reduce((s, r) => s + r.neto, 0);
@@ -111,10 +128,18 @@ export default function IvaPage() {
         title="Libro IVA"
         subtitle="Registro de comprobantes para liquidación de IVA"
         actions={
-          <Button onClick={handleExport} isLoading={isExporting} variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Exportar Excel
-          </Button>
+          <div className="flex items-center gap-2">
+            {tab === 'compras' && (
+              <Button onClick={handleExportIvaDigital} isLoading={isExportingTxt} variant="outline">
+                <FileText className="w-4 h-4 mr-2" />
+                IVA Digital (ARCA)
+              </Button>
+            )}
+            <Button onClick={handleExport} isLoading={isExporting} variant="outline">
+              <Download className="w-4 h-4 mr-2" />
+              Exportar Excel
+            </Button>
+          </div>
         }
       />
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Receipt, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../ui';
 import ProductSearchSelect from './ProductSearchSelect';
@@ -156,7 +156,7 @@ const todayISO = () => new Date().toISOString().split('T')[0];
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function AddPurchaseInvoiceModal({
-  isOpen, currency, existing, onClose, onSave, isLoading,
+  isOpen, purchaseId, currency, existing, onClose, onSave, isLoading,
   standalone = false, suppliers = [], fromRemito = null,
 }: Props) {
   const [supplierId,    setSupplierId]    = useState('');
@@ -190,10 +190,24 @@ export function AddPurchaseInvoiceModal({
   const [showItems,   setShowItems]   = useState(false);
   const [showRets,    setShowRets]    = useState(false);
   const [showTribs,   setShowTribs]   = useState(false);
+  const [confirmAction, setConfirmAction] = useState<null | 'close' | 'discard'>(null);
+
+  // Borrador (solo factura nueva): se persiste en localStorage y se restaura al reabrir.
+  const isDraftMode = !existing && !fromRemito;
+  const draftKey = `pi-draft:${standalone ? 'standalone' : `purchase:${purchaseId ?? 'none'}`}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const readDraft = (): any | null => {
+    try { const raw = localStorage.getItem(draftKey); return raw ? JSON.parse(raw) : null; }
+    catch { return null; }
+  };
+  const clearDraft = () => { try { localStorage.removeItem(draftKey); } catch { /* noop */ } };
+  // Evita que el primer render tras hidratar pise el borrador con estado vacío.
+  const hydratingRef = useRef(false);
 
   // Reset / populate standalone header fields when opening
   useEffect(() => {
     if (!isOpen) return;
+    hydratingRef.current = true;
     if (existing) {
       setSupplierId(existing.supplierId ?? '');
       setCurrencyState(existing.currency ?? currency);
@@ -212,14 +226,15 @@ export function AddPurchaseInvoiceModal({
       setOriginInvoiceId('');
       if ((fromRemito.currency ?? currency) !== 'ARS') fetchDayRate();
     } else {
-      setSupplierId('');
-      setCurrencyState(currency);
-      setSaleCondition('CONTADO');
-      setDate(todayISO());
-      setExchangeRate(1);
-      setRemitoLink(null);
-      setOriginInvoiceId('');
-      if (currency !== 'ARS') fetchDayRate();
+      const draft = readDraft();
+      setSupplierId(draft?.supplierId ?? '');
+      setCurrencyState(draft?.currencyState ?? currency);
+      setSaleCondition(draft?.saleCondition ?? 'CONTADO');
+      setDate(draft?.date ?? todayISO());
+      setExchangeRate(draft?.exchangeRate ?? 1);
+      setRemitoLink(draft?.remitoLink ?? null);
+      setOriginInvoiceId(draft?.originInvoiceId ?? '');
+      if (!draft && currency !== 'ARS') fetchDayRate();
     }
   }, [isOpen, existing, fromRemito, currency]);
 
@@ -277,13 +292,14 @@ export function AddPurchaseInvoiceModal({
       setShowRets(false);
       setShowTribs(false);
     } else {
-      setForm(EMPTY_FORM);
-      setItems([]);
-      setRetenciones([]);
-      setTributos([]);
-      setShowItems(false);
-      setShowRets(false);
-      setShowTribs(false);
+      const draft = readDraft();
+      setForm(draft?.form ?? EMPTY_FORM);
+      setItems(draft?.items ?? []);
+      setRetenciones(draft?.retenciones ?? []);
+      setTributos(draft?.tributos ?? []);
+      setShowItems(draft?.showItems ?? false);
+      setShowRets(draft?.showRets ?? false);
+      setShowTribs(draft?.showTribs ?? false);
     }
   }, [isOpen, existing, fromRemito]);
 
@@ -296,6 +312,43 @@ export function AddPurchaseInvoiceModal({
       .catch(() => { /* sin productos: el ítem se carga a mano */ });
     return () => { cancelled = true; };
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ¿Hay datos cargados? (para confirmar cierre y decidir si guardar el borrador)
+  const isDirty = useMemo(() => (
+    !!form.number.trim() || Number(form.amount) > 0 || Number(form.subtotal) > 0 ||
+    items.length > 0 || retenciones.length > 0 || tributos.length > 0 ||
+    !!supplierId || !!form.notes || !!originInvoiceId
+  ), [form, items, retenciones, tributos, supplierId, originInvoiceId]);
+
+  // Auto-guardado del borrador (solo factura nueva). Se omite el primer render
+  // tras hidratar para no pisar lo restaurado con el estado vacío inicial.
+  useEffect(() => {
+    if (!isOpen || !isDraftMode) return;
+    if (hydratingRef.current) { hydratingRef.current = false; return; }
+    if (!isDirty) { clearDraft(); return; }
+    const snapshot = {
+      supplierId, currencyState, saleCondition, date, exchangeRate, remitoLink,
+      originInvoiceId, form, items, retenciones, tributos, showItems, showRets, showTribs,
+    };
+    try { localStorage.setItem(draftKey, JSON.stringify(snapshot)); } catch { /* quota */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isDraftMode, isDirty, supplierId, currencyState, saleCondition, date,
+      exchangeRate, remitoLink, originInvoiceId, form, items, retenciones, tributos,
+      showItems, showRets, showTribs]);
+
+  // Cierre con Escape (respeta la confirmación de borrador)
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (confirmAction) { setConfirmAction(null); return; }
+      attemptClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isDraftMode, isDirty, confirmAction]);
 
   const set = (field: keyof typeof EMPTY_FORM, value: unknown) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -337,8 +390,8 @@ export function AddPurchaseInvoiceModal({
 
   // Al elegir un producto: autocompleta descripción, precio unitario (costo) e IVA.
   // El productId queda solo en el estado local (no se envía al backend).
-  const selectProduct = (i: number, productId: string) => {
-    const product = products.find((p) => p.id === productId);
+  const selectProduct = (i: number, productId: string, picked?: Product) => {
+    const product = picked ?? products.find((p) => p.id === productId);
     setItems((prev) => prev.map((item, idx) => {
       if (idx !== i) return item;
       if (!product) return { ...item, productId: null };
@@ -484,6 +537,39 @@ export function AddPurchaseInvoiceModal({
     } : {}),
   });
 
+  const resetToEmpty = () => {
+    setForm(EMPTY_FORM); setItems([]); setRetenciones([]); setTributos([]);
+    setSupplierId(''); setCurrencyState(currency); setSaleCondition('CONTADO');
+    setDate(todayISO()); setExchangeRate(1); setRemitoLink(null); setOriginInvoiceId('');
+    setShowItems(false); setShowRets(false); setShowTribs(false);
+  };
+
+  // El click afuera no cierra; cerrar con datos cargados pide confirmación.
+  const attemptClose = () => {
+    if (isDraftMode && isDirty) { setConfirmAction('close'); return; }
+    onClose();
+  };
+
+  const handleConfirm = () => {
+    if (confirmAction === 'discard') {
+      clearDraft();
+      resetToEmpty();
+      setConfirmAction(null);
+      return;
+    }
+    // 'close' — el borrador queda guardado y se restaura al reabrir
+    setConfirmAction(null);
+    onClose();
+  };
+
+  // Guarda y, solo si el guardado fue exitoso, limpia el borrador.
+  const handleSaveClick = async () => {
+    try {
+      await onSave(buildPayload());
+      if (isDraftMode) clearDraft();
+    } catch { /* el padre ya muestra el error y mantiene el modal abierto */ }
+  };
+
   // All hooks have been called — safe to early-return now
   if (!isOpen) return null;
 
@@ -527,7 +613,8 @@ export function AddPurchaseInvoiceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      {/* Click afuera NO cierra: evita perder lo cargado por accidente */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[92vh]">
         {/* Header */}
@@ -540,7 +627,7 @@ export function AddPurchaseInvoiceModal({
               {existing ? 'Editar factura' : 'Agregar factura del proveedor'}
             </h2>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400">
+          <button onClick={attemptClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -777,9 +864,10 @@ export function AddPurchaseInvoiceModal({
                     <ProductSearchSelect
                       products={products}
                       value={item.productId || ''}
-                      onChange={(productId) => selectProduct(i, productId)}
+                      onChange={(productId, picked) => selectProduct(i, productId, picked)}
                       placeholder="Elegir producto…"
                       optional
+                      serverSearch
                     />
                     <input className={tinyInput} placeholder="Descripción"
                       value={item.description}
@@ -995,14 +1083,52 @@ export function AddPurchaseInvoiceModal({
             </span>
           ) : <span />}
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={onClose} disabled={isLoading}>Cancelar</Button>
+            {isDraftMode && isDirty && (
+              <button
+                type="button"
+                onClick={() => setConfirmAction('discard')}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+              >
+                Descartar borrador
+              </button>
+            )}
+            <Button variant="outline" size="sm" onClick={attemptClose} disabled={isLoading}>Cancelar</Button>
             <Button size="sm"
-              onClick={() => onSave(buildPayload())}
+              onClick={handleSaveClick}
               isLoading={isLoading} disabled={!isValid}>
               {existing ? 'Guardar cambios' : standalone ? 'Crear factura' : 'Agregar factura'}
             </Button>
           </div>
         </div>
+
+        {/* Confirmación de cierre / descarte (overlay sobre el panel) */}
+        {confirmAction && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center p-4 rounded-2xl overflow-hidden">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmAction(null)} />
+            <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm p-5">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-1.5">
+                {confirmAction === 'discard' ? '¿Descartar el borrador?' : 'Cerrar sin guardar'}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mb-4 leading-relaxed">
+                {confirmAction === 'discard'
+                  ? 'Se borrarán los datos cargados de esta factura. Esta acción no se puede deshacer.'
+                  : 'Tus datos quedan guardados como borrador y se restauran cuando vuelvas a abrir el formulario.'}
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setConfirmAction(null)}>
+                  {confirmAction === 'discard' ? 'Cancelar' : 'Seguir editando'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={confirmAction === 'discard' ? 'danger' : 'primary'}
+                  onClick={handleConfirm}
+                >
+                  {confirmAction === 'discard' ? 'Descartar' : 'Cerrar'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
