@@ -12,8 +12,10 @@ export class PrismaRubroRepository implements IRubroRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<Rubro | null> {
-    return this.prisma.rubro.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Rubro | null> {
+    return this.prisma.rubro.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
+    });
   }
 
   async findAll(companyId?: string): Promise<Rubro[]> {

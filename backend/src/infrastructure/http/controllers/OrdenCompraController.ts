@@ -43,7 +43,7 @@ export class OrdenCompraController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenCompraRepository>('OrdenCompraRepository');
-      const oc   = await repo.findById(req.params.id);
+      const oc   = await repo.findById(req.params.id, req.companyId);
       if (!oc) throw new NotFoundError('Orden de Compra');
       res.json({ status: 'success', data: oc });
     } catch (error) {
@@ -102,7 +102,7 @@ export class OrdenCompraController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenCompraRepository>('OrdenCompraRepository');
-      const oc   = await repo.findById(req.params.id);
+      const oc   = await repo.findById(req.params.id, req.companyId);
       if (!oc) throw new NotFoundError('Orden de Compra');
       if (oc.status !== 'DRAFT') throw new AppError('Solo se pueden editar OC en borrador', 400);
 
@@ -139,7 +139,7 @@ export class OrdenCompraController {
       const repo         = container.resolve<IOrdenCompraRepository>('OrdenCompraRepository');
       const activityRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const oc = await repo.findById(req.params.id);
+      const oc = await repo.findById(req.params.id, req.companyId);
       if (!oc) throw new NotFoundError('Orden de Compra');
       if (oc.status === 'RECEIVED' || oc.status === 'CANCELLED') {
         throw new AppError(`No se puede cambiar el estado de una OC ${oc.status === 'RECEIVED' ? 'recibida' : 'cancelada'}`, 400);
@@ -167,7 +167,7 @@ export class OrdenCompraController {
       const repo         = container.resolve<IOrdenCompraRepository>('OrdenCompraRepository');
       const activityRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const oc = await repo.findById(req.params.id);
+      const oc = await repo.findById(req.params.id, req.companyId);
       if (!oc) throw new NotFoundError('Orden de Compra');
       if (oc.status !== 'CONFIRMED') throw new AppError('Solo se pueden convertir OC confirmadas', 400);
       if (oc.purchaseId) throw new AppError('Esta OC ya fue convertida a compra', 400);
@@ -289,7 +289,7 @@ export class OrdenCompraController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenCompraRepository>('OrdenCompraRepository');
-      const oc   = await repo.findById(req.params.id);
+      const oc   = await repo.findById(req.params.id, req.companyId);
       if (!oc) throw new NotFoundError('Orden de Compra');
       if (oc.status !== 'DRAFT') throw new AppError('Solo se pueden eliminar OC en borrador', 400);
       await repo.delete(req.params.id);

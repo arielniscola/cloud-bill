@@ -19,7 +19,7 @@ export class BancoController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBancoRepository>('BancoRepository');
-      const banco = await repo.findById(req.params.id);
+      const banco = await repo.findById(req.params.id, req.companyId);
       if (!banco) throw new NotFoundError('Banco');
       res.json({ status: 'success', data: banco });
     } catch (error) {
@@ -42,7 +42,7 @@ export class BancoController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBancoRepository>('BancoRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Banco');
       const data = updateBancoSchema.parse(req.body);
       const banco = await repo.update(req.params.id, data);
@@ -56,7 +56,7 @@ export class BancoController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBancoRepository>('BancoRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Banco');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Banco ${existing.name} desactivado`);

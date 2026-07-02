@@ -34,7 +34,7 @@ export class CustomerController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const useCase = container.resolve(GetCustomerUseCase);
-      const customer = await useCase.execute(req.params.id);
+      const customer = await useCase.execute(req.params.id, req.companyId);
 
       res.json({
         status: 'success',
@@ -67,7 +67,7 @@ export class CustomerController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const useCase = container.resolve(UpdateCustomerUseCase);
-      const customer = await useCase.execute(req.params.id, req.body);
+      const customer = await useCase.execute(req.params.id, req.body, req.companyId);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
@@ -90,7 +90,7 @@ export class CustomerController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const useCase = container.resolve(DeleteCustomerUseCase);
-      await useCase.execute(req.params.id);
+      await useCase.execute(req.params.id, req.companyId);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({

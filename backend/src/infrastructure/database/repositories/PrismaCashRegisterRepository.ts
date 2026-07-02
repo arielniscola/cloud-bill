@@ -22,8 +22,8 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<CashRegister | null> {
-    return this.prisma.cashRegister.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<CashRegister | null> {
+    return this.prisma.cashRegister.findFirst({ where: { id, ...(companyId ? ({ companyId } as any) : {}) } });
   }
 
   async findAll(onlyActive = false, companyId?: string): Promise<CashRegister[]> {

@@ -5,8 +5,10 @@ import prisma from '../prisma';
 
 @injectable()
 export class PrismaBrandRepository implements IBrandRepository {
-  async findById(id: string): Promise<Brand | null> {
-    return (prisma as any).brand.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Brand | null> {
+    return (prisma as any).brand.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
+    });
   }
 
   async findAll(companyId?: string): Promise<Brand[]> {

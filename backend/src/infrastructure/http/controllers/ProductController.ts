@@ -10,6 +10,16 @@ import {
   getCustomFieldValuesForProducts,
 } from '../../database/repositories/productCustomFieldValuesHelper';
 import { ProductCustomFieldValueInput } from '../../../domain/entities/ProductCustomField';
+import prisma from '../../database/prisma';
+
+/** Filtra los IDs recibidos dejando solo los que pertenecen a la empresa activa. */
+async function filterOwnedProductIds(ids: string[], companyId: string): Promise<Set<string>> {
+  const owned = await prisma.product.findMany({
+    where: { id: { in: ids }, companyId },
+    select: { id: true },
+  });
+  return new Set(owned.map((p) => p.id));
+}
 
 function parseCustomFieldsPayload(body: any): ProductCustomFieldValueInput[] | null {
   if (!Array.isArray(body?.customFields)) return null;
@@ -76,7 +86,7 @@ export class ProductController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
-      const product = await productRepository.findById(req.params.id);
+      const product = await productRepository.findById(req.params.id, req.companyId);
 
       if (!product) {
         throw new NotFoundError('Product');
@@ -123,7 +133,7 @@ export class ProductController {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
 
-      const existingProduct = await productRepository.findById(req.params.id);
+      const existingProduct = await productRepository.findById(req.params.id, req.companyId);
       if (!existingProduct) {
         throw new NotFoundError('Product');
       }
@@ -187,8 +197,11 @@ export class ProductController {
         return;
       }
 
+      const ownedIds = await filterOwnedProductIds(updates.map((u) => u.id), req.companyId!);
+      const ownedUpdates = updates.filter((u) => ownedIds.has(u.id));
+
       await Promise.all(
-        updates.map(({ id, price, cost, salePriceUSD }) => {
+        ownedUpdates.map(({ id, price, cost, salePriceUSD }) => {
           const data: Record<string, unknown> = {};
           if (price        !== undefined) data.price       = new Decimal(price);
           if (cost         !== undefined) data.cost        = new Decimal(cost);
@@ -197,7 +210,7 @@ export class ProductController {
         })
       );
 
-      res.json({ status: 'success', updated: updates.length });
+      res.json({ status: 'success', updated: ownedUpdates.length });
     } catch (error) {
       next(error);
     }
@@ -226,7 +239,10 @@ export class ProductController {
         return;
       }
 
-      await Promise.all(ids.map((id) => productRepository.update(id, patch as any)));
+      const ownedIds = await filterOwnedProductIds(ids, req.companyId!);
+      const ownedList = ids.filter((id) => ownedIds.has(id));
+
+      await Promise.all(ownedList.map((id) => productRepository.update(id, patch as any)));
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       activityLogRepo.create({
@@ -247,7 +263,7 @@ export class ProductController {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
 
-      const existingProduct = await productRepository.findById(req.params.id);
+      const existingProduct = await productRepository.findById(req.params.id, req.companyId);
       if (!existingProduct) {
         throw new NotFoundError('Product');
       }

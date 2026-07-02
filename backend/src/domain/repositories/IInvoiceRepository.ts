@@ -20,7 +20,7 @@ export interface InvoiceFilters {
 }
 
 export interface IInvoiceRepository {
-  findById(id: string): Promise<InvoiceWithItems | null>;
+  findById(id: string, companyId?: string): Promise<InvoiceWithItems | null>;
   findByNumber(number: string): Promise<Invoice | null>;
   findAll(
     pagination?: PaginationParams,

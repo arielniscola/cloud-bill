@@ -44,7 +44,7 @@ export class ReciboController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IReciboRepository>('ReciboRepository');
-      const recibo = await repo.findById(req.params.id);
+      const recibo = await repo.findById(req.params.id, req.companyId);
       if (!recibo) throw new NotFoundError('Recibo');
 
       res.json({ status: 'success', data: recibo });
@@ -82,7 +82,7 @@ export class ReciboController {
       const repo = container.resolve<IReciboRepository>('ReciboRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const recibo = await repo.findById(req.params.id);
+      const recibo = await repo.findById(req.params.id, req.companyId);
       if (!recibo) throw new NotFoundError('Recibo');
       if (recibo.paymentMethod !== 'CHECK') throw new AppError('Solo se puede cambiar el estado de cheques', 400);
       if (recibo.status === 'CANCELLED') throw new AppError('El recibo está cancelado', 400);
@@ -131,7 +131,7 @@ export class ReciboController {
       const logRepo     = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
 
-      const recibo = await reciboRepo.findById(req.params.id);
+      const recibo = await reciboRepo.findById(req.params.id, req.companyId);
       if (!recibo) throw new NotFoundError('Recibo');
       if ((recibo as any).paymentMethod !== 'CHECK') throw new AppError('El recibo no es de tipo cheque', 400);
       if ((recibo as any).status === 'CANCELLED')    throw new AppError('El recibo está cancelado', 400);
@@ -191,7 +191,7 @@ export class ReciboController {
         description: `Cheque ${(recibo as any).number} depositado en caja ${cashRegister.name}`,
       });
 
-      const updated = await reciboRepo.findById(req.params.id);
+      const updated = await reciboRepo.findById(req.params.id, req.companyId);
       res.json({ status: 'success', data: updated });
     } catch (error) { next(error); }
   }
@@ -205,7 +205,7 @@ export class ReciboController {
       const opRepo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const recibo = await reciboRepo.findById(req.params.id);
+      const recibo = await reciboRepo.findById(req.params.id, req.companyId);
       if (!recibo) throw new NotFoundError('Recibo');
 
       if (recibo.status === 'CANCELLED') {

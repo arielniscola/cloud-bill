@@ -11,8 +11,8 @@ export class UpdateCustomerUseCase {
     private customerRepository: ICustomerRepository
   ) {}
 
-  async execute(id: string, data: UpdateCustomerDTO): Promise<Customer> {
-    const existingCustomer = await this.customerRepository.findById(id);
+  async execute(id: string, data: UpdateCustomerDTO, companyId?: string): Promise<Customer> {
+    const existingCustomer = await this.customerRepository.findById(id, companyId);
 
     if (!existingCustomer) {
       throw new NotFoundError('Customer');

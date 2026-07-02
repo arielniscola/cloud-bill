@@ -2,7 +2,7 @@ import { ProductVariant, CreateProductVariantInput, UpdateProductVariantInput } 
 
 export interface IProductVariantRepository {
   findByProduct(productId: string): Promise<ProductVariant[]>;
-  findById(id: string): Promise<ProductVariant | null>;
+  findById(id: string, companyId?: string): Promise<ProductVariant | null>;
   findBySku(sku: string, companyId: string): Promise<ProductVariant | null>;
   create(data: CreateProductVariantInput): Promise<ProductVariant>;
   createMany(data: CreateProductVariantInput[]): Promise<ProductVariant[]>;

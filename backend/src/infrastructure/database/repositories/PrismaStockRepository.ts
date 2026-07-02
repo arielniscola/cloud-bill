@@ -187,11 +187,43 @@ export class PrismaStockRepository implements IStockRepository {
       } as any));
   }
 
+  // Productos no inventariados (trackStock = false, ej. servicios) no generan ni
+  // validan stock. Se consulta por SQL crudo para no depender del cliente Prisma
+  // (puede estar desactualizado por el lock de DLL en Windows). Por defecto true
+  // (compatibilidad hacia atrás: productos sin la columna seteada siguen con stock).
+  private async _tracksStock(
+    client: Prisma.TransactionClient | PrismaClient,
+    productId: string
+  ): Promise<boolean> {
+    const rows = await client.$queryRaw<{ trackStock: boolean }[]>`
+      SELECT "trackStock" FROM "products" WHERE "id" = ${productId} LIMIT 1
+    `;
+    return rows[0] ? rows[0].trackStock !== false : true;
+  }
+
   private async _addMovementWithTx(
     tx: Prisma.TransactionClient,
     data: CreateStockMovementInput
   ): Promise<StockMovement> {
     const v = data.variantId ?? null;
+
+    // Producto no inventariado: no se crea fila de stock ni movimiento.
+    if (!(await this._tracksStock(tx, data.productId))) {
+      return {
+        id: '',
+        productId: data.productId,
+        variantId: v,
+        warehouseId: data.warehouseId,
+        type: data.type,
+        quantity: new Decimal(data.quantity),
+        previousQuantity: new Decimal(0),
+        newQuantity: new Decimal(0),
+        reason: data.reason ?? null,
+        referenceId: data.referenceId ?? null,
+        userId: data.userId ?? null,
+        createdAt: new Date(),
+      } as unknown as StockMovement;
+    }
 
     // Look up current stock row (variant-aware)
     const existing = v === null
@@ -449,6 +481,8 @@ export class PrismaStockRepository implements IStockRepository {
     variantId?: string | null
   ): Promise<void> {
     const v = variantId ?? null;
+    // Producto no inventariado: no reserva stock.
+    if (!(await this._tracksStock(this.prisma, productId))) return;
     const existing = await this.getStock(productId, warehouseId, v);
     if (existing) {
       await this.prisma.$executeRaw`

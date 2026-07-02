@@ -23,10 +23,14 @@ export class PrismaBancoRepository implements IBancoRepository {
     `;
   }
 
-  async findById(id: string): Promise<Banco | null> {
-    const rows = await prisma.$queryRaw<RawBanco[]>`
-      SELECT * FROM "bancos" WHERE id = ${id} LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<Banco | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<RawBanco[]>`
+          SELECT * FROM "bancos" WHERE id = ${id} AND "companyId" = ${companyId} LIMIT 1
+        `
+      : await prisma.$queryRaw<RawBanco[]>`
+          SELECT * FROM "bancos" WHERE id = ${id} LIMIT 1
+        `;
     return rows[0] ?? null;
   }
 

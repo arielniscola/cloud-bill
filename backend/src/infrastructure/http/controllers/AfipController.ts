@@ -113,7 +113,7 @@ export class AfipController {
       const afipRepo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const invoice = await invoiceRepo.findById(req.params.id);
+      const invoice = await invoiceRepo.findById(req.params.id, req.companyId);
       if (!invoice) throw new NotFoundError('Invoice');
 
       if (invoice.status !== 'DRAFT') {

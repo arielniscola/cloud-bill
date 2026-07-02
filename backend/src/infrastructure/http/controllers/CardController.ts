@@ -19,7 +19,7 @@ export class CardController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICardRepository>('CardRepository');
-      const card = await repo.findById(req.params.id);
+      const card = await repo.findById(req.params.id, req.companyId);
       if (!card) throw new NotFoundError('Tarjeta');
       res.json({ status: 'success', data: card });
     } catch (error) {
@@ -42,7 +42,7 @@ export class CardController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICardRepository>('CardRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Tarjeta');
       const data = updateCardSchema.parse(req.body);
       const card = await repo.update(req.params.id, data);
@@ -56,7 +56,7 @@ export class CardController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICardRepository>('CardRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Tarjeta');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Tarjeta ${existing.name} desactivada`);

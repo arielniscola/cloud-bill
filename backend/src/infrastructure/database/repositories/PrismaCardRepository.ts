@@ -63,10 +63,14 @@ export class PrismaCardRepository implements ICardRepository {
     }));
   }
 
-  async findById(id: string): Promise<Card | null> {
-    const rows = await prisma.$queryRaw<RawCard[]>`
-      SELECT * FROM "cards" WHERE id = ${id} LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<Card | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<RawCard[]>`
+          SELECT * FROM "cards" WHERE id = ${id} AND "companyId" = ${companyId} LIMIT 1
+        `
+      : await prisma.$queryRaw<RawCard[]>`
+          SELECT * FROM "cards" WHERE id = ${id} LIMIT 1
+        `;
     if (!rows[0]) return null;
     const surchargesMap = await getSurchargesForCards([id]);
     return {

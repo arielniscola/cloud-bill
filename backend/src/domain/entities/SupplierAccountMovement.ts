@@ -32,6 +32,7 @@ export interface SupplierAccountMovement {
   // Enriquecido en getSupplierMovements (no persistido):
   kind?: SupplierMovementKind;
   docNumber?: string | null;
+  docDate?: Date | null; // fecha del comprobante de origen (vs. createdAt = fecha imputable)
 }
 
 export interface SupplierMovementFilters {

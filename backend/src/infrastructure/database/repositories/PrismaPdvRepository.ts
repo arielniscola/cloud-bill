@@ -44,13 +44,20 @@ export class PrismaPdvRepository implements IPdvRepository {
     return rows.map((r: any) => mapRow({ ...r, assignedUsers: usersByPdv[r.id] ?? [] }));
   }
 
-  async findById(id: string): Promise<PuntoDeVenta | null> {
-    const rows = await prisma.$queryRaw<any[]>`
-      SELECT id, number, name, "companyId", "isActive", "createdAt", "updatedAt"
-      FROM "puntos_de_venta"
-      WHERE id = ${id}
-      LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<PuntoDeVenta | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<any[]>`
+          SELECT id, number, name, "companyId", "isActive", "createdAt", "updatedAt"
+          FROM "puntos_de_venta"
+          WHERE id = ${id} AND "companyId" = ${companyId}
+          LIMIT 1
+        `
+      : await prisma.$queryRaw<any[]>`
+          SELECT id, number, name, "companyId", "isActive", "createdAt", "updatedAt"
+          FROM "puntos_de_venta"
+          WHERE id = ${id}
+          LIMIT 1
+        `;
     if (!rows[0]) return null;
 
     const users = await prisma.$queryRaw<{ id: string; name: string; username: string }[]>`

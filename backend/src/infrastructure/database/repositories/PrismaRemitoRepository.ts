@@ -19,9 +19,9 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<RemitoWithItems | null> {
-    return this.prisma.remito.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<RemitoWithItems | null> {
+    return this.prisma.remito.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
       include: {
         items: {
           include: { product: true },

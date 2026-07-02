@@ -14,7 +14,7 @@ export interface InternalNoteFilters {
 }
 
 export interface IInternalNoteRepository {
-  findById(id: string): Promise<InternalNote | null>;
+  findById(id: string, companyId?: string): Promise<InternalNote | null>;
   findAll(
     pagination: PaginationParams,
     filters: InternalNoteFilters

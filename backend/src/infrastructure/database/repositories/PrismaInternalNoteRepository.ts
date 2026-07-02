@@ -58,11 +58,14 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
     return `${prefix}${seq.toString().padStart(8, '0')}`;
   }
 
-  async findById(id: string): Promise<InternalNote | null> {
+  async findById(id: string, companyId?: string): Promise<InternalNote | null> {
+    const companyFilter = companyId
+      ? Prisma.sql`AND n."companyId" = ${companyId}`
+      : Prisma.empty;
     const [row] = await prisma.$queryRaw<any[]>`
       SELECT ${Prisma.raw(SELECT)}
       ${Prisma.raw(FROM)}
-      WHERE n.id = ${id}
+      WHERE n.id = ${id} ${companyFilter}
     `;
     return row ? mapRow(row) : null;
   }

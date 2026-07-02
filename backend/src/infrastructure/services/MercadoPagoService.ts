@@ -15,6 +15,21 @@ export interface MpPreferenceResult {
   sandboxInitPoint: string;
 }
 
+export interface MpQrOrderInput {
+  posId: string;
+  externalReference: string;
+  title: string;
+  amount: number;
+  notificationUrl: string;
+  description?: string;
+}
+
+export interface MpQrOrderResult {
+  /** EMV string que se renderiza como QR (NO es una URL) */
+  qrData: string;
+  inStoreOrderId: string | null;
+}
+
 export interface MpPaymentData {
   id: number;
   status: string; // approved | pending | in_process | rejected | cancelled | refunded | charged_back
@@ -89,6 +104,55 @@ export class MercadoPagoService {
       initPoint:       result.init_point!,
       sandboxInitPoint: result.sandbox_init_point!,
     };
+  }
+
+  /**
+   * Crea una orden QR dinámica (presencial / "posnet") sobre una caja (POS).
+   * Devuelve el `qr_data` (string EMV) para renderizar como código QR. El cliente
+   * lo escanea con la app de MercadoPago y el pago se confirma vía webhook
+   * (notificación `payment` con el mismo external_reference).
+   * Requiere que la caja exista en el panel de MP con el external id `posId`.
+   */
+  async createQrOrder(input: MpQrOrderInput): Promise<MpQrOrderResult> {
+    const collectorId = await this.getCollectorId();
+    const url = `${MP_API}/instore/orders/qr/seller/collectors/${collectorId}/pos/${encodeURIComponent(input.posId)}/qrs`;
+
+    const body = {
+      external_reference: input.externalReference,
+      title: input.title,
+      description: input.description ?? input.title,
+      notification_url: input.notificationUrl,
+      total_amount: input.amount,
+      items: [
+        {
+          title: input.title,
+          unit_price: input.amount,
+          quantity: 1,
+          unit_measure: 'unit',
+          total_amount: input.amount,
+        },
+      ],
+    };
+
+    const res = await axios.put(url, body, {
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    return {
+      qrData: res.data?.qr_data ?? '',
+      inStoreOrderId: res.data?.in_store_order_id ?? null,
+    };
+  }
+
+  /** Resuelve el id del collector (vendedor) dueño del access token */
+  async getCollectorId(): Promise<number> {
+    const res = await axios.get(`${MP_API}/users/me`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    });
+    return Number(res.data?.id);
   }
 
   async getPayment(paymentId: string | number): Promise<MpPaymentData> {

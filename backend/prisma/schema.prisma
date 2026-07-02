@@ -223,6 +223,7 @@ model Product {
   salePriceUSD  Decimal? @db.Decimal(12, 2) // Precio de venta en USD (opcional, para presupuestos)
   taxRate       Decimal  @default(21) @db.Decimal(5, 2)
   leadTimeDays    Int?                          // Días de reposición para predicción de quiebre
+  trackStock      Boolean  @default(true)       // false = producto no inventariado (servicios): no genera/valida stock
   priceUpdatedAt  DateTime?                     // Última vez que se actualizó price, cost o salePriceUSD
   isActive        Boolean  @default(true)
   companyId     String   @default("00000000-0000-0000-0000-000000000001")

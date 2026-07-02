@@ -56,8 +56,8 @@ export class PrismaPurchaseRepository implements IPurchaseRepository {
     return { data: data as unknown as Purchase[], total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<PurchaseWithItems | null> {
-    const purchase = await prisma.purchase.findUnique({ where: { id }, include: includeRelations }) as unknown as PurchaseWithItems | null;
+  async findById(id: string, companyId?: string): Promise<PurchaseWithItems | null> {
+    const purchase = await prisma.purchase.findFirst({ where: { id, ...(companyId ? ({ companyId } as any) : {}) }, include: includeRelations }) as unknown as PurchaseWithItems | null;
     if (!purchase) return null;
 
     // originPurchaseId + origin reference + exchangeRate via raw SQL (stale Prisma client workaround)

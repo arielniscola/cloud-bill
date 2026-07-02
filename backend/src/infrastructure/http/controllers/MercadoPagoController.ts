@@ -151,6 +151,106 @@ export class MercadoPagoController {
     }
   }
 
+  /** POST /api/mercadopago/qr — create a presential dynamic QR (posnet) for invoice/budget/OP */
+  async createQrOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const settingsRepo = container.resolve<IAppSettingsRepository>('AppSettingsRepository');
+      const invoiceRepo  = container.resolve<IInvoiceRepository>('InvoiceRepository');
+      const budgetRepo   = container.resolve<IBudgetRepository>('BudgetRepository');
+      const companyId    = req.companyId ?? '00000000-0000-0000-0000-000000000001';
+
+      const settings = await (settingsRepo as any).get(companyId);
+      if (!settings?.mpAccessToken) {
+        throw new AppError('MercadoPago no está configurado. Ingresá el Access Token en Configuración.', 400);
+      }
+      if (!settings?.mpPosId) {
+        throw new AppError('Falta el ID de caja (POS) de MercadoPago. Configuralo en Configuración → Pagos para usar el QR presencial.', 400);
+      }
+
+      const body = createPreferenceSchema.parse(req.body);
+      if (!body.invoiceId && !body.budgetId && !body.ordenPedidoId) {
+        throw new AppError('Debe especificar invoiceId, budgetId o ordenPedidoId', 400);
+      }
+
+      let amount = 0;
+      let title = '';
+      let externalRef = '';
+      let customerId = '';
+      let type = 'INVOICE';
+
+      if (body.invoiceId) {
+        const invoice = await invoiceRepo.findById(body.invoiceId);
+        if (!invoice) throw new NotFoundError('Factura');
+        if (invoice.status === 'PAID')      throw new AppError('La factura ya está pagada', 400);
+        if (invoice.status === 'CANCELLED') throw new AppError('La factura está cancelada', 400);
+        const activeRecibos = await prisma.recibo.findMany({ where: { invoiceId: invoice.id, status: 'EMITTED' } });
+        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
+        amount = Number(invoice.total) - paid;
+        title = `Factura ${invoice.number}`;
+        externalRef = invoice.id;
+        customerId = invoice.customerId;
+        type = 'INVOICE';
+      } else if (body.budgetId) {
+        const budget = await (budgetRepo as any).findById(body.budgetId);
+        if (!budget) throw new NotFoundError('Presupuesto');
+        const activeRecibos = await prisma.recibo.findMany({ where: { budgetId: budget.id, status: 'EMITTED' } });
+        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
+        amount = Number(budget.total) - paid;
+        title = `Presupuesto ${budget.number}`;
+        externalRef = budget.id;
+        customerId = budget.customerId;
+        type = 'BUDGET';
+      } else if (body.ordenPedidoId) {
+        const op = await prisma.ordenPedido.findUnique({ where: { id: body.ordenPedidoId } });
+        if (!op) throw new NotFoundError('Orden de Pedido');
+        const activeRecibos = await prisma.recibo.findMany({ where: { ordenPedidoId: op.id, status: 'EMITTED' } });
+        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
+        amount = Number(op.total) - paid;
+        title = `Orden de Pedido ${op.number}`;
+        externalRef = op.id;
+        customerId = op.customerId ?? '';
+        type = 'ORDEN_PEDIDO';
+      }
+
+      if (amount <= 0) throw new AppError('El saldo pendiente es 0', 400);
+
+      const notificationUrl = `${process.env.BASE_URL ?? 'http://localhost:3000'}/api/mercadopago/webhook`;
+      const mpService = new MercadoPagoService(settings.mpAccessToken);
+      const qr = await mpService.createQrOrder({
+        posId:             settings.mpPosId,
+        externalReference: externalRef,
+        title,
+        amount,
+        notificationUrl,
+      });
+
+      // El webhook matchea por externalReference; preferenceId sólo debe ser único y no nulo.
+      const preferenceId = qr.inStoreOrderId ?? `QR-${uuidv4()}`;
+      await prisma.$executeRaw`
+        INSERT INTO "mp_preferences" ("id","preferenceId","externalReference","type","amount","customerId","userId","cashRegisterId","notes","status","companyId","createdAt","updatedAt")
+        VALUES (
+          ${uuidv4()}, ${preferenceId}, ${externalRef}, ${type},
+          ${amount}, ${customerId}, ${req.user!.userId},
+          ${body.cashRegisterId ?? null}, ${body.notes ?? null},
+          'PENDING', ${companyId}, NOW(), NOW()
+        )
+      `;
+
+      res.json({
+        status: 'success',
+        data: {
+          qrData:         qr.qrData,
+          inStoreOrderId: qr.inStoreOrderId,
+          amount,
+          title,
+          mode:           settings.mpMode,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   /** POST /api/mercadopago/webhook — receives MP IPN notifications (no auth) */
   async webhook(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

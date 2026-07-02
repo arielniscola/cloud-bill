@@ -1,8 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
+import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 import { Currency } from '../../../shared/types';
+
+/** La cuenta corriente no tiene companyId propio: se protege validando el cliente. */
+async function assertCustomerInCompany(customerId: string, companyId?: string): Promise<void> {
+  const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
+  const customer = await customerRepo.findById(customerId, companyId);
+  if (!customer) throw new NotFoundError('Customer');
+}
 
 export class CurrentAccountController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -28,6 +36,7 @@ export class CurrentAccountController {
       const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
         'CurrentAccountRepository'
       );
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
       const accounts = await currentAccountRepository.findAllByCustomerId(req.params.customerId);
 
       res.json({
@@ -44,6 +53,7 @@ export class CurrentAccountController {
       const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
         'CurrentAccountRepository'
       );
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
       const currency = (req.query.currency as Currency) || 'ARS';
       const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
@@ -71,6 +81,7 @@ export class CurrentAccountController {
       const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
         'CurrentAccountRepository'
       );
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
       const currency: Currency = req.body.currency || 'ARS';
       let currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
@@ -99,6 +110,7 @@ export class CurrentAccountController {
       const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
         'CurrentAccountRepository'
       );
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
       const currency: Currency = req.body.currency || 'ARS';
       const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
@@ -125,6 +137,7 @@ export class CurrentAccountController {
       const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
         'CurrentAccountRepository'
       );
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
       const currency = (req.query.currency as Currency) || 'ARS';
       const balance = await currentAccountRepository.getBalance(req.params.customerId, currency);
 

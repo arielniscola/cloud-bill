@@ -46,7 +46,7 @@ export class BudgetController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
-      const budget = await repo.findById(req.params.id);
+      const budget = await repo.findById(req.params.id, req.companyId);
       if (!budget) throw new NotFoundError('Presupuesto');
 
       const deliveryStatus = await computeDeliveryStatus('budgetId', budget.id, budget.items);
@@ -125,7 +125,7 @@ export class BudgetController {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const budget = await repo.findById(req.params.id);
+      const budget = await repo.findById(req.params.id, req.companyId);
       if (!budget) throw new NotFoundError('Presupuesto');
 
       if (budget.status !== 'DRAFT') {
@@ -182,7 +182,7 @@ export class BudgetController {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const budget = await repo.findById(req.params.id);
+      const budget = await repo.findById(req.params.id, req.companyId);
       if (!budget) throw new NotFoundError('Presupuesto');
 
       if (budget.status === 'CONVERTED' || budget.status === 'REJECTED') {
@@ -209,7 +209,7 @@ export class BudgetController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
-      const budget = await repo.findById(req.params.id);
+      const budget = await repo.findById(req.params.id, req.companyId);
       if (!budget) throw new NotFoundError('Presupuesto');
 
       if (budget.status !== 'DRAFT') {

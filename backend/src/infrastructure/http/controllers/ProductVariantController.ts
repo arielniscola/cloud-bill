@@ -14,6 +14,9 @@ export class ProductVariantController {
   async findByProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
+      const productRepo = container.resolve<IProductRepository>('ProductRepository');
+      const product = await productRepo.findById(req.params.productId, req.companyId);
+      if (!product) throw new NotFoundError('Producto');
       const variants = await repo.findByProduct(req.params.productId);
       res.json({ status: 'success', data: variants });
     } catch (error) {
@@ -24,7 +27,7 @@ export class ProductVariantController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
-      const variant = await repo.findById(req.params.id);
+      const variant = await repo.findById(req.params.id, req.companyId);
       if (!variant) throw new NotFoundError('Variante');
       res.json({ status: 'success', data: variant });
     } catch (error) {
@@ -37,7 +40,7 @@ export class ProductVariantController {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
       const productRepo = container.resolve<IProductRepository>('ProductRepository');
 
-      const product = await productRepo.findById(req.params.productId);
+      const product = await productRepo.findById(req.params.productId, req.companyId);
       if (!product) throw new NotFoundError('Producto');
 
       const data = createProductVariantSchema.parse(req.body);
@@ -69,7 +72,7 @@ export class ProductVariantController {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
       const productRepo = container.resolve<IProductRepository>('ProductRepository');
 
-      const product = await productRepo.findById(req.params.productId);
+      const product = await productRepo.findById(req.params.productId, req.companyId);
       if (!product) throw new NotFoundError('Producto');
 
       const data = bulkCreateProductVariantSchema.parse(req.body);
@@ -123,7 +126,7 @@ export class ProductVariantController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Variante');
 
       const data = updateProductVariantSchema.parse(req.body);
@@ -144,7 +147,7 @@ export class ProductVariantController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductVariantRepository>('ProductVariantRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Variante');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Variante "${existing.name}" eliminada`);

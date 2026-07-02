@@ -48,10 +48,14 @@ export class PrismaProductVariantRepository implements IProductVariantRepository
     return rows.map(mapRow);
   }
 
-  async findById(id: string): Promise<ProductVariant | null> {
-    const rows = await prisma.$queryRaw<RawVariant[]>`
-      SELECT * FROM "product_variants" WHERE id = ${id} LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<ProductVariant | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<RawVariant[]>`
+          SELECT * FROM "product_variants" WHERE id = ${id} AND "companyId" = ${companyId} LIMIT 1
+        `
+      : await prisma.$queryRaw<RawVariant[]>`
+          SELECT * FROM "product_variants" WHERE id = ${id} LIMIT 1
+        `;
     return rows[0] ? mapRow(rows[0]) : null;
   }
 

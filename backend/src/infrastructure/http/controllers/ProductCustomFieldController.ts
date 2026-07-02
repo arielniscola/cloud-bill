@@ -23,7 +23,7 @@ export class ProductCustomFieldController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductCustomFieldRepository>('ProductCustomFieldRepository');
-      const field = await repo.findById(req.params.id);
+      const field = await repo.findById(req.params.id, req.companyId);
       if (!field) throw new NotFoundError('Campo personalizado');
       res.json({ status: 'success', data: field });
     } catch (error) {
@@ -51,7 +51,7 @@ export class ProductCustomFieldController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductCustomFieldRepository>('ProductCustomFieldRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Campo personalizado');
       const data = updateProductCustomFieldSchema.parse(req.body);
 
@@ -73,7 +73,7 @@ export class ProductCustomFieldController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IProductCustomFieldRepository>('ProductCustomFieldRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Campo personalizado');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Campo personalizado "${existing.name}" eliminado`);

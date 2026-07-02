@@ -129,55 +129,47 @@ export class ReportsController {
   }
 
   // ── GET /reports/purchases/by-supplier ───────────────────────────
+  // Agrega desde las facturas de compra (documento de primer nivel del flujo
+  // actual). La antigua tabla `purchases` quedó fuera del flujo.
   async purchasesBySupplier(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
       const { dateFrom, dateTo, supplierId, status } = req.query as Record<string, string>;
 
-      const where: Record<string, unknown> = { companyId, ...(req.fiscalMode && { fiscalMode: req.fiscalMode }) };
-      if (status) where.status = status;
-      else where.status = { not: 'CANCELLED' };
-      if (supplierId) where.supplierId = supplierId;
-      if (dateFrom || dateTo) {
-        where.date = {
-          ...(dateFrom && { gte: new Date(dateFrom) }),
-          ...(dateTo   && { lte: new Date(dateTo)   }),
-        };
+      const conditions: Prisma.Sql[] = [Prisma.sql`pi."companyId" = ${companyId}`];
+      if (req.fiscalMode) conditions.push(Prisma.sql`pi."fiscalMode" = ${req.fiscalMode}`);
+      if (supplierId)     conditions.push(Prisma.sql`pi."supplierId" = ${supplierId}`);
+      if (status)         conditions.push(Prisma.sql`pi.status = ${status}`);
+      if (dateFrom)       conditions.push(Prisma.sql`pi.date >= ${new Date(dateFrom)}`);
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        conditions.push(Prisma.sql`pi.date <= ${to}`);
       }
+      const where = Prisma.join(conditions, ' AND ');
 
-      const purchases = await prisma.purchase.findMany({
-        where,
-        include: { supplier: { select: { id: true, name: true, cuit: true } } },
-      });
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
+               COUNT(pi.id)::int          AS "purchaseCount",
+               COALESCE(SUM(pi.subtotal), 0)      AS "subtotal",
+               COALESCE(SUM(pi."taxAmount"), 0)   AS "taxAmount",
+               COALESCE(SUM(pi.amount), 0)        AS "total"
+        FROM "purchase_invoices" pi
+        JOIN "suppliers" s ON s.id = pi."supplierId"
+        WHERE ${where}
+        GROUP BY s.id, s.name, s.cuit
+        ORDER BY "total" DESC
+      `;
 
-      const map = new Map<string, {
-        supplierId: string; supplierName: string; supplierCuit: string;
-        purchaseCount: number; subtotal: number; taxAmount: number; total: number;
-      }>();
-
-      for (const p of purchases) {
-        const ex = map.get(p.supplierId);
-        if (ex) {
-          ex.purchaseCount++;
-          ex.subtotal  += (p.subtotal  as Decimal).toNumber();
-          ex.taxAmount += (p.taxAmount as Decimal).toNumber();
-          ex.total     += (p.total     as Decimal).toNumber();
-        } else {
-          map.set(p.supplierId, {
-            supplierId:   p.supplierId,
-            supplierName: p.supplier.name,
-            supplierCuit: p.supplier.cuit ?? '—',
-            purchaseCount: 1,
-            subtotal:  (p.subtotal  as Decimal).toNumber(),
-            taxAmount: (p.taxAmount as Decimal).toNumber(),
-            total:     (p.total     as Decimal).toNumber(),
-          });
-        }
-      }
-
-      const data = Array.from(map.values())
-        .map((e) => ({ ...e, subtotal: round2(e.subtotal), taxAmount: round2(e.taxAmount), total: round2(e.total) }))
-        .sort((a, b) => b.total - a.total);
+      const data = rows.map((r) => ({
+        supplierId:    r.supplierId,
+        supplierName:  r.supplierName,
+        supplierCuit:  r.supplierCuit ?? '—',
+        purchaseCount: Number(r.purchaseCount),
+        subtotal:      round2(Number(r.subtotal)),
+        taxAmount:     round2(Number(r.taxAmount)),
+        total:         round2(Number(r.total)),
+      }));
 
       res.json({ status: 'success', data });
     } catch (error) { next(error); }
@@ -312,26 +304,27 @@ export class ReportsController {
       const { dateFrom, dateTo, supplierId, status, paymentMethod, dateField } = req.query as Record<string, string>;
       const fiscalMode = req.fiscalMode;
 
+      // La factura es documento de primer nivel: filtramos/joineamos por `pi`.
+      // `purchases` queda como LEFT JOIN legacy (opcional, puede no existir).
       const DATE_FIELDS: Record<string, string> = {
         imputationDate: `pi."imputationDate"`,
         dueDate:        `pi."dueDate"`,
         createdAt:      `pi."createdAt"`,
-        purchaseDate:   `p."date"`,
+        purchaseDate:   `pi."date"`,
+        date:           `pi."date"`,
       };
       const dateColumn = DATE_FIELDS[dateField] ?? DATE_FIELDS.imputationDate;
 
-      const conditions: string[] = [`p."companyId" = $1`];
+      const conditions: string[] = [`pi."companyId" = $1`];
       const params: any[] = [companyId];
       let i = 2;
 
       if (fiscalMode)     { conditions.push(`pi."fiscalMode" = $${i++}`);   params.push(fiscalMode); }
-      if (supplierId)     { conditions.push(`p."supplierId" = $${i++}`);    params.push(supplierId); }
+      if (supplierId)     { conditions.push(`pi."supplierId" = $${i++}`);   params.push(supplierId); }
       if (status)         { conditions.push(`pi.status = $${i++}`);          params.push(status); }
       if (paymentMethod)  { conditions.push(`pi."paymentMethod" = $${i++}`); params.push(paymentMethod); }
       if (dateFrom)       { conditions.push(`${dateColumn} >= $${i++}`);     params.push(new Date(dateFrom)); }
       if (dateTo)         { conditions.push(`${dateColumn} <= $${i++}`);     params.push(new Date(dateTo + 'T23:59:59')); }
-
-      conditions.push(`p.status <> 'CANCELLED'`);
 
       const where = conditions.join(' AND ');
 
@@ -339,13 +332,19 @@ export class ReportsController {
         SELECT
           pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
           pi."dueDate", pi."imputationDate", pi."paymentMethod", pi.status, pi.notes,
-          pi."createdAt",
-          p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate", p.currency,
+          pi."createdAt", pi.date AS "invoiceDate", pi.currency,
+          p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate",
           s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
-          COALESCE((SELECT SUM(amount) FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = pi.id), 0) AS "retencionesTotal"
+          COALESCE((SELECT SUM(amount) FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = pi.id), 0) AS "retencionesTotal",
+          COALESCE((
+            SELECT SUM(opi.amount)
+            FROM "orden_pago_items" opi
+            JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+            WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
+          ), 0) AS "paidAmount"
         FROM "purchase_invoices" pi
-        JOIN "purchases" p ON p.id = pi."purchaseId"
-        JOIN "suppliers" s ON s.id = p."supplierId"
+        LEFT JOIN "purchases" p ON p.id = pi."purchaseId"
+        JOIN "suppliers" s ON s.id = pi."supplierId"
         WHERE ${where}
         ORDER BY pi."imputationDate" DESC NULLS LAST, pi."createdAt" DESC
       `, ...params);
@@ -356,6 +355,8 @@ export class ReportsController {
         const amount        = Number(r.amount ?? 0);
         const retenciones   = Number(r.retencionesTotal ?? 0);
         const net           = amount - retenciones;
+        const paid          = Math.min(Number(r.paidAmount ?? 0), net);
+        const pending       = Math.max(net - paid, 0);
         return {
           id:             r.id,
           number:         r.number,
@@ -365,13 +366,16 @@ export class ReportsController {
           amount:         round2(amount),
           retenciones:    round2(retenciones),
           net:            round2(net),
+          paid:           round2(paid),
+          pending:        round2(pending),
           dueDate:        r.dueDate        ? r.dueDate.toISOString().substring(0, 10)        : null,
           imputationDate: r.imputationDate ? r.imputationDate.toISOString().substring(0, 10) : null,
+          invoiceDate:    r.invoiceDate    ? r.invoiceDate.toISOString().substring(0, 10)    : null,
           paymentMethod:  r.paymentMethod,
           status:         r.status,
           notes:          r.notes,
-          purchaseId:     r.purchaseId,
-          purchaseNumber: r.purchaseNumber,
+          purchaseId:     r.purchaseId ?? null,
+          purchaseNumber: r.purchaseNumber ?? null,
           purchaseDate:   r.purchaseDate ? r.purchaseDate.toISOString().substring(0, 10) : null,
           currency:       r.currency,
           supplierId:     r.supplierId,
@@ -387,8 +391,8 @@ export class ReportsController {
         amount:       round2(data.reduce((a, r) => a + r.amount,      0)),
         retenciones:  round2(data.reduce((a, r) => a + r.retenciones, 0)),
         net:          round2(data.reduce((a, r) => a + r.net,         0)),
-        pending:      round2(data.filter((r) => r.status === 'PENDING').reduce((a, r) => a + r.net, 0)),
-        paid:         round2(data.filter((r) => r.status === 'PAID').reduce((a, r) => a + r.net, 0)),
+        pending:      round2(data.reduce((a, r) => a + r.pending,     0)),
+        paid:         round2(data.reduce((a, r) => a + r.paid,        0)),
       };
 
       res.json({ status: 'success', data, totals });

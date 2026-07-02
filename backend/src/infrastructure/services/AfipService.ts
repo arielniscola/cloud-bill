@@ -209,7 +209,8 @@ export class AfipService {
     invoice: InvoiceWithItems & { customer: { taxId: string | null; taxCondition: string } },
     config: AfipConfig,
     pdvNumber: number,
-    cbteNro: number
+    cbteNro: number,
+    originInvoice?: { type: string; date: Date; afipPtVenta: number | null; afipCbtNum: number | null } | null
   ): Promise<EmitResult> {
     const cbteTipo = INVOICE_TYPE_MAP[invoice.type];
     if (cbteTipo === undefined) throw new Error(`Tipo de comprobante no soportado: ${invoice.type}`);
@@ -259,6 +260,37 @@ export class AfipService {
     if (needsIvaArray) {
       detRequest.Iva = {
         AlicIva: { Id: 5, BaseImp: impNeto, Importe: impIva }, // 21%
+      };
+    }
+
+    // Notas de Crédito/Débito: ARCA exige la estructura CbtesAsoc con el comprobante
+    // de origen (error 10197 si falta). El asociado debe estar autorizado (tener CAE,
+    // es decir, afipPtVenta + afipCbtNum poblados).
+    const isNotaCD = invoice.type.startsWith('NOTA_CREDITO') || invoice.type.startsWith('NOTA_DEBITO');
+    if (isNotaCD) {
+      if (!originInvoice || !originInvoice.afipPtVenta || !originInvoice.afipCbtNum) {
+        throw new Error(
+          'La nota de crédito/débito requiere un comprobante de origen autorizado por ARCA. ' +
+          'Verificá que la factura asociada tenga CAE.'
+        );
+      }
+      const asocTipo = INVOICE_TYPE_MAP[originInvoice.type];
+      if (asocTipo === undefined) {
+        throw new Error(`Tipo de comprobante de origen no soportado: ${originInvoice.type}`);
+      }
+      const od = new Date(originInvoice.date);
+      const asocFch =
+        od.getFullYear().toString() +
+        String(od.getMonth() + 1).padStart(2, '0') +
+        String(od.getDate()).padStart(2, '0');
+      detRequest.CbtesAsoc = {
+        CbteAsoc: {
+          Tipo: asocTipo,
+          PtoVta: originInvoice.afipPtVenta,
+          Nro: originInvoice.afipCbtNum,
+          Cuit: config.cuit,
+          CbteFch: asocFch,
+        },
       };
     }
 

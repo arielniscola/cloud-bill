@@ -11,6 +11,12 @@ export class CompanyController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICompanyRepository>('CompanyRepository');
+      // Un ADMIN solo ve su propia empresa; el listado completo es de SUPER_ADMIN.
+      if (req.user?.role !== 'SUPER_ADMIN') {
+        const own = req.companyId ? await repo.findById(req.companyId) : null;
+        res.json({ status: 'success', data: own ? [own] : [] });
+        return;
+      }
       const companies = await repo.findAll();
       res.json({ status: 'success', data: companies });
     } catch (error) { next(error); }
@@ -18,6 +24,9 @@ export class CompanyController {
 
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      if (req.user?.role !== 'SUPER_ADMIN' && req.params.id !== req.companyId) {
+        throw new NotFoundError('Empresa');
+      }
       const repo = container.resolve<ICompanyRepository>('CompanyRepository');
       const company = await repo.findById(req.params.id);
       if (!company) throw new NotFoundError('Empresa');

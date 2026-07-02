@@ -1,7 +1,7 @@
 import { Rubro, CreateRubroInput, UpdateRubroInput } from '../entities/Rubro';
 
 export interface IRubroRepository {
-  findById(id: string): Promise<Rubro | null>;
+  findById(id: string, companyId?: string): Promise<Rubro | null>;
   findAll(companyId?: string): Promise<Rubro[]>;
   findByParentId(parentId: string | null): Promise<Rubro[]>;
   create(data: CreateRubroInput & { companyId?: string }): Promise<Rubro>;

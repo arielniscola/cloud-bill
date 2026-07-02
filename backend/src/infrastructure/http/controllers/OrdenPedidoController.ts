@@ -50,7 +50,7 @@ export class OrdenPedidoController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
       res.json({ status: 'success', data: op });
     } catch (error) {
@@ -202,7 +202,7 @@ export class OrdenPedidoController {
       const repo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
 
       if (op.status !== 'DRAFT') {
@@ -250,7 +250,7 @@ export class OrdenPedidoController {
       const repo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
 
       if (op.status === 'CONVERTED' || op.status === 'CANCELLED') {
@@ -366,7 +366,7 @@ export class OrdenPedidoController {
       const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await opRepo.findById(req.params.id);
+      const op = await opRepo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
 
       if (op.status === 'CONVERTED') throw new AppError('La orden ya fue convertida a factura', 400);
@@ -452,7 +452,7 @@ export class OrdenPedidoController {
       const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await opRepo.findById(req.params.id);
+      const op = await opRepo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
 
       if (op.status === 'DRAFT') throw new AppError('Debe confirmar la orden antes de registrar un pago', 400);
@@ -604,7 +604,7 @@ export class OrdenPedidoController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('Orden de pedido');
 
       if (op.status !== 'DRAFT') {

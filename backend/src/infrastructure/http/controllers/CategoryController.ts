@@ -19,8 +19,8 @@ export class CategoryController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICategoryRepository>('CategoryRepository');
-      const category = await repo.findById(req.params.id);
-      if (!category || category.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      const category = await repo.findById(req.params.id, req.companyId);
+      if (!category) throw new NotFoundError('Categoría');
       res.json({ status: 'success', data: category });
     } catch (error) {
       next(error);
@@ -42,8 +42,8 @@ export class CategoryController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICategoryRepository>('CategoryRepository');
-      const existing = await repo.findById(req.params.id);
-      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      const existing = await repo.findById(req.params.id, req.companyId);
+      if (!existing) throw new NotFoundError('Categoría');
       const data = updateCategorySchema.parse(req.body);
       const category = await repo.update(req.params.id, data);
       this._log(req, 'UPDATE', category.id, `Category "${category.name}" actualizado`);
@@ -56,8 +56,8 @@ export class CategoryController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICategoryRepository>('CategoryRepository');
-      const existing = await repo.findById(req.params.id);
-      if (!existing || existing.companyId !== req.companyId) throw new NotFoundError('Categoría');
+      const existing = await repo.findById(req.params.id, req.companyId);
+      if (!existing) throw new NotFoundError('Categoría');
       await repo.delete(req.params.id);
       this._log(req, 'DELETE', req.params.id, `Category "${existing.name}" eliminado`);
       res.status(204).send();

@@ -13,8 +13,11 @@ export class PrismaProductRepository implements IProductRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id }, include: { rubro: true, brand: true, category: true } } as any);
+  async findById(id: string, companyId?: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
+      include: { rubro: true, brand: true, category: true },
+    } as any);
   }
 
   async findBySku(sku: string, companyId: string): Promise<Product | null> {
@@ -34,6 +37,7 @@ export class PrismaProductRepository implements IProductRepository {
       where.OR = [
         { name: { contains: filters.search, mode: 'insensitive' } },
         { sku: { contains: filters.search, mode: 'insensitive' } },
+        { barcode: { equals: filters.search } },
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
@@ -95,7 +99,7 @@ export class PrismaProductRepository implements IProductRepository {
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",
-        cost, price, "salePriceUSD", "taxRate", "isActive",
+        cost, price, "salePriceUSD", "taxRate", "trackStock", "isActive",
         "priceUpdatedAt", "rubroId", "brandId", "categoryId", "companyId",
         "createdAt", "updatedAt"
       ) VALUES (
@@ -103,7 +107,7 @@ export class PrismaProductRepository implements IProductRepository {
         ${d.sku}, ${d.name}, ${d.description ?? null}, ${d.barcode ?? null},
         ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
         ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
-        ${d.isActive ?? true}, NOW(),
+        ${d.trackStock ?? true}, ${d.isActive ?? true}, NOW(),
         ${d.rubroId ?? null}, ${d.brandId ?? null}, ${d.categoryId ?? null}, ${companyId},
         NOW(), NOW()
       )
@@ -127,6 +131,7 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.price         !== undefined) setClauses.push(Prisma.sql`price = ${d.price}`);
     if (d.salePriceUSD  !== undefined) setClauses.push(Prisma.sql`"salePriceUSD" = ${d.salePriceUSD}`);
     if (d.taxRate       !== undefined) setClauses.push(Prisma.sql`"taxRate" = ${d.taxRate}`);
+    if (d.trackStock    !== undefined) setClauses.push(Prisma.sql`"trackStock" = ${d.trackStock}`);
     if (d.isActive      !== undefined) setClauses.push(Prisma.sql`"isActive" = ${d.isActive}`);
     if (d.leadTimeDays  !== undefined) setClauses.push(Prisma.sql`"leadTimeDays" = ${d.leadTimeDays}`);
     if (d.rubroId    !== undefined) setClauses.push(Prisma.sql`"rubroId" = ${d.rubroId}`);

@@ -2,7 +2,7 @@ import { PuntoDeVenta, CreatePdvInput, UpdatePdvInput } from '../entities/PuntoD
 
 export interface IPdvRepository {
   findAll(companyId: string): Promise<PuntoDeVenta[]>;
-  findById(id: string): Promise<PuntoDeVenta | null>;
+  findById(id: string, companyId?: string): Promise<PuntoDeVenta | null>;
   findByNumber(number: number, companyId: string): Promise<PuntoDeVenta | null>;
   create(input: CreatePdvInput): Promise<PuntoDeVenta>;
   update(id: string, input: UpdatePdvInput): Promise<PuntoDeVenta>;

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IPurchaseRepository } from '../../../domain/repositories/IPurchaseRepository';
 import prisma from '../../database/prisma';
+import { buildIvaDigitalCompras, IvaDigitalCompraRow } from '../utils/ivaDigitalTxt';
 
 function escapeCSV(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -334,6 +335,143 @@ export class IvaController {
         `attachment; filename=iva-compras-${year}-${String(month).padStart(2, '0')}.csv`
       );
       res.send('\uFEFF' + csv);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Libro de IVA Digital \u2014 Compras (ARCA). Devuelve los dos archivos de ancho
+   * fijo (comprobantes + al\u00EDcuotas) listos para importar en el Portal IVA.
+   */
+  async exportComprasIvaDigital(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
+      const companyId = (req as any).companyId;
+
+      const dateFrom = new Date(year, month - 1, 1);
+      const dateTo = new Date(year, month, 0, 23, 59, 59, 999);
+
+      const invoices = await prisma.$queryRaw<any[]>`
+        SELECT pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
+               pi.currency, pi."exchangeRate",
+               COALESCE(pi."imputationDate", pi.date) AS fecha,
+               s.name AS "supplierName", s.cuit AS "supplierCuit"
+        FROM "purchase_invoices" pi
+        LEFT JOIN "suppliers" s ON s.id = pi."supplierId"
+        WHERE pi."companyId" = ${companyId} AND pi."fiscalMode" = 'FORMAL'
+          AND COALESCE(pi."imputationDate", pi.date) >= ${dateFrom}
+          AND COALESCE(pi."imputationDate", pi.date) <= ${dateTo}
+        ORDER BY COALESCE(pi."imputationDate", pi.date) ASC, pi.number ASC
+      `;
+
+      const ids = invoices.map((i) => i.id);
+      const itemsByInv = new Map<string, any[]>();
+      const tribByInv = new Map<string, any[]>();
+      if (ids.length > 0) {
+        const allItems = await prisma.$queryRaw<any[]>`
+          SELECT "purchaseInvoiceId", "taxRate", subtotal, "taxAmount"
+          FROM "purchase_invoice_items"
+          WHERE "purchaseInvoiceId" IN (${Prisma.join(ids)})
+          ORDER BY "createdAt" ASC
+        `;
+        for (const it of allItems) {
+          const list = itemsByInv.get(it.purchaseInvoiceId) ?? [];
+          list.push(it);
+          itemsByInv.set(it.purchaseInvoiceId, list);
+        }
+        const allTrib = await prisma.$queryRaw<any[]>`
+          SELECT "purchaseInvoiceId", type, amount
+          FROM "purchase_invoice_tributos"
+          WHERE "purchaseInvoiceId" IN (${Prisma.join(ids)})
+        `;
+        for (const tr of allTrib) {
+          const list = tribByInv.get(tr.purchaseInvoiceId) ?? [];
+          list.push(tr);
+          tribByInv.set(tr.purchaseInvoiceId, list);
+        }
+      }
+
+      const rows: IvaDigitalCompraRow[] = invoices.map((inv) => {
+        const its = itemsByInv.get(inv.id) ?? [];
+        const trs = tribByInv.get(inv.id) ?? [];
+        // Comprobantes tipo C: sin discriminaci\u00F3n de IVA \u2192 solo importe total.
+        const isTipoC = String(inv.type).endsWith('_C');
+
+        let exento = 0;
+        const alicMap = new Map<number, { neto: number; iva: number }>();
+        if (!isTipoC) {
+          if (its.length > 0) {
+            for (const it of its) {
+              const rate = Number(it.taxRate ?? 0);
+              const sub = Number(it.subtotal ?? 0);
+              if (rate > 0) {
+                const a = alicMap.get(rate) ?? { neto: 0, iva: 0 };
+                a.neto += sub;
+                a.iva += Number(it.taxAmount ?? 0);
+                alicMap.set(rate, a);
+              } else {
+                exento += sub;
+              }
+            }
+          } else if (Number(inv.taxAmount) > 0) {
+            const rate = Number(inv.taxRate) || 21;
+            alicMap.set(rate, { neto: Number(inv.subtotal), iva: Number(inv.taxAmount) });
+          } else {
+            exento = Number(inv.subtotal);
+          }
+        }
+
+        let percepcionIva = 0, percepcionIIBB = 0, otrosTributos = 0;
+        for (const tr of trs) {
+          const amt = Number(tr.amount ?? 0);
+          if (tr.type === 'PERCEPCION_IVA') percepcionIva += amt;
+          else if (tr.type === 'PERCEPCION_IIBB') percepcionIIBB += amt;
+          else otrosTributos += amt;
+        }
+
+        const alicuotas = Array.from(alicMap.entries())
+          .map(([rate, v]) => ({ rate, neto: v.neto, iva: v.iva }))
+          .sort((a, b) => a.rate - b.rate);
+        const creditoFiscal = alicuotas.reduce((s, a) => s + a.iva, 0);
+
+        return {
+          fecha: inv.fecha,
+          tipoComprobante: inv.type,
+          numero: inv.number,
+          cuitProveedor: inv.supplierCuit ?? '',
+          denominacion: inv.supplierName ?? '',
+          totalOperacion: Number(inv.amount),
+          noGravado: 0,
+          exento,
+          percepcionIva,
+          percepcionNacional: 0,
+          percepcionIIBB,
+          percepcionMunicipal: 0,
+          impuestosInternos: 0,
+          moneda: inv.currency ?? 'ARS',
+          tipoCambio: Number(inv.exchangeRate ?? 1),
+          creditoFiscal,
+          otrosTributos,
+          alicuotas,
+        };
+      });
+
+      const files = buildIvaDigitalCompras(rows);
+      const period = `${year}${String(month).padStart(2, '0')}`;
+
+      res.json({
+        status: 'success',
+        data: {
+          period,
+          count: rows.length,
+          cbteFileName: `LIBRO_IVA_DIGITAL_COMPRAS_CBTE_${period}.txt`,
+          alicuotasFileName: `LIBRO_IVA_DIGITAL_COMPRAS_ALICUOTAS_${period}.txt`,
+          cbte: files.cbte,
+          alicuotas: files.alicuotas,
+        },
+      });
     } catch (error) {
       next(error);
     }

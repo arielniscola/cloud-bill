@@ -110,7 +110,7 @@ export class BankController {
       const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
       const logRepo    = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const recibo = await reciboRepo.findById(req.params.reciboId);
+      const recibo = await reciboRepo.findById(req.params.reciboId, req.companyId);
       if (!recibo) throw new NotFoundError('Recibo');
       if ((recibo as any).paymentMethod !== 'CHECK') throw new AppError('El recibo no es de tipo cheque', 400);
       if ((recibo as any).status === 'CANCELLED')    throw new AppError('El recibo está cancelado', 400);

@@ -17,7 +17,7 @@ export interface RemitoFilters {
 }
 
 export interface IRemitoRepository {
-  findById(id: string): Promise<RemitoWithItems | null>;
+  findById(id: string, companyId?: string): Promise<RemitoWithItems | null>;
   findAll(
     pagination?: PaginationParams,
     filters?: RemitoFilters

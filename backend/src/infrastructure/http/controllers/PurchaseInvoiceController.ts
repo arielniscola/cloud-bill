@@ -65,14 +65,14 @@ const standaloneSchema = baseInvoiceSchema.extend({
 });
 
 const updateSchema = standaloneSchema.partial().extend({
-  status: z.enum(['PENDING', 'PAID']).optional(),
+  status: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID']).optional(),
 });
 
 const querySchema = z.object({
   page:          z.coerce.number().int().positive().default(1),
   limit:         z.coerce.number().int().positive().default(20),
   supplierId:    z.string().uuid().optional(),
-  status:        z.enum(['PENDING', 'PAID']).optional(),
+  status:        z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID']).optional(),
   search:        z.string().trim().optional(),
   currency:      z.string().optional(),                                  // ARS | USD
   saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).optional(),
@@ -188,9 +188,55 @@ async function upsertTributos(invoiceId: string, tributos: z.infer<typeof tribSc
   }
 }
 
+// Valida que los remitos vinculados no reciban, por descripción, más cantidad
+// que la que tiene la factura (evita ingresar más mercadería de la facturada).
+async function assertRemitosWithinInvoice(invoiceId: string, remitoIds: string[]) {
+  if (remitoIds.length === 0) return;
+
+  const invItems = await prisma.$queryRaw<{ description: string; quantity: number }[]>`
+    SELECT description, quantity FROM "purchase_invoice_items" WHERE "purchaseInvoiceId" = ${invoiceId}
+  `;
+  // Factura sin detalle de ítems → no hay contra qué validar cantidades.
+  if (invItems.length === 0) return;
+
+  const norm = (d: string) => d.trim().toLowerCase();
+  const invByDesc = new Map<string, number>();
+  for (const it of invItems) {
+    const key = norm(it.description);
+    invByDesc.set(key, (invByDesc.get(key) ?? 0) + Number(it.quantity));
+  }
+
+  const remitoItems = await prisma.$queryRaw<{ description: string; quantity: number }[]>`
+    SELECT ri.description, ri.quantity
+    FROM "purchase_remito_items" ri
+    JOIN "purchase_remitos" r ON r.id = ri."remitoId"
+    WHERE ri."remitoId" IN (${Prisma.join(remitoIds)})
+      AND r.status <> 'CANCELLED'
+  `;
+  const recByDesc = new Map<string, number>();
+  for (const it of remitoItems) {
+    const key = norm(it.description);
+    recByDesc.set(key, (recByDesc.get(key) ?? 0) + Number(it.quantity));
+  }
+
+  for (const [key, qty] of recByDesc) {
+    const max = invByDesc.get(key);
+    if (max === undefined) {
+      throw new AppError('Los remitos incluyen mercadería que no pertenece a la factura', 400);
+    }
+    if (qty > max + 0.0001) {
+      throw new AppError(
+        `Se intenta recibir ${qty} unidades de un ítem, pero la factura solo tiene ${max}`,
+        400,
+      );
+    }
+  }
+}
+
 // Vincula la factura a remitos de compra (solo trazabilidad; el stock ya lo movió
 // el remito). Marca los remitos como INVOICED. Idempotente: limpia los previos.
 async function linkRemitos(invoiceId: string, remitoIds: string[]) {
+  await assertRemitosWithinInvoice(invoiceId, remitoIds);
   await prisma.$executeRaw`DELETE FROM "purchase_invoice_remitos" WHERE "purchaseInvoiceId" = ${invoiceId}`;
   for (const remitoId of remitoIds) {
     await prisma.$executeRaw`
@@ -313,13 +359,20 @@ export class PurchaseInvoiceController {
 
   async updateStandalone(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const [existing] = await prisma.$queryRaw<any[]>`
-        SELECT id FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
+      const [existing] = await prisma.$queryRaw<{ id: string; status: string }[]>`
+        SELECT id, status FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
       `;
       if (!existing) throw new NotFoundError('Factura de proveedor');
 
       const data = updateSchema.parse(req.body);
       const id = req.params.id;
+
+      // Una factura con pagos imputados no se edita, PERO sí se le puede vincular
+      // mercadería (remitoIds) — recepción posterior a un pago anticipado.
+      const onlyRemitoLink = Object.keys(data).every((k) => k === 'remitoIds' || data[k as keyof typeof data] === undefined);
+      if ((existing.status === 'PAID' || existing.status === 'PARTIALLY_PAID') && !onlyRemitoLink) {
+        throw new AppError('No se puede editar una factura con pagos imputados', 400);
+      }
 
       if (data.supplierId    !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "supplierId"    = ${data.supplierId},    "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.number        !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET number          = ${data.number},        "updatedAt" = NOW() WHERE id = ${id}`;
@@ -366,7 +419,9 @@ export class PurchaseInvoiceController {
         SELECT id, status FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
       `;
       if (!existing) throw new NotFoundError('Factura de proveedor');
-      if (existing.status === 'PAID') throw new AppError('No se puede eliminar una factura pagada', 400);
+      if (existing.status === 'PAID' || existing.status === 'PARTIALLY_PAID') {
+        throw new AppError('No se puede eliminar una factura con pagos imputados', 400);
+      }
 
       // CASCADE removes items/retenciones/tributos/account-movements/remito links
       await prisma.$executeRaw`DELETE FROM "purchase_invoices" WHERE id = ${req.params.id}`;

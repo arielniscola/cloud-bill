@@ -91,24 +91,32 @@ export class DashboardController {
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
-        // Compras del mes (no canceladas)
+        // Compras del mes — facturas de compra (documento de primer nivel del flujo
+        // actual). Solo FACTURA_* (excluye NC/ND), igual que la métrica de ventas.
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
-          FROM "purchases"
-          WHERE status != 'CANCELLED'
+          SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+          FROM "purchase_invoices"
+          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
-        // Compras pendientes de pago (no pagadas totalmente)
+        // Compras pendientes de pago — facturas no pagadas totalmente.
+        // El saldo pendiente = total − imputado por Órdenes de Pago pagadas.
+        // Las NC (notas de crédito) no son un pasivo, se excluyen.
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
           SELECT COUNT(*) AS count,
-                 COALESCE(SUM(total - "paidAmount"), 0) AS total
-          FROM "purchases"
-          WHERE "paymentStatus" != 'PAID'
-            AND status != 'CANCELLED'
-            AND "companyId" = ${companyId}
+                 COALESCE(SUM(pi.amount - COALESCE((
+                   SELECT SUM(opi.amount)
+                   FROM "orden_pago_items" opi
+                   JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+                   WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
+                 ), 0)), 0) AS total
+          FROM "purchase_invoices" pi
+          WHERE pi.status != 'PAID'
+            AND pi.type NOT IN ('NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C')
+            AND pi."companyId" = ${companyId}
             ${fmFilter}
         `,
 
@@ -343,10 +351,11 @@ export class DashboardController {
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
-        // Compras
+        // Compras — facturas de compra (documento de primer nivel del flujo actual).
+        // Solo FACTURA_* (excluye NC/ND), consistente con la serie de ventas.
         prisma.$queryRaw<{ date: Date; total: any }[]>`
-          SELECT date, total FROM "purchases"
-          WHERE status != 'CANCELLED'
+          SELECT date, amount AS total FROM "purchase_invoices"
+          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}

@@ -38,7 +38,7 @@ export class OrdenPagoController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('OrdenPago');
       res.json({ status: 'success', data: op });
     } catch (error) {
@@ -94,7 +94,7 @@ export class OrdenPagoController {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('OrdenPago');
 
       if (op.status === 'PAID') throw new AppError('La orden de pago ya está pagada', 400);
@@ -144,7 +144,7 @@ export class OrdenPagoController {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const op = await repo.findById(req.params.id);
+      const op = await repo.findById(req.params.id, req.companyId);
       if (!op) throw new NotFoundError('OrdenPago');
 
       if (op.status === 'CANCELLED') throw new AppError('La orden de pago ya está cancelada', 400);

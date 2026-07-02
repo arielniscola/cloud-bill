@@ -99,7 +99,8 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     return `OP-${year}-${String(seq).padStart(8, '0')}`;
   }
 
-  async findById(id: string): Promise<OrdenPagoWithRelations | null> {
+  async findById(id: string, companyId?: string): Promise<OrdenPagoWithRelations | null> {
+    const companyFilter = companyId ? Prisma.sql`AND op."companyId" = ${companyId}` : Prisma.empty;
     const rows = await prisma.$queryRaw<RawOrdenPago[]>`
       SELECT op.*,
         s.name AS "supplierName", s.cuit AS "supplierCuit",
@@ -109,7 +110,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       LEFT JOIN "suppliers" s ON s.id = op."supplierId"
       LEFT JOIN "users" u ON u.id = op."userId"
       LEFT JOIN "cash_registers" cr ON cr.id = op."cashRegisterId"
-      WHERE op.id = ${id}
+      WHERE op.id = ${id} ${companyFilter}
     `;
     if (!rows[0]) return null;
 
@@ -339,13 +340,16 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const op = await this.findById(id);
     if (!op) throw new Error('OrdenPago not found');
 
-    // Mark each invoice as PAID and recalculate purchase payment status (skip if already PAID)
+    // Mark the OP as PAID first so the per-invoice recalc counts its items.
+    await prisma.$executeRaw`
+      UPDATE "orden_pagos" SET status = 'PAID', "updatedAt" = NOW() WHERE id = ${id}
+    `;
+
+    // Recompute each invoice status from the total imputed by PAID orders: a payment
+    // for less than the invoice total leaves it PARTIALLY_PAID, never PAID.
     for (const item of op.items) {
       if (item.purchaseInvoiceId) {
-        await prisma.$executeRaw`
-          UPDATE "purchase_invoices" SET status = 'PAID', "updatedAt" = NOW()
-          WHERE id = ${item.purchaseInvoiceId} AND status != 'PAID'
-        `;
+        await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId);
         if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
       }
     }
@@ -374,10 +378,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       }
     }
 
-    await prisma.$executeRaw`
-      UPDATE "orden_pagos" SET status = 'PAID', "updatedAt" = NOW() WHERE id = ${id}
-    `;
-
     return this.findById(id) as Promise<OrdenPagoWithRelations>;
   }
 
@@ -394,13 +394,16 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       return rows[0] as any as OrdenPago;
     }
 
-    // Revert each invoice to PENDING and recalculate purchase status
+    // Mark the OP cancelled first so the per-invoice recalc no longer counts its items.
+    await prisma.$executeRaw`
+      UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
+    `;
+
+    // Recompute each invoice status from the remaining PAID orders (it may still be
+    // PARTIALLY_PAID if other orders imputed part of it).
     for (const item of op.items) {
       if (item.purchaseInvoiceId) {
-        await prisma.$executeRaw`
-          UPDATE "purchase_invoices" SET status = 'PENDING', "updatedAt" = NOW()
-          WHERE id = ${item.purchaseInvoiceId}
-        `;
+        await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId);
         if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
       } else {
         // Backward compat: items without purchaseInvoiceId use old paidAmount logic
@@ -423,10 +426,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     if (op.items.length === 0 || await this._opHasCuentaCorriente(op)) {
       await this.cancelSupplierMovement(id);
     }
-
-    await prisma.$executeRaw`
-      UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
-    `;
 
     const rows = await prisma.$queryRaw<RawOrdenPago[]>`
       SELECT * FROM "orden_pagos" WHERE id = ${id}
@@ -459,13 +458,34 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     return false;
   }
 
+  // Recompute a purchase invoice's status from the total imputed by PAID orders of
+  // payment: nothing → PENDING, less than the total → PARTIALLY_PAID, full → PAID.
+  private async _recalcPurchaseInvoicePaymentStatus(invoiceId: string): Promise<void> {
+    await prisma.$executeRaw`
+      UPDATE "purchase_invoices" pi
+      SET status = CASE
+            WHEN paid.total <= 0                  THEN 'PENDING'
+            WHEN paid.total < pi.amount - 0.01    THEN 'PARTIALLY_PAID'
+            ELSE 'PAID'
+          END,
+          "updatedAt" = NOW()
+      FROM (
+        SELECT COALESCE(SUM(opi.amount), 0) AS total
+        FROM "orden_pago_items" opi
+        JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+        WHERE opi."purchaseInvoiceId" = ${invoiceId} AND op.status = 'PAID'
+      ) paid
+      WHERE pi.id = ${invoiceId}
+    `;
+  }
+
   private async _recalcPurchasePaymentStatus(purchaseId: string): Promise<void> {
     await prisma.$executeRaw`
       UPDATE "purchases"
       SET "paymentStatus" = CASE
         WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId}) THEN 'PENDING'
-        WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status = 'PENDING') THEN 'PAID'
-        WHEN EXISTS     (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status = 'PAID')    THEN 'PARTIALLY_PAID'
+        WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status <> 'PAID') THEN 'PAID'
+        WHEN EXISTS     (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId} AND status IN ('PAID', 'PARTIALLY_PAID')) THEN 'PARTIALLY_PAID'
         ELSE 'PENDING'
       END,
       "updatedAt" = NOW()
@@ -497,7 +517,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     pagination: PaginationParams,
     companyId?: string,
     filters?: SupplierMovementFilters
-  ): Promise<PaginatedResult<SupplierAccountMovement>> {
+  ): Promise<PaginatedResult<SupplierAccountMovement> & { openingBalance: number }> {
     const { page = 1, limit = 20 } = pagination;
     const offset = (page - 1) * limit;
 
@@ -548,18 +568,38 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       prisma.$queryRaw<(RawMovement & { kind: string; purchaseInvoiceId: string | null; docNumber: string | null })[]>`
         SELECT sam.*,
                (${kindExpr}) AS kind,
-               COALESCE(op.number, pi.number, pu.number, inn.number) AS "docNumber"
+               COALESCE(op.number, pi.number, pu.number, inn.number) AS "docNumber",
+               COALESCE(pi.date, op.date, pu.date, inn."createdAt", sam."createdAt") AS "docDate"
         ${joins}
         ORDER BY sam."createdAt" DESC
         LIMIT ${limit} OFFSET ${offset}
       `,
     ]);
 
+    // Saldo al inicio: balance acumulado de TODOS los movimientos anteriores a
+    // `dateFrom` (independiente de los filtros de tipo/kind del rango).
+    let openingBalance = 0;
+    if (filters?.dateFrom) {
+      const from = new Date(filters.dateFrom);
+      const openConds: Prisma.Sql[] = [
+        Prisma.sql`sam."supplierId" = ${supplierId}`,
+        Prisma.sql`sam."createdAt" < ${from}`,
+      ];
+      if (companyId) openConds.push(Prisma.sql`sam."companyId" = ${companyId}`);
+      const [openRow] = await prisma.$queryRaw<{ opening: any }[]>`
+        SELECT COALESCE(SUM(CASE WHEN sam.type = 'DEBIT' THEN sam.amount ELSE -sam.amount END), 0) AS opening
+        FROM "supplier_account_movements" sam
+        WHERE ${Prisma.join(openConds, ' AND ')}
+      `;
+      openingBalance = Number(openRow?.opening ?? 0);
+    }
+
     const total = Number(countRows[0]?.count ?? 0);
     return {
       data: rows as any as SupplierAccountMovement[],
       total, page, limit,
       totalPages: Math.ceil(total / limit),
+      openingBalance,
     };
   }
 

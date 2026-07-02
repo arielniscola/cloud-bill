@@ -17,6 +17,7 @@ router.get('/status',        ctrl.getStatus);
 router.get('/balance',       requireRoles('ADMIN', 'FINANCES'), ctrl.getBalance);
 router.get('/movements',     requireRoles('ADMIN', 'FINANCES'), ctrl.getMovements);
 router.post('/preference',   requireRoles('ADMIN', 'SELLER'),   ctrl.createPreference);
+router.post('/qr',           requireRoles('ADMIN', 'SELLER'),   ctrl.createQrOrder);
 router.post('/link-payment', requireRoles('ADMIN', 'SELLER'),   ctrl.linkPayment);
 
 export { router as mpRoutes };

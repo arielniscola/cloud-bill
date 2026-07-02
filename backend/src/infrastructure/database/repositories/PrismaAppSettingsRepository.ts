@@ -48,6 +48,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       mpPublicKey:                 r.mpPublicKey     ?? null,
       mpWebhookSecret:             r.mpWebhookSecret ?? null,
       mpMode:                      (r.mpMode ?? 'test') as 'test' | 'production',
+      mpPosId:                     r.mpPosId ?? null,
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -85,6 +86,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
     const mpPublicKey         = data.mpPublicKey     !== undefined ? data.mpPublicKey     : (current?.mpPublicKey     ?? null);
     const mpWebhookSecret     = data.mpWebhookSecret !== undefined ? data.mpWebhookSecret : (current?.mpWebhookSecret ?? null);
     const mpMode              = data.mpMode ?? current?.mpMode ?? 'test';
+    const mpPosId             = data.mpPosId !== undefined ? data.mpPosId : (current?.mpPosId ?? null);
 
     await prisma.$executeRaw`
       INSERT INTO "app_settings" (
@@ -93,7 +95,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "printFormatInvoice", "printFormatBudget", "printFormatOrdenPedido",
         "printFormatRemito", "printFormatRecibo",
         "smtpHost", "smtpPort", "smtpUser", "smtpPass", "smtpFrom", "smtpSecure",
-        "mpAccessToken", "mpPublicKey", "mpWebhookSecret", "mpMode",
+        "mpAccessToken", "mpPublicKey", "mpWebhookSecret", "mpMode", "mpPosId",
         "defaultBudgetCashRegisterId", "defaultInvoiceCashRegisterId", "updatedAt"
       ) VALUES (
         ${companyId},
@@ -102,7 +104,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         ${printFormatInvoice}, ${printFormatBudget}, ${printFormatOrdenPedido},
         ${printFormatRemito}, ${printFormatRecibo},
         ${smtpHost}, ${smtpPort}, ${smtpUser}, ${smtpPass}, ${smtpFrom}, ${smtpSecure},
-        ${mpAccessToken}, ${mpPublicKey}, ${mpWebhookSecret}, ${mpMode},
+        ${mpAccessToken}, ${mpPublicKey}, ${mpWebhookSecret}, ${mpMode}, ${mpPosId},
         ${budgetCashRegisterId}, ${invoiceCashRegisterId}, NOW()
       )
       ON CONFLICT ("id") DO UPDATE SET
@@ -125,6 +127,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "mpPublicKey"                  = EXCLUDED."mpPublicKey",
         "mpWebhookSecret"              = EXCLUDED."mpWebhookSecret",
         "mpMode"                       = EXCLUDED."mpMode",
+        "mpPosId"                      = EXCLUDED."mpPosId",
         "defaultBudgetCashRegisterId"  = EXCLUDED."defaultBudgetCashRegisterId",
         "defaultInvoiceCashRegisterId" = EXCLUDED."defaultInvoiceCashRegisterId",
         "updatedAt"                    = NOW()

@@ -56,7 +56,7 @@ export class AccountingController {
   async getJournalEntryById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IJournalEntryRepository>('JournalEntryRepository');
-      const entry = await repo.findById(req.params.id);
+      const entry = await repo.findById(req.params.id, req.companyId);
       if (!entry) {
         res.status(404).json({ status: 'error', message: 'Asiento no encontrado' });
         return;

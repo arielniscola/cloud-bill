@@ -64,9 +64,9 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<OrdenPedidoWithItems | null> {
-    const op = await (prisma as any).ordenPedido.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<OrdenPedidoWithItems | null> {
+    const op = await (prisma as any).ordenPedido.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
       include: includeWithoutItems,
     });
     if (!op) return null;

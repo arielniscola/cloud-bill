@@ -54,9 +54,9 @@ async function enrichWithCardData(recibos: any[]): Promise<void> {
 
 @injectable()
 export class PrismaReciboRepository implements IReciboRepository {
-  async findById(id: string): Promise<ReciboWithRelations | null> {
-    const recibo = await prisma.recibo.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<ReciboWithRelations | null> {
+    const recibo = await prisma.recibo.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
       include: includeRelations,
     });
     if (!recibo) return null;

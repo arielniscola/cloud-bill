@@ -24,8 +24,10 @@ export class PrismaCategoryRepository implements ICategoryRepository {
     return categories.map((r: Category) => ({ ...r, allowsVariants: map.get(r.id) ?? false }));
   }
 
-  async findById(id: string): Promise<Category | null> {
-    const category = await (prisma as any).category.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Category | null> {
+    const category = await (prisma as any).category.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
+    });
     if (!category) return null;
     const map = await readAllowsVariants([id]);
     return { ...category, allowsVariants: map.get(id) ?? false };

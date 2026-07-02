@@ -58,10 +58,14 @@ export class PrismaProductCustomFieldRepository implements IProductCustomFieldRe
     return rows.map(mapField);
   }
 
-  async findById(id: string): Promise<ProductCustomField | null> {
-    const rows = await prisma.$queryRaw<RawField[]>`
-      SELECT * FROM "product_custom_fields" WHERE id = ${id} LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<ProductCustomField | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<RawField[]>`
+          SELECT * FROM "product_custom_fields" WHERE id = ${id} AND "companyId" = ${companyId} LIMIT 1
+        `
+      : await prisma.$queryRaw<RawField[]>`
+          SELECT * FROM "product_custom_fields" WHERE id = ${id} LIMIT 1
+        `;
     return rows[0] ? mapField(rows[0]) : null;
   }
 

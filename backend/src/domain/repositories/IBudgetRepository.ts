@@ -13,7 +13,7 @@ export interface BudgetFilters {
 }
 
 export interface IBudgetRepository {
-  findById(id: string): Promise<BudgetWithItems | null>;
+  findById(id: string, companyId?: string): Promise<BudgetWithItems | null>;
   findAll(pagination?: { page: number; limit: number }, filters?: BudgetFilters): Promise<PaginatedResult<Budget>>;
   create(data: CreateBudgetInput): Promise<BudgetWithItems>;
   update(id: string, data: UpdateBudgetInput): Promise<BudgetWithItems>;

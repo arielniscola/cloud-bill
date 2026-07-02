@@ -35,7 +35,7 @@ export class PurchaseController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IPurchaseRepository>('PurchaseRepository');
-      const purchase = await repo.findById(req.params.id);
+      const purchase = await repo.findById(req.params.id, req.companyId);
       if (!purchase) throw new NotFoundError('Purchase');
       res.json({ status: 'success', data: purchase });
     } catch (error) {
@@ -158,23 +158,33 @@ export class PurchaseController {
 
       // Invoices are now standalone (their own supplierId/currency). Query them
       // directly; the linked purchase is optional/legacy.
+      // Incluye facturas parcialmente pagadas para poder completar el saldo, y devuelve
+      // lo ya imputado por OP pagadas para que el front proponga el saldo pendiente.
       const rows = await prisma.$queryRaw<{
         id: string; number: string; type: string; amount: any; subtotal: any;
         taxRate: any; taxAmount: any; dueDate: Date | null; paymentMethod: string;
-        purchaseId: string | null; purchaseNumber: string | null; purchaseDate: Date | null; currency: string;
+        purchaseId: string | null; purchaseNumber: string | null; purchaseDate: Date | null;
+        currency: string; paidAmount: any;
       }[]>`
         SELECT pi.id, pi.number, pi.type, pi.amount, pi.subtotal, pi."taxRate", pi."taxAmount",
                pi."dueDate", pi."paymentMethod", pi.currency,
-               p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate"
+               p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate",
+               COALESCE((
+                 SELECT SUM(opi.amount)
+                 FROM "orden_pago_items" opi
+                 JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+                 WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
+               ), 0) AS "paidAmount"
         FROM "purchase_invoices" pi
         LEFT JOIN "purchases" p ON p.id = pi."purchaseId"
         WHERE pi."supplierId" = ${supplierId as string}
           AND pi."companyId" = ${req.companyId}
-          AND pi.status = 'PENDING'
+          AND pi.status IN ('PENDING', 'PARTIALLY_PAID')
         ORDER BY pi."createdAt" ASC
       `;
 
-      res.json({ status: 'success', data: rows });
+      const data = rows.map((r) => ({ ...r, paidAmount: Number(r.paidAmount ?? 0) }));
+      res.json({ status: 'success', data });
     } catch (error) {
       next(error);
     }
@@ -185,7 +195,7 @@ export class PurchaseController {
       const repo      = container.resolve<IPurchaseRepository>('PurchaseRepository');
       const stockRepo = container.resolve<IStockRepository>('StockRepository');
 
-      const purchase = await repo.findById(req.params.id);
+      const purchase = await repo.findById(req.params.id, req.companyId);
       if (!purchase) throw new NotFoundError('Purchase');
       if (purchase.warehouseId) throw new AppError('Esta compra ya tiene un almacén asignado', 400);
 
@@ -229,7 +239,7 @@ export class PurchaseController {
       const repo = container.resolve<IPurchaseRepository>('PurchaseRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const purchase = await repo.findById(req.params.id);
+      const purchase = await repo.findById(req.params.id, req.companyId);
       if (!purchase) throw new NotFoundError('Purchase');
 
       if (purchase.status === 'CANCELLED') {

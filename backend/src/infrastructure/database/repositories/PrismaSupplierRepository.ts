@@ -39,8 +39,8 @@ export class PrismaSupplierRepository implements ISupplierRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<Supplier | null> {
-    return prisma.supplier.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Supplier | null> {
+    return prisma.supplier.findFirst({ where: { id, ...(companyId ? ({ companyId } as any) : {}) } });
   }
 
   async create(data: CreateSupplierInput): Promise<Supplier> {

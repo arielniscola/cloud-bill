@@ -28,7 +28,7 @@ export class PdvController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const pdvRepo = container.resolve<IPdvRepository>('PdvRepository');
-      const pdv = await pdvRepo.findById(req.params.id);
+      const pdv = await pdvRepo.findById(req.params.id, req.companyId);
       if (!pdv) throw new NotFoundError('Punto de Venta');
       res.json({ status: 'success', data: pdv });
     } catch (error) {
@@ -57,9 +57,8 @@ export class PdvController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const pdvRepo = container.resolve<IPdvRepository>('PdvRepository');
-      const existing = await pdvRepo.findById(req.params.id);
+      const existing = await pdvRepo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Punto de Venta');
-      if (existing.companyId !== req.companyId) throw new AppError('No autorizado', 403);
 
       const body = updatePdvSchema.parse(req.body);
       const pdv = await pdvRepo.update(req.params.id, body);
@@ -77,9 +76,8 @@ export class PdvController {
         throw new AppError('userId requerido', 400);
       }
 
-      const pdv = await pdvRepo.findById(req.params.id);
+      const pdv = await pdvRepo.findById(req.params.id, req.companyId);
       if (!pdv) throw new NotFoundError('Punto de Venta');
-      if (pdv.companyId !== req.companyId) throw new AppError('No autorizado', 403);
 
       await pdvRepo.assignToUser(userId, req.params.id);
       res.json({ status: 'success', message: 'Usuario asignado al Punto de Venta' });

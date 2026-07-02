@@ -12,7 +12,7 @@ export interface ProductFilters {
 }
 
 export interface IProductRepository {
-  findById(id: string): Promise<Product | null>;
+  findById(id: string, companyId?: string): Promise<Product | null>;
   findBySku(sku: string, companyId: string): Promise<Product | null>;
   findAll(
     pagination?: PaginationParams,

@@ -152,10 +152,14 @@ export class PrismaJournalEntryRepository implements IJournalEntryRepository {
     return { data: rows.map((r) => mapEntry(r)), total, page, limit };
   }
 
-  async findById(id: string): Promise<JournalEntry | null> {
-    const rows = await prisma.$queryRaw<RawEntry[]>`
-      SELECT * FROM "journal_entries" WHERE id = ${id} LIMIT 1
-    `;
+  async findById(id: string, companyId?: string): Promise<JournalEntry | null> {
+    const rows = companyId
+      ? await prisma.$queryRaw<RawEntry[]>`
+          SELECT * FROM "journal_entries" WHERE id = ${id} AND "companyId" = ${companyId} LIMIT 1
+        `
+      : await prisma.$queryRaw<RawEntry[]>`
+          SELECT * FROM "journal_entries" WHERE id = ${id} LIMIT 1
+        `;
     if (!rows[0]) return null;
 
     const lineRows = await prisma.$queryRaw<RawLine[]>`

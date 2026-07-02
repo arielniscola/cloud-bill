@@ -24,6 +24,7 @@ export const updateAppSettingsSchema = z.object({
   mpPublicKey:                  z.string().optional().nullable(),
   mpWebhookSecret:              z.string().optional().nullable(),
   mpMode:                       z.enum(['test', 'production']).optional(),
+  mpPosId:                      z.string().optional().nullable(),
 });
 
 export type UpdateAppSettingsDTO = z.infer<typeof updateAppSettingsSchema>;

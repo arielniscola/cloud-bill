@@ -9,8 +9,8 @@ export class DeleteCustomerUseCase {
     private customerRepository: ICustomerRepository
   ) {}
 
-  async execute(id: string): Promise<void> {
-    const existingCustomer = await this.customerRepository.findById(id);
+  async execute(id: string, companyId?: string): Promise<void> {
+    const existingCustomer = await this.customerRepository.findById(id, companyId);
 
     if (!existingCustomer) {
       throw new NotFoundError('Customer');

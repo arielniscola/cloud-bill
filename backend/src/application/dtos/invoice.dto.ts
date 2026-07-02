@@ -28,6 +28,10 @@ export const createInvoiceSchema = z.object({
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().positive().default(1),
+  // Condición de cobro: CUENTA_CORRIENTE (o un plazo "a X días") genera el
+  // movimiento en la cuenta corriente del cliente al crear la factura.
+  saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
+  paymentTerms: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
   originInvoiceId: z.string().uuid().optional().nullable(),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
@@ -68,8 +72,8 @@ export const invoiceQuerySchema = z.object({
       'NOTA_DEBITO_C',
     ]).optional(),
   ),
-  dateFrom: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
-  dateTo: z.preprocess(emptyToUndefined, z.string().datetime().optional()),
+  dateFrom: z.preprocess(emptyToUndefined, z.string().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD']).optional()),
 });
 

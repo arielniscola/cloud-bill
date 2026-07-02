@@ -13,7 +13,7 @@ export interface OrdenPedidoFilters {
 }
 
 export interface IOrdenPedidoRepository {
-  findById(id: string): Promise<OrdenPedidoWithItems | null>;
+  findById(id: string, companyId?: string): Promise<OrdenPedidoWithItems | null>;
   findAll(pagination?: PaginationParams, filters?: OrdenPedidoFilters): Promise<PaginatedResult<OrdenPedido>>;
   create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems>;
   update(id: string, data: UpdateOrdenPedidoInput): Promise<OrdenPedidoWithItems>;

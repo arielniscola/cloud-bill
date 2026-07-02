@@ -39,7 +39,7 @@ export class CashRegisterController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const cashRegister = await repo.findById(req.params.id);
+      const cashRegister = await repo.findById(req.params.id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
       res.json({ status: 'success', data: cashRegister });
     } catch (error) {
@@ -50,7 +50,7 @@ export class CashRegisterController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Caja');
       const cashRegister = await repo.update(req.params.id, req.body);
 
@@ -72,7 +72,7 @@ export class CashRegisterController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Caja');
       await repo.delete(req.params.id);
 
@@ -120,7 +120,7 @@ export class CashRegisterController {
   async getClosePreview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const cashRegister = await repo.findById(req.params.id);
+      const cashRegister = await repo.findById(req.params.id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
       const preview = await repo.getClosePreview(req.params.id, req.fiscalMode);
@@ -133,7 +133,7 @@ export class CashRegisterController {
   async createClose(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
-      const cashRegister = await repo.findById(req.params.id);
+      const cashRegister = await repo.findById(req.params.id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
       const close = await repo.createClose(req.params.id, {

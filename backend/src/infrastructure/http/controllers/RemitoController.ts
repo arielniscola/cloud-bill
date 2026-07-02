@@ -123,7 +123,7 @@ export class RemitoController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
-      const remito = await remitoRepository.findById(req.params.id);
+      const remito = await remitoRepository.findById(req.params.id, req.companyId);
 
       if (!remito) {
         throw new NotFoundError('Remito');
@@ -171,7 +171,7 @@ export class RemitoController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      const remito = await remitoRepository.findById(req.params.id);
+      const remito = await remitoRepository.findById(req.params.id, req.companyId);
       if (!remito) {
         throw new NotFoundError('Remito');
       }
@@ -230,7 +230,7 @@ export class RemitoController {
       }
 
       // Recalculate status
-      const updatedRemito = await remitoRepository.findById(req.params.id);
+      const updatedRemito = await remitoRepository.findById(req.params.id, req.companyId);
       if (!updatedRemito) {
         throw new NotFoundError('Remito');
       }
@@ -253,7 +253,7 @@ export class RemitoController {
 
       await remitoRepository.updateStatus(remito.id, newStatus);
 
-      const finalRemito = await remitoRepository.findById(req.params.id);
+      const finalRemito = await remitoRepository.findById(req.params.id, req.companyId);
 
       res.json({
         status: 'success',
@@ -270,7 +270,7 @@ export class RemitoController {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      const remito = await remitoRepository.findById(req.params.id);
+      const remito = await remitoRepository.findById(req.params.id, req.companyId);
       if (!remito) {
         throw new NotFoundError('Remito');
       }
@@ -335,7 +335,7 @@ export class RemitoController {
 
       await remitoRepository.updateStatus(remito.id, 'CANCELLED');
 
-      const updatedRemito = await remitoRepository.findById(req.params.id);
+      const updatedRemito = await remitoRepository.findById(req.params.id, req.companyId);
 
       res.json({
         status: 'success',

@@ -20,9 +20,9 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<InvoiceWithItems | null> {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<InvoiceWithItems | null> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
       include: { customer: true, user: true },
     });
     if (!invoice) return null;

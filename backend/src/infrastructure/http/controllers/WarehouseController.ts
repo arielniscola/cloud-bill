@@ -49,7 +49,7 @@ export class WarehouseController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
-      const warehouse = await warehouseRepository.findById(req.params.id);
+      const warehouse = await warehouseRepository.findById(req.params.id, req.companyId);
 
       if (!warehouse) {
         throw new NotFoundError('Warehouse');
@@ -82,7 +82,7 @@ export class WarehouseController {
     try {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      const existingWarehouse = await warehouseRepository.findById(req.params.id);
+      const existingWarehouse = await warehouseRepository.findById(req.params.id, req.companyId);
       if (!existingWarehouse) {
         throw new NotFoundError('Warehouse');
       }
@@ -116,7 +116,7 @@ export class WarehouseController {
     try {
       const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
-      const existingWarehouse = await warehouseRepository.findById(req.params.id);
+      const existingWarehouse = await warehouseRepository.findById(req.params.id, req.companyId);
       if (!existingWarehouse) {
         throw new NotFoundError('Warehouse');
       }

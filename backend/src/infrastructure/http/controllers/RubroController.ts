@@ -36,9 +36,9 @@ export class RubroController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
-      const rubro = await rubroRepository.findById(req.params.id);
+      const rubro = await rubroRepository.findById(req.params.id, req.companyId);
 
-      if (!rubro || (rubro as any).companyId !== req.companyId) {
+      if (!rubro) {
         throw new NotFoundError('Rubro');
       }
 
@@ -69,8 +69,8 @@ export class RubroController {
     try {
       const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
 
-      const existingRubro = await rubroRepository.findById(req.params.id);
-      if (!existingRubro || (existingRubro as any).companyId !== req.companyId) {
+      const existingRubro = await rubroRepository.findById(req.params.id, req.companyId);
+      if (!existingRubro) {
         throw new NotFoundError('Rubro');
       }
 
@@ -101,8 +101,8 @@ export class RubroController {
     try {
       const rubroRepository = container.resolve<IRubroRepository>('RubroRepository');
 
-      const existingRubro = await rubroRepository.findById(req.params.id);
-      if (!existingRubro || (existingRubro as any).companyId !== req.companyId) {
+      const existingRubro = await rubroRepository.findById(req.params.id, req.companyId);
+      if (!existingRubro) {
         throw new NotFoundError('Rubro');
       }
 

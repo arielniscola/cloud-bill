@@ -22,21 +22,125 @@ import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
 import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
 
+type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 'INFORMAL' };
+
+/**
+ * Efectos de la emisión de una factura: movimiento en cuenta corriente (venta
+ * CC o "a X días"), movimiento de stock (descuento o reserva), remito
+ * auto-entregado para ventas con descuento inmediato y asiento contable.
+ * Se ejecuta UNA sola vez, al salir del estado borrador.
+ * `invoice` debe venir de findById (incluye items + customer).
+ */
+async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<void> {
+  const currentAccountRepository = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+  const stockRepository = container.resolve<IStockRepository>('StockRepository');
+  const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
+
+  const type: string = invoice.type;
+  const currency: Currency = (invoice.currency || 'ARS') as Currency;
+  const stockBehavior: string = invoice.stockBehavior ?? 'DISCOUNT';
+  const saleCondition: string = effectiveSaleCondition(invoice.saleCondition, invoice.paymentTerms);
+
+  // Cuenta corriente (venta CC o pago a X días)
+  if (saleCondition === 'CUENTA_CORRIENTE' && invoice.customerId) {
+    let currentAccount = await currentAccountRepository.findByCustomerId(invoice.customerId, currency, ctx.fiscalMode);
+    if (!currentAccount) {
+      currentAccount = await currentAccountRepository.createForCustomer(invoice.customerId, currency, undefined, ctx.fiscalMode);
+    }
+    const isCredit = type.startsWith('NOTA_CREDITO');
+    await currentAccountRepository.addMovement({
+      currentAccountId: currentAccount.id,
+      type: isCredit ? 'CREDIT' : 'DEBIT',
+      amount: Number(invoice.total),
+      description: `${type} ${invoice.number}`,
+      invoiceId: invoice.id,
+    });
+  }
+
+  // Stock (solo facturas)
+  if (type.startsWith('FACTURA')) {
+    const defaultWarehouse = await warehouseRepository.findDefault(ctx.companyId);
+    if (defaultWarehouse) {
+      if (stockBehavior === 'RESERVE') {
+        for (const item of invoice.items) {
+          await stockRepository.incrementReserved(
+            item.productId,
+            defaultWarehouse.id,
+            Number(item.quantity),
+            (item as any).variantId ?? null,
+          );
+        }
+      } else {
+        for (const item of invoice.items) {
+          await stockRepository.addMovement({
+            productId: item.productId,
+            variantId: (item as any).variantId ?? null,
+            warehouseId: defaultWarehouse.id,
+            type: 'SALE',
+            quantity: Number(item.quantity),
+            reason: `Invoice ${invoice.number}`,
+            referenceId: invoice.id,
+            userId: ctx.userId,
+          });
+        }
+      }
+    }
+  }
+
+  // Remito auto-entregado para ventas con descuento inmediato. El stock ya se
+  // movió arriba (SALE), así que el remito vinculado no mueve stock.
+  if (type.startsWith('FACTURA') && stockBehavior === 'DISCOUNT' && invoice.customerId) {
+    const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
+    await remitoRepository.create({
+      customerId: invoice.customerId,
+      userId: ctx.userId,
+      stockBehavior: 'DISCOUNT',
+      notes: `Auto-generado desde factura ${invoice.number}`,
+      invoiceId: invoice.id,
+      companyId: ctx.companyId,
+      fiscalMode: ctx.fiscalMode,
+      items: invoice.items.map((item: any) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity),
+        variantId: (item as any).variantId ?? null,
+      })),
+    } as any);
+  }
+
+  // Asiento contable
+  await recordInvoiceCreated({
+    id: invoice.id,
+    number: invoice.number,
+    type: invoice.type,
+    subtotal: Number(invoice.subtotal),
+    taxAmount: Number(invoice.taxAmount),
+    total: Number(invoice.total),
+    companyId: ctx.companyId,
+    userId: ctx.userId,
+  });
+}
+
+/**
+ * Aplica los efectos de emisión solo si la factura todavía está en borrador.
+ * Garantiza que los movimientos se generen una única vez al salir de DRAFT,
+ * sin importar el camino (emitir, emitir a ARCA o cobrar).
+ */
+async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx): Promise<void> {
+  if (invoice && invoice.status === 'DRAFT') {
+    await applyIssuanceEffects(invoice, ctx);
+  }
+}
+
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
-      const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
-        'CurrentAccountRepository'
-      );
-      const stockRepository = container.resolve<IStockRepository>('StockRepository');
-      const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
       const currency: Currency = req.body.currency || 'ARS';
       const exchangeRate: number = req.body.exchangeRate || 1;
 
-      // Una venta "a X días" (pago diferido) se trata como cuenta corriente:
-      // genera el movimiento aunque el front no haya seteado CUENTA_CORRIENTE.
+      // Una venta "a X días" (pago diferido) se persiste como cuenta corriente:
+      // los movimientos se generan al emitir, no al crear el borrador.
       const saleCondition: string = effectiveSaleCondition(req.body.saleCondition, req.body.paymentTerms);
 
       if (req.body.customerId) {
@@ -64,99 +168,17 @@ export class InvoiceController {
         items: req.body.items,
       } as any);
 
-      // Update current account only for cuenta corriente sales
-      if (saleCondition === 'CUENTA_CORRIENTE') {
-        let currentAccount = await currentAccountRepository.findByCustomerId(req.body.customerId, currency, req.fiscalMode);
-        if (!currentAccount) {
-          currentAccount = await currentAccountRepository.createForCustomer(req.body.customerId, currency, undefined, req.fiscalMode);
-        }
-        const isCredit = req.body.type.startsWith('NOTA_CREDITO');
-        await currentAccountRepository.addMovement({
-          currentAccountId: currentAccount.id,
-          type: isCredit ? 'CREDIT' : 'DEBIT',
-          amount: invoice.total.toNumber(),
-          description: `${req.body.type} ${invoice.number}`,
-          invoiceId: invoice.id,
-        });
-      }
-
-      // Update stock for sales invoices
-      if (req.body.type.startsWith('FACTURA')) {
-        const stockBehavior: string = req.body.stockBehavior ?? 'DISCOUNT';
-        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
-        if (defaultWarehouse) {
-          if (stockBehavior === 'RESERVE') {
-            // Reserve stock (increment reservedQuantity)
-            for (const item of invoice.items) {
-              await stockRepository.incrementReserved(
-                item.productId,
-                defaultWarehouse.id,
-                item.quantity.toNumber(),
-                (item as any).variantId ?? null,
-              );
-            }
-          } else {
-            // DISCOUNT: create SALE movement (immediate deduction)
-            for (const item of invoice.items) {
-              await stockRepository.addMovement({
-                productId: item.productId,
-                variantId: (item as any).variantId ?? null,
-                warehouseId: defaultWarehouse.id,
-                type: 'SALE',
-                quantity: item.quantity.toNumber(),
-                reason: `Invoice ${invoice.number}`,
-                referenceId: invoice.id,
-                userId: req.user!.userId,
-              });
-            }
-          }
-        }
-      }
-
-      // Auto-generate a delivered remito for immediate-discount sales.
-      // Stock was already moved above (SALE), so the linked remito performs no
-      // stock movement; the repository auto-marks DISCOUNT remitos as DELIVERED.
-      if (
-        req.body.type.startsWith('FACTURA') &&
-        (req.body.stockBehavior ?? 'DISCOUNT') === 'DISCOUNT' &&
-        req.body.customerId
-      ) {
-        const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
-        await remitoRepository.create({
-          customerId: req.body.customerId,
-          userId: req.user!.userId,
-          stockBehavior: 'DISCOUNT',
-          notes: `Auto-generado desde factura ${invoice.number}`,
-          invoiceId: invoice.id,
-          companyId: req.companyId,
-          fiscalMode: req.fiscalMode,
-          items: invoice.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity.toNumber(),
-            variantId: (item as any).variantId ?? null,
-          })),
-        } as any);
-      }
-
+      // NOTA: la factura nace en BORRADOR (DRAFT). Mientras esté en borrador NO
+      // genera movimientos (cuenta corriente, stock, remito, asiento contable) —
+      // así puede editarse y eliminarse libremente. Los efectos se aplican una
+      // sola vez al emitirse (ver applyIssuanceEffects / leaveDraftIfNeeded).
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
         userId: req.user!.userId,
         action: 'CREATE',
         entity: 'Invoice',
         entityId: invoice.id,
-        description: `Factura ${invoice.number} creada`,
-      });
-
-      // Auto-generate journal entry
-      await recordInvoiceCreated({
-        id: invoice.id,
-        number: invoice.number,
-        type: invoice.type,
-        subtotal: Number(invoice.subtotal),
-        taxAmount: Number(invoice.taxAmount),
-        total: Number(invoice.total),
-        companyId: req.companyId!,
-        userId: req.user!.userId,
+        description: `Factura ${invoice.number} creada (borrador)`,
       });
 
       res.status(201).json({
@@ -171,7 +193,7 @@ export class InvoiceController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
-      const invoice = await invoiceRepository.findById(req.params.id);
+      const invoice = await invoiceRepository.findById(req.params.id, req.companyId);
 
       if (!invoice) {
         throw new NotFoundError('Invoice');
@@ -287,7 +309,7 @@ export class InvoiceController {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
 
-      const existingInvoice = await invoiceRepository.findById(req.params.id);
+      const existingInvoice = await invoiceRepository.findById(req.params.id, req.companyId);
       if (!existingInvoice) {
         throw new NotFoundError('Invoice');
       }
@@ -326,7 +348,7 @@ export class InvoiceController {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
 
-      const existingInvoice = await invoiceRepository.findById(req.params.id);
+      const existingInvoice = await invoiceRepository.findById(req.params.id, req.companyId);
       if (!existingInvoice) {
         throw new NotFoundError('Invoice');
       }
@@ -338,6 +360,16 @@ export class InvoiceController {
       const invoice = await invoiceRepository.update(req.params.id, {
         status: req.body.status,
       });
+
+      // Al salir del borrador (p.ej. "Emitir" → ISSUED) se generan los
+      // movimientos asociados, una sola vez.
+      if (req.body.status !== 'DRAFT' && req.body.status !== 'CANCELLED') {
+        await leaveDraftIfNeeded(existingInvoice, {
+          userId: req.user!.userId,
+          companyId: req.companyId!,
+          fiscalMode: req.fiscalMode,
+        });
+      }
 
       res.json({
         status: 'success',
@@ -360,7 +392,7 @@ export class InvoiceController {
       const reciboRepository = container.resolve<IReciboRepository>('ReciboRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const invoice = await invoiceRepository.findById(req.params.id);
+      const invoice = await invoiceRepository.findById(req.params.id, req.companyId);
       if (!invoice) throw new NotFoundError('Invoice');
 
       // Una Nota de Crédito no se "cobra": su pago es una DEVOLUCIÓN al cliente
@@ -373,6 +405,14 @@ export class InvoiceController {
       if (invoice.status === 'CANCELLED') {
         throw new AppError(isCreditNote ? 'No se puede devolver una nota de crédito cancelada' : 'No se puede pagar una factura cancelada', 400);
       }
+
+      // Cobrar un borrador lo emite: primero se generan los movimientos de la
+      // emisión (cuenta corriente, stock, remito, asiento) y luego el cobro.
+      await leaveDraftIfNeeded(invoice, {
+        userId: req.user!.userId,
+        companyId: req.companyId!,
+        fiscalMode: req.fiscalMode,
+      });
 
       const paymentData = createReciboSchema.parse(req.body);
 
@@ -550,7 +590,7 @@ export class InvoiceController {
       const afipRepo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      const invoice = await invoiceRepo.findById(req.params.id);
+      const invoice = await invoiceRepo.findById(req.params.id, req.companyId);
       if (!invoice) throw new NotFoundError('Invoice');
 
       const emittableStatuses = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'];
@@ -570,6 +610,20 @@ export class InvoiceController {
       // Resolve the terminal (PdV) assigned to the user
       const pdv = await pdvService.getPdvForUser(req.user!.userId);
 
+      // Notas de Crédito/Débito necesitan el comprobante de origen (CbtesAsoc) para ARCA.
+      const isNotaCD = invoice.type.startsWith('NOTA_CREDITO') || invoice.type.startsWith('NOTA_DEBITO');
+      let originInvoice: Awaited<ReturnType<IInvoiceRepository['findById']>> = null;
+      if (isNotaCD) {
+        if (!invoice.originInvoiceId) {
+          throw new AppError('La nota de crédito/débito no tiene un comprobante de origen asociado.', 400);
+        }
+        originInvoice = await invoiceRepo.findById(invoice.originInvoiceId);
+        if (!originInvoice) throw new AppError('No se encontró el comprobante de origen asociado.', 400);
+        if (!originInvoice.cae || !originInvoice.afipPtVenta || !originInvoice.afipCbtNum) {
+          throw new AppError('El comprobante de origen debe estar autorizado por ARCA (con CAE) antes de emitir la nota.', 400);
+        }
+      }
+
       // Get TA outside getNextNumber to reuse the same token for both sync and emit
       const ta = await afipService.getTokenAuth(config);
 
@@ -579,7 +633,7 @@ export class InvoiceController {
       const result = await pdvService.runWithPdvLock(pdv.id, invoice.type, async () => {
         const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
         try {
-          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
+          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro, originInvoice);
         } catch (afipError) {
           await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
           throw afipError;
@@ -602,6 +656,13 @@ export class InvoiceController {
         afipObservaciones: result.observaciones,
         status: newStatus,
       } as any);
+
+      // Emitir a ARCA desde borrador también genera los movimientos asociados.
+      await leaveDraftIfNeeded(invoice, {
+        userId: req.user!.userId,
+        companyId: req.companyId!,
+        fiscalMode: req.fiscalMode,
+      });
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -629,7 +690,7 @@ export class InvoiceController {
         'CurrentAccountRepository'
       );
 
-      const existingInvoice = await invoiceRepository.findById(req.params.id);
+      const existingInvoice = await invoiceRepository.findById(req.params.id, req.companyId);
       if (!existingInvoice) {
         throw new NotFoundError('Invoice');
       }
@@ -638,8 +699,9 @@ export class InvoiceController {
         throw new AppError('Invoice is already cancelled', 400);
       }
 
+      // Un borrador no generó movimientos, así que no hay nada que revertir.
       // Reverse current account movement only for cuenta corriente (incl. pago a X días)
-      if (effectiveSaleCondition((existingInvoice as any).saleCondition, (existingInvoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
+      if (existingInvoice.status !== 'DRAFT' && effectiveSaleCondition((existingInvoice as any).saleCondition, (existingInvoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
         const currentAccount = await currentAccountRepository.findByCustomerId(
           existingInvoice.customerId,
           existingInvoice.currency,
@@ -674,6 +736,45 @@ export class InvoiceController {
         status: 'success',
         data: invoice,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Elimina una factura en borrador. Solo se permite en estado DRAFT (todavía no
+   * generó movimientos). Limpia cualquier vínculo residual por las dudas y borra
+   * los ítems (cascade) + la factura.
+   */
+  async remove(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
+      const existingInvoice = await invoiceRepository.findById(req.params.id, req.companyId);
+      if (!existingInvoice || (existingInvoice as any).companyId !== req.companyId) {
+        throw new NotFoundError('Invoice');
+      }
+      if (existingInvoice.status !== 'DRAFT') {
+        throw new AppError('Solo se pueden eliminar facturas en borrador. Para una factura emitida usá Anular.', 400);
+      }
+
+      const id = req.params.id;
+      // Limpieza defensiva de vínculos (un borrador normal no tiene ninguno).
+      await prisma.$executeRaw`DELETE FROM "account_movements" WHERE "invoiceId" = ${id}`;
+      await prisma.$executeRaw`DELETE FROM "remito_items" WHERE "remitoId" IN (SELECT id FROM "remitos" WHERE "invoiceId" = ${id})`;
+      await prisma.$executeRaw`DELETE FROM "remitos" WHERE "invoiceId" = ${id}`;
+      await prisma.$executeRaw`DELETE FROM "stock_movements" WHERE "referenceId" = ${id}`;
+      await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${id}`; // invoice_items cascade
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'Invoice',
+        entityId: id,
+        description: `Factura ${existingInvoice.number} (borrador) eliminada`,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

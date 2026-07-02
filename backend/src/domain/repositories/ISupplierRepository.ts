@@ -9,7 +9,7 @@ export interface SupplierFilters {
 
 export interface ISupplierRepository {
   findAll(pagination?: PaginationParams, filters?: SupplierFilters): Promise<PaginatedResult<Supplier>>;
-  findById(id: string): Promise<Supplier | null>;
+  findById(id: string, companyId?: string): Promise<Supplier | null>;
   create(data: CreateSupplierInput): Promise<Supplier>;
   update(id: string, data: UpdateSupplierInput): Promise<Supplier>;
   delete(id: string): Promise<void>;

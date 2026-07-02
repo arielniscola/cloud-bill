@@ -51,7 +51,7 @@ export class InternalNoteController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IInternalNoteRepository>('InternalNoteRepository');
-      const note = await repo.findById(req.params.id);
+      const note = await repo.findById(req.params.id, req.companyId);
       if (!note) throw new NotFoundError('Nota interna');
       res.json({ status: 'success', data: note });
     } catch (error) { next(error); }
@@ -68,10 +68,10 @@ export class InternalNoteController {
       const data = createSchema.parse(req.body);
 
       if (data.customerId) {
-        const customer = await customerRepo.findById(data.customerId);
+        const customer = await customerRepo.findById(data.customerId, req.companyId);
         if (!customer) throw new NotFoundError('Cliente');
       } else if (data.supplierId) {
-        const supplier = await supplierRepo.findById(data.supplierId);
+        const supplier = await supplierRepo.findById(data.supplierId, req.companyId);
         if (!supplier) throw new NotFoundError('Proveedor');
       }
 
@@ -139,9 +139,8 @@ export class InternalNoteController {
       const currentAccRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
       const ordenPagoRepo  = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
 
-      const note = await repo.findById(req.params.id);
+      const note = await repo.findById(req.params.id, req.companyId);
       if (!note) throw new NotFoundError('Nota interna');
-      if (note.companyId !== req.companyId) throw new NotFoundError('Nota interna');
       if (note.status === 'CANCELLED') throw new AppError('La nota ya está cancelada', 400);
 
       const reversalType = note.type === 'DEBIT' ? 'CREDIT' : 'DEBIT';

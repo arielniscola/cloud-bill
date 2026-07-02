@@ -11,7 +11,7 @@ export interface CustomerFilters {
 }
 
 export interface ICustomerRepository {
-  findById(id: string): Promise<Customer | null>;
+  findById(id: string, companyId?: string): Promise<Customer | null>;
   findByTaxId(taxId: string): Promise<Customer | null>;
   findAll(
     pagination?: PaginationParams,

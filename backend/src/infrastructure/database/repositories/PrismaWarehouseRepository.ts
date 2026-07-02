@@ -16,8 +16,8 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
     this.prisma = prisma;
   }
 
-  async findById(id: string): Promise<Warehouse | null> {
-    return this.prisma.warehouse.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Warehouse | null> {
+    return this.prisma.warehouse.findFirst({ where: { id, ...(companyId ? ({ companyId } as any) : {}) } });
   }
 
   async findAll(companyId?: string): Promise<Warehouse[]> {

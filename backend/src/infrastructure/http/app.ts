@@ -70,8 +70,9 @@ export function createApp(): Application {
       credentials: true,
     })
   );
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // 20mb: las importaciones masivas (CSV de miles de productos) superan el default de 100kb
+  app.use(express.json({ limit: '20mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
   app.use(fiscalModeMiddleware);
 
   // Health check

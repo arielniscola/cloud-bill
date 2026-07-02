@@ -10,8 +10,8 @@ export class GetCustomerUseCase {
     private customerRepository: ICustomerRepository
   ) {}
 
-  async execute(id: string): Promise<Customer> {
-    const customer = await this.customerRepository.findById(id);
+  async execute(id: string, companyId?: string): Promise<Customer> {
+    const customer = await this.customerRepository.findById(id, companyId);
 
     if (!customer) {
       throw new NotFoundError('Customer');

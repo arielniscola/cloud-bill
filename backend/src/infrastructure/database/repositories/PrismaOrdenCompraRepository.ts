@@ -63,9 +63,9 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<OrdenCompraWithItems | null> {
-    return db.ordenCompra.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<OrdenCompraWithItems | null> {
+    return db.ordenCompra.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
       include: includeRelations,
     }) as Promise<OrdenCompraWithItems | null>;
   }

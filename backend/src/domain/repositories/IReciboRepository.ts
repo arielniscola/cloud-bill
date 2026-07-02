@@ -15,7 +15,7 @@ export interface ReciboFilters {
 }
 
 export interface IReciboRepository {
-  findById(id: string): Promise<ReciboWithRelations | null>;
+  findById(id: string, companyId?: string): Promise<ReciboWithRelations | null>;
   findAll(pagination: PaginationParams, filters: ReciboFilters): Promise<PaginatedResult<ReciboWithRelations>>;
   findChecks(pagination: PaginationParams, filters: CheckFilters): Promise<PaginatedResult<ReciboWithRelations>>;
   create(data: CreateReciboInput): Promise<ReciboWithRelations>;

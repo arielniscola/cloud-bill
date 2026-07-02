@@ -14,5 +14,6 @@ router.get('/ventas', ivaController.getVentas);
 router.get('/ventas/export', ivaController.exportVentasCSV);
 router.get('/compras', ivaController.getCompras);
 router.get('/compras/export', ivaController.exportComprasCSV);
+router.get('/compras/export-iva-digital', ivaController.exportComprasIvaDigital);
 
 export { router as ivaRoutes };

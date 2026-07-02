@@ -18,6 +18,7 @@ export interface Product {
   salePriceUSD?: Decimal | null;
   taxRate: Decimal;
   leadTimeDays?: number | null;
+  trackStock?: boolean;
   priceUpdatedAt?: Date | null;
   isActive: boolean;
   createdAt: Date;

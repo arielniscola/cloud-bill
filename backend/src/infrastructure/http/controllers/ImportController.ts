@@ -65,13 +65,21 @@ export class ImportController {
         return;
       }
 
-      // Pre-load rubros and brands by name for this company
+      // Pre-load rubros and brands by name for this company.
+      // Solo se vinculan los existentes (no se crean nuevos en la importación).
       const [rubros, brands] = await Promise.all([
-        prisma.rubro.findMany({ where: { companyId }, select: { id: true, name: true } }),
+        prisma.rubro.findMany({ where: { companyId }, select: { id: true, name: true, parentId: true } }),
         prisma.brand.findMany({ where: { companyId }, select: { id: true, name: true } }),
       ]);
-      const rubroMap = new Map(rubros.map((c) => [c.name.toLowerCase(), c.id]));
-      const brandMap    = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
+      const rubroById = new Map(rubros.map((r) => [r.id, r]));
+      const rubroByName = new Map<string, string>();        // nombre -> id (fallback)
+      const rubroByParentChild = new Map<string, string>(); // `${padre}|${hijo}` -> id (desambigua por "super rubro")
+      for (const r of rubros) {
+        rubroByName.set(r.name.toLowerCase(), r.id);
+        const parentName = r.parentId ? (rubroById.get(r.parentId)?.name.toLowerCase() ?? '') : '';
+        if (parentName) rubroByParentChild.set(`${parentName}|${r.name.toLowerCase()}`, r.id);
+      }
+      const brandMap = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
 
       let imported = 0;
       let skipped  = 0;
@@ -93,17 +101,29 @@ export class ImportController {
         if (isNaN(cost)  || cost  < 0) { errors.push({ row: rowNum, message: 'Costo inválido' });  skipped++; continue; }
         if (isNaN(price) || price < 0) { errors.push({ row: rowNum, message: 'Precio inválido' }); skipped++; continue; }
 
-        const taxRateStr = pick(row, 'iva', 'taxrate', 'tasaiva');
-        const taxRate    = parseFloat(taxRateStr || '21');
+        let taxRate = parseFloat(pick(row, 'iva', 'taxrate', 'tasaiva') || '21');
+        // El archivo trae el IVA como fracción (0.21); lo normalizamos a porcentaje.
+        if (!isNaN(taxRate) && taxRate > 0 && taxRate <= 1) taxRate = taxRate * 100;
 
-        const rubroName = pick(row, 'rubro', 'rubro').toLowerCase();
-        const brandName    = pick(row, 'marca', 'brand').toLowerCase();
-        const rubroId   = rubroName ? (rubroMap.get(rubroName) ?? null) : null;
-        const brandId      = brandName    ? (brandMap.get(brandName)       ?? null) : null;
+        const usdStr = pick(row, 'preciousd', 'salepriceusd', 'preciosivausd', 'precioventausd');
+        const salePriceUSD = usdStr ? parseFloat(usdStr) : NaN;
+        const hasUSD = !isNaN(salePriceUSD) && salePriceUSD > 0;
 
-        const unit        = pick(row, 'unidad', 'unit')               || 'UN';
-        const barcode     = pick(row, 'codigobarras', 'barcode')       || null;
-        const description = pick(row, 'descripcion', 'description')    || null;
+        const rubroName      = pick(row, 'rubro').toLowerCase();
+        const superRubroName = pick(row, 'superrubro', 'rubropadre').toLowerCase();
+        const brandName      = pick(row, 'marca', 'brand').toLowerCase();
+        let rubroId: string | null = null;
+        if (rubroName) {
+          if (superRubroName) rubroId = rubroByParentChild.get(`${superRubroName}|${rubroName}`) ?? null;
+          if (!rubroId) rubroId = rubroByName.get(rubroName) ?? null;
+        }
+        const brandId = brandName ? (brandMap.get(brandName) ?? null) : null;
+
+        const unit          = pick(row, 'unidad', 'unit')                          || 'UN';
+        const barcode       = pick(row, 'codigobarras', 'barcode')                  || null;
+        const description   = pick(row, 'descripcion', 'description')               || null;
+        // "Cod prov" del archivo → notas internas (solo al crear, ver abajo)
+        const internalNotes = pick(row, 'notasinternas', 'codprov', 'internalnotes', 'codigoproveedor') || null;
 
         try {
           // Check if product exists in this company
@@ -121,6 +141,8 @@ export class ImportController {
                 ...(barcode     && { barcode }),
                 ...(rubroId  && { rubroId }),
                 ...(brandId     && { brandId }),
+                ...(hasUSD && { salePriceUSD: new Prisma.Decimal(salePriceUSD) }),
+                // internalNotes NO se pisa al actualizar (preserva notas cargadas en la app)
               },
             });
           } else {
@@ -136,6 +158,8 @@ export class ImportController {
                 barcode:    barcode    ?? undefined,
                 rubroId: rubroId ?? undefined,
                 brandId:    brandId    ?? undefined,
+                ...(hasUSD && { salePriceUSD: new Prisma.Decimal(salePriceUSD) }),
+                ...(internalNotes && { internalNotes }),
                 companyId,
               },
             });

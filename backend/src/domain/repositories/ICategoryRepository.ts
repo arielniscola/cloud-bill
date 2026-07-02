@@ -2,7 +2,7 @@ import { Category, CreateCategoryInput, UpdateCategoryInput } from '../entities/
 
 export interface ICategoryRepository {
   findAll(companyId?: string): Promise<Category[]>;
-  findById(id: string): Promise<Category | null>;
+  findById(id: string, companyId?: string): Promise<Category | null>;
   create(data: CreateCategoryInput): Promise<Category>;
   update(id: string, data: UpdateCategoryInput): Promise<Category>;
   delete(id: string): Promise<void>;

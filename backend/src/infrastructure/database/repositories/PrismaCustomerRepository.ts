@@ -25,8 +25,10 @@ export class PrismaCustomerRepository implements ICustomerRepository {
     return rows[0]?.saleCondition ?? 'CONTADO';
   }
 
-  async findById(id: string): Promise<Customer | null> {
-    const customer = await this.prisma.customer.findUnique({ where: { id } });
+  async findById(id: string, companyId?: string): Promise<Customer | null> {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
+    });
     if (!customer) return null;
     const saleCondition = await this.getSaleCondition(id);
     return { ...(customer as any), saleCondition } as Customer;

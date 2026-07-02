@@ -41,6 +41,7 @@ router.post(
   invoiceController.pay
 );
 router.post('/:id/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), invoiceController.cancel);
+router.delete('/:id', requireRoles('ADMIN', 'SELLER'), invoiceController.remove);
 router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), invoiceController.emit);
 router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), invoiceController.sendEmail);
 router.get('/:id/afip-errors', invoiceController.getAfipErrors);

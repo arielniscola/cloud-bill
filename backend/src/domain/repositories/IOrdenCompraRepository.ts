@@ -12,7 +12,7 @@ export interface OrdenCompraFilters {
 
 export interface IOrdenCompraRepository {
   findAll(pagination?: { page: number; limit: number }, filters?: OrdenCompraFilters): Promise<PaginatedResult<OrdenCompra>>;
-  findById(id: string): Promise<OrdenCompraWithItems | null>;
+  findById(id: string, companyId?: string): Promise<OrdenCompraWithItems | null>;
   create(data: CreateOrdenCompraInput): Promise<OrdenCompraWithItems>;
   update(id: string, data: UpdateOrdenCompraInput): Promise<OrdenCompraWithItems>;
   delete(id: string): Promise<void>;

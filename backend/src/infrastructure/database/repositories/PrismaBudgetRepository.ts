@@ -63,9 +63,9 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     return { data: data as any, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findById(id: string): Promise<BudgetWithItems | null> {
-    const budget = await prisma.budget.findUnique({
-      where: { id },
+  async findById(id: string, companyId?: string): Promise<BudgetWithItems | null> {
+    const budget = await prisma.budget.findFirst({
+      where: { id, ...(companyId ? ({ companyId } as any) : {}) },
       include: includeRelations,
     });
     if (!budget) return null;

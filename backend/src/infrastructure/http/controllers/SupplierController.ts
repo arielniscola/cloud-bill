@@ -29,7 +29,7 @@ export class SupplierController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const supplier = await repo.findById(req.params.id);
+      const supplier = await repo.findById(req.params.id, req.companyId);
       if (!supplier) throw new NotFoundError('Supplier');
       res.json({ status: 'success', data: supplier });
     } catch (error) {
@@ -60,7 +60,7 @@ export class SupplierController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Supplier');
       const supplier = await repo.update(req.params.id, req.body);
 
@@ -82,7 +82,7 @@ export class SupplierController {
   async findProducts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const supplier = await repo.findById(req.params.id);
+      const supplier = await repo.findById(req.params.id, req.companyId);
       if (!supplier) throw new NotFoundError('Supplier');
 
       const supplierId = req.params.id;
@@ -123,7 +123,7 @@ export class SupplierController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const existing = await repo.findById(req.params.id);
+      const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Supplier');
       await repo.delete(req.params.id);
 

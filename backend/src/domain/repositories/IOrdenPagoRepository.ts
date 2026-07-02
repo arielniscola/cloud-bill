@@ -13,7 +13,7 @@ export interface OrdenPagoFilters {
 }
 
 export interface IOrdenPagoRepository {
-  findById(id: string): Promise<OrdenPagoWithRelations | null>;
+  findById(id: string, companyId?: string): Promise<OrdenPagoWithRelations | null>;
   findAll(pagination: PaginationParams, filters?: OrdenPagoFilters): Promise<PaginatedResult<OrdenPagoWithRelations>>;
   create(data: CreateOrdenPagoInput): Promise<OrdenPagoWithRelations>;
   pay(id: string): Promise<OrdenPagoWithRelations>;
@@ -22,7 +22,7 @@ export interface IOrdenPagoRepository {
 
   // Supplier current account
   getSupplierBalance(supplierId: string, companyId?: string): Promise<number>;
-  getSupplierMovements(supplierId: string, pagination: PaginationParams, companyId?: string, filters?: SupplierMovementFilters): Promise<PaginatedResult<SupplierAccountMovement>>;
+  getSupplierMovements(supplierId: string, pagination: PaginationParams, companyId?: string, filters?: SupplierMovementFilters): Promise<PaginatedResult<SupplierAccountMovement> & { openingBalance: number }>;
   createSupplierMovement(data: CreateSupplierMovementInput): Promise<SupplierAccountMovement>;
   cancelSupplierMovement(ordenPagoId: string): Promise<void>;
   reverseSupplierMovementByPurchase(purchaseId: string): Promise<void>;
