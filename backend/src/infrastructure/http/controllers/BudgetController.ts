@@ -12,12 +12,36 @@ import {
   updateBudgetStatusSchema,
   budgetQuerySchema,
 } from '../../../application/dtos/budget.dto';
+import { Prisma } from '@prisma/client';
+import prisma from '../../database/prisma';
+
+/**
+ * Marca como EXPIRED los presupuestos cuyo validUntil ya pasó. Solo aplica a
+ * estados abiertos (DRAFT/SENT): un presupuesto aceptado, convertido o cobrado
+ * no vence solo. Corre al listar/consultar — un único UPDATE masivo, sin
+ * recálculo por fila.
+ */
+async function expireOverdueBudgets(companyId?: string, budgetId?: string): Promise<void> {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`"validUntil" IS NOT NULL`,
+    Prisma.sql`"validUntil" < NOW()`,
+    Prisma.sql`status::text IN ('DRAFT', 'SENT')`,
+  ];
+  if (companyId) conditions.push(Prisma.sql`"companyId" = ${companyId}`);
+  if (budgetId) conditions.push(Prisma.sql`id = ${budgetId}`);
+  await prisma.$executeRaw`
+    UPDATE "budgets" SET status = 'EXPIRED'::"BudgetStatus", "updatedAt" = NOW()
+    WHERE ${Prisma.join(conditions, ' AND ')}
+  `;
+}
 
 export class BudgetController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
       const query = budgetQuerySchema.parse(req.query);
+
+      await expireOverdueBudgets(req.companyId);
 
       const result = await repo.findAll(
         { page: query.page, limit: query.limit },
@@ -46,6 +70,7 @@ export class BudgetController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBudgetRepository>('BudgetRepository');
+      await expireOverdueBudgets(req.companyId, req.params.id);
       const budget = await repo.findById(req.params.id, req.companyId);
       if (!budget) throw new NotFoundError('Presupuesto');
 

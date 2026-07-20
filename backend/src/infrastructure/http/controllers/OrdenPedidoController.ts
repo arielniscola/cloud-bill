@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import type { Prisma } from '@prisma/client';
 import { container } from 'tsyringe';
 import { IOrdenPedidoRepository } from '../../../domain/repositories/IOrdenPedidoRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
@@ -19,7 +20,76 @@ import {
   ordenPedidoQuerySchema,
 } from '../../../application/dtos/ordenPedido.dto';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
+import { resolveSaleWarehouse, setSaleWarehouse, getSaleWarehouseId } from '../../../shared/utils/saleWarehouse';
 import prisma from '../../database/prisma';
+
+/**
+ * Revierte los efectos que generó el create() de la orden: movimientos de
+ * stock (SALE → RETURN, o liberación de reserva) y el débito en cuenta
+ * corriente. Lo usan tanto la cancelación como la eliminación de un borrador —
+ * ambos caminos deben devolver el stock y la cuenta corriente a su estado previo.
+ */
+async function revertOrdenPedidoEffects(
+  op: any,
+  ctx: { userId: string; companyId?: string; fiscalMode?: 'FORMAL' | 'INFORMAL' },
+  tx?: Prisma.TransactionClient
+): Promise<void> {
+  const stockRepo = container.resolve<IStockRepository>('StockRepository');
+  const stockBehavior: string = op.stockBehavior ?? 'DISCOUNT';
+  const itemsWithProduct = op.items.filter((item: any) => item.productId);
+
+  if (itemsWithProduct.length > 0) {
+    if (stockBehavior === 'DISCOUNT') {
+      // Buscamos los SALE movements originales por referenceId para saber
+      // de qué almacén descontar la devolución (RETURN).
+      const originalMovs = await prisma.stockMovement.findMany({
+        where: { referenceId: op.id, type: 'SALE' },
+      });
+      for (const mov of originalMovs) {
+        await stockRepo.addMovement({
+          productId: mov.productId,
+          variantId: (mov as any).variantId ?? null,
+          warehouseId: mov.warehouseId,
+          type: 'RETURN',
+          quantity: Number(mov.quantity),
+          reason: `Cancelación orden de pedido ${op.number}`,
+          referenceId: op.id,
+          userId: ctx.userId,
+        }, tx);
+      }
+    } else {
+      // RESERVE: liberar la reserva en el depósito de la orden
+      // (o el por defecto si la orden no fijó uno).
+      const defaultWarehouse = await resolveSaleWarehouse('orden_pedidos', op.id, ctx.companyId);
+      if (defaultWarehouse) {
+        for (const item of itemsWithProduct) {
+          await stockRepo.decrementReserved(
+            item.productId!,
+            defaultWarehouse.id,
+            Number(item.quantity),
+            (item as any).variantId ?? null,
+            tx,
+          );
+        }
+      }
+    }
+  }
+
+  // Si había débito en cuenta corriente al crear la OP, lo revertimos con un CRÉDITO.
+  if (effectiveSaleCondition(op.saleCondition, op.paymentTerms) === 'CUENTA_CORRIENTE' && op.customerId) {
+    const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+    const ca = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, ctx.fiscalMode);
+    if (ca) {
+      await currentAccountRepo.addMovement({
+        currentAccountId: ca.id,
+        type: 'CREDIT',
+        amount: Number(op.total),
+        description: `Reversa por cancelación orden ${op.number}`,
+        ordenPedidoId: op.id,
+      } as any, tx);
+    }
+  }
+}
 
 export class OrdenPedidoController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -31,6 +101,7 @@ export class OrdenPedidoController {
         { page: query.page, limit: query.limit },
         {
           customerId: query.customerId,
+          budgetId: query.budgetId,
           status: query.status,
           currency: query.currency,
           companyId: req.companyId,
@@ -105,6 +176,17 @@ export class OrdenPedidoController {
         items,
       } as any);
 
+      // Persistir el depósito elegido: las reversas (cancelar/eliminar) y los
+      // remitos deben operar sobre el mismo depósito que el alta.
+      await setSaleWarehouse('orden_pedidos', op.id, (data as any).warehouseId ?? null);
+
+      // Trazabilidad presupuesto → OP (columna nueva; puede faltar la migración).
+      if (data.budgetId) {
+        try {
+          await prisma.$executeRaw`UPDATE "orden_pedidos" SET "budgetId" = ${data.budgetId} WHERE id = ${op.id}`;
+        } catch { /* migración 20260714120000 pendiente: el vínculo se pierde, nada más */ }
+      }
+
       // Handle stock for items with productId
       const stockBehavior: string = data.stockBehavior ?? 'DISCOUNT';
       const stockRepo = container.resolve<IStockRepository>('StockRepository');
@@ -116,7 +198,7 @@ export class OrdenPedidoController {
           stockWarehouse = await warehouseRepo.findById((data as any).warehouseId);
           if (!stockWarehouse) throw new AppError('Almacén seleccionado no encontrado', 400);
         } else {
-          stockWarehouse = await warehouseRepo.findDefault(req.companyId);
+          stockWarehouse = await warehouseRepo.findDefaultOrFirstActive(req.companyId);
         }
         if (!stockWarehouse) {
           throw new AppError('No se encontró un almacén por defecto. Seleccioná un almacén para registrar el movimiento de stock.', 400);
@@ -263,66 +345,22 @@ export class OrdenPedidoController {
       const { status } = updateOrdenPedidoStatusSchema.parse(req.body);
 
       // Reversa de stock al cancelar — el create() de la OP descuenta (DISCOUNT)
-      // o reserva (RESERVE) stock; al cancelar hay que devolverlo.
+      // o reserva (RESERVE) stock; al cancelar hay que devolverlo. La reversa
+      // y el cambio de estado se confirman o revierten juntos.
+      let updated;
       if (status === 'CANCELLED') {
-        const stockRepo = container.resolve<IStockRepository>('StockRepository');
-        const warehouseRepo = container.resolve<IWarehouseRepository>('WarehouseRepository');
-        const stockBehavior: string = (op as any).stockBehavior ?? 'DISCOUNT';
-        const itemsWithProduct = op.items.filter((item) => item.productId);
-
-        if (itemsWithProduct.length > 0) {
-          if (stockBehavior === 'DISCOUNT') {
-            // Buscamos los SALE movements originales por referenceId para saber
-            // de qué almacén descontar la devolución (RETURN).
-            const originalMovs = await prisma.stockMovement.findMany({
-              where: { referenceId: op.id, type: 'SALE' },
-            });
-            for (const mov of originalMovs) {
-              await stockRepo.addMovement({
-                productId: mov.productId,
-                variantId: (mov as any).variantId ?? null,
-                warehouseId: mov.warehouseId,
-                type: 'RETURN',
-                quantity: Number(mov.quantity),
-                reason: `Cancelación orden de pedido ${op.number}`,
-                referenceId: op.id,
-                userId: req.user!.userId,
-              });
-            }
-          } else {
-            // RESERVE: liberar la reserva en el almacén por defecto
-            // (el create() usó findDefault cuando no había warehouseId explícito).
-            const defaultWarehouse = await warehouseRepo.findDefault(req.companyId);
-            if (defaultWarehouse) {
-              for (const item of itemsWithProduct) {
-                await stockRepo.decrementReserved(
-                  item.productId!,
-                  defaultWarehouse.id,
-                  Number(item.quantity),
-                  (item as any).variantId ?? null,
-                );
-              }
-            }
-          }
-        }
-
-        // Si había débito en cuenta corriente al crear la OP, lo revertimos con un CRÉDITO.
-        if (effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE' && op.customerId) {
-          const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
-          const ca = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
-          if (ca) {
-            await currentAccountRepo.addMovement({
-              currentAccountId: ca.id,
-              type: 'CREDIT',
-              amount: Number(op.total),
-              description: `Reversa por cancelación orden ${op.number}`,
-              ordenPedidoId: op.id,
-            } as any);
-          }
-        }
+        await prisma.$transaction(async (tx) => {
+          await revertOrdenPedidoEffects(op, {
+            userId: req.user!.userId,
+            companyId: req.companyId,
+            fiscalMode: req.fiscalMode,
+          }, tx);
+          await tx.$executeRaw`UPDATE "orden_pedidos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${op.id}`;
+        }, { timeout: 30000 });
+        updated = await repo.findById(req.params.id, req.companyId);
+      } else {
+        updated = await repo.update(req.params.id, { status });
       }
-
-      const updated = await repo.update(req.params.id, { status });
 
       // Auto-create Remito when confirming the OP — but skip if one already
       // exists (DISCOUNT orders generate their delivered remito at creation).
@@ -404,6 +442,9 @@ export class OrdenPedidoController {
           taxRate: Number(item.taxRate),
         })),
       } as any);
+
+      // La factura hereda el depósito de la orden (relevante para NC futuras).
+      await setSaleWarehouse('invoices', invoice.id, await getSaleWarehouseId('orden_pedidos', op.id));
 
       // Mark OP as CONVERTED and link to invoice
       await opRepo.update(req.params.id, { status: 'CONVERTED', invoiceId: invoice.id });
@@ -611,7 +652,47 @@ export class OrdenPedidoController {
         throw new AppError('Solo se pueden eliminar órdenes de pedido en borrador', 400);
       }
 
-      await repo.delete(req.params.id);
+      const emittedRecibos = await prisma.recibo.count({
+        where: { ordenPedidoId: op.id, status: 'EMITTED' },
+      });
+      if (emittedRecibos > 0) {
+        throw new AppError(
+          'La orden tiene cobros registrados. Cancelá primero sus recibos para revertir los cobros.',
+          400
+        );
+      }
+
+      // El create() del borrador ya movió stock (SALE o reserva) y pudo
+      // debitar la cuenta corriente: hay que revertirlo antes de borrar,
+      // si no el stock queda descontado para siempre. Reversa + limpieza +
+      // borrado se confirman o revierten juntos.
+      await prisma.$transaction(async (tx) => {
+        await revertOrdenPedidoEffects(op, {
+          userId: req.user!.userId,
+          companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
+        }, tx);
+
+        // El borrador pudo generar un remito automático; se elimina junto con la
+        // orden. Los movimientos de cuenta corriente y recibos cancelados se
+        // desvinculan (conservan su historia, sin FK al documento borrado).
+        await tx.$executeRaw`DELETE FROM "remito_items" WHERE "remitoId" IN (SELECT id FROM "remitos" WHERE "ordenPedidoId" = ${op.id})`;
+        await tx.$executeRaw`DELETE FROM "remitos" WHERE "ordenPedidoId" = ${op.id}`;
+        await tx.$executeRaw`UPDATE "account_movements" SET "ordenPedidoId" = NULL WHERE "ordenPedidoId" = ${op.id}`;
+        await tx.$executeRaw`UPDATE "recibos" SET "ordenPedidoId" = NULL WHERE "ordenPedidoId" = ${op.id}`;
+        await tx.$executeRaw`DELETE FROM "orden_pedido_items" WHERE "ordenPedidoId" = ${op.id}`;
+        await tx.$executeRaw`DELETE FROM "orden_pedidos" WHERE id = ${op.id}`;
+      }, { timeout: 30000 });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'OrdenPedido',
+        entityId: op.id,
+        description: `Orden de pedido ${op.number} (borrador) eliminada`,
+      });
+
       res.status(204).send();
     } catch (error) {
       next(error);

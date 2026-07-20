@@ -3,7 +3,6 @@ import { container } from 'tsyringe';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
-import { IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { Currency } from '../../../shared/types';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
@@ -18,6 +17,7 @@ import { pdvService } from '../../services/PdvService';
 import { sendInvoiceEmail } from '../../services/EmailService';
 import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
+import { resolveSaleWarehouse, setSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
 import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
@@ -34,33 +34,43 @@ type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 
 async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<void> {
   const currentAccountRepository = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
   const stockRepository = container.resolve<IStockRepository>('StockRepository');
-  const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
   const type: string = invoice.type;
   const currency: Currency = (invoice.currency || 'ARS') as Currency;
   const stockBehavior: string = invoice.stockBehavior ?? 'DISCOUNT';
   const saleCondition: string = effectiveSaleCondition(invoice.saleCondition, invoice.paymentTerms);
 
-  // Cuenta corriente (venta CC o pago a X días)
-  if (saleCondition === 'CUENTA_CORRIENTE' && invoice.customerId) {
-    let currentAccount = await currentAccountRepository.findByCustomerId(invoice.customerId, currency, ctx.fiscalMode);
-    if (!currentAccount) {
-      currentAccount = await currentAccountRepository.createForCustomer(invoice.customerId, currency, undefined, ctx.fiscalMode);
-    }
-    const isCredit = type.startsWith('NOTA_CREDITO');
-    await currentAccountRepository.addMovement({
-      currentAccountId: currentAccount.id,
-      type: isCredit ? 'CREDIT' : 'DEBIT',
-      amount: Number(invoice.total),
-      description: `${type} ${invoice.number}`,
-      invoiceId: invoice.id,
-    });
-  }
+  // Lecturas previas (no necesitan la transacción)
+  const isFactura = type.startsWith('FACTURA');
+  const usesCC = saleCondition === 'CUENTA_CORRIENTE' && invoice.customerId;
+  // Depósito elegido en la factura, o el por defecto de la empresa.
+  const defaultWarehouse = isFactura
+    ? await resolveSaleWarehouse('invoices', invoice.id, ctx.companyId)
+    : null;
+  const existingAccount = usesCC
+    ? await currentAccountRepository.findByCustomerId(invoice.customerId, currency, ctx.fiscalMode)
+    : null;
 
-  // Stock (solo facturas)
-  if (type.startsWith('FACTURA')) {
-    const defaultWarehouse = await warehouseRepository.findDefault(ctx.companyId);
-    if (defaultWarehouse) {
+  // Todos los efectos se confirman o revierten juntos: sin esto, un fallo a
+  // mitad (p.ej. stock insuficiente en el 3er ítem) dejaba la cuenta corriente
+  // debitada con el stock a medio descontar.
+  await prisma.$transaction(async (tx) => {
+    // Cuenta corriente (venta CC o pago a X días)
+    if (usesCC) {
+      const currentAccount = existingAccount
+        ?? await currentAccountRepository.createForCustomer(invoice.customerId, currency, undefined, ctx.fiscalMode, tx);
+      const isCredit = type.startsWith('NOTA_CREDITO');
+      await currentAccountRepository.addMovement({
+        currentAccountId: currentAccount.id,
+        type: isCredit ? 'CREDIT' : 'DEBIT',
+        amount: Number(invoice.total),
+        description: `${type} ${invoice.number}`,
+        invoiceId: invoice.id,
+      }, tx);
+    }
+
+    // Stock (solo facturas)
+    if (isFactura && defaultWarehouse) {
       if (stockBehavior === 'RESERVE') {
         for (const item of invoice.items) {
           await stockRepository.incrementReserved(
@@ -68,6 +78,7 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
             defaultWarehouse.id,
             Number(item.quantity),
             (item as any).variantId ?? null,
+            tx,
           );
         }
       } else {
@@ -81,33 +92,34 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
             reason: `Invoice ${invoice.number}`,
             referenceId: invoice.id,
             userId: ctx.userId,
-          });
+          }, tx);
         }
       }
     }
-  }
 
-  // Remito auto-entregado para ventas con descuento inmediato. El stock ya se
-  // movió arriba (SALE), así que el remito vinculado no mueve stock.
-  if (type.startsWith('FACTURA') && stockBehavior === 'DISCOUNT' && invoice.customerId) {
-    const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
-    await remitoRepository.create({
-      customerId: invoice.customerId,
-      userId: ctx.userId,
-      stockBehavior: 'DISCOUNT',
-      notes: `Auto-generado desde factura ${invoice.number}`,
-      invoiceId: invoice.id,
-      companyId: ctx.companyId,
-      fiscalMode: ctx.fiscalMode,
-      items: invoice.items.map((item: any) => ({
-        productId: item.productId,
-        quantity: Number(item.quantity),
-        variantId: (item as any).variantId ?? null,
-      })),
-    } as any);
-  }
+    // Remito auto-entregado para ventas con descuento inmediato. El stock ya se
+    // movió arriba (SALE), así que el remito vinculado no mueve stock.
+    if (isFactura && stockBehavior === 'DISCOUNT' && invoice.customerId) {
+      const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
+      await remitoRepository.create({
+        customerId: invoice.customerId,
+        userId: ctx.userId,
+        stockBehavior: 'DISCOUNT',
+        notes: `Auto-generado desde factura ${invoice.number}`,
+        invoiceId: invoice.id,
+        companyId: ctx.companyId,
+        fiscalMode: ctx.fiscalMode,
+        items: invoice.items.map((item: any) => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          variantId: (item as any).variantId ?? null,
+        })),
+      } as any, tx);
+    }
+  }, { timeout: 30000 });
 
-  // Asiento contable
+  // Asiento contable — fuera de la transacción: es best-effort por diseño
+  // (recordInvoiceCreated captura sus propios errores y no debe abortar la emisión).
   await recordInvoiceCreated({
     id: invoice.id,
     number: invoice.number,
@@ -119,6 +131,16 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
     userId: ctx.userId,
   });
 }
+
+// Guía al usuario hacia el caso de uso correcto cuando intenta asignar a mano
+// un estado que tiene efectos asociados (ver updateStatus).
+const MANUAL_STATUS_HINTS: Record<string, string> = {
+  AUTHORIZED: 'El estado Autorizada lo asigna la emisión ante ARCA ("Emitir ARCA").',
+  PAID: 'Para marcarla pagada registrá el cobro (recibo).',
+  PARTIALLY_PAID: 'Los cobros parciales se registran con recibos.',
+  CANCELLED: 'Para anularla usá "Anular", que revierte los movimientos generados.',
+  DRAFT: 'Una factura emitida no puede volver a borrador.',
+};
 
 /**
  * Aplica los efectos de emisión solo si la factura todavía está en borrador.
@@ -167,6 +189,10 @@ export class InvoiceController {
         exchangeRate,
         items: req.body.items,
       } as any);
+
+      // Depósito elegido para el stock (raw SQL: el cliente Prisma puede no
+      // conocer la columna todavía).
+      await setSaleWarehouse('invoices', invoice.id, req.body.warehouseId ?? null);
 
       // NOTA: la factura nace en BORRADOR (DRAFT). Mientras esté en borrador NO
       // genera movimientos (cuenta corriente, stock, remito, asiento contable) —
@@ -335,6 +361,8 @@ export class InvoiceController {
         items: req.body.items,
       });
 
+      await setSaleWarehouse('invoices', req.params.id, req.body.warehouseId ?? null);
+
       res.json({
         status: 'success',
         data: invoice,
@@ -357,19 +385,40 @@ export class InvoiceController {
         throw new AppError('Cannot modify cancelled invoice', 400);
       }
 
+      // Única transición manual permitida: emitir un borrador (DRAFT → ISSUED).
+      // Los demás estados tienen su propio caso de uso con efectos asociados;
+      // asignarlos a mano dejaría la factura inconsistente (PAID sin recibos,
+      // CANCELLED sin reversas, o un retorno a DRAFT que re-dispararía los
+      // efectos de emisión duplicando stock y cuenta corriente).
+      const from = existingInvoice.status;
+      const to: string = req.body.status;
+      if (!(from === 'DRAFT' && to === 'ISSUED')) {
+        throw new AppError(
+          `Transición de estado inválida (${from} → ${to}). ${MANUAL_STATUS_HINTS[to] ?? ''}`.trim(),
+          400
+        );
+      }
+
       const invoice = await invoiceRepository.update(req.params.id, {
         status: req.body.status,
       });
 
-      // Al salir del borrador (p.ej. "Emitir" → ISSUED) se generan los
-      // movimientos asociados, una sola vez.
-      if (req.body.status !== 'DRAFT' && req.body.status !== 'CANCELLED') {
-        await leaveDraftIfNeeded(existingInvoice, {
-          userId: req.user!.userId,
-          companyId: req.companyId!,
-          fiscalMode: req.fiscalMode,
-        });
-      }
+      // Al salir del borrador ("Emitir" → ISSUED) se generan los movimientos
+      // asociados, una sola vez.
+      await leaveDraftIfNeeded(existingInvoice, {
+        userId: req.user!.userId,
+        companyId: req.companyId!,
+        fiscalMode: req.fiscalMode,
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Invoice',
+        entityId: existingInvoice.id,
+        description: `Factura ${existingInvoice.number} emitida`,
+      });
 
       res.json({
         status: 'success',
@@ -447,57 +496,73 @@ export class InvoiceController {
       const isMercadoPago = paymentData.paymentMethod === 'MERCADO_PAGO';
       const usesCaja = !isCheck && !isBankTransfer && !isMercadoPago;
 
-      // Create recibo
-      const recibo = await reciboRepository.create({
-        invoiceId: invoice.id,
-        customerId: invoice.customerId,
-        userId: req.user!.userId,
-        cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
-        bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
-        amount: paymentData.amount,
-        currency: invoice.currency,
-        paymentMethod: paymentData.paymentMethod,
-        reference: paymentData.reference ?? null,
-        bank: paymentData.bank ?? null,
-        checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
-        installments: paymentData.installments ?? null,
-        notes: paymentData.notes ?? null,
-        companyId: req.companyId,
-        fiscalMode: ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-      } as any);
+      // Estado resultante del cobro (calculable de antemano)
+      const newPaid = alreadyPaid + paymentData.amount;
+      const newStatus: 'PAID' | 'PARTIALLY_PAID' = newPaid >= total - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
 
-      // For BANK_TRANSFER with a bankAccountId, create a bank movement.
-      // NC → es una devolución: DEBIT (sale plata) y baja el saldo del banco.
-      if (isBankTransfer && (paymentData as any).bankAccountId) {
-        const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
-        const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
-        const customerName = (invoice as any).customer?.name ?? '';
-        const bankDescription = `${isCreditNote ? 'Devolución' : 'Cobro'} ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
-        await (prisma as any).bankMovement.create({
-          data: {
-            bankAccountId: (paymentData as any).bankAccountId,
-            type: isCreditNote ? 'DEBIT' : 'CREDIT',
-            amount: amountARS,
-            description: bankDescription,
-            reciboId: recibo.id,
-            companyId: req.companyId,
-          },
-        });
-        // Update bank account balance (+ cobro / − devolución)
-        const signedAmount = isCreditNote ? -amountARS : amountARS;
-        await (prisma as any).$executeRaw`
-          UPDATE "bank_accounts" SET balance = balance + ${signedAmount}, "updatedAt" = NOW()
-          WHERE id = ${(paymentData as any).bankAccountId}
-        `;
-      }
+      // Lecturas previas (no necesitan la transacción)
+      const usesCC = effectiveSaleCondition((invoice as any).saleCondition, (invoice as any).paymentTerms) === 'CUENTA_CORRIENTE';
+      const currentAccount = usesCC
+        ? await currentAccountRepository.findByCustomerId(
+            invoice.customerId,
+            invoice.currency,
+            ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
+          )
+        : null;
+      // La mercadería devuelta reingresa al depósito de la factura de origen
+      // (o al por defecto si la NC no tiene depósito propio).
+      const returnWarehouse = isCreditNote && newStatus === 'PAID'
+        ? await resolveSaleWarehouse('invoices', (invoice as any).originInvoiceId ?? invoice.id, req.companyId)
+        : null;
 
-      // Record payment in current account only for cuenta corriente (incl. pago a X días)
-      if (effectiveSaleCondition((invoice as any).saleCondition, (invoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
-        const currentAccount = await currentAccountRepository.findByCustomerId(
-          invoice.customerId,
-          invoice.currency,
-          ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
-        );
+      // Recibo + banco + cuenta corriente + estado + reingreso de stock (NC):
+      // se confirman o revierten juntos — un cobro a medias es una caja que no cierra.
+      let recibo: any;
+      await prisma.$transaction(async (tx) => {
+        recibo = await reciboRepository.create({
+          invoiceId: invoice.id,
+          customerId: invoice.customerId,
+          userId: req.user!.userId,
+          cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
+          bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
+          amount: paymentData.amount,
+          currency: invoice.currency,
+          paymentMethod: paymentData.paymentMethod,
+          reference: paymentData.reference ?? null,
+          bank: paymentData.bank ?? null,
+          checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
+          installments: paymentData.installments ?? null,
+          notes: paymentData.notes ?? null,
+          companyId: req.companyId,
+          fiscalMode: ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
+        } as any, tx);
+
+        // For BANK_TRANSFER with a bankAccountId, create a bank movement.
+        // NC → es una devolución: DEBIT (sale plata) y baja el saldo del banco.
+        if (isBankTransfer && (paymentData as any).bankAccountId) {
+          const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
+          const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
+          const customerName = (invoice as any).customer?.name ?? '';
+          const bankDescription = `${isCreditNote ? 'Devolución' : 'Cobro'} ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
+          await (tx as any).bankMovement.create({
+            data: {
+              bankAccountId: (paymentData as any).bankAccountId,
+              type: isCreditNote ? 'DEBIT' : 'CREDIT',
+              amount: amountARS,
+              description: bankDescription,
+              reciboId: recibo.id,
+              companyId: req.companyId,
+            },
+          });
+          // Update bank account balance (+ cobro / − devolución)
+          const signedAmount = isCreditNote ? -amountARS : amountARS;
+          await tx.$executeRaw`
+            UPDATE "bank_accounts" SET balance = balance + ${signedAmount}, "updatedAt" = NOW()
+            WHERE id = ${(paymentData as any).bankAccountId}
+          `;
+        }
+
+        // Record payment in current account only for cuenta corriente (incl. pago a X días)
         if (currentAccount) {
           const movement = await currentAccountRepository.addMovement({
             currentAccountId: currentAccount.id,
@@ -506,55 +571,43 @@ export class InvoiceController {
             description: `${isCreditNote ? 'Devolución' : 'Pago'} ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
             invoiceId: invoice.id,
             cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
-          });
+          }, tx);
           // Link movement to recibo
           if (movement?.id) {
-            await prisma.accountMovement.update({
+            await tx.accountMovement.update({
               where: { id: movement.id },
               data: { reciboId: recibo.id },
             });
           }
         }
-      }
 
-      // Update invoice status
-      const newPaid = alreadyPaid + paymentData.amount;
-      let newStatus: 'PAID' | 'PARTIALLY_PAID' | 'ISSUED';
-      if (newPaid >= total - 0.001) {
-        newStatus = 'PAID';
-      } else {
-        newStatus = 'PARTIALLY_PAID';
-      }
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { status: newStatus },
+        });
 
-      const updated = await invoiceRepository.update(req.params.id, { status: newStatus });
-
-      // Reingreso de mercadería devuelta: cuando la NC queda totalmente devuelta,
-      // los ítems con producto vuelven al stock (movimiento RETURN). Se hace una
-      // sola vez (al llegar a PAID) para no duplicar ante devoluciones parciales.
-      if (isCreditNote && newStatus === 'PAID') {
-        const stockRepository = container.resolve<IStockRepository>('StockRepository');
-        const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
-        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
-        if (defaultWarehouse) {
+        // Reingreso de mercadería devuelta: cuando la NC queda totalmente devuelta,
+        // los ítems con producto vuelven al stock (movimiento RETURN). Se hace una
+        // sola vez (al llegar a PAID) para no duplicar ante devoluciones parciales.
+        if (returnWarehouse) {
+          const stockRepository = container.resolve<IStockRepository>('StockRepository');
           for (const item of invoice.items) {
             if (!item.productId) continue;
-            try {
-              await stockRepository.addMovement({
-                productId: item.productId,
-                variantId: (item as any).variantId ?? null,
-                warehouseId: defaultWarehouse.id,
-                type: 'RETURN',
-                quantity: item.quantity.toNumber(),
-                reason: `Devolución NC ${invoice.number}`,
-                referenceId: invoice.id,
-                userId: req.user!.userId,
-              });
-            } catch (stockError) {
-              console.error(`Stock return failed for product ${item.productId}:`, stockError);
-            }
+            await stockRepository.addMovement({
+              productId: item.productId,
+              variantId: (item as any).variantId ?? null,
+              warehouseId: returnWarehouse.id,
+              type: 'RETURN',
+              quantity: item.quantity.toNumber(),
+              reason: `Devolución NC ${invoice.number}`,
+              referenceId: invoice.id,
+              userId: req.user!.userId,
+            }, tx);
           }
         }
-      }
+      }, { timeout: 30000 });
+
+      const updated = await invoiceRepository.findById(req.params.id, req.companyId);
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -699,29 +752,162 @@ export class InvoiceController {
         throw new AppError('Invoice is already cancelled', 400);
       }
 
-      // Un borrador no generó movimientos, así que no hay nada que revertir.
-      // Reverse current account movement only for cuenta corriente (incl. pago a X días)
-      if (existingInvoice.status !== 'DRAFT' && effectiveSaleCondition((existingInvoice as any).saleCondition, (existingInvoice as any).paymentTerms) === 'CUENTA_CORRIENTE') {
-        const currentAccount = await currentAccountRepository.findByCustomerId(
-          existingInvoice.customerId,
-          existingInvoice.currency,
-          ((existingInvoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
+      // Una factura autorizada por ARCA no se anula internamente: el
+      // comprobante fiscal ya existe. El camino correcto es la Nota de Crédito.
+      if (existingInvoice.status === 'AUTHORIZED' || (existingInvoice as any).cae) {
+        throw new AppError(
+          'La factura está autorizada por ARCA y no puede anularse. Generá una Nota de Crédito sobre este comprobante.',
+          400
         );
-        if (currentAccount) {
-          const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');
-          await currentAccountRepository.addMovement({
-            currentAccountId: currentAccount.id,
-            type: wasCredit ? 'DEBIT' : 'CREDIT',
-            amount: existingInvoice.total.toNumber(),
-            description: `Cancelled: ${existingInvoice.type} ${existingInvoice.number}`,
-            invoiceId: existingInvoice.id,
-          });
-        }
       }
 
-      const invoice = await invoiceRepository.update(req.params.id, {
-        status: 'CANCELLED',
+      // Los cobros se revierten cancelando sus recibos (eso devuelve caja,
+      // banco y cuenta corriente). Anular con recibos vigentes dejaría plata
+      // registrada contra una factura inexistente.
+      const emittedRecibos = await prisma.recibo.count({
+        where: { invoiceId: existingInvoice.id, status: 'EMITTED' },
       });
+      if (emittedRecibos > 0) {
+        throw new AppError(
+          'La factura tiene cobros registrados. Cancelá primero sus recibos para revertir los cobros.',
+          400
+        );
+      }
+
+      // Un borrador no generó movimientos, así que no hay nada que revertir.
+      if (existingInvoice.status !== 'DRAFT') {
+        const stockRepository = container.resolve<IStockRepository>('StockRepository');
+        const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
+        const stockBehavior: string = (existingInvoice as any).stockBehavior ?? 'DISCOUNT';
+        const isFactura = existingInvoice.type.startsWith('FACTURA');
+        const usesCC = effectiveSaleCondition((existingInvoice as any).saleCondition, (existingInvoice as any).paymentTerms) === 'CUENTA_CORRIENTE';
+
+        // Lecturas previas (no necesitan la transacción)
+        const currentAccount = usesCC
+          ? await currentAccountRepository.findByCustomerId(
+              existingInvoice.customerId,
+              existingInvoice.currency,
+              ((existingInvoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
+            )
+          : null;
+        const linkedRemitos = await prisma.remito.findMany({
+          where: { invoiceId: existingInvoice.id },
+          include: { items: true },
+        });
+        const activeRemitos = linkedRemitos.filter((r) => r.status !== 'CANCELLED');
+        const saleMovements = isFactura && stockBehavior === 'DISCOUNT'
+          ? await prisma.stockMovement.findMany({
+              where: { referenceId: existingInvoice.id, type: 'SALE' },
+            })
+          : [];
+        const defaultWarehouse = isFactura && stockBehavior === 'RESERVE'
+          ? await resolveSaleWarehouse('invoices', existingInvoice.id, req.companyId)
+          : null;
+
+        // Toda la reversa (CC + stock + remitos + estado) se confirma o
+        // revierte junta: una anulación a medias es peor que ninguna.
+        await prisma.$transaction(async (tx) => {
+          // Reverse current account movement only for cuenta corriente (incl. pago a X días)
+          if (currentAccount) {
+            const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');
+            await currentAccountRepository.addMovement({
+              currentAccountId: currentAccount.id,
+              type: wasCredit ? 'DEBIT' : 'CREDIT',
+              amount: existingInvoice.total.toNumber(),
+              description: `Cancelled: ${existingInvoice.type} ${existingInvoice.number}`,
+              invoiceId: existingInvoice.id,
+            }, tx);
+          }
+
+          // Reversa de stock. La emisión descontó (SALE) o reservó stock y
+          // pudo generar un remito automático; todo debe volver.
+          if (isFactura && stockBehavior === 'DISCOUNT') {
+            // Los SALE originales conservan producto/variante/almacén exactos.
+            for (const mov of saleMovements) {
+              await stockRepository.addMovement({
+                productId: mov.productId,
+                variantId: (mov as any).variantId ?? null,
+                warehouseId: mov.warehouseId,
+                type: 'RETURN',
+                quantity: Number(mov.quantity),
+                reason: `Anulación factura ${existingInvoice.number}`,
+                referenceId: existingInvoice.id,
+                userId: req.user!.userId,
+              }, tx);
+            }
+          } else if (isFactura && defaultWarehouse) {
+            // RESERVE: liberar lo aún reservado y devolver lo ya entregado.
+            // Cantidades que pasaron por algún remito (activo o ya cancelado):
+            // su reserva ya fue liberada al entregarse o al cancelarse.
+            const managedByRemito = new Map<string, number>();
+            for (const remito of linkedRemitos) {
+              for (const item of remito.items) {
+                const key = `${item.productId}|${(item as any).variantId ?? ''}`;
+                managedByRemito.set(key, (managedByRemito.get(key) ?? 0) + Number(item.quantity));
+              }
+            }
+
+            for (const remito of activeRemitos) {
+              for (const item of remito.items) {
+                const variantId = (item as any).variantId ?? null;
+                const delivered = Number(item.deliveredQuantity);
+                const pending = Number(item.quantity) - delivered;
+                if (pending > 0) {
+                  await stockRepository.decrementReserved(
+                    item.productId,
+                    defaultWarehouse.id,
+                    pending,
+                    variantId,
+                    tx,
+                  );
+                }
+                if (delivered > 0) {
+                  await stockRepository.addMovement({
+                    productId: item.productId,
+                    variantId,
+                    warehouseId: defaultWarehouse.id,
+                    type: 'RETURN',
+                    quantity: delivered,
+                    reason: `Anulación factura ${existingInvoice.number}`,
+                    referenceId: remito.id,
+                    userId: req.user!.userId,
+                  }, tx);
+                }
+              }
+            }
+
+            // Reserva de la factura que nunca pasó por un remito.
+            for (const item of existingInvoice.items) {
+              const variantId = (item as any).variantId ?? null;
+              const key = `${item.productId}|${variantId ?? ''}`;
+              const remainder = Number(item.quantity) - (managedByRemito.get(key) ?? 0);
+              if (remainder > 0) {
+                await stockRepository.decrementReserved(
+                  item.productId,
+                  defaultWarehouse.id,
+                  remainder,
+                  variantId,
+                  tx,
+                );
+              }
+            }
+          }
+
+          // Los remitos vinculados quedan cancelados: la mercadería ya volvió.
+          for (const remito of activeRemitos) {
+            await remitoRepository.updateStatus(remito.id, 'CANCELLED', tx);
+          }
+
+          await tx.invoice.update({
+            where: { id: existingInvoice.id },
+            data: { status: 'CANCELLED' },
+          });
+        }, { timeout: 30000 });
+      } else {
+        await invoiceRepository.update(req.params.id, { status: 'CANCELLED' });
+      }
+
+      const invoice = await invoiceRepository.findById(req.params.id, req.companyId);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({

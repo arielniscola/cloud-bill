@@ -44,6 +44,29 @@ const WSFE_WSDL = {
   test: 'https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL',
 };
 
+// Constancia de inscripción (ws_sr_constancia_inscripcion) — padrón por CUIT.
+// El certificado debe tener este servicio asociado en el portal de ARCA.
+const PADRON_WSDL = {
+  prod: 'https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL',
+  test: 'https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5?WSDL',
+};
+
+// IDs de impuestos en la constancia de inscripción
+const IMPUESTO_IVA = 30;
+const IMPUESTO_IVA_EXENTO = 32;
+
+export interface PadronResult {
+  cuit: string;
+  name: string;
+  taxCondition: 'RESPONSABLE_INSCRIPTO' | 'MONOTRIBUTISTA' | 'EXENTO' | 'CONSUMIDOR_FINAL';
+  address: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  personType: string | null; // FISICA | JURIDICA
+  estado: string | null;     // ACTIVO | ...
+}
+
 export interface EmitResult {
   cae: string;
   caeExpiry: Date;
@@ -66,11 +89,15 @@ const taCache = new Map<string, TokenAuth>();
 // servidor por ~12hs y rechaza con `coe.alreadyAuthenticated` si pedís uno
 // nuevo antes de que expire — por eso necesitamos persistir.
 const TA_DIR = path.join(os.tmpdir(), 'cloud-bill-afip-ta');
-const taFilePath = (cuit: string, env: string) => path.join(TA_DIR, `${cuit}-${env}.json`);
+// El TA de WSAA es POR SERVICIO (wsfe, ws_sr_constancia_inscripcion, …).
+// Para wsfe se mantiene el nombre histórico sin sufijo (compatibilidad con
+// TAs ya persistidos — ARCA rechaza re-login mientras el TA viejo siga vivo).
+const taFilePath = (cuit: string, env: string, service: string) =>
+  path.join(TA_DIR, service === 'wsfe' ? `${cuit}-${env}.json` : `${cuit}-${env}-${service}.json`);
 
-function loadTaFromDisk(cuit: string, env: string): TokenAuth | null {
+function loadTaFromDisk(cuit: string, env: string, service: string): TokenAuth | null {
   try {
-    const raw = fs.readFileSync(taFilePath(cuit, env), 'utf8');
+    const raw = fs.readFileSync(taFilePath(cuit, env, service), 'utf8');
     const parsed = JSON.parse(raw);
     return { token: parsed.token, sign: parsed.sign, expiresAt: new Date(parsed.expiresAt) };
   } catch {
@@ -78,10 +105,10 @@ function loadTaFromDisk(cuit: string, env: string): TokenAuth | null {
   }
 }
 
-function saveTaToDisk(cuit: string, env: string, ta: TokenAuth): void {
+function saveTaToDisk(cuit: string, env: string, service: string, ta: TokenAuth): void {
   try {
     fs.mkdirSync(TA_DIR, { recursive: true });
-    fs.writeFileSync(taFilePath(cuit, env), JSON.stringify({
+    fs.writeFileSync(taFilePath(cuit, env, service), JSON.stringify({
       token: ta.token,
       sign: ta.sign,
       expiresAt: ta.expiresAt.toISOString(),
@@ -133,14 +160,14 @@ export class AfipService {
     return { token, sign, expiresAt: new Date(expStr) };
   }
 
-  /** Get (or refresh) the Ticket de Acceso from WSAA */
-  async getTokenAuth(config: AfipConfig): Promise<{ token: string; sign: string }> {
-    return this.getTA(config);
+  /** Get (or refresh) the Ticket de Acceso from WSAA (por servicio; default wsfe) */
+  async getTokenAuth(config: AfipConfig, service = 'wsfe'): Promise<{ token: string; sign: string }> {
+    return this.getTA(config, service);
   }
 
-  private async getTA(config: AfipConfig): Promise<TokenAuth> {
+  private async getTA(config: AfipConfig, service = 'wsfe'): Promise<TokenAuth> {
     const env = config.isProduction ? 'prod' : 'test';
-    const cacheKey = `${config.cuit}-${env}`;
+    const cacheKey = `${config.cuit}-${env}-${service}`;
     const isStillValid = (ta: TokenAuth) => ta.expiresAt.getTime() - Date.now() > 5 * 60 * 1000;
 
     // 1. Memory cache
@@ -148,14 +175,14 @@ export class AfipService {
     if (cached && isStillValid(cached)) return cached;
 
     // 2. Disk cache (survives restart) — ARCA bloquea login mientras el TA viejo siga vivo
-    const fromDisk = loadTaFromDisk(config.cuit, env);
+    const fromDisk = loadTaFromDisk(config.cuit, env, service);
     if (fromDisk && isStillValid(fromDisk)) {
       taCache.set(cacheKey, fromDisk);
       return fromDisk;
     }
 
     // 3. Login WSAA
-    const tra = this.buildTRA('wsfe');
+    const tra = this.buildTRA(service);
     const cms = this.signTRA(tra, config.cert, config.privateKey);
 
     const wsaaClient = await soap.createClientAsync(WSAA_WSDL[env]);
@@ -176,8 +203,89 @@ export class AfipService {
 
     const ta = this.parseTA(loginResult?.loginCmsReturn ?? '');
     taCache.set(cacheKey, ta);
-    saveTaToDisk(config.cuit, env, ta);
+    saveTaToDisk(config.cuit, env, service, ta);
     return ta;
+  }
+
+  /**
+   * Consulta el padrón de ARCA (constancia de inscripción) por CUIT y devuelve
+   * los datos normalizados para autocompletar clientes/proveedores.
+   * Requiere que el certificado tenga asociado el servicio
+   * "ws_sr_constancia_inscripcion" en el portal de ARCA.
+   */
+  async getPadronData(config: AfipConfig, cuit: string): Promise<PadronResult> {
+    const digits = cuit.replace(/\D/g, '');
+    if (digits.length !== 11) throw new Error('El CUIT debe tener 11 dígitos');
+
+    const env = config.isProduction ? 'prod' : 'test';
+    const ta = await this.getTA(config, 'ws_sr_constancia_inscripcion');
+
+    const client = await soap.createClientAsync(PADRON_WSDL[env]);
+    let result: any;
+    try {
+      [result] = await (client as any).getPersonaAsync({
+        token: ta.token,
+        sign: ta.sign,
+        cuitRepresentada: config.cuit.replace(/\D/g, ''),
+        idPersona: digits,
+      });
+    } catch (err: any) {
+      const msg = String(err.root?.Envelope?.Body?.Fault?.faultstring ?? err.message ?? err);
+      if (/no autorizado|unauthorized|computador no autorizado/i.test(msg)) {
+        throw new Error(
+          'ARCA rechazó la consulta al padrón: el certificado no tiene asociado el servicio ' +
+          '"ws_sr_constancia_inscripcion". Asocialo desde el portal de ARCA ' +
+          '(Administración de Certificados Digitales) y volvé a intentar.'
+        );
+      }
+      throw new Error(`Padrón ARCA: ${msg}`);
+    }
+
+    const persona = result?.personaReturn;
+    if (!persona) throw new Error('Padrón ARCA: respuesta vacía');
+
+    // Errores de constancia (CUIT inexistente, persona sin constancia, etc.)
+    const constanciaErrors: string[] = [
+      persona.errorConstancia?.error,
+      persona.errorMonotributo?.error,
+      persona.errorRegimenGeneral?.error,
+    ]
+      .flat()
+      .filter(Boolean)
+      .map(String);
+    const dg = persona.datosGenerales;
+    if (!dg) {
+      throw new Error(
+        constanciaErrors[0] ?? 'El CUIT no figura en el padrón de ARCA'
+      );
+    }
+
+    const name: string = dg.razonSocial
+      ?? [dg.apellido, dg.nombre].filter(Boolean).join(' ')
+      ?? '';
+
+    // Condición IVA: monotributo → MONOTRIBUTISTA; impuesto 30 activo → RI;
+    // impuesto 32 → EXENTO; sin nada de eso → CONSUMIDOR_FINAL.
+    const impuestos: any[] = [persona.datosRegimenGeneral?.impuesto ?? []].flat();
+    const tieneImpuesto = (id: number) => impuestos.some((i) => Number(i?.idImpuesto) === id);
+    let taxCondition: PadronResult['taxCondition'] = 'CONSUMIDOR_FINAL';
+    if (persona.datosMonotributo) taxCondition = 'MONOTRIBUTISTA';
+    else if (tieneImpuesto(IMPUESTO_IVA)) taxCondition = 'RESPONSABLE_INSCRIPTO';
+    else if (tieneImpuesto(IMPUESTO_IVA_EXENTO)) taxCondition = 'EXENTO';
+
+    const dom = dg.domicilioFiscal ?? {};
+
+    return {
+      cuit: digits,
+      name,
+      taxCondition,
+      address: dom.direccion ?? null,
+      city: dom.localidad ?? null,
+      province: dom.descripcionProvincia ?? null,
+      postalCode: dom.codPostal ?? null,
+      personType: dg.tipoPersona ?? null,
+      estado: dg.estadoClave ?? null,
+    };
   }
 
   /** Test server availability (FEDummy) + WSAA authentication */

@@ -8,7 +8,17 @@ import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { RemitoStatus } from '../../../shared/types';
 import prisma from '../../database/prisma';
 import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
+import { resolveSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import { sendRemitoEmail } from '../../services/EmailService';
+
+// Depósito donde opera el remito: el del documento de venta vinculado
+// (factura u orden de pedido) o el depósito por defecto de la empresa.
+async function resolveRemitoWarehouse(remito: any, companyId?: string) {
+  if (remito.invoiceId) return resolveSaleWarehouse('invoices', remito.invoiceId, companyId);
+  if (remito.ordenPedidoId) return resolveSaleWarehouse('orden_pedidos', remito.ordenPedidoId, companyId);
+  const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
+  return warehouseRepository.findDefaultOrFirstActive(companyId);
+}
 
 export class RemitoController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -36,6 +46,15 @@ export class RemitoController {
           include: { items: true },
         });
         if (!invoice) throw new AppError('Factura no encontrada', 404);
+
+        // Un borrador no movió stock (los efectos se aplican al emitir):
+        // entregar por remito descontaría mercadería que nunca se descontó.
+        if (invoice.status === 'DRAFT') {
+          throw new AppError('La factura está en borrador: emitila antes de generar un remito.', 400);
+        }
+        if (invoice.status === 'CANCELLED') {
+          throw new AppError('No se puede generar un remito de una factura cancelada.', 400);
+        }
 
         const deliveryStatus = await computeDeliveryStatus('invoiceId', invoiceId, invoice.items);
         if (deliveryStatus === 'DELIVERED') {
@@ -93,7 +112,7 @@ export class RemitoController {
 
       // Stock movements only for standalone remitos (linked docs handled stock at creation)
       if (!isLinked) {
-        const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
+        const defaultWarehouse = await warehouseRepository.findDefaultOrFirstActive(req.companyId);
         if (!defaultWarehouse) {
           throw new AppError('No se encontró un almacén por defecto', 400);
         }
@@ -153,6 +172,8 @@ export class RemitoController {
           dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
           dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
           ordenPedidoId: filters.ordenPedidoId as string | undefined,
+          invoiceId: filters.invoiceId as string | undefined,
+          budgetId: filters.budgetId as string | undefined,
         }
       );
 
@@ -180,7 +201,7 @@ export class RemitoController {
         throw new AppError('Solo se pueden entregar remitos pendientes o parcialmente entregados', 400);
       }
 
-      const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
+      const defaultWarehouse = await resolveRemitoWarehouse(remito, req.companyId);
       if (!defaultWarehouse) {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }
@@ -279,7 +300,7 @@ export class RemitoController {
         throw new AppError('El remito ya está cancelado', 400);
       }
 
-      const defaultWarehouse = await warehouseRepository.findDefault(req.companyId);
+      const defaultWarehouse = await resolveRemitoWarehouse(remito, req.companyId);
       if (!defaultWarehouse) {
         throw new AppError('No se encontró un almacén por defecto', 400);
       }

@@ -107,6 +107,34 @@ export class AfipController {
     }
   }
 
+  /**
+   * GET /afip/padron/:cuit — consulta la constancia de inscripción de ARCA
+   * y devuelve los datos normalizados para autocompletar el alta de
+   * clientes/proveedores (razón social, condición IVA, domicilio).
+   */
+  async getPadron(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const digits = String(req.params.cuit ?? '').replace(/\D/g, '');
+      if (digits.length !== 11) {
+        throw new AppError('El CUIT debe tener 11 dígitos', 400);
+      }
+
+      const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
+      const config = await (repo as any).getActive(req.companyId);
+      if (!config) {
+        throw new AppError('No hay configuración ARCA activa. Configurala en Configuración → AFIP.', 400);
+      }
+
+      const data = await afipService.getPadronData(config, digits);
+      res.json({ status: 'success', data });
+    } catch (error: any) {
+      // Los errores del padrón son de negocio (CUIT inexistente, servicio no
+      // asociado): se devuelven como 400 con el mensaje, no como 500.
+      if (error instanceof AppError) return next(error);
+      next(new AppError(error.message ?? 'Error al consultar el padrón de ARCA', 400));
+    }
+  }
+
   async emitInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');

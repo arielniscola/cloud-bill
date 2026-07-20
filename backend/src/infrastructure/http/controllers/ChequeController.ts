@@ -3,8 +3,9 @@ import { container } from 'tsyringe';
 import { z } from 'zod';
 import { IChequeRepository } from '../../../domain/repositories/IChequeRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
-import { NotFoundError } from '../../../shared/errors/AppError';
+import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
+import prisma from '../../database/prisma';
 
 const createChequeSchema = z.object({
   type:           z.enum(['INGRESO', 'EGRESO']),
@@ -26,7 +27,31 @@ const createChequeSchema = z.object({
 
 const updateStatusSchema = z.object({
   status: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'ENDOSADO']),
+  bankAccountId: z.string().uuid().optional(),
 });
+
+// Máquina de transiciones del cheque — espejo server-side de
+// CHEQUE_NEXT_STATUSES en frontend/src/types/cheque.types.ts: lo que la UI
+// no ofrece, la API tampoco acepta. CLEARED es terminal; ENDOSADO se gestiona
+// vía la Orden de Pago (no por este endpoint); BOUNCED/RETURNED pueden volver
+// a cartera (la reversión del débito por rechazo la maneja el bounce service).
+const CHEQUE_TRANSITIONS: Record<string, string[]> = {
+  PENDING:   ['DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED'],
+  DEPOSITED: ['CLEARED', 'BOUNCED'],
+  CLEARED:   [],
+  BOUNCED:   ['PENDING'],
+  RETURNED:  ['PENDING'],
+  ENDOSADO:  [],
+};
+
+const CHEQUE_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'En cartera',
+  DEPOSITED: 'Depositado',
+  CLEARED: 'Acreditado',
+  BOUNCED: 'Rechazado',
+  RETURNED: 'Devuelto',
+  ENDOSADO: 'Endosado',
+};
 
 const listQuerySchema = z.object({
   page:       z.coerce.number().int().positive().optional(),
@@ -87,11 +112,31 @@ export class ChequeController {
   async updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo   = container.resolve<IChequeRepository>('ChequeRepository');
-      const { status } = updateStatusSchema.parse(req.body);
+      const { status, bankAccountId } = updateStatusSchema.parse(req.body);
 
       const existing = await repo.findById(req.params.id, req.companyId!);
       if (!existing) throw new NotFoundError('Cheque');
       const oldStatus = existing.status;
+
+      if (!(CHEQUE_TRANSITIONS[oldStatus] ?? []).includes(status)) {
+        const from = CHEQUE_STATUS_LABELS[oldStatus] ?? oldStatus;
+        const to = CHEQUE_STATUS_LABELS[status] ?? status;
+        const allowed = (CHEQUE_TRANSITIONS[oldStatus] ?? [])
+          .map((s) => CHEQUE_STATUS_LABELS[s] ?? s)
+          .join(', ');
+        throw new AppError(
+          `Transición de estado inválida (${from} → ${to}).${allowed ? ` Desde ${from} solo se puede pasar a: ${allowed}.` : ` ${from} es un estado final.`}`,
+          400
+        );
+      }
+
+      // Al depositar se puede indicar (o corregir) la cuenta bancaria destino.
+      if (status === 'DEPOSITED' && bankAccountId) {
+        await prisma.$executeRaw`
+          UPDATE "cheques" SET "bankAccountId" = ${bankAccountId}, "updatedAt" = NOW()
+          WHERE id = ${req.params.id} AND "companyId" = ${req.companyId!}
+        `;
+      }
 
       const cheque = await repo.updateStatus(req.params.id, status, req.companyId!);
 

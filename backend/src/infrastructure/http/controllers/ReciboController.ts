@@ -11,6 +11,7 @@ import { IStockRepository, IWarehouseRepository } from '../../../domain/reposito
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
 import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
+import { resolveSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import prisma from '../../database/prisma';
 
 export class ReciboController {
@@ -212,57 +213,67 @@ export class ReciboController {
         throw new AppError('El recibo ya está cancelado', 400);
       }
 
-      // Reverse the AccountMovement linked to this recibo
+      // Lecturas previas (no necesitan la transacción)
       const accountMovement = await prisma.accountMovement.findFirst({
         where: { reciboId: recibo.id },
         include: { currentAccount: true },
       });
 
-      if (accountMovement) {
-        const currentAccount = accountMovement.currentAccount;
-        await currentAccountRepo.addMovement({
-          currentAccountId: currentAccount.id,
-          type: accountMovement.type === 'CREDIT' ? 'DEBIT' : 'CREDIT',
-          amount: Number(accountMovement.amount),
-          description: `Anulación recibo ${recibo.number}`,
-          invoiceId: recibo.invoiceId ?? undefined,
-          cashRegisterId: recibo.cashRegisterId ?? undefined,
-        });
-      }
-
       // Si es la devolución de una Nota de Crédito que estaba totalmente devuelta,
       // la mercadería ya había reingresado al stock (RETURN al llegar a PAID).
       // Al anular la devolución hay que sacar nuevamente ese stock.
+      let ncInvoice: Awaited<ReturnType<IInvoiceRepository['findById']>> = null;
+      let ncWarehouse: { id: string } | null = null;
       if (recibo.invoiceId) {
         const invoice = await invoiceRepo.findById(recibo.invoiceId);
         if (invoice && invoice.type.startsWith('NOTA_CREDITO') && invoice.status === 'PAID') {
-          const stockRepo = container.resolve<IStockRepository>('StockRepository');
-          const warehouseRepo = container.resolve<IWarehouseRepository>('WarehouseRepository');
-          const defaultWarehouse = await warehouseRepo.findDefault((invoice as any).companyId);
-          if (defaultWarehouse) {
-            for (const item of invoice.items) {
-              if (!item.productId) continue;
-              try {
-                await stockRepo.addMovement({
-                  productId: item.productId,
-                  variantId: (item as any).variantId ?? null,
-                  warehouseId: defaultWarehouse.id,
-                  type: 'ADJUSTMENT_OUT',
-                  quantity: item.quantity.toNumber(),
-                  reason: `Anulación devolución NC ${invoice.number}`,
-                  referenceId: invoice.id,
-                  userId: req.user!.userId,
-                });
-              } catch (stockError) {
-                console.error(`Stock reversal failed for product ${item.productId}:`, stockError);
-              }
-            }
-          }
+          ncInvoice = invoice;
+          // Mismo depósito al que reingresó la devolución (el de la factura de origen).
+          ncWarehouse = await resolveSaleWarehouse(
+            'invoices',
+            (invoice as any).originInvoiceId ?? invoice.id,
+            (invoice as any).companyId
+          );
         }
       }
 
-      // Cancel the recibo
-      const cancelled = await reciboRepo.cancel(recibo.id);
+      // Reversa de cuenta corriente + stock + estado del recibo: todo o nada.
+      // Los recálculos de estados (factura/presupuesto/orden) van después del
+      // commit porque releen los recibos ya confirmados.
+      let cancelled!: Awaited<ReturnType<IReciboRepository['cancel']>>;
+      await prisma.$transaction(async (tx) => {
+        // Reverse the AccountMovement linked to this recibo
+        if (accountMovement) {
+          await currentAccountRepo.addMovement({
+            currentAccountId: accountMovement.currentAccount.id,
+            type: accountMovement.type === 'CREDIT' ? 'DEBIT' : 'CREDIT',
+            amount: Number(accountMovement.amount),
+            description: `Anulación recibo ${recibo.number}`,
+            invoiceId: recibo.invoiceId ?? undefined,
+            cashRegisterId: recibo.cashRegisterId ?? undefined,
+          }, tx);
+        }
+
+        if (ncInvoice && ncWarehouse) {
+          const stockRepo = container.resolve<IStockRepository>('StockRepository');
+          for (const item of ncInvoice.items) {
+            if (!item.productId) continue;
+            await stockRepo.addMovement({
+              productId: item.productId,
+              variantId: (item as any).variantId ?? null,
+              warehouseId: ncWarehouse.id,
+              type: 'ADJUSTMENT_OUT',
+              quantity: item.quantity.toNumber(),
+              reason: `Anulación devolución NC ${ncInvoice.number}`,
+              referenceId: ncInvoice.id,
+              userId: req.user!.userId,
+            }, tx);
+          }
+        }
+
+        // Cancel the recibo
+        cancelled = await reciboRepo.cancel(recibo.id, tx);
+      }, { timeout: 30000 });
 
       // Recalculate invoice status
       if (recibo.invoiceId) {
