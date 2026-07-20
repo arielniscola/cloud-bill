@@ -25,6 +25,7 @@ import { budgetRoutes } from './routes/budgetRoutes';
 import { appSettingsRoutes } from './routes/appSettingsRoutes';
 import { stockIntelligenceRoutes } from './routes/stockIntelligenceRoutes';
 import { reciboRoutes } from './routes/reciboRoutes';
+import { recurringInvoiceRoutes } from './routes/recurringInvoiceRoutes';
 import { ordenPedidoRoutes } from './routes/ordenPedidoRoutes';
 import { purchaseRemitoRoutes } from './routes/purchaseRemitoRoutes';
 import { userRoutes } from './routes/userRoutes';
@@ -105,6 +106,7 @@ export function createApp(): Application {
   app.use('/api/app-settings', appSettingsRoutes);
   app.use('/api/stock-intelligence', stockIntelligenceRoutes);
   app.use('/api/recibos', reciboRoutes);
+  app.use('/api/recurring-invoices', recurringInvoiceRoutes);
   app.use('/api/orden-pedidos', ordenPedidoRoutes);
   app.use('/api/purchase-remitos', purchaseRemitoRoutes);
   app.use('/api/users', userRoutes);

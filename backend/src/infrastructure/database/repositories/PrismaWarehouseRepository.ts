@@ -33,6 +33,17 @@ export class PrismaWarehouseRepository implements IWarehouseRepository {
     });
   }
 
+  async findDefaultOrFirstActive(companyId?: string): Promise<Warehouse | null> {
+    const def = await this.findDefault(companyId);
+    if (def) return def;
+    // Fallback: primer almacén activo de la empresa (por nombre) cuando no hay
+    // uno marcado como default. Evita saltear el movimiento de stock en silencio.
+    return this.prisma.warehouse.findFirst({
+      where: { isActive: true, ...(companyId ? ({ companyId } as any) : {}) },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async create(data: CreateWarehouseInput): Promise<Warehouse> {
     if (data.isDefault) {
       await this.prisma.warehouse.updateMany({

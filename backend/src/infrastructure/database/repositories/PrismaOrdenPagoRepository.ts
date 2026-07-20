@@ -340,30 +340,33 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const op = await this.findById(id);
     if (!op) throw new Error('OrdenPago not found');
 
-    // Mark the OP as PAID first so the per-invoice recalc counts its items.
-    await prisma.$executeRaw`
-      UPDATE "orden_pagos" SET status = 'PAID', "updatedAt" = NOW() WHERE id = ${id}
-    `;
-
-    // Recompute each invoice status from the total imputed by PAID orders: a payment
-    // for less than the invoice total leaves it PARTIALLY_PAID, never PAID.
-    for (const item of op.items) {
-      if (item.purchaseInvoiceId) {
-        await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId);
-        if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
-      }
-    }
-
-    // Movimiento de cuenta corriente: si las facturas pagadas son de cuenta
-    // corriente, o si es un pago a cuenta (sin facturas) → genera CREDIT.
+    // Lecturas previas (no necesitan la transacción)
     const isPagoACuenta = op.items.length === 0;
     const hasCuentaCorriente = await this._opHasCuentaCorriente(op);
+    const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
+    `;
 
-    if (isPagoACuenta || hasCuentaCorriente) {
-      const existingMovement = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
+    // Estado + recalcs de facturas + cuenta corriente se confirman o
+    // revierten juntos: un pago a medias dejaba la OP en PAID sin CREDIT.
+    await prisma.$transaction(async (tx) => {
+      // Mark the OP as PAID first so the per-invoice recalc counts its items.
+      await tx.$executeRaw`
+        UPDATE "orden_pagos" SET status = 'PAID', "updatedAt" = NOW() WHERE id = ${id}
       `;
-      if (existingMovement.length === 0) {
+
+      // Recompute each invoice status from the total imputed by PAID orders: a payment
+      // for less than the invoice total leaves it PARTIALLY_PAID, never PAID.
+      for (const item of op.items) {
+        if (item.purchaseInvoiceId) {
+          await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId, tx);
+          if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId, tx);
+        }
+      }
+
+      // Movimiento de cuenta corriente: si las facturas pagadas son de cuenta
+      // corriente, o si es un pago a cuenta (sin facturas) → genera CREDIT.
+      if ((isPagoACuenta || hasCuentaCorriente) && existingMovement.length === 0) {
         const totalAmount = Number(op.amount);
         await this.createSupplierMovement({
           supplierId: op.supplierId,
@@ -374,9 +377,9 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           description: isPagoACuenta ? `Pago a cuenta ${op.number}` : `Orden de Pago ${op.number}`,
           companyId: op.companyId,
           fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-        });
+        }, tx);
       }
-    }
+    }, { timeout: 30000 });
 
     return this.findById(id) as Promise<OrdenPagoWithRelations>;
   }
@@ -394,38 +397,44 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       return rows[0] as any as OrdenPago;
     }
 
-    // Mark the OP cancelled first so the per-invoice recalc no longer counts its items.
-    await prisma.$executeRaw`
-      UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
-    `;
+    // Lectura previa (no necesita la transacción)
+    const shouldReverseMovement = op.items.length === 0 || await this._opHasCuentaCorriente(op);
 
-    // Recompute each invoice status from the remaining PAID orders (it may still be
-    // PARTIALLY_PAID if other orders imputed part of it).
-    for (const item of op.items) {
-      if (item.purchaseInvoiceId) {
-        await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId);
-        if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId);
-      } else {
-        // Backward compat: items without purchaseInvoiceId use old paidAmount logic
-        const amount = Number(item.amount);
-        await prisma.$executeRaw`
-          UPDATE "purchases"
-          SET "paidAmount" = GREATEST("paidAmount" - ${amount}, 0),
-              "paymentStatus" = CASE
-                WHEN GREATEST("paidAmount" - ${amount}, 0) = 0     THEN 'PENDING'
-                WHEN GREATEST("paidAmount" - ${amount}, 0) < total THEN 'PARTIALLY_PAID'
-                ELSE 'PAID'
-              END,
-              "updatedAt" = NOW()
-          WHERE id = ${item.purchaseId}
-        `;
+    // Estado + recalcs + reversa de cuenta corriente, todo o nada.
+    await prisma.$transaction(async (tx) => {
+      // Mark the OP cancelled first so the per-invoice recalc no longer counts its items.
+      await tx.$executeRaw`
+        UPDATE "orden_pagos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${id}
+      `;
+
+      // Recompute each invoice status from the remaining PAID orders (it may still be
+      // PARTIALLY_PAID if other orders imputed part of it).
+      for (const item of op.items) {
+        if (item.purchaseInvoiceId) {
+          await this._recalcPurchaseInvoicePaymentStatus(item.purchaseInvoiceId, tx);
+          if (item.purchaseId) await this._recalcPurchasePaymentStatus(item.purchaseId, tx);
+        } else {
+          // Backward compat: items without purchaseInvoiceId use old paidAmount logic
+          const amount = Number(item.amount);
+          await tx.$executeRaw`
+            UPDATE "purchases"
+            SET "paidAmount" = GREATEST("paidAmount" - ${amount}, 0),
+                "paymentStatus" = CASE
+                  WHEN GREATEST("paidAmount" - ${amount}, 0) = 0     THEN 'PENDING'
+                  WHEN GREATEST("paidAmount" - ${amount}, 0) < total THEN 'PARTIALLY_PAID'
+                  ELSE 'PAID'
+                END,
+                "updatedAt" = NOW()
+            WHERE id = ${item.purchaseId}
+          `;
+        }
       }
-    }
 
-    // Reverse supplier account movement for CC invoices or pago a cuenta (no invoices)
-    if (op.items.length === 0 || await this._opHasCuentaCorriente(op)) {
-      await this.cancelSupplierMovement(id);
-    }
+      // Reverse supplier account movement for CC invoices or pago a cuenta (no invoices)
+      if (shouldReverseMovement) {
+        await this.cancelSupplierMovement(id, tx);
+      }
+    }, { timeout: 30000 });
 
     const rows = await prisma.$queryRaw<RawOrdenPago[]>`
       SELECT * FROM "orden_pagos" WHERE id = ${id}
@@ -460,8 +469,8 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
   // Recompute a purchase invoice's status from the total imputed by PAID orders of
   // payment: nothing → PENDING, less than the total → PARTIALLY_PAID, full → PAID.
-  private async _recalcPurchaseInvoicePaymentStatus(invoiceId: string): Promise<void> {
-    await prisma.$executeRaw`
+  private async _recalcPurchaseInvoicePaymentStatus(invoiceId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? prisma).$executeRaw`
       UPDATE "purchase_invoices" pi
       SET status = CASE
             WHEN paid.total <= 0                  THEN 'PENDING'
@@ -479,8 +488,8 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     `;
   }
 
-  private async _recalcPurchasePaymentStatus(purchaseId: string): Promise<void> {
-    await prisma.$executeRaw`
+  private async _recalcPurchasePaymentStatus(purchaseId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? prisma).$executeRaw`
       UPDATE "purchases"
       SET "paymentStatus" = CASE
         WHEN NOT EXISTS (SELECT 1 FROM "purchase_invoices" WHERE "purchaseId" = ${purchaseId}) THEN 'PENDING'
@@ -495,12 +504,12 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
   // ── Supplier current account ──────────────────────────────────────────────
 
-  async getSupplierBalance(supplierId: string, companyId?: string): Promise<number> {
+  async getSupplierBalance(supplierId: string, companyId?: string, tx?: Prisma.TransactionClient): Promise<number> {
     const conditions: Prisma.Sql[] = [Prisma.sql`"supplierId" = ${supplierId}`];
     if (companyId) conditions.push(Prisma.sql`"companyId" = ${companyId}`);
     const where = Prisma.join(conditions, ' AND ');
 
-    const rows = await prisma.$queryRaw<{ balance: any }[]>`
+    const rows = await (tx ?? prisma).$queryRaw<{ balance: any }[]>`
       SELECT COALESCE(
         SUM(CASE WHEN type = 'DEBIT'  THEN amount ELSE 0 END) -
         SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END),
@@ -603,19 +612,20 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     };
   }
 
-  async createSupplierMovement(data: CreateSupplierMovementInput): Promise<SupplierAccountMovement> {
+  async createSupplierMovement(data: CreateSupplierMovementInput, tx?: Prisma.TransactionClient): Promise<SupplierAccountMovement> {
+    const client = tx ?? prisma;
     const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
     const fiscalMode = data.fiscalMode ?? 'FORMAL';
 
-    const currentBalance = await this.getSupplierBalance(data.supplierId, companyId);
+    const currentBalance = await this.getSupplierBalance(data.supplierId, companyId, tx);
     const newBalance = data.type === 'DEBIT'
       ? currentBalance + data.amount
       : currentBalance - data.amount;
 
-    const movId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
+    const movId = await client.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
 
-    await prisma.$executeRaw`
+    await client.$executeRaw`
       INSERT INTO "supplier_account_movements" (
         "id", "supplierId", "ordenPagoId", "purchaseId", "purchaseInvoiceId",
         "type", "amount", "currency", "balance", "description", "companyId", "fiscalMode"
@@ -627,14 +637,15 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       )
     `;
 
-    const rows = await prisma.$queryRaw<RawMovement[]>`
+    const rows = await client.$queryRaw<RawMovement[]>`
       SELECT * FROM "supplier_account_movements" WHERE id = ${movId[0].id}
     `;
     return rows[0] as any as SupplierAccountMovement;
   }
 
-  async cancelSupplierMovement(ordenPagoId: string): Promise<void> {
-    const rows = await prisma.$queryRaw<RawMovement[]>`
+  async cancelSupplierMovement(ordenPagoId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? prisma;
+    const rows = await client.$queryRaw<RawMovement[]>`
       SELECT * FROM "supplier_account_movements" WHERE "ordenPagoId" = ${ordenPagoId}
     `;
     if (!rows[0]) return;
@@ -648,9 +659,9 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       description: `Reversión: ${original.description ?? ''}`.trim(),
       companyId: original.companyId,
       fiscalMode: (original.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-    });
+    }, tx);
 
-    await prisma.$executeRaw`
+    await client.$executeRaw`
       DELETE FROM "supplier_account_movements" WHERE "ordenPagoId" = ${ordenPagoId}
     `;
   }

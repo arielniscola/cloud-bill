@@ -27,7 +27,17 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     });
     if (!invoice) return null;
     const items = await this._fetchItemsRaw(id);
-    return { ...invoice, items } as unknown as InvoiceWithItems;
+
+    // Columna nueva que el cliente Prisma (desactualizado) no selecciona.
+    let warehouseId: string | null = null;
+    try {
+      const extra = await this.prisma.$queryRaw<{ warehouseId: string | null }[]>`
+        SELECT "warehouseId" FROM "invoices" WHERE id = ${id} LIMIT 1
+      `;
+      warehouseId = extra[0]?.warehouseId ?? null;
+    } catch { /* migración 20260713 pendiente */ }
+
+    return { ...invoice, items, warehouseId } as unknown as InvoiceWithItems;
   }
 
   async findByNumber(number: string): Promise<Invoice | null> {

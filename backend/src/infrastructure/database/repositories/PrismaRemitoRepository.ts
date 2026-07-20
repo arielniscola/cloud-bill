@@ -49,6 +49,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     if (filters.customerId)     conditions.push(Prisma.sql`"customerId" = ${filters.customerId}`);
     if (filters.status)         conditions.push(Prisma.sql`status = ${filters.status}::"RemitoStatus"`);
     if (filters.ordenPedidoId)  conditions.push(Prisma.sql`"ordenPedidoId" = ${filters.ordenPedidoId}`);
+    if (filters.invoiceId)      conditions.push(Prisma.sql`"invoiceId" = ${filters.invoiceId}`);
+    if (filters.budgetId)       conditions.push(Prisma.sql`"budgetId" = ${filters.budgetId}`);
     if (filters.dateFrom)       conditions.push(Prisma.sql`date >= ${filters.dateFrom}`);
     if (filters.dateTo)         conditions.push(Prisma.sql`date <= ${filters.dateTo}`);
 
@@ -83,7 +85,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async create(data: CreateRemitoInput): Promise<RemitoWithItems> {
+  async create(data: CreateRemitoInput, tx?: Prisma.TransactionClient): Promise<RemitoWithItems> {
+    const client = tx ?? this.prisma;
     const number = await this.getNextRemitoNumber();
 
     // Auto-deliver every DISCOUNT remito: stock was already moved upstream
@@ -95,7 +98,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
 
     const itemVariantIds = data.items.map((it) => (it as any).variantId ?? null);
 
-    const created = await (this.prisma as any).remito.create({
+    const created = await (client as any).remito.create({
       data: {
         number,
         customerId: data.customerId,
@@ -135,7 +138,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     for (let i = 0; i < itemVariantIds.length; i++) {
       const variantId = itemVariantIds[i];
       if (variantId && createdItems[i]?.id) {
-        await this.prisma.$executeRaw`UPDATE "remito_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}`;
+        await client.$executeRaw`UPDATE "remito_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}`;
         createdItems[i].variantId = variantId;
       }
     }
@@ -143,8 +146,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     return created;
   }
 
-  async updateStatus(id: string, status: RemitoStatus): Promise<Remito> {
-    return this.prisma.remito.update({
+  async updateStatus(id: string, status: RemitoStatus, tx?: Prisma.TransactionClient): Promise<Remito> {
+    return (tx ?? this.prisma).remito.update({
       where: { id },
       data: { status },
     });

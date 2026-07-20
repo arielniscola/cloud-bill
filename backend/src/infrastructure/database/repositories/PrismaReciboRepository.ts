@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import type { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { IReciboRepository, ReciboFilters, CheckFilters } from '../../../domain/repositories/IReciboRepository';
 import { ReciboWithRelations, CreateReciboInput } from '../../../domain/entities/Recibo';
@@ -103,11 +104,12 @@ export class PrismaReciboRepository implements IReciboRepository {
     return { data: data as ReciboWithRelations[], total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async create(data: CreateReciboInput): Promise<ReciboWithRelations> {
+  async create(data: CreateReciboInput, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations> {
+    const client = tx ?? prisma;
     const number = await this.getNextNumber();
 
     // Create without exchangeRate (stale Prisma client doesn't know the column yet)
-    const recibo = await prisma.recibo.create({
+    const recibo = await client.recibo.create({
       data: {
         number,
         invoiceId: data.invoiceId ?? null,
@@ -135,7 +137,7 @@ export class PrismaReciboRepository implements IReciboRepository {
     const surchargePercent = (data as any).surchargePercent != null ? new Decimal((data as any).surchargePercent) : null;
     const surchargeAmount = (data as any).surchargeAmount != null ? new Decimal((data as any).surchargeAmount) : null;
     const fiscalMode = (data as any).fiscalMode ?? 'FORMAL';
-    await prisma.$executeRaw`
+    await client.$executeRaw`
       UPDATE "recibos"
       SET "exchangeRate" = ${rate},
           "companyId" = ${companyId},
@@ -147,7 +149,7 @@ export class PrismaReciboRepository implements IReciboRepository {
     `;
 
     // Return with relations
-    return prisma.recibo.findUnique({
+    return client.recibo.findUnique({
       where: { id: recibo.id },
       include: includeRelations,
     }) as unknown as Promise<ReciboWithRelations>;
@@ -197,8 +199,8 @@ export class PrismaReciboRepository implements IReciboRepository {
     }) as unknown as Promise<ReciboWithRelations>;
   }
 
-  async cancel(id: string): Promise<ReciboWithRelations> {
-    return (prisma.recibo as any).update({
+  async cancel(id: string, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations> {
+    return ((tx ?? prisma).recibo as any).update({
       where: { id },
       data: { status: 'CANCELLED' },
       include: includeRelations,

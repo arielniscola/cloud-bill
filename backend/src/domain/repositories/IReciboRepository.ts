@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { Recibo, ReciboWithRelations, CreateReciboInput } from '../entities/Recibo';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
 
@@ -18,8 +19,9 @@ export interface IReciboRepository {
   findById(id: string, companyId?: string): Promise<ReciboWithRelations | null>;
   findAll(pagination: PaginationParams, filters: ReciboFilters): Promise<PaginatedResult<ReciboWithRelations>>;
   findChecks(pagination: PaginationParams, filters: CheckFilters): Promise<PaginatedResult<ReciboWithRelations>>;
-  create(data: CreateReciboInput): Promise<ReciboWithRelations>;
-  cancel(id: string): Promise<ReciboWithRelations>;
+  /** `tx`: cliente de transacción opcional para participar de una transacción externa. */
+  create(data: CreateReciboInput, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations>;
+  cancel(id: string, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations>;
   updateCheckStatus(id: string, checkStatus: string): Promise<ReciboWithRelations>;
   getNextNumber(): Promise<string>;
 }

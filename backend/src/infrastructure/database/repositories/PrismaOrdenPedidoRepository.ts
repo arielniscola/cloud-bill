@@ -30,6 +30,18 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
 
     const where: any = {};
     if (filters.customerId) where.customerId = filters.customerId;
+    if (filters.budgetId) {
+      // budgetId es columna nueva: se resuelve por SQL crudo para no depender
+      // del cliente Prisma regenerado; si la migración no corrió, sin resultados.
+      try {
+        const rows = await prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "orden_pedidos" WHERE "budgetId" = ${filters.budgetId}
+        `;
+        where.id = { in: rows.map((r) => r.id) };
+      } catch {
+        where.id = { in: [] };
+      }
+    }
     if (filters.status) where.status = filters.status;
     if (filters.currency) where.currency = filters.currency;
     if (filters.companyId) where.companyId = filters.companyId;
@@ -71,7 +83,20 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
     });
     if (!op) return null;
     const items = await this._fetchItemsRaw(id);
-    return { ...op, items } as OrdenPedidoWithItems;
+
+    // Columnas nuevas que el cliente Prisma (desactualizado) no selecciona.
+    // Si las migraciones 20260713/20260714 no corrieron, quedan en null.
+    let budgetId: string | null = null;
+    let warehouseId: string | null = null;
+    try {
+      const extra = await prisma.$queryRaw<{ budgetId: string | null; warehouseId: string | null }[]>`
+        SELECT "budgetId", "warehouseId" FROM "orden_pedidos" WHERE id = ${id} LIMIT 1
+      `;
+      budgetId = extra[0]?.budgetId ?? null;
+      warehouseId = extra[0]?.warehouseId ?? null;
+    } catch { /* migraciones pendientes */ }
+
+    return { ...op, items, budgetId, warehouseId } as OrdenPedidoWithItems;
   }
 
   async create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {

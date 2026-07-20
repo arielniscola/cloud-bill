@@ -34,6 +34,8 @@ export const createInvoiceSchema = z.object({
   paymentTerms: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
   originInvoiceId: z.string().uuid().optional().nullable(),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
+  // Depósito del que descontar/reservar stock (null = depósito por defecto)
+  warehouseId: z.string().uuid().optional().nullable(),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
 });
 

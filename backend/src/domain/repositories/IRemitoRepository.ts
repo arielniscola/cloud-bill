@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import {
   Remito,
   RemitoWithItems,
@@ -14,6 +15,8 @@ export interface RemitoFilters {
   dateFrom?: Date;
   dateTo?: Date;
   ordenPedidoId?: string;
+  invoiceId?: string;
+  budgetId?: string;
 }
 
 export interface IRemitoRepository {
@@ -22,8 +25,9 @@ export interface IRemitoRepository {
     pagination?: PaginationParams,
     filters?: RemitoFilters
   ): Promise<PaginatedResult<Remito>>;
-  create(data: CreateRemitoInput): Promise<RemitoWithItems>;
-  updateStatus(id: string, status: RemitoStatus): Promise<Remito>;
+  /** `tx`: cliente de transacción opcional para participar de una transacción externa. */
+  create(data: CreateRemitoInput, tx?: Prisma.TransactionClient): Promise<RemitoWithItems>;
+  updateStatus(id: string, status: RemitoStatus, tx?: Prisma.TransactionClient): Promise<Remito>;
   updateItemDeliveredQuantity(itemId: string, deliveredQuantity: number): Promise<RemitoItem>;
   getNextRemitoNumber(): Promise<string>;
   delete(id: string): Promise<void>;

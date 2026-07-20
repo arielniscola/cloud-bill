@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import {
   Warehouse,
   Stock,
@@ -12,6 +13,13 @@ export interface IWarehouseRepository {
   findById(id: string, companyId?: string): Promise<Warehouse | null>;
   findAll(companyId?: string): Promise<Warehouse[]>;
   findDefault(companyId?: string): Promise<Warehouse | null>;
+  /**
+   * Almacén por defecto de la empresa; si no hay ninguno marcado como default,
+   * cae en el primer almacén activo. Se usa para resolver dónde mover stock al
+   * emitir comprobantes, evitando que la operación se saltee en silencio cuando
+   * la empresa no configuró un almacén por defecto.
+   */
+  findDefaultOrFirstActive(companyId?: string): Promise<Warehouse | null>;
   create(data: CreateWarehouseInput): Promise<Warehouse>;
   update(id: string, data: UpdateWarehouseInput): Promise<Warehouse>;
   delete(id: string): Promise<void>;
@@ -30,7 +38,8 @@ export interface IStockRepository {
   updateStock(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<Stock>;
   setMinQuantity(productId: string, warehouseId: string, minQuantity: number | null, variantId?: string | null): Promise<Stock>;
   getLowStockItems(warehouseId?: string): Promise<Stock[]>;
-  addMovement(data: CreateStockMovementInput): Promise<StockMovement>;
+  /** `tx`: cliente de transacción opcional para participar de una transacción externa. */
+  addMovement(data: CreateStockMovementInput, tx?: Prisma.TransactionClient): Promise<StockMovement>;
   getMovements(
     filters: { productId?: string; variantId?: string; warehouseId?: string; type?: string; startDate?: string; endDate?: string },
     pagination?: PaginationParams
@@ -51,7 +60,7 @@ export interface IStockRepository {
   ): Promise<void>;
   exportWarehouseStock(warehouseId: string): Promise<string>;
   /** Increment reservedQuantity (variant-aware). Creates row if missing. */
-  incrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<void>;
+  incrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null, tx?: Prisma.TransactionClient): Promise<void>;
   /** Decrement reservedQuantity (variant-aware). Floors at 0. */
-  decrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null): Promise<void>;
+  decrementReserved(productId: string, warehouseId: string, quantity: number, variantId?: string | null, tx?: Prisma.TransactionClient): Promise<void>;
 }

@@ -1,5 +1,5 @@
 import { injectable } from 'tsyringe';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
 import {
@@ -56,9 +56,9 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     });
   }
 
-  async createForCustomer(customerId: string, currency: Currency, creditLimit?: number, fiscalMode?: string): Promise<CurrentAccount> {
+  async createForCustomer(customerId: string, currency: Currency, creditLimit?: number, fiscalMode?: string, tx?: Prisma.TransactionClient): Promise<CurrentAccount> {
     const fm = fiscalMode ?? 'FORMAL';
-    return (this.prisma as any).currentAccount.create({
+    return ((tx ?? this.prisma) as any).currentAccount.create({
       data: {
         customerId,
         currency,
@@ -77,43 +77,51 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     });
   }
 
-  async addMovement(data: CreateAccountMovementInput): Promise<AccountMovement> {
-    return this.prisma.$transaction(async (tx) => {
-      const currentAccount = await tx.currentAccount.findUnique({
-        where: { id: data.currentAccountId },
-      });
-
-      if (!currentAccount) {
-        throw new Error('Current account not found');
-      }
-
-      const amount = new Decimal(data.amount);
-      let newBalance: Decimal;
-
-      if (data.type === 'DEBIT') {
-        newBalance = currentAccount.balance.plus(amount);
-      } else {
-        newBalance = currentAccount.balance.minus(amount);
-      }
-
-      await tx.currentAccount.update({
-        where: { id: data.currentAccountId },
-        data: { balance: newBalance },
-      });
-
-      return tx.accountMovement.create({
-        data: {
-          currentAccountId: data.currentAccountId,
-          type: data.type,
-          amount,
-          balance: newBalance,
-          description: data.description,
-          invoiceId: data.invoiceId,
-          budgetId: data.budgetId,
-          cashRegisterId: data.cashRegisterId,
-        },
-      } as any);
+  private async _addMovementWithTx(
+    tx: Prisma.TransactionClient,
+    data: CreateAccountMovementInput
+  ): Promise<AccountMovement> {
+    const currentAccount = await tx.currentAccount.findUnique({
+      where: { id: data.currentAccountId },
     });
+
+    if (!currentAccount) {
+      throw new Error('Current account not found');
+    }
+
+    const amount = new Decimal(data.amount);
+    let newBalance: Decimal;
+
+    if (data.type === 'DEBIT') {
+      newBalance = currentAccount.balance.plus(amount);
+    } else {
+      newBalance = currentAccount.balance.minus(amount);
+    }
+
+    await tx.currentAccount.update({
+      where: { id: data.currentAccountId },
+      data: { balance: newBalance },
+    });
+
+    return tx.accountMovement.create({
+      data: {
+        currentAccountId: data.currentAccountId,
+        type: data.type,
+        amount,
+        balance: newBalance,
+        description: data.description,
+        invoiceId: data.invoiceId,
+        budgetId: data.budgetId,
+        cashRegisterId: data.cashRegisterId,
+      },
+    } as any);
+  }
+
+  async addMovement(data: CreateAccountMovementInput, tx?: Prisma.TransactionClient): Promise<AccountMovement> {
+    // Con `tx` participa de la transacción del llamador (el balance y el
+    // movimiento se confirman o revierten junto con el resto del flujo).
+    if (tx) return this._addMovementWithTx(tx, data);
+    return this.prisma.$transaction((t) => this._addMovementWithTx(t, data));
   }
 
   async getMovements(

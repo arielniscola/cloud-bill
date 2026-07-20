@@ -16,6 +16,7 @@ export const createRemitoSchema = z.object({
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  ordenPedidoId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   items: z.array(remitoItemSchema).min(1, 'At least one item is required'),
 });
 
@@ -28,6 +29,9 @@ export const deliverRemitoSchema = z.object({
   items: z.array(deliverItemSchema).min(1, 'At least one item is required'),
 });
 
+// OJO: el middleware validate() reemplaza req.query con el resultado del parse.
+// Todo filtro que el controller lea DEBE estar declarado acá, si no Zod lo
+// descarta en silencio (mismo bug que saleCondition en facturas).
 export const remitoQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
@@ -37,6 +41,10 @@ export const remitoQuerySchema = z.object({
     z.enum(['PENDING', 'PARTIALLY_DELIVERED', 'DELIVERED', 'CANCELLED']).optional()
   ),
   ordenPedidoId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  dateFrom: z.preprocess(emptyToUndefined, z.string().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type CreateRemitoDTO = z.infer<typeof createRemitoSchema>;

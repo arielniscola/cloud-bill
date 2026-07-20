@@ -25,6 +25,8 @@ export const createOrdenPedidoSchema = z.object({
   cashRegisterId: z.string().uuid().optional().nullable(),
   invoiceCashRegisterId: z.string().uuid().optional().nullable(),
   warehouseId: z.string().uuid().optional().nullable(),
+  // Presupuesto de origen cuando la OP nace de "Generar orden de pedido"
+  budgetId: z.string().uuid().optional().nullable(),
   items: z.array(ordenPedidoItemSchema).min(1, 'Agrega al menos un item'),
 });
 
@@ -38,6 +40,7 @@ export const ordenPedidoQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().default(20),
   customerId: z.string().uuid().optional(),
+  budgetId: z.string().uuid().optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED', 'CONVERTED']).optional(),
   currency: z.enum(['ARS', 'USD']).optional(),
   dateFrom: z.string().optional(),

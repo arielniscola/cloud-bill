@@ -19,6 +19,7 @@ import { IBudgetRepository } from '../domain/repositories/IBudgetRepository';
 import { IAppSettingsRepository } from '../domain/repositories/IAppSettingsRepository';
 import { IStockIntelligenceRepository } from '../domain/repositories/IStockIntelligenceRepository';
 import { IReciboRepository } from '../domain/repositories/IReciboRepository';
+import { IRecurringInvoiceRepository } from '../domain/repositories/IRecurringInvoiceRepository';
 import { IOrdenPedidoRepository } from '../domain/repositories/IOrdenPedidoRepository';
 import { IOrdenCompraRepository } from '../domain/repositories/IOrdenCompraRepository';
 import { ICompanyRepository } from '../domain/repositories/ICompanyRepository';
@@ -55,6 +56,7 @@ import { PrismaBudgetRepository } from '../infrastructure/database/repositories/
 import { PrismaAppSettingsRepository } from '../infrastructure/database/repositories/PrismaAppSettingsRepository';
 import { PrismaStockIntelligenceRepository } from '../infrastructure/database/repositories/PrismaStockIntelligenceRepository';
 import { PrismaReciboRepository } from '../infrastructure/database/repositories/PrismaReciboRepository';
+import { PrismaRecurringInvoiceRepository } from '../infrastructure/database/repositories/PrismaRecurringInvoiceRepository';
 import { PrismaOrdenPedidoRepository } from '../infrastructure/database/repositories/PrismaOrdenPedidoRepository';
 import { PrismaOrdenCompraRepository } from '../infrastructure/database/repositories/PrismaOrdenCompraRepository';
 import { PrismaCompanyRepository } from '../infrastructure/database/repositories/PrismaCompanyRepository';
@@ -95,6 +97,7 @@ container.registerSingleton<IBudgetRepository>('BudgetRepository', PrismaBudgetR
 container.registerSingleton<IAppSettingsRepository>('AppSettingsRepository', PrismaAppSettingsRepository);
 container.registerSingleton<IStockIntelligenceRepository>('StockIntelligenceRepository', PrismaStockIntelligenceRepository);
 container.registerSingleton<IReciboRepository>('ReciboRepository', PrismaReciboRepository);
+container.registerSingleton<IRecurringInvoiceRepository>('RecurringInvoiceRepository', PrismaRecurringInvoiceRepository);
 container.registerSingleton<IOrdenPedidoRepository>('OrdenPedidoRepository', PrismaOrdenPedidoRepository);
 container.registerSingleton<IOrdenCompraRepository>('OrdenCompraRepository', PrismaOrdenCompraRepository);
 container.registerSingleton<ICompanyRepository>('CompanyRepository', PrismaCompanyRepository);

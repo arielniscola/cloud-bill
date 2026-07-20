@@ -54,6 +54,7 @@ export class PrismaActivityLogRepository implements IActivityLogRepository {
     if (filters.userId) where.userId = filters.userId;
     if (filters.action) where.action = filters.action;
     if (filters.entity) where.entity = filters.entity;
+    if (filters.entityId) where.entityId = filters.entityId;
     if (filters.search) {
       where.description = { contains: filters.search, mode: 'insensitive' };
     }

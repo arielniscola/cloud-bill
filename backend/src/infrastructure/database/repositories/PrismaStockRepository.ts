@@ -44,20 +44,29 @@ export class PrismaStockRepository implements IStockRepository {
     this.prisma = prisma;
   }
 
-  async getStock(productId: string, warehouseId: string, variantId?: string | null): Promise<Stock | null> {
-    const v = variantId ?? null;
+  private async _getStockRow(
+    client: Prisma.TransactionClient | PrismaClient,
+    productId: string,
+    warehouseId: string,
+    v: string | null
+  ): Promise<RawStock | null> {
     const rows = v === null
-      ? await this.prisma.$queryRaw<RawStock[]>`
+      ? await client.$queryRaw<RawStock[]>`
           SELECT * FROM "stocks"
           WHERE "productId" = ${productId} AND "warehouseId" = ${warehouseId} AND "variantId" IS NULL
           LIMIT 1
         `
-      : await this.prisma.$queryRaw<RawStock[]>`
+      : await client.$queryRaw<RawStock[]>`
           SELECT * FROM "stocks"
           WHERE "productId" = ${productId} AND "warehouseId" = ${warehouseId} AND "variantId" = ${v}
           LIMIT 1
         `;
-    return rows[0] ? mapStock(rows[0]) : null;
+    return rows[0] ?? null;
+  }
+
+  async getStock(productId: string, warehouseId: string, variantId?: string | null): Promise<Stock | null> {
+    const row = await this._getStockRow(this.prisma, productId, warehouseId, variantId ?? null);
+    return row ? mapStock(row) : null;
   }
 
   async getStockByProduct(productId: string): Promise<Stock[]> {
@@ -305,8 +314,10 @@ export class PrismaStockRepository implements IStockRepository {
     };
   }
 
-  async addMovement(data: CreateStockMovementInput): Promise<StockMovement> {
-    return this.prisma.$transaction((tx) => this._addMovementWithTx(tx, data));
+  async addMovement(data: CreateStockMovementInput, tx?: Prisma.TransactionClient): Promise<StockMovement> {
+    // Con `tx` participa de la transacción del llamador; sin él abre la propia.
+    if (tx) return this._addMovementWithTx(tx, data);
+    return this.prisma.$transaction((t) => this._addMovementWithTx(t, data));
   }
 
   async getMovements(
@@ -478,20 +489,22 @@ export class PrismaStockRepository implements IStockRepository {
     productId: string,
     warehouseId: string,
     quantity: number,
-    variantId?: string | null
+    variantId?: string | null,
+    tx?: Prisma.TransactionClient
   ): Promise<void> {
+    const client = tx ?? this.prisma;
     const v = variantId ?? null;
     // Producto no inventariado: no reserva stock.
-    if (!(await this._tracksStock(this.prisma, productId))) return;
-    const existing = await this.getStock(productId, warehouseId, v);
+    if (!(await this._tracksStock(client, productId))) return;
+    const existing = await this._getStockRow(client, productId, warehouseId, v);
     if (existing) {
-      await this.prisma.$executeRaw`
+      await client.$executeRaw`
         UPDATE "stocks" SET "reservedQuantity" = "reservedQuantity" + ${quantity}::decimal, "updatedAt" = NOW()
         WHERE "id" = ${existing.id}
       `;
     } else {
       const id = randomUUID();
-      await this.prisma.$executeRaw`
+      await client.$executeRaw`
         INSERT INTO "stocks" ("id", "productId", "variantId", "warehouseId", "quantity", "reservedQuantity", "updatedAt")
         VALUES (${id}, ${productId}, ${v}, ${warehouseId}, 0, ${quantity}::decimal, NOW())
       `;
@@ -502,12 +515,14 @@ export class PrismaStockRepository implements IStockRepository {
     productId: string,
     warehouseId: string,
     quantity: number,
-    variantId?: string | null
+    variantId?: string | null,
+    tx?: Prisma.TransactionClient
   ): Promise<void> {
+    const client = tx ?? this.prisma;
     const v = variantId ?? null;
-    const existing = await this.getStock(productId, warehouseId, v);
+    const existing = await this._getStockRow(client, productId, warehouseId, v);
     if (!existing) return;
-    await this.prisma.$executeRaw`
+    await client.$executeRaw`
       UPDATE "stocks"
       SET "reservedQuantity" = GREATEST("reservedQuantity" - ${quantity}::decimal, 0),
           "updatedAt" = NOW()

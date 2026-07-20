@@ -3,6 +3,7 @@ import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface OrdenPedidoFilters {
   customerId?: string;
+  budgetId?: string;
   status?: string;
   currency?: string;
   companyId?: string;
