@@ -6,11 +6,11 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import {
   User, Hash, Building2, Phone, Mail,
-  MapPin, FileText, Power, Check,
+  MapPin, FileText, Power, Check, CloudDownload,
 } from 'lucide-react';
 import { Button, Input, Textarea, Card } from '../../components/ui';
 import { PageHeader, CuitInput } from '../../components/shared';
-import { customersService } from '../../services';
+import { customersService, afipService } from '../../services';
 import type { TaxCondition } from '../../types';
 
 // ── Schema ───────────────────────────────────────────────────────
@@ -280,6 +280,36 @@ export default function CustomerFormPage() {
   const taxCondition = watch('taxCondition');
   const saleCondition = watch('saleCondition');
   const isActiveVal = watch('isActive');
+  const taxIdVal = watch('taxId');
+  const [isPadronLoading, setIsPadronLoading] = useState(false);
+
+  // Autocompletar desde el padrón de ARCA (constancia de inscripción)
+  const handlePadronLookup = async () => {
+    const digits = (taxIdVal ?? '').replace(/\D/g, '');
+    if (digits.length !== 11) {
+      toast.error('Ingresá un CUIT completo (11 dígitos) para buscar en ARCA');
+      return;
+    }
+    setIsPadronLoading(true);
+    try {
+      const p = await afipService.getPadron(digits);
+      if (p.name) setValue('name', p.name);
+      setValue('taxCondition', p.taxCondition);
+      if (p.address) setValue('address', p.address);
+      if (p.city) setValue('city', p.city);
+      if (p.province) setValue('province', p.province);
+      if (p.postalCode) setValue('postalCode', p.postalCode);
+      toast.success(`Datos de "${p.name}" cargados desde ARCA`);
+      if (p.estado && p.estado !== 'ACTIVO') {
+        toast(`Atención: el CUIT figura como ${p.estado} en ARCA`, { icon: '⚠️' });
+      }
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'No se pudo consultar el padrón de ARCA');
+    } finally {
+      setIsPadronLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isEditing) return;
@@ -359,12 +389,23 @@ export default function CustomerFormPage() {
                 error={errors.name?.message}
                 autoFocus={!isEditing}
               />
-              <CuitInput
-                label="CUIT / CUIL"
-                value={watch('taxId')}
-                onChange={(raw) => setValue('taxId', raw || null)}
-                error={errors.taxId?.message}
-              />
+              <div>
+                <CuitInput
+                  label="CUIT / CUIL"
+                  value={watch('taxId')}
+                  onChange={(raw) => setValue('taxId', raw || null)}
+                  error={errors.taxId?.message}
+                />
+                <button
+                  type="button"
+                  onClick={handlePadronLookup}
+                  disabled={isPadronLoading || (taxIdVal ?? '').replace(/\D/g, '').length !== 11}
+                  className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 disabled:text-gray-300 dark:disabled:text-slate-600 disabled:cursor-not-allowed transition-colors"
+                >
+                  <CloudDownload className={`w-3.5 h-3.5 ${isPadronLoading ? 'animate-pulse' : ''}`} />
+                  {isPadronLoading ? 'Consultando ARCA…' : 'Completar datos desde ARCA'}
+                </button>
+              </div>
             </div>
 
             <TaxConditionSelector

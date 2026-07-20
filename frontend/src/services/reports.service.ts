@@ -143,6 +143,19 @@ export interface AccountsReceivableFilters {
   minBalance?: number;
 }
 
+// ── Aging de cuentas corrientes ───────────────────────────────────────────────
+export interface AgingEntityRow {
+  entityId: string;
+  name:     string;
+  notDue:   number;
+  d0_30:    number;
+  d31_60:   number;
+  d61_90:   number;
+  d90plus:  number;
+  total:    number;
+  docCount: number;
+}
+
 // ── Cash Flow ─────────────────────────────────────────────────────────────────
 export interface CashFlowRow {
   id:             string;
@@ -207,6 +220,13 @@ export const reportsService = {
       '/reports/accounts-receivable', { params: clean(filters) }
     );
     return { data: res.data.data, totalBalance: res.data.totalBalance };
+  },
+
+  async ccAging(): Promise<{ customers: AgingEntityRow[]; suppliers: AgingEntityRow[] }> {
+    const res = await api.get<{ status: string; customers: AgingEntityRow[]; suppliers: AgingEntityRow[] }>(
+      '/reports/cc-aging'
+    );
+    return { customers: res.data.customers, suppliers: res.data.suppliers };
   },
 
   async cashFlow(filters: CashFlowFilters): Promise<{ data: CashFlowRow[]; totalAmount: number }> {

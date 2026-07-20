@@ -25,6 +25,8 @@ import StockTransferPage from '../pages/stock/StockTransferPage';
 import StockPhysicalCountPage from '../pages/stock/StockPhysicalCountPage';
 import StockIntelligencePage from '../pages/stock/StockIntelligencePage';
 import InvoicesPage from '../pages/invoices/InvoicesPage';
+import RecurringInvoicesPage from '../pages/recurring-invoices/RecurringInvoicesPage';
+import RecurringInvoiceFormPage from '../pages/recurring-invoices/RecurringInvoiceFormPage';
 import InvoiceFormPage from '../pages/invoices/InvoiceFormPage';
 import InvoiceDetailPage from '../pages/invoices/InvoiceDetailPage';
 import CurrentAccountsPage from '../pages/current-accounts/CurrentAccountsPage';
@@ -54,6 +56,7 @@ import PurchasesReportPage from '../pages/reports/PurchasesReportPage';
 import ProfitabilityReportPage from '../pages/reports/ProfitabilityReportPage';
 import StockValuationReportPage from '../pages/reports/StockValuationReportPage';
 import AccountsReceivableReportPage from '../pages/reports/AccountsReceivableReportPage';
+import CcAgingReportPage from '../pages/reports/CcAgingReportPage';
 import CashFlowReportPage from '../pages/reports/CashFlowReportPage';
 import PurchaseInvoicesReportPage from '../pages/reports/PurchaseInvoicesReportPage';
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
@@ -148,6 +151,7 @@ export default function AppRoutes() {
         </Route>
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+        <Route path="/recurring-invoices" element={<RecurringInvoicesPage />} />
         <Route path="/remitos" element={<RemitosPage />} />
         <Route path="/remitos/:id" element={<RemitoDetailPage />} />
         <Route element={<FeatureRouteGuard feature="current_accounts" />}>
@@ -167,6 +171,8 @@ export default function AppRoutes() {
           <Route path="/warehouses/:id/edit" element={<WarehouseFormPage />} />
           <Route path="/invoices/new" element={<InvoiceFormPage />} />
           <Route path="/invoices/:id/edit" element={<InvoiceFormPage />} />
+          <Route path="/recurring-invoices/new" element={<RecurringInvoiceFormPage />} />
+          <Route path="/recurring-invoices/:id/edit" element={<RecurringInvoiceFormPage />} />
           <Route path="/remitos/new" element={<RemitoFormPage />} />
         </Route>
 
@@ -191,6 +197,7 @@ export default function AppRoutes() {
             <Route path="/reports/profitability" element={<ProfitabilityReportPage />} />
             <Route path="/reports/stock-valuation" element={<StockValuationReportPage />} />
             <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />
+            <Route path="/reports/cc-aging" element={<CcAgingReportPage />} />
             <Route path="/reports/cash-flow" element={<CashFlowReportPage />} />
           </Route>
         </Route>

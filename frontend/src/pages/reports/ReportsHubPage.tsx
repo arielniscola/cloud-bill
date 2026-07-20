@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, BarChart2, Package,
-  Users, Landmark, ArrowRight, FileText,
+  Users, Landmark, ArrowRight, FileText, Hourglass,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 
@@ -56,6 +56,13 @@ const REPORTS: ReportCard[] = [
     href:        '/reports/accounts-receivable',
     icon:        Users,
     color:       'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400',
+  },
+  {
+    title:       'Deuda por antigüedad',
+    description: 'Aging de comprobantes impagos (a vencer / 0-30 / 31-60 / 61-90 / +90 días) por cliente y proveedor.',
+    href:        '/reports/cc-aging',
+    icon:        Hourglass,
+    color:       'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400',
   },
   {
     title:       'Flujo de cobros',

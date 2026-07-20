@@ -12,6 +12,7 @@ export interface OrdenPedidoFilters {
   page?: number;
   limit?: number;
   customerId?: string;
+  budgetId?: string;
   status?: string;
   currency?: string;
   dateFrom?: string;

@@ -1,7 +1,7 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
+  roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts', '**/*.spec.ts'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
@@ -13,6 +13,14 @@ module.exports = {
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
     '^@container/(.*)$': '<rootDir>/src/container/$1',
   },
+  // Carga .env.test ANTES de que cualquier módulo lea process.env
+  setupFiles: ['<rootDir>/tests/env.ts'],
+  setupFilesAfterEnv: ['<rootDir>/tests/setupAfterEnv.ts'],
+  // Prepara la DB de test (create + migrate + truncate + seed) una sola vez
+  globalSetup: '<rootDir>/tests/globalSetup.ts',
+  // Los flujos comparten la misma DB: correr archivos en serie
+  maxWorkers: 1,
+  testTimeout: 30000,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

@@ -41,6 +41,8 @@ export interface OrdenPedido {
   invoiceId: string | null;
   cashRegisterId: string | null;
   invoiceCashRegisterId: string | null;
+  warehouseId?: string | null;
+  budgetId?: string | null;
   createdAt: string;
   updatedAt: string;
   items: OrdenPedidoItem[];
@@ -74,6 +76,8 @@ export interface CreateOrdenPedidoDTO {
   stockBehavior?: 'DISCOUNT' | 'RESERVE';
   cashRegisterId?: string | null;
   invoiceCashRegisterId?: string | null;
+  warehouseId?: string | null;
+  budgetId?: string | null;
   items: CreateOrdenPedidoItemDTO[];
 }
 

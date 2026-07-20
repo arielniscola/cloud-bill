@@ -41,3 +41,4 @@ export { default as productCustomFieldsService } from './product-custom-fields.s
 export { default as internalNotesService } from './internal-notes.service';
 export { default as chequesService } from './cheques.service';
 export { accountingService } from './accounting.service';
+export { default as recurringInvoicesService } from './recurring-invoices.service';

@@ -41,6 +41,7 @@ import {
   BookMarked,
   Sliders,
   Crown,
+  Repeat,
 } from "lucide-react";
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
@@ -100,6 +101,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Órdenes de Pedido", href: "/orden-pedidos",    icon: ShoppingBag },
           { name: "Presupuestos",      href: "/budgets",          icon: Calculator },
           { name: "Facturas",          href: "/invoices",         icon: FileText },
+          { name: "Abonos",            href: "/recurring-invoices", icon: Repeat },
           { name: "Remitos",           href: "/remitos",          icon: ClipboardList },
           { name: "Recibos",           href: "/recibos",          icon: Receipt },
           { name: "Clientes",          href: "/customers",        icon: Users },

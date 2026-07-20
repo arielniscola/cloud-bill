@@ -10,12 +10,12 @@ import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogMod
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService } from '../../services';
+import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService } from '../../services';
 import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
-import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO } from '../../types';
+import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse } from '../../types';
 import { INVOICE_TYPES } from '../../utils/constants';
 
 const NC_TYPE_MAP: Partial<Record<InvoiceType, InvoiceType>> = {
@@ -109,6 +109,8 @@ export default function InvoiceFormPage() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [discountType, setDiscountType] = useState<'%' | '$'>('%');
   const [discountValue, setDiscountValue] = useState(0);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [warehouseId, setWarehouseId] = useState<string>('');
 
   const {
     register, control, handleSubmit, setValue, watch, reset,
@@ -219,16 +221,23 @@ export default function InvoiceFormPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [customersData, productsData, settingsData] = await Promise.all([
+        const [customersData, productsData, settingsData, warehousesData] = await Promise.all([
           customersService.getAll({ limit: 1000, isActive: true }),
           productsService.getAll({ limit: 1000 }),
           appSettingsService.get().catch(() => null),
+          warehousesService.getAll().catch(() => [] as Warehouse[]),
         ]);
         setCustomers(customersData.data);
         setProducts(productsData.data);
         if (settingsData?.companyTaxCondition) {
           setCompanyTaxCondition(settingsData.companyTaxCondition);
         }
+        // Depósito de stock: preselecciona el por defecto (o el único activo)
+        // sin pisar el que ya trajo una factura en edición.
+        const activeWarehouses = warehousesData.filter((w) => w.isActive);
+        setWarehouses(activeWarehouses);
+        const defWh = activeWarehouses.find((w) => w.isDefault) ?? (activeWarehouses.length === 1 ? activeWarehouses[0] : null);
+        if (defWh) setWarehouseId((prev) => prev || defWh.id);
       } catch {
         toast.error('Error al cargar datos');
       }
@@ -246,6 +255,7 @@ export default function InvoiceFormPage() {
           navigate(`/invoices/${id}`);
           return;
         }
+        if ((invoice as any).warehouseId) setWarehouseId((invoice as any).warehouseId);
         reset({
           type: invoice.type,
           customerId: invoice.customerId,
@@ -442,11 +452,11 @@ export default function InvoiceFormPage() {
         : (subtotalBase > 0 ? (discountAmount / subtotalBase) * 100 : 0);
       const itemsWithDiscount = data.items.map((item) => ({ ...item, discountPct }));
       if (isEditing) {
-        await invoicesService.update(id, { ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
+        await invoicesService.update(id, { ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null, warehouseId: warehouseId || null });
         toast.success('Factura actualizada');
         navigate(`/invoices/${id}`);
       } else {
-        const invoice = await invoicesService.create({ ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null });
+        const invoice = await invoicesService.create({ ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null, warehouseId: warehouseId || null });
         toast.success('Factura creada');
         if (registerPayment) {
           setCreatedInvoiceId(invoice.id);
@@ -839,6 +849,16 @@ export default function InvoiceFormPage() {
                     <span title={stockBehavior === 'DISCOUNT' ? 'El stock se descuenta inmediatamente al crear la factura.' : 'El stock se reserva al crear. Se descuenta al confirmar la entrega por remito.'}><Info className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" /></span>
                   </span>
                 </label>
+              )}
+
+              {/* Depósito de stock — visible cuando hay más de uno */}
+              {!isNcNd && warehouses.length > 1 && (
+                <Select
+                  label="Depósito de stock"
+                  options={warehouses.map((w) => ({ value: w.id, label: w.isDefault ? `${w.name} (por defecto)` : w.name }))}
+                  value={warehouseId}
+                  onChange={(v) => setWarehouseId(v)}
+                />
               )}
 
               <Select

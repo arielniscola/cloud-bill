@@ -30,3 +30,6 @@ coverage/
 # Prisma
 prisma/*.db
 prisma/*.db-journal
+
+# Claude
+_claude_test/

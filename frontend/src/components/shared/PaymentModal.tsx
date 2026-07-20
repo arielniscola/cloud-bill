@@ -60,6 +60,10 @@ interface PaymentModalProps {
   title?: string;
   /** 'payment' = cobro (default) · 'refund' = devolución (Nota de Crédito) */
   mode?: 'payment' | 'refund';
+  /** Total del documento — con `paidCount` muestra el desglose "total / cobrado / pendiente" */
+  total?: number;
+  /** Cantidad de recibos ya emitidos contra el documento */
+  paidCount?: number;
 }
 
 export function PaymentModal({
@@ -72,6 +76,8 @@ export function PaymentModal({
   defaultCashRegisterId,
   title,
   mode = 'payment',
+  total,
+  paidCount,
 }: PaymentModalProps) {
   const isRefund = mode === 'refund';
   const L = {
@@ -246,6 +252,18 @@ export function PaymentModal({
 
         {/* ── Balance summary card ── */}
         <div className="rounded-xl bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 overflow-hidden">
+          {/* Desglose total / cobrado / pendiente — evita el error más común
+              del cobro parcial: cargar el total cuando ya había recibos */}
+          {total !== undefined && total > remaining && (
+            <div className="grid grid-cols-2 gap-y-1 px-4 py-2.5 border-b border-gray-200 dark:border-slate-600 text-xs">
+              <span className="text-gray-500 dark:text-slate-400">Total del comprobante</span>
+              <span className="text-right font-medium text-gray-700 dark:text-slate-200 tabular-nums">{formatCurrency(total, currency)}</span>
+              <span className="text-gray-500 dark:text-slate-400">
+                {isRefund ? 'Devuelto' : 'Cobrado'}{paidCount ? ` en ${paidCount} recibo${paidCount !== 1 ? 's' : ''}` : ''}
+              </span>
+              <span className="text-right font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">− {formatCurrency(total - remaining, currency)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-600">
             <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Saldo pendiente</span>
             <span className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">

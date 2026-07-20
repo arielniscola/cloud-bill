@@ -58,4 +58,6 @@ export interface RemitoFilters {
   dateFrom?: string;
   dateTo?: string;
   ordenPedidoId?: string;
+  invoiceId?: string;
+  budgetId?: string;
 }

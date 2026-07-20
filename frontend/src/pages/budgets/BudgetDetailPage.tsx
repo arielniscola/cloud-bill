@@ -4,11 +4,12 @@ import { Pencil, Send, CheckCircle, XCircle, ShoppingBag, Trash2, ArrowRight, Ch
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button } from '../../components/ui';
-import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
-import { budgetsService, afipService } from '../../services';
+import { PageHeader, ConfirmDialog, SendEmailModal, RelatedDocuments } from '../../components/shared';
+import type { RelatedDocGroup } from '../../components/shared';
+import { budgetsService, afipService, ordenPedidosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
-import { BUDGET_STATUSES, INVOICE_TYPES } from '../../utils/constants';
-import type { Budget } from '../../types';
+import { BUDGET_STATUSES, INVOICE_TYPES, ORDEN_PEDIDO_STATUSES } from '../../utils/constants';
+import type { Budget, OrdenPedido } from '../../types';
 import BudgetPDF from '../../components/pdf/BudgetPDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
@@ -70,6 +71,7 @@ export default function BudgetDetailPage() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [generatedOps, setGeneratedOps] = useState<OrdenPedido[]>([]);
 
   const generateBudgetPdfBlob = async (): Promise<Blob> => {
     const afipConfig = await afipService.getConfig();
@@ -100,6 +102,10 @@ export default function BudgetDetailPage() {
     try {
       const budgetData = await budgetsService.getById(id);
       setBudget(budgetData);
+      // Órdenes de pedido generadas desde este presupuesto (trazabilidad)
+      ordenPedidosService.getAll({ budgetId: id, limit: 10 })
+        .then((res) => setGeneratedOps(res.data))
+        .catch(() => setGeneratedOps([]));
     } catch {
       toast.error('Error al cargar presupuesto');
       navigate('/budgets');
@@ -449,6 +455,21 @@ export default function BudgetDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Documentos relacionados */}
+          <RelatedDocuments
+            groups={[
+              {
+                title: 'Órdenes de pedido generadas',
+                docs: generatedOps.map((o) => ({
+                  label: o.number,
+                  to: `/orden-pedidos/${o.id}`,
+                  badge: ORDEN_PEDIDO_STATUSES[o.status] ?? o.status,
+                  detail: formatDate(o.date),
+                })) as RelatedDocGroup['docs'],
+              },
+            ]}
+          />
         </div>
       </div>
 

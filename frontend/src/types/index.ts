@@ -33,3 +33,4 @@ export * from './product-custom-field.types';
 export * from './internal-note.types';
 export * from './accounting.types';
 export * from './pdv.types';
+export * from './recurring-invoice.types';

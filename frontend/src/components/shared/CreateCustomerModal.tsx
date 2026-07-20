@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Check, User, Phone } from 'lucide-react';
+import { Check, User, Phone, CloudDownload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal, Button, Input } from '../ui';
 import CuitInput from './CuitInput';
-import { customersService } from '../../services';
+import { customersService, afipService } from '../../services';
 import type { Customer, TaxCondition } from '../../types';
 
 // ── Schema (campos mínimos para crear rápido) ─────────────────────
@@ -97,10 +97,30 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreated }: Crea
 
   const taxCondition = watch('taxCondition');
   const saleCondition = watch('saleCondition');
+  const taxIdVal = watch('taxId');
+  const [isPadronLoading, setIsPadronLoading] = useState(false);
 
   const handleClose = () => {
     reset();
     onClose();
+  };
+
+  // Autocompletar desde el padrón de ARCA (constancia de inscripción)
+  const handlePadronLookup = async () => {
+    const digits = (taxIdVal ?? '').replace(/\D/g, '');
+    if (digits.length !== 11) return;
+    setIsPadronLoading(true);
+    try {
+      const p = await afipService.getPadron(digits);
+      if (p.name) setValue('name', p.name);
+      setValue('taxCondition', p.taxCondition);
+      toast.success(`Datos de "${p.name}" cargados desde ARCA`);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || 'No se pudo consultar el padrón de ARCA');
+    } finally {
+      setIsPadronLoading(false);
+    }
   };
 
   const onSubmit = async (data: FormData) => {
@@ -141,12 +161,23 @@ export default function CreateCustomerModal({ isOpen, onClose, onCreated }: Crea
             error={errors.name?.message}
             autoFocus
           />
-          <CuitInput
-            label="CUIT / CUIL"
-            value={watch('taxId')}
-            onChange={(raw) => setValue('taxId', raw || null)}
-            error={errors.taxId?.message}
-          />
+          <div>
+            <CuitInput
+              label="CUIT / CUIL"
+              value={watch('taxId')}
+              onChange={(raw) => setValue('taxId', raw || null)}
+              error={errors.taxId?.message}
+            />
+            <button
+              type="button"
+              onClick={handlePadronLookup}
+              disabled={isPadronLoading || (taxIdVal ?? '').replace(/\D/g, '').length !== 11}
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 disabled:text-gray-300 dark:disabled:text-slate-600 disabled:cursor-not-allowed transition-colors"
+            >
+              <CloudDownload className={`w-3.5 h-3.5 ${isPadronLoading ? 'animate-pulse' : ''}`} />
+              {isPadronLoading ? 'Consultando ARCA…' : 'Completar desde ARCA'}
+            </button>
+          </div>
         </div>
 
         {/* Condición IVA */}

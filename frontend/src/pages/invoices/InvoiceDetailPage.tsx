@@ -7,13 +7,14 @@ import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import QRCode from 'qrcode';
 import { Badge, Button } from '../../components/ui';
-import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal } from '../../components/shared';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal, DocumentTimeline, RelatedDocuments } from '../../components/shared';
+import type { TimelineEvent, RelatedDocGroup } from '../../components/shared';
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
-import { invoicesService, recibosService, afipService, appSettingsService } from '../../services';
+import { invoicesService, recibosService, afipService, appSettingsService, activityLogsService, remitosService, ordenPedidosService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../../utils/formatters';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
-import type { Invoice, Recibo, CreateReciboDTO, AfipError } from '../../types';
+import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, OrdenPedido } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
@@ -86,18 +87,32 @@ export default function InvoiceDetailPage() {
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showMpModal,    setShowMpModal]    = useState(false);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [linkedRemitos, setLinkedRemitos] = useState<Remito[]>([]);
+  const [sourceOp, setSourceOp] = useState<OrdenPedido | null>(null);
 
   const loadData = async () => {
     if (!id) return;
     try {
-      const [invoiceData, recibosData, afipErrorsData] = await Promise.all([
+      const [invoiceData, recibosData, afipErrorsData, logsData, remitosData] = await Promise.all([
         invoicesService.getById(id),
         recibosService.getAll({ invoiceId: id }),
         invoicesService.getAfipErrors(id).catch(() => []),
+        activityLogsService.getAll({ entityId: id, limit: 100 }).catch(() => ({ data: [] as ActivityLog[] })),
+        remitosService.getAll({ invoiceId: id, limit: 50 }).catch(() => ({ data: [] as Remito[] })),
       ]);
       setInvoice(invoiceData);
       setRecibos(recibosData.data);
       setAfipErrors(afipErrorsData);
+      setLogs(logsData.data);
+      setLinkedRemitos(remitosData.data);
+      if (invoiceData.ordenPedidoId) {
+        ordenPedidosService.getById(invoiceData.ordenPedidoId)
+          .then(setSourceOp)
+          .catch(() => setSourceOp(null));
+      } else {
+        setSourceOp(null);
+      }
     } catch {
       toast.error('Error al cargar factura');
       navigate('/invoices');
@@ -301,7 +316,18 @@ export default function InvoiceDetailPage() {
   );
 
   const isDraft = invoice.status === 'DRAFT';
-  const canCancel = invoice.status !== 'CANCELLED' && invoice.status !== 'PAID';
+  const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
+  const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
+  const remaining = Math.max(0, Number(invoice.total) - paidAmount);
+  const isCancelled = invoice.status === 'CANCELLED';
+  // Espejo de las guardas del backend: una factura autorizada por ARCA no se
+  // anula (se revierte con NC) y una con cobros exige cancelar antes sus recibos.
+  const canCancel =
+    invoice.status !== 'CANCELLED' &&
+    invoice.status !== 'PAID' &&
+    invoice.status !== 'AUTHORIZED' &&
+    !invoice.cae &&
+    activeRecibos.length === 0;
   const canMarkAsPaid = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT';
   const isFactura = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'].includes(invoice.type);
   // Una NC no se cobra: su "pago" es una devolución al cliente.
@@ -314,10 +340,80 @@ export default function InvoiceDetailPage() {
   const canGenerateNC = isFactura && isNcNdStatus;
   const canGenerateND = isFactura && isNcNdStatus;
   const canEmitArca = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'].includes(invoice.status) && !invoice.cae && invoice.fiscalMode !== 'INFORMAL';
-  const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
-  const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
-  const remaining = Math.max(0, Number(invoice.total) - paidAmount);
-  const isCancelled = invoice.status === 'CANCELLED';
+  // Un borrador no movió stock: entregar por remito descontaría mercadería inexistente.
+  const canGenerateRemito = !isDraft && !isCancelled && invoice.deliveryStatus !== 'DELIVERED';
+
+  // ── Timeline: creada → emitida → CAE → cobros → saldo ──
+  const timelineEvents: TimelineEvent[] = (() => {
+    const dated: TimelineEvent[] = [{ date: invoice.createdAt, title: 'Creada', detail: 'Borrador' }];
+    for (const log of logs) {
+      if (log.entity === 'Invoice' && log.action === 'UPDATE' && log.description.includes('emitida')) {
+        dated.push({ date: log.createdAt, title: 'Emitida' });
+      }
+      if (log.entity === 'AfipEmission') {
+        dated.push({ date: log.createdAt, title: 'CAE otorgado por ARCA', detail: invoice.cae ?? undefined, tone: 'success' });
+      }
+      if (log.entity === 'Invoice' && log.action === 'CANCEL') {
+        dated.push({ date: log.createdAt, title: 'Anulada', tone: 'danger' });
+      }
+    }
+    // Facturas emitidas antes de que existiera el log de emisión
+    if (!isDraft && !dated.some((e) => e.title === 'Emitida' || e.title.startsWith('CAE'))) {
+      dated.push({ date: invoice.date, title: 'Emitida' });
+    }
+    for (const r of activeRecibos) {
+      dated.push({
+        date: r.date,
+        title: `${isCreditNote ? 'Devolución' : 'Cobro'} ${r.number}`,
+        detail: formatCurrency(Number(r.amount), invoice.currency),
+        tone: 'success',
+      });
+    }
+    dated.sort((a, b) => new Date(a.date as string).getTime() - new Date(b.date as string).getTime());
+    // Estado final (sin fecha): qué falta
+    if (isCancelled) return dated;
+    if (invoice.status === 'PAID') {
+      dated.push({ title: isCreditNote ? 'Devuelta por completo' : 'Cobrada por completo', tone: 'success' });
+    } else if (!isDraft && remaining > 0.009) {
+      dated.push({ title: `Saldo pendiente: ${formatCurrency(remaining, invoice.currency)}`, tone: 'pending' });
+    }
+    return dated;
+  })();
+
+  // ── Documentos relacionados: la cadena presupuesto → orden → factura → remito ──
+  const relatedGroups: RelatedDocGroup[] = [
+    {
+      title: 'Origen',
+      docs: [
+        ...(sourceOp ? [{ label: `Orden de Pedido ${sourceOp.number}`, to: `/orden-pedidos/${sourceOp.id}`, detail: formatDate(sourceOp.date) }] : []),
+        ...(invoice.originInvoiceId
+          ? [{
+              label: invoice.originInvoice
+                ? `${INVOICE_TYPES[invoice.originInvoice.type]} ${formatInvoiceNumber(invoice.originInvoice)}`
+                : 'Comprobante de origen',
+              to: `/invoices/${invoice.originInvoiceId}`,
+            }]
+          : []),
+      ],
+    },
+    {
+      title: 'Remitos',
+      docs: linkedRemitos.map((r) => ({
+        label: r.number,
+        to: `/remitos/${r.id}`,
+        badge: r.status === 'DELIVERED' ? 'Entregado' : r.status === 'CANCELLED' ? 'Cancelado' : r.status === 'PARTIALLY_DELIVERED' ? 'Parcial' : 'Pendiente',
+        detail: formatDate(r.date),
+      })),
+    },
+    {
+      title: 'Recibos',
+      docs: activeRecibos.map((r) => ({
+        label: r.number,
+        to: `/recibos/${r.id}`,
+        detail: formatCurrency(Number(r.amount), invoice.currency),
+      })),
+    },
+  ];
 
   return (
     <div>
@@ -363,7 +459,7 @@ export default function InvoiceDetailPage() {
                 Cobrar con MP
               </Button>
             )}
-            {invoice.deliveryStatus !== 'DELIVERED' && (
+            {canGenerateRemito && (
               <Button
                 variant="outline"
                 onClick={() => navigate(`/remitos/new?invoiceId=${invoice.id}`)}
@@ -714,6 +810,12 @@ export default function InvoiceDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Documentos relacionados */}
+          <RelatedDocuments groups={relatedGroups} />
+
+          {/* Historia del documento */}
+          <DocumentTimeline events={timelineEvents} />
         </div>
       </div>
 
@@ -762,6 +864,8 @@ export default function InvoiceDetailPage() {
         onClose={() => setShowPayModal(false)}
         onSubmit={handlePay}
         remaining={remaining}
+        total={Number(invoice.total)}
+        paidCount={recibos.filter((r) => r.status === 'EMITTED').length}
         currency={invoice.currency}
         isLoading={isPayLoading}
         defaultCashRegisterId={undefined}

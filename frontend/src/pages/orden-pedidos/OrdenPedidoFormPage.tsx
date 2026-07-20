@@ -445,7 +445,8 @@ export default function OrdenPedidoFormPage() {
         toast.success('Orden de pedido actualizada');
         navigate(`/orden-pedidos/${id}`);
       } else {
-        const op = await ordenPedidosService.create(payload);
+        // budgetId solo al crear: deja navegable la cadena presupuesto → OP
+        const op = await ordenPedidosService.create({ ...payload, budgetId: fromBudget?.id ?? null });
         // If created from a budget, mark it as CONVERTED
         if (fromBudget) {
           await budgetsService.updateStatus(fromBudget.id, { status: 'CONVERTED' }).catch(() => null);
@@ -804,11 +805,12 @@ export default function OrdenPedidoFormPage() {
                 </span>
               </label>
 
-              {/* Warehouse selector — only shown when no default and multiple warehouses */}
-              {stockBehavior === 'DISCOUNT' && hasDefaultWarehouse === false && (
+              {/* Depósito de stock — elegible siempre que haya más de uno
+                  (aplica tanto a descuento inmediato como a reserva) */}
+              {(warehouses.length > 1 || hasDefaultWarehouse === false) && (
                 <Select
-                  label="Almacén donde descontar *"
-                  options={[{ value: '', label: 'Seleccioná un almacén' }, ...warehouses.map((w) => ({ value: w.id, label: w.name }))]}
+                  label={stockBehavior === 'DISCOUNT' ? 'Depósito donde descontar *' : 'Depósito donde reservar'}
+                  options={[{ value: '', label: 'Seleccioná un depósito' }, ...warehouses.map((w) => ({ value: w.id, label: w.isDefault ? `${w.name} (por defecto)` : w.name }))]}
                   value={resolvedWarehouseId || ''}
                   onChange={(v) => setResolvedWarehouseId(v || null)}
                 />

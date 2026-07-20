@@ -28,6 +28,11 @@ export type { AccountSearchSelectProps } from './AccountSearchSelect';
 export { PaymentModal } from './PaymentModal';
 export { RecibosList } from './RecibosList';
 
+export { DocumentTimeline } from './DocumentTimeline';
+export type { TimelineEvent } from './DocumentTimeline';
+export { RelatedDocuments } from './RelatedDocuments';
+export type { RelatedDocGroup } from './RelatedDocuments';
+
 export { default as CustomerSearchSelect } from './CustomerSearchSelect';
 export type { CustomerSearchSelectProps } from './CustomerSearchSelect';
 

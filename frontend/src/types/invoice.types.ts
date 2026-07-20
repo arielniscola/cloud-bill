@@ -66,6 +66,7 @@ export interface Invoice {
   originInvoiceId: string | null;
   originInvoice?: Invoice;
   ordenPedidoId: string | null;
+  warehouseId?: string | null;
   cae: string | null;
   caeExpiry: string | null;
   afipPtVenta: number | null;
@@ -97,6 +98,7 @@ export interface CreateInvoiceDTO {
   saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior?: 'DISCOUNT' | 'RESERVE';
   originInvoiceId?: string | null;
+  warehouseId?: string | null;
   currency?: Currency;
   exchangeRate?: number;
   items: CreateInvoiceItemDTO[];
