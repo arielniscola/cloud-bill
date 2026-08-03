@@ -20,7 +20,7 @@ export class CurrentAccountController {
       );
 
       if (req.query.hasDebt === 'true') {
-        const accounts = await (currentAccountRepository as any).findAllWithDebt(req.companyId);
+        const accounts = await (currentAccountRepository as any).findAllWithDebt(req.companyId, req.fiscalMode);
         res.json({ status: 'success', data: accounts });
         return;
       }
@@ -37,7 +37,7 @@ export class CurrentAccountController {
         'CurrentAccountRepository'
       );
       await assertCustomerInCompany(req.params.customerId, req.companyId);
-      const accounts = await currentAccountRepository.findAllByCustomerId(req.params.customerId);
+      const accounts = await currentAccountRepository.findAllByCustomerId(req.params.customerId, req.fiscalMode);
 
       res.json({
         status: 'success',
@@ -55,14 +55,22 @@ export class CurrentAccountController {
       );
       await assertCustomerInCompany(req.params.customerId, req.companyId);
       const currency = (req.query.currency as Currency) || 'ARS';
-      const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
 
-      if (!currentAccount) {
-        throw new NotFoundError('Current account');
+      // "Todos": no hay una cuenta única (FORMAL e INFORMAL son filas separadas)
+      // — se combinan los movimientos de todas las cuentas de esa moneda.
+      let accountIds: string[];
+      if (req.fiscalMode) {
+        const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
+        if (!currentAccount) throw new NotFoundError('Current account');
+        accountIds = [currentAccount.id];
+      } else {
+        const accounts = await currentAccountRepository.findAllByCustomerId(req.params.customerId);
+        accountIds = accounts.filter((a) => a.currency === currency).map((a) => a.id);
+        if (accountIds.length === 0) throw new NotFoundError('Current account');
       }
 
       const { page, limit } = req.query;
-      const result = await currentAccountRepository.getMovements(currentAccount.id, {
+      const result = await currentAccountRepository.getMovements(accountIds, {
         page: Number(page) || 1,
         limit: Number(limit) || 10,
       });

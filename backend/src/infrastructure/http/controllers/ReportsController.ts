@@ -90,9 +90,11 @@ export class ReportsController {
         FROM "purchase_invoices" pi
         JOIN "suppliers" s ON s.id = pi."supplierId"
         LEFT JOIN (
-          SELECT opi."purchaseInvoiceId", SUM(opi.amount) AS paid
+          SELECT opi."purchaseInvoiceId",
+                 SUM(CASE WHEN op.currency = pi2.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END) AS paid
           FROM "orden_pago_items" opi
           JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+          JOIN "purchase_invoices" pi2 ON pi2.id = opi."purchaseInvoiceId"
           WHERE op.status = 'PAID'
           GROUP BY opi."purchaseInvoiceId"
         ) p ON p."purchaseInvoiceId" = pi.id
@@ -439,9 +441,10 @@ export class ReportsController {
           pi."createdAt", pi.date AS "invoiceDate", pi.currency,
           p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate",
           s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
-          COALESCE((SELECT SUM(amount) FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = pi.id), 0) AS "retencionesTotal",
           COALESCE((
-            SELECT SUM(opi.amount)
+            SELECT SUM(
+              CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
+            )
             FROM "orden_pago_items" opi
             JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
             WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
@@ -457,10 +460,8 @@ export class ReportsController {
         const subtotal      = Number(r.subtotal ?? 0);
         const taxAmount     = Number(r.taxAmount ?? 0);
         const amount        = Number(r.amount ?? 0);
-        const retenciones   = Number(r.retencionesTotal ?? 0);
-        const net           = amount - retenciones;
-        const paid          = Math.min(Number(r.paidAmount ?? 0), net);
-        const pending       = Math.max(net - paid, 0);
+        const paid          = Math.min(Number(r.paidAmount ?? 0), amount);
+        const pending       = Math.max(amount - paid, 0);
         return {
           id:             r.id,
           number:         r.number,
@@ -468,8 +469,6 @@ export class ReportsController {
           subtotal:       round2(subtotal),
           taxAmount:      round2(taxAmount),
           amount:         round2(amount),
-          retenciones:    round2(retenciones),
-          net:            round2(net),
           paid:           round2(paid),
           pending:        round2(pending),
           dueDate:        r.dueDate        ? r.dueDate.toISOString().substring(0, 10)        : null,
@@ -493,13 +492,97 @@ export class ReportsController {
         subtotal:     round2(data.reduce((a, r) => a + r.subtotal,    0)),
         taxAmount:    round2(data.reduce((a, r) => a + r.taxAmount,   0)),
         amount:       round2(data.reduce((a, r) => a + r.amount,      0)),
-        retenciones:  round2(data.reduce((a, r) => a + r.retenciones, 0)),
-        net:          round2(data.reduce((a, r) => a + r.net,         0)),
         pending:      round2(data.reduce((a, r) => a + r.pending,     0)),
         paid:         round2(data.reduce((a, r) => a + r.paid,        0)),
       };
 
       res.json({ status: 'success', data, totals });
+    } catch (error) { next(error); }
+  }
+
+  // ── GET /reports/retentions ───────────────────────────────────────
+  // Retenciones practicadas en un período (siempre al pagar, ver OrdenPagoRetencion).
+  // Devuelve el detalle listo para el papel de trabajo y para el archivo de
+  // importación de SICORE: por eso viaja el CUIT del proveedor, el comprobante
+  // (la OP) con su importe, y los códigos ARCA de impuesto/régimen.
+  async retentions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const companyId = req.user!.companyId!;
+      const { dateFrom, dateTo, supplierId, type } = req.query as Record<string, string>;
+
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`op."companyId" = ${companyId}`,
+        // Una OP anulada no practicó retención
+        Prisma.sql`op.status <> 'CANCELLED'`,
+      ];
+      if (req.fiscalMode) conditions.push(Prisma.sql`op."fiscalMode" = ${req.fiscalMode}`);
+      if (supplierId)     conditions.push(Prisma.sql`op."supplierId" = ${supplierId}`);
+      if (type)           conditions.push(Prisma.sql`ret.type = ${type}`);
+      if (dateFrom)       conditions.push(Prisma.sql`op.date >= ${new Date(dateFrom)}`);
+      if (dateTo)         conditions.push(Prisma.sql`op.date <= ${new Date(dateTo + 'T23:59:59')}`);
+
+      // Los códigos ARCA se congelan al practicar la retención. Si quedaron
+      // vacíos (config incompleta en ese momento), se completan con la config
+      // actual del proveedor para que la retención sea exportable sin rehacerla.
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT ret.id, ret.type, ret.jurisdiction, ret.base AS "baseKind", ret."baseAmount",
+               ret.percentage, ret.amount, ret.certificate,
+               COALESCE(ret."arcaImpuesto", cfg."arcaImpuesto") AS "arcaImpuesto",
+               COALESCE(ret."arcaRegimen",  cfg."arcaRegimen")  AS "arcaRegimen",
+               ret."createdAt",
+               op.id AS "ordenPagoId", op.number AS "ordenPagoNumber", op.date AS "ordenPagoDate",
+               op.amount AS "ordenPagoAmount", op.currency, op.status AS "ordenPagoStatus",
+               s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit"
+        FROM "orden_pago_retenciones" ret
+        JOIN "orden_pagos" op ON op.id = ret."ordenPagoId"
+        JOIN "suppliers" s ON s.id = op."supplierId"
+        LEFT JOIN "supplier_retentions" cfg ON cfg.id = ret."supplierRetentionId"
+        WHERE ${Prisma.join(conditions, ' AND ')}
+        ORDER BY op.date ASC, op.number ASC
+      `;
+
+      const data = rows.map((r) => ({
+        id:              r.id,
+        type:            r.type,
+        jurisdiction:    r.jurisdiction ?? null,
+        baseKind:        r.baseKind,
+        baseAmount:      round2(Number(r.baseAmount ?? 0)),
+        percentage:      Number(r.percentage ?? 0),
+        amount:          round2(Number(r.amount ?? 0)),
+        certificate:     r.certificate ?? null,
+        arcaImpuesto:    r.arcaImpuesto ?? null,
+        arcaRegimen:     r.arcaRegimen ?? null,
+        date:            r.ordenPagoDate.toISOString().substring(0, 10),
+        ordenPagoId:     r.ordenPagoId,
+        ordenPagoNumber: r.ordenPagoNumber,
+        ordenPagoAmount: round2(Number(r.ordenPagoAmount ?? 0)),
+        ordenPagoStatus: r.ordenPagoStatus,
+        currency:        r.currency,
+        supplierId:      r.supplierId,
+        supplierName:    r.supplierName,
+        supplierCuit:    r.supplierCuit ?? null,
+      }));
+
+      // Subtotales por régimen — es como se presenta e ingresa el impuesto
+      const byTypeMap = new Map<string, { type: string; count: number; baseAmount: number; amount: number }>();
+      for (const r of data) {
+        const acc = byTypeMap.get(r.type) ?? { type: r.type, count: 0, baseAmount: 0, amount: 0 };
+        acc.count      += 1;
+        acc.baseAmount += r.baseAmount;
+        acc.amount     += r.amount;
+        byTypeMap.set(r.type, acc);
+      }
+      const byType = Array.from(byTypeMap.values())
+        .map((t) => ({ ...t, baseAmount: round2(t.baseAmount), amount: round2(t.amount) }))
+        .sort((a, b) => b.amount - a.amount);
+
+      const totals = {
+        count:      data.length,
+        baseAmount: round2(data.reduce((a, r) => a + r.baseAmount, 0)),
+        amount:     round2(data.reduce((a, r) => a + r.amount,     0)),
+      };
+
+      res.json({ status: 'success', data, totals, byType });
     } catch (error) { next(error); }
   }
 

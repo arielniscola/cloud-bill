@@ -5,6 +5,7 @@ export interface ProductFilters {
   search?: string;
   rubroId?: string;
   brandId?: string;
+  supplierId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -20,5 +21,7 @@ export interface IProductRepository {
   ): Promise<PaginatedResult<Product>>;
   create(data: CreateProductInput): Promise<Product>;
   update(id: string, data: UpdateProductInput): Promise<Product>;
+  /** Actualiza en un único UPDATE todos los productos que matchean el filtro (sin traerlos a memoria) — escala sin importar cuántos sean. Devuelve la cantidad afectada. */
+  updateByFilter(filters: ProductFilters, data: UpdateProductInput): Promise<number>;
   delete(id: string): Promise<void>;
 }

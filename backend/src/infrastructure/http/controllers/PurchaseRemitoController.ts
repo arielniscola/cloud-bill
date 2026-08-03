@@ -25,6 +25,10 @@ const createSchema = z.object({
   items:       z.array(itemSchema).min(1, 'Agregue al menos un ítem'),
 });
 
+const updateNumberSchema = z.object({
+  number: z.string().min(1, 'El número es requerido'),
+});
+
 const querySchema = z.object({
   page:        z.coerce.number().int().positive().default(1),
   limit:       z.coerce.number().int().positive().default(20),
@@ -200,6 +204,37 @@ export class PurchaseRemitoController {
 
       const remito = await fetchFull(id);
       res.status(201).json({ status: 'success', data: remito });
+    } catch (error) { next(error); }
+  }
+
+  // Corrige el número del remito (ej. para que coincida con el remito físico
+  // preimpreso del proveedor). No aplica a remitos cancelados.
+  async updateNumber(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const remito = await fetchFull(req.params.id);
+      if (!remito || remito.companyId !== req.companyId) throw new NotFoundError('Remito de compra');
+      if (remito.status === 'CANCELLED') {
+        throw new AppError('No se puede editar un remito cancelado', 400);
+      }
+
+      const { number } = updateNumberSchema.parse(req.body);
+      const activityRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      const previousNumber = remito.number;
+
+      await prisma.$executeRaw`
+        UPDATE "purchase_remitos" SET number = ${number}, "updatedAt" = NOW() WHERE id = ${remito.id}
+      `;
+
+      await activityRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'PurchaseRemito',
+        entityId: remito.id,
+        description: `Remito de compra renumerado de ${previousNumber} a ${number}`,
+      });
+
+      const updated = await fetchFull(remito.id);
+      res.json({ status: 'success', data: updated });
     } catch (error) { next(error); }
   }
 

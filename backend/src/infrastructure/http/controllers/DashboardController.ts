@@ -108,7 +108,9 @@ export class DashboardController {
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
           SELECT COUNT(*) AS count,
                  COALESCE(SUM(pi.amount - COALESCE((
-                   SELECT SUM(opi.amount)
+                   SELECT SUM(
+                     CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
+                   )
                    FROM "orden_pago_items" opi
                    JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
                    WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
@@ -369,9 +371,10 @@ export class DashboardController {
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
-        // Pagos a proveedores (Órdenes de Pago)
+        // Pagos a proveedores (Órdenes de Pago) — neto de retenciones: lo
+        // retenido no sale de caja, queda como impuesto a depositar.
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
-          SELECT date, amount FROM "orden_pagos"
+          SELECT date, (amount - "retentionAmount") AS amount FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
             ${fmFilter}

@@ -1,4 +1,7 @@
-import { Supplier, CreateSupplierInput, UpdateSupplierInput } from '../entities/Supplier';
+import {
+  Supplier, CreateSupplierInput, UpdateSupplierInput,
+  SupplierRetention, CreateSupplierRetentionInput, UpdateSupplierRetentionInput,
+} from '../entities/Supplier';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface SupplierFilters {
@@ -13,4 +16,11 @@ export interface ISupplierRepository {
   create(data: CreateSupplierInput): Promise<Supplier>;
   update(id: string, data: UpdateSupplierInput): Promise<Supplier>;
   delete(id: string): Promise<void>;
+
+  // Retenciones configuradas para el proveedor (se aplican al pagar)
+  findRetentions(supplierId: string, companyId?: string, onlyActive?: boolean): Promise<SupplierRetention[]>;
+  findRetentionById(id: string, companyId?: string): Promise<SupplierRetention | null>;
+  createRetention(data: CreateSupplierRetentionInput): Promise<SupplierRetention>;
+  updateRetention(id: string, data: UpdateSupplierRetentionInput): Promise<SupplierRetention>;
+  deleteRetention(id: string): Promise<void>;
 }

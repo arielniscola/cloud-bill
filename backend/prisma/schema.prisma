@@ -217,6 +217,7 @@ model Product {
   rubroId    String?
   brandId       String?
   categoryId       String?
+  supplierId    String?  // Proveedor habitual — para filtrar el catálogo por proveedor
   barcode       String?
   unit          String?  @default("UN")
   internalNotes String?
@@ -235,6 +236,7 @@ model Product {
   rubro       Rubro?       @relation(fields: [rubroId], references: [id])
   brand          Brand?          @relation(fields: [brandId], references: [id])
   category          Category?          @relation(fields: [categoryId], references: [id])
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
   invoiceItems   InvoiceItem[]
   stocks         Stock[]
   stockMovements StockMovement[]
@@ -694,13 +696,50 @@ model Supplier {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  // Retención automática (ej. IIBB 1.5%) — se autocompleta al cargar una
+  // factura de este proveedor. NULL/0 = sin retención automática.
+  retentionType       String?
+  retentionPercentage Decimal? @db.Decimal(5, 2)
+
   purchases    Purchase[]
   ordenCompras OrdenCompra[]
   ordenPagos   OrdenPago[]
   supplierAccountMovements SupplierAccountMovement[]
   purchaseInvoices         PurchaseInvoice[]
+  products                 Product[]
+  retentions               SupplierRetention[]
 
   @@map("suppliers")
+}
+
+// Retenciones configuradas para un proveedor. Se practican al PAGAR (ver
+// OrdenPagoRetencion), no al cargar la factura: la Orden de Pago las propone
+// automáticamente calculando `percentage` sobre la base elegida.
+//   NETO  → suma de subtotales de las facturas pagadas (sin IVA)
+//   IVA   → suma del IVA de esas facturas
+//   BRUTO → total de las facturas (neto + IVA)
+// Acceso vía $queryRaw/$executeRaw (el cliente Prisma puede estar desactualizado).
+model SupplierRetention {
+  id           String   @id @default(uuid())
+  supplierId   String
+  companyId    String
+  type         String   @default("IIBB")  // IIBB | GANANCIAS | IVA | SUSS | OTHER
+  jurisdiction String?
+  base         String   @default("NETO")  // NETO | IVA | BRUTO
+  percentage   Decimal  @default(0) @db.Decimal(6, 3)
+  arcaImpuesto String?                    // código de impuesto SICORE (217 Ganancias, 767 IVA)
+  arcaRegimen  String?                    // código de régimen SICORE (según la actividad)
+  isActive     Boolean  @default(true)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  supplier   Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  ordenPagos OrdenPagoRetencion[]
+
+  @@index([supplierId])
+  @@index([companyId])
+  @@map("supplier_retentions")
 }
 
 model Purchase {
@@ -1085,16 +1124,47 @@ model OrdenPago {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  // Total retenido. `amount` es el BRUTO imputado a las facturas / cuenta
+  // corriente; el egreso real de caja o banco es `amount - retentionAmount`.
+  retentionAmount Decimal @default(0) @db.Decimal(12, 2)
+
   supplier     Supplier      @relation(fields: [supplierId], references: [id])
   user         User          @relation(fields: [userId], references: [id])
   cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
   items        OrdenPagoItem[]
   ajustes      OrdenPagoAjuste[]
-  supplierAccountMovement SupplierAccountMovement?
+  retenciones  OrdenPagoRetencion[]
+  supplierAccountMovements SupplierAccountMovement[]
 
   fiscalMode String @default("FORMAL")
 
   @@map("orden_pagos")
+}
+
+// Retención practicada al pagar. No reduce la deuda con el proveedor (la
+// factura se cancela por el bruto): es un impuesto a depositar, y solo alimenta
+// el reporte de retenciones y el asiento contable del pago.
+model OrdenPagoRetencion {
+  id                  String   @id @default(uuid())
+  ordenPagoId         String
+  supplierRetentionId String?
+  type                String   @default("IIBB")
+  jurisdiction        String?
+  base                String   @default("NETO")   // NETO | IVA | BRUTO
+  baseAmount          Decimal  @default(0) @db.Decimal(14, 2)
+  percentage          Decimal  @default(0) @db.Decimal(6, 3)
+  amount              Decimal  @default(0) @db.Decimal(14, 2)
+  arcaImpuesto        String?                    // código de impuesto SICORE (snapshot de la config)
+  arcaRegimen         String?                    // código de régimen SICORE (snapshot de la config)
+  certificate         String?
+  notes               String?
+  createdAt           DateTime @default(now())
+
+  ordenPago         OrdenPago          @relation(fields: [ordenPagoId], references: [id], onDelete: Cascade)
+  supplierRetention SupplierRetention? @relation(fields: [supplierRetentionId], references: [id], onDelete: SetNull)
+
+  @@index([ordenPagoId])
+  @@map("orden_pago_retenciones")
 }
 
 // Ajustes al pago (descuentos obtenidos, intereses, etc.). Cada uno referencia
@@ -1132,13 +1202,13 @@ model OrdenPagoItem {
 model SupplierAccountMovement {
   id          String   @id @default(uuid())
   supplierId  String
-  ordenPagoId String?  @unique
+  ordenPagoId String?  // no @unique: una OP puede generar más de un movimiento (uno por moneda, ver pay())
   purchaseId  String?
   purchaseInvoiceId String?  // set for retenciones/percepciones movements from a supplier invoice
   type        String   // DEBIT | CREDIT
   amount      Decimal  @db.Decimal(12, 2)
   currency    String   @default("ARS")
-  balance     Decimal  @db.Decimal(12, 2) @default(0)
+  balance     Decimal  @db.Decimal(12, 2) @default(0) // running balance, escoped per (supplierId, currency)
   description String?
   companyId   String   @default("00000000-0000-0000-0000-000000000001")
   createdAt   DateTime @default(now())
@@ -1150,7 +1220,44 @@ model SupplierAccountMovement {
 
   fiscalMode String @default("FORMAL")
 
+  @@index([ordenPagoId])
   @@map("supplier_account_movements")
+}
+
+// Imputación manual de cuenta corriente: cierra facturas/ND pendientes contra
+// NC o pagos a cuenta sueltos sin pasar por una Orden de Pago. `manualAmount`
+// es la diferencia (si la hay) que se condona/cierra a mano y que sí genera
+// un movimiento nuevo en supplier_account_movements (ver PrismaOrdenPagoRepository).
+// Acceso 100% vía $queryRaw/$executeRaw (igual que OrdenPagoAjuste) — no requiere
+// regenerar el cliente Prisma.
+model SupplierCcAdjustment {
+  id           String   @id @default(uuid())
+  supplierId   String
+  companyId    String
+  fiscalMode   String?
+  currency     String   @default("ARS")
+  manualAmount Decimal  @default(0) @db.Decimal(14, 2)
+  description  String?
+  userId       String
+  createdAt    DateTime @default(now())
+
+  items SupplierCcAdjustmentItem[]
+
+  @@map("supplier_cc_adjustments")
+}
+
+model SupplierCcAdjustmentItem {
+  id                String  @id @default(uuid())
+  adjustmentId      String
+  side              String  // DEBIT | CREDIT
+  purchaseInvoiceId String?
+  movementId        String?
+  amount            Decimal @db.Decimal(14, 2)
+
+  adjustment SupplierCcAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+
+  @@index([adjustmentId])
+  @@map("supplier_cc_adjustment_items")
 }
 
 // ── Bancos (catálogo / parametrización) ─────────────────────────────────────

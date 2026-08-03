@@ -9,15 +9,16 @@ import { PaginationParams, PaginatedResult, Currency } from '../../shared/types'
 export interface ICurrentAccountRepository {
   findById(id: string): Promise<CurrentAccount | null>;
   findByCustomerId(customerId: string, currency?: Currency, fiscalMode?: string): Promise<CurrentAccount | null>;
-  findAllByCustomerId(customerId: string): Promise<CurrentAccount[]>;
+  findAllByCustomerId(customerId: string, fiscalMode?: string): Promise<CurrentAccount[]>;
   createForCustomer(customerId: string, currency: Currency, creditLimit?: number, fiscalMode?: string, tx?: Prisma.TransactionClient): Promise<CurrentAccount>;
   updateCreditLimit(id: string, creditLimit: number | null): Promise<CurrentAccount>;
   /** `tx`: cliente de transacción opcional para participar de una transacción externa. */
   addMovement(data: CreateAccountMovementInput, tx?: Prisma.TransactionClient): Promise<AccountMovement>;
+  /** `currentAccountId` acepta varios ids (modo "Todos": una cuenta por fiscalMode) para traer los movimientos combinados. */
   getMovements(
-    currentAccountId: string,
+    currentAccountId: string | string[],
     pagination?: PaginationParams
   ): Promise<PaginatedResult<AccountMovement>>;
   getBalance(customerId: string, currency: Currency): Promise<number>;
-  findAllWithDebt(companyId?: string): Promise<CurrentAccount[]>;
+  findAllWithDebt(companyId?: string, fiscalMode?: string): Promise<CurrentAccount[]>;
 }

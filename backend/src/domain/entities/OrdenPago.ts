@@ -1,6 +1,7 @@
 import { Decimal } from '@prisma/client/runtime/library';
 import { Currency } from '../../shared/types';
 import { PaymentMethod } from './Recibo';
+import { RetentionBase } from './Supplier';
 
 export type OrdenPagoStatus = 'EMITTED' | 'PAID' | 'CANCELLED';
 
@@ -23,6 +24,7 @@ export interface OrdenPagoItem {
     type: string;
     amount: Decimal;
     status: string;
+    currency: string;
   };
 }
 
@@ -43,6 +45,9 @@ export interface OrdenPago {
   checkDueDate: Date | null;
   notes: string | null;
   status: OrdenPagoStatus;
+  // Total retenido. `amount` es el bruto imputado a las facturas; el egreso
+  // real de caja/banco es `amount - retentionAmount`.
+  retentionAmount: Decimal;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,6 +75,26 @@ export interface OrdenPagoAjuste {
   amount: Decimal;
 }
 
+// Retención practicada al pagar. No reduce la deuda con el proveedor: las
+// facturas se cancelan por el bruto y este importe queda como impuesto a
+// depositar, alimentando el reporte de retenciones.
+export interface OrdenPagoRetencion {
+  id: string;
+  ordenPagoId: string;
+  supplierRetentionId: string | null;
+  type: string;
+  jurisdiction: string | null;
+  base: RetentionBase;
+  baseAmount: Decimal;
+  percentage: Decimal;
+  amount: Decimal;
+  // Snapshot de los códigos ARCA de la config del proveedor, para SICORE.
+  arcaImpuesto: string | null;
+  arcaRegimen: string | null;
+  certificate: string | null;
+  notes: string | null;
+}
+
 export interface OrdenPagoWithRelations extends OrdenPago {
   items: OrdenPagoItem[];
   supplier?: { id: string; name: string; cuit: string | null };
@@ -77,6 +102,7 @@ export interface OrdenPagoWithRelations extends OrdenPago {
   cashRegister?: { id: string; name: string } | null;
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
+  retenciones?: OrdenPagoRetencion[];
 }
 
 export interface CreateOrdenPagoItemInput {
@@ -90,6 +116,19 @@ export interface CreateOrdenPagoChequePropioInput {
   bank?: string;
   amount: number;
   dueDate?: string;
+}
+
+export interface CreateOrdenPagoRetencionInput {
+  supplierRetentionId?: string | null;
+  type: string;
+  jurisdiction?: string | null;
+  base: RetentionBase;
+  baseAmount: number;
+  percentage: number;
+  amount: number;
+  arcaImpuesto?: string | null;
+  arcaRegimen?: string | null;
+  notes?: string | null;
 }
 
 export interface CreateOrdenPagoAjusteInput {
@@ -117,6 +156,9 @@ export interface CreateOrdenPagoInput {
   amount?: number;  // pago a cuenta (sin facturas): importe explícito
   // Ajustes (descuentos / intereses) que modifican el total a pagar
   ajustes?: CreateOrdenPagoAjusteInput[];
+  // Retenciones practicadas: NO modifican `amount` (la deuda se cancela por el
+  // bruto), solo reducen el egreso de dinero vía `retentionAmount`.
+  retenciones?: CreateOrdenPagoRetencionInput[];
   // Pago con cheques
   chequesEnCartera?: string[];                        // ids de cheques INGRESO a endosar
   chequesPropios?: CreateOrdenPagoChequePropioInput[]; // cheques EGRESO a emitir

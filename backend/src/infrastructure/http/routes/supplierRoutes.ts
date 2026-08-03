@@ -11,6 +11,13 @@ router.use(authMiddleware);
 
 router.get('/',             requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findAll);
 router.get('/:id/products', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findProducts);
+
+// Retenciones configuradas del proveedor (se aplican al emitir la Orden de Pago)
+router.get('/:id/retentions',                  requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findRetentions);
+router.post('/:id/retentions',                 requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             supplierController.createRetention);
+router.put('/:id/retentions/:retentionId',     requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             supplierController.updateRetention);
+router.delete('/:id/retentions/:retentionId',  requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             supplierController.deleteRetention);
+
 router.get('/:id',          requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findById);
 router.post('/import',      requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             importController.importSuppliers);
 router.post('/',            requireRoles('SUPER_ADMIN', 'ADMIN', 'PURCHASES'),             supplierController.create);

@@ -4,10 +4,8 @@ import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRep
 import { SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
-import { createOrdenPagoSchema, ordenPagoQuerySchema } from '../../../application/dtos/ordenPago.dto';
+import { createOrdenPagoSchema, ordenPagoQuerySchema, createSupplierCcAdjustmentSchema } from '../../../application/dtos/ordenPago.dto';
 import { recordSupplierPayment, recordSupplierPaymentReversal } from '../../services/AccountingService';
-import prisma from '../../database/prisma';
-import { Prisma } from '@prisma/client';
 
 export class OrdenPagoController {
 
@@ -70,6 +68,7 @@ export class OrdenPagoController {
         items:          body.items,
         amount:         body.amount,
         ajustes:        body.ajustes,
+        retenciones:    body.retenciones,
         chequesEnCartera: body.chequesEnCartera,
         chequesPropios:   body.chequesPropios,
       } as any);
@@ -102,22 +101,16 @@ export class OrdenPagoController {
 
       const paid = await repo.pay(req.params.id);
 
-      // Fetch retenciones from all linked purchase_invoices to discriminate them in the journal entry
-      const invoiceIds = [...new Set(paid.items.map((i) => i.purchaseInvoiceId).filter(Boolean) as string[])];
-      let retenciones: { type: string; amount: number }[] = [];
-      if (invoiceIds.length > 0) {
-        const rows = await prisma.$queryRaw<{ type: string; amount: any }[]>`
-          SELECT type, amount
-          FROM "purchase_invoice_retenciones"
-          WHERE "purchaseInvoiceId" IN (${Prisma.join(invoiceIds)})
-        `;
-        retenciones = rows.map((r) => ({ type: r.type, amount: Number(r.amount) }));
-      }
+      // Retenciones practicadas en el propio pago: ya están descontadas del
+      // egreso (`amount` es el bruto imputado), así que el asiento acredita el
+      // neto contra caja/banco y cada retención contra su cuenta de pasivo.
+      const retenciones = (paid.retenciones ?? []).map((r) => ({ type: r.type, amount: Number(r.amount) }));
+      const netCash = Number(paid.amount) - Number(paid.retentionAmount ?? 0);
 
       await recordSupplierPayment({
         id:            paid.id,
         number:        paid.number,
-        amount:        Number(paid.amount),
+        amount:        netCash,
         paymentMethod: paid.paymentMethod,
         companyId:     req.companyId!,
         userId:        req.user!.userId,
@@ -180,29 +173,76 @@ export class OrdenPagoController {
     try {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
       const { supplierId } = req.params;
-      const { page, limit, type, kinds, dateFrom, dateTo, search } = req.query;
+      const { page, limit, type, kinds, currency, dateFrom, dateTo, search } = req.query;
 
       const filters: SupplierMovementFilters = {
         type: type === 'DEBIT' || type === 'CREDIT' ? type : undefined,
         kinds: typeof kinds === 'string' && kinds.length > 0
           ? (kinds.split(',') as any[])
           : undefined,
+        currency: currency === 'ARS' || currency === 'USD' ? currency : undefined,
         dateFrom: typeof dateFrom === 'string' ? dateFrom : undefined,
         dateTo: typeof dateTo === 'string' ? dateTo : undefined,
         search: typeof search === 'string' && search.trim() ? search.trim() : undefined,
       };
 
       const [balance, movements] = await Promise.all([
-        repo.getSupplierBalance(supplierId, req.companyId),
+        repo.getSupplierBalance(supplierId, req.companyId, req.fiscalMode),
         repo.getSupplierMovements(
           supplierId,
           { page: Number(page) || 1, limit: Number(limit) || 20 },
           req.companyId,
-          filters
+          filters,
+          req.fiscalMode
         ),
       ]);
 
       res.json({ status: 'success', data: { balance, ...movements } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getOpenItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
+      const { supplierId } = req.params;
+      const data = await repo.getOpenAccountItems(supplierId, req.companyId);
+      res.json({ status: 'success', data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createAdjustment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      const { supplierId } = req.params;
+      const body = createSupplierCcAdjustmentSchema.parse(req.body);
+
+      const adjustment = await repo.createCcAdjustment({
+        supplierId,
+        companyId:   req.companyId!,
+        fiscalMode:  req.fiscalMode as 'FORMAL' | 'INFORMAL' | undefined,
+        currency:    body.currency,
+        userId:      req.user!.userId,
+        description: body.description,
+        debits:      body.debits,
+        credits:     body.credits,
+        manualAmount: body.manualAmount,
+      });
+
+      await activityLogRepo.create({
+        userId:      req.user!.userId,
+        action:      'CREATE',
+        entity:      'SupplierCcAdjustment',
+        entityId:    adjustment.id,
+        description: `Ajuste de cuenta corriente para proveedor ${supplierId}`,
+        metadata:    { supplierId, manualAmount: Number(adjustment.manualAmount) },
+      });
+
+      res.status(201).json({ status: 'success', data: adjustment });
     } catch (error) {
       next(error);
     }

@@ -106,8 +106,11 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
         opConditions.push(Prisma.sql`op."createdAt" <= ${endDate}`);
       }
       const opWhere = Prisma.join(opConditions, ' AND ');
+      // El egreso de caja es el NETO: `amount` es el bruto imputado a las
+      // facturas y `retentionAmount` no sale de la caja (queda a depositar).
       const opRows = await prisma.$queryRaw<any[]>`
-        SELECT op.id, op.amount, op."cashRegisterId", op."createdAt", op.number,
+        SELECT op.id, (op.amount - op."retentionAmount") AS amount,
+               op."cashRegisterId", op."createdAt", op.number,
                s.name AS "supplierName"
         FROM "orden_pagos" op
         LEFT JOIN "suppliers" s ON s.id = op."supplierId"
@@ -156,8 +159,9 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     if (fromDate) conditions.push(Prisma.sql`"createdAt" > ${fromDate}`);
     if (fiscalMode) conditions.push(Prisma.sql`"fiscalMode" = ${fiscalMode}`);
     const where = Prisma.join(conditions, ' AND ');
+    // Neto: lo retenido no sale de la caja (ver _getOrdenPagoOutflows en el listado).
     const rows = await prisma.$queryRaw<{ total: any; count: bigint }[]>`
-      SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+      SELECT COALESCE(SUM(amount - "retentionAmount"), 0) AS total, COUNT(*) AS count
       FROM "orden_pagos"
       WHERE ${where}
     `;

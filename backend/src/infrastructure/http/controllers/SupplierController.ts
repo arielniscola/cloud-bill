@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { ISupplierRepository } from '../../../domain/repositories/ISupplierRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
+import { createSupplierRetentionSchema, updateSupplierRetentionSchema } from '../../../application/dtos/supplier.dto';
 import prisma from '../../database/prisma';
 
 export class SupplierController {
@@ -137,6 +138,99 @@ export class SupplierController {
       });
 
       res.json({ status: 'success', message: 'Proveedor eliminado' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── Retenciones configuradas del proveedor ──────────────────────────────
+  // Se practican al emitir la Orden de Pago, que las propone calculando la
+  // alícuota sobre la base (NETO / IVA / BRUTO) de las facturas seleccionadas.
+
+  async findRetentions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const supplier = await repo.findById(req.params.id, req.companyId);
+      if (!supplier) throw new NotFoundError('Supplier');
+
+      const onlyActive = req.query.isActive === 'true';
+      const retentions = await repo.findRetentions(req.params.id, req.companyId, onlyActive);
+      res.json({ status: 'success', data: retentions });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createRetention(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const supplier = await repo.findById(req.params.id, req.companyId);
+      if (!supplier) throw new NotFoundError('Supplier');
+
+      const body = createSupplierRetentionSchema.parse(req.body);
+      const retention = await repo.createRetention({
+        ...body,
+        supplierId: req.params.id,
+        companyId: req.companyId!,
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'SupplierRetention',
+        entityId: retention.id,
+        description: `Retención ${retention.type} ${retention.percentage}% s/${retention.base} configurada para ${supplier.name}`,
+      });
+
+      res.status(201).json({ status: 'success', data: retention });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateRetention(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const existing = await repo.findRetentionById(req.params.retentionId, req.companyId);
+      if (!existing || existing.supplierId !== req.params.id) throw new NotFoundError('SupplierRetention');
+
+      const body = updateSupplierRetentionSchema.parse(req.body);
+      const retention = await repo.updateRetention(req.params.retentionId, body);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'SupplierRetention',
+        entityId: retention.id,
+        description: `Retención ${retention.type} actualizada a ${retention.percentage}% s/${retention.base}`,
+      });
+
+      res.json({ status: 'success', data: retention });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteRetention(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const existing = await repo.findRetentionById(req.params.retentionId, req.companyId);
+      if (!existing || existing.supplierId !== req.params.id) throw new NotFoundError('SupplierRetention');
+
+      await repo.deleteRetention(req.params.retentionId);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'DELETE',
+        entity: 'SupplierRetention',
+        entityId: req.params.retentionId,
+        description: `Retención ${existing.type} eliminada`,
+      });
+
+      res.json({ status: 'success', message: 'Retención eliminada' });
     } catch (error) {
       next(error);
     }

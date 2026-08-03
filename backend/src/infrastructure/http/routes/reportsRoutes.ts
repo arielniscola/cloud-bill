@@ -18,5 +18,6 @@ router.get('/stock-valuation',        ctrl.stockValuation);
 router.get('/accounts-receivable',    ctrl.accountsReceivable);
 router.get('/cc-aging',               ctrl.ccAging);
 router.get('/cash-flow',              ctrl.cashFlow);
+router.get('/retentions',             ctrl.retentions);
 
 export { router as reportsRoutes };

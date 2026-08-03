@@ -14,3 +14,5 @@ ordenPagoRoutes.post('/',                            requireRoles('ADMIN', 'PURC
 ordenPagoRoutes.post('/:id/pay',                     requireRoles('ADMIN', 'PURCHASES'),             (req, res, next) => ctrl.pay(req, res, next));
 ordenPagoRoutes.delete('/:id',                       requireRoles('ADMIN', 'PURCHASES'),             (req, res, next) => ctrl.cancel(req, res, next));
 ordenPagoRoutes.get('/supplier/:supplierId/account', requireRoles('ADMIN', 'FINANCES', 'PURCHASES'), requireFeature('supplier_accounts'), (req, res, next) => ctrl.getSupplierAccount(req, res, next));
+ordenPagoRoutes.get('/supplier/:supplierId/open-items', requireRoles('ADMIN', 'FINANCES', 'PURCHASES'), requireFeature('supplier_accounts'), (req, res, next) => ctrl.getOpenItems(req, res, next));
+ordenPagoRoutes.post('/supplier/:supplierId/adjustments', requireRoles('ADMIN', 'FINANCES', 'PURCHASES'), requireFeature('supplier_accounts'), (req, res, next) => ctrl.createAdjustment(req, res, next));

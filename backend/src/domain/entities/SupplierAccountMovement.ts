@@ -38,6 +38,7 @@ export interface SupplierAccountMovement {
 export interface SupplierMovementFilters {
   type?: SupplierMovementType;
   kinds?: SupplierMovementKind[];
+  currency?: string;
   dateFrom?: string;
   dateTo?: string;
   search?: string;

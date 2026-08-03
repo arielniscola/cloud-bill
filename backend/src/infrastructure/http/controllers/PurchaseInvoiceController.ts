@@ -16,16 +16,6 @@ const itemSchema = z.object({
   taxRate:     z.coerce.number().min(0).max(100).default(21),
 });
 
-const retSchema = z.object({
-  type:         z.string().default('IIBB'),   // IIBB | GANANCIAS | IVA | OTHER
-  jurisdiction: z.string().optional().nullable(),
-  base:         z.coerce.number().min(0),
-  percentage:   z.coerce.number().min(0).max(100),
-  amount:       z.coerce.number().min(0),
-  certificate:  z.string().optional().nullable(),
-  notes:        z.string().optional().nullable(),
-});
-
 // "Otros tributos" que SUMAN al total (percepciones, impuestos internos, otros)
 const tribSchema = z.object({
   type:         z.string().default('PERCEPCION_IVA'), // PERCEPCION_IVA | PERCEPCION_IIBB | IMPUESTOS_INTERNOS | OTRO
@@ -49,7 +39,6 @@ const baseInvoiceSchema = z.object({
   paymentMethod:  z.string().default('BANK_TRANSFER'),
   notes:          z.string().optional().nullable(),
   items:          z.array(itemSchema).optional().default([]),
-  retenciones:    z.array(retSchema).optional().default([]),
   tributos:       z.array(tribSchema).optional().default([]),
 });
 
@@ -81,6 +70,16 @@ const querySchema = z.object({
   dateTo:        z.string().optional(),
 });
 
+const retencionesQuerySchema = z.object({
+  page:       z.coerce.number().int().positive().default(1),
+  limit:      z.coerce.number().int().positive().default(20),
+  supplierId: z.string().uuid().optional(),
+  type:       z.string().optional(),          // IIBB | GANANCIAS | IVA | SUSS | OTHER
+  search:     z.string().trim().optional(),   // Nº de certificado, de factura o de OP
+  dateFrom:   z.string().optional(),
+  dateTo:     z.string().optional(),
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function fetchFull(invoiceId: string) {
@@ -104,13 +103,6 @@ async function fetchFull(invoiceId: string) {
   const items = await prisma.$queryRaw<any[]>`
     SELECT id, description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total
     FROM "purchase_invoice_items"
-    WHERE "purchaseInvoiceId" = ${invoiceId}
-    ORDER BY "createdAt" ASC
-  `;
-
-  const retenciones = await prisma.$queryRaw<any[]>`
-    SELECT id, type, jurisdiction, base, percentage, amount, certificate, notes
-    FROM "purchase_invoice_retenciones"
     WHERE "purchaseInvoiceId" = ${invoiceId}
     ORDER BY "createdAt" ASC
   `;
@@ -139,7 +131,7 @@ async function fetchFull(invoiceId: string) {
     originInvoice: invoice.originInvoiceId
       ? { id: invoice.originInvoiceId, number: invoice.originNumber, type: invoice.originType }
       : null,
-    items, retenciones, tributos, remitos,
+    items, tributos, remitos,
   };
 }
 
@@ -156,20 +148,6 @@ async function upsertItems(invoiceId: string, items: z.infer<typeof itemSchema>[
       VALUES
         (${id}, ${invoiceId}, ${item.description}, ${item.quantity}, ${item.unitPrice},
          ${item.taxRate}, ${subtotal}, ${taxAmount}, ${total})
-    `;
-  }
-}
-
-async function upsertRetenciones(invoiceId: string, retenciones: z.infer<typeof retSchema>[]) {
-  await prisma.$executeRaw`DELETE FROM "purchase_invoice_retenciones" WHERE "purchaseInvoiceId" = ${invoiceId}`;
-  for (const ret of retenciones) {
-    const id = randomUUID();
-    await prisma.$executeRaw`
-      INSERT INTO "purchase_invoice_retenciones"
-        (id, "purchaseInvoiceId", type, jurisdiction, base, percentage, amount, certificate, notes)
-      VALUES
-        (${id}, ${invoiceId}, ${ret.type}, ${ret.jurisdiction ?? null}, ${ret.base},
-         ${ret.percentage}, ${ret.amount}, ${ret.certificate ?? null}, ${ret.notes ?? null})
     `;
   }
 }
@@ -285,7 +263,9 @@ export class PurchaseInvoiceController {
                  pi."exchangeRate", pi."saleCondition", pi.date, pi."dueDate", pi.status, pi."paymentMethod",
                  s.name AS "supplierName",
                  COALESCE((
-                   SELECT SUM(opi.amount)
+                   SELECT SUM(
+                     CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
+                   )
                    FROM "orden_pago_items" opi
                    JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
                    WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
@@ -344,12 +324,11 @@ export class PurchaseInvoiceController {
            ${data.paymentMethod}, 'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode}, ${data.originInvoiceId ?? null})
       `;
 
-      if (data.items?.length)       await upsertItems(id, data.items);
-      if (data.retenciones?.length) await upsertRetenciones(id, data.retenciones);
-      if (data.tributos?.length)    await upsertTributos(id, data.tributos);
-      if (data.remitoIds?.length)   await linkRemitos(id, data.remitoIds);
+      if (data.items?.length)     await upsertItems(id, data.items);
+      if (data.tributos?.length)  await upsertTributos(id, data.tributos);
+      if (data.remitoIds?.length) await linkRemitos(id, data.remitoIds);
 
-      // Generate supplier current-account movements (main debt + retenciones)
+      // Generate the supplier current-account movement for the invoice debt
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
 
       const row = await fetchFull(id);
@@ -400,12 +379,11 @@ export class PurchaseInvoiceController {
         const d = data.imputationDate ? new Date(data.imputationDate) : null;
         await prisma.$executeRaw`UPDATE "purchase_invoices" SET "imputationDate" = ${d}, "updatedAt" = NOW() WHERE id = ${id}`;
       }
-      if (data.items       !== undefined) await upsertItems(id, data.items);
-      if (data.retenciones !== undefined) await upsertRetenciones(id, data.retenciones);
-      if (data.tributos    !== undefined) await upsertTributos(id, data.tributos);
-      if (data.remitoIds   !== undefined) await linkRemitos(id, data.remitoIds);
+      if (data.items     !== undefined) await upsertItems(id, data.items);
+      if (data.tributos  !== undefined) await upsertTributos(id, data.tributos);
+      if (data.remitoIds !== undefined) await linkRemitos(id, data.remitoIds);
 
-      // Re-sync supplier current account (main debt + retenciones)
+      // Re-sync supplier current account (invoice debt)
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
 
       const row = await fetchFull(id);
@@ -423,7 +401,7 @@ export class PurchaseInvoiceController {
         throw new AppError('No se puede eliminar una factura con pagos imputados', 400);
       }
 
-      // CASCADE removes items/retenciones/tributos/account-movements/remito links
+      // CASCADE removes items/tributos/account-movements/remito links
       await prisma.$executeRaw`DELETE FROM "purchase_invoices" WHERE id = ${req.params.id}`;
       res.status(204).send();
     } catch (error) { next(error); }
@@ -472,9 +450,8 @@ export class PurchaseInvoiceController {
            'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode})
       `;
 
-      if (data.items?.length)       await upsertItems(id, data.items);
-      if (data.retenciones?.length) await upsertRetenciones(id, data.retenciones);
-      if (data.tributos?.length)    await upsertTributos(id, data.tributos);
+      if (data.items?.length)    await upsertItems(id, data.items);
+      if (data.tributos?.length) await upsertTributos(id, data.tributos);
 
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
 
@@ -494,4 +471,66 @@ export class PurchaseInvoiceController {
     req.params.id = req.params.invoiceId;
     return this.deleteStandalone(req, res, next);
   };
+
+  // ── Consulta de retenciones practicadas (para reimprimir el comprobante) ───
+  async findRetenciones(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const q = retencionesQuerySchema.parse(req.query);
+      const offset = (q.page - 1) * q.limit;
+
+      // Las retenciones se practican únicamente al pagar (orden_pago_retenciones),
+      // que es el momento en que corresponden legalmente.
+      // `base` sale como IMPORTE y `baseKind` (NETO/IVA/BRUTO) indica sobre qué
+      // se calculó.
+      const opConditions: Prisma.Sql[] = [Prisma.sql`op."companyId" = ${req.companyId}`];
+      if (q.supplierId) opConditions.push(Prisma.sql`op."supplierId" = ${q.supplierId}`);
+      if (q.type)       opConditions.push(Prisma.sql`ret.type = ${q.type}`);
+      if (q.dateFrom)   opConditions.push(Prisma.sql`op.date >= ${new Date(q.dateFrom)}`);
+      if (q.dateTo) {
+        const to = new Date(q.dateTo);
+        to.setHours(23, 59, 59, 999);
+        opConditions.push(Prisma.sql`op.date <= ${to}`);
+      }
+      if (q.search) {
+        const term = `%${q.search}%`;
+        opConditions.push(Prisma.sql`(ret.certificate ILIKE ${term} OR op.number ILIKE ${term})`);
+      }
+
+      // Las OP canceladas no practicaron retención.
+      opConditions.push(Prisma.sql`op.status <> 'CANCELLED'`);
+
+      const unioned = Prisma.sql`
+        SELECT ret.id, 'ORDEN_PAGO' AS origin, ret.type, ret.jurisdiction,
+               ret."baseAmount", ret.base AS "baseKind",
+               ret.percentage, ret.amount, ret.certificate, ret.notes, ret."createdAt",
+               op.id AS "docId", op.number AS "docNumber", op.date AS "docDate", op.currency,
+               s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit"
+        FROM "orden_pago_retenciones" ret
+        JOIN "orden_pagos" op ON op.id = ret."ordenPagoId"
+        JOIN "suppliers" s ON s.id = op."supplierId"
+        WHERE ${Prisma.join(opConditions, ' AND ')}
+      `;
+
+      const [countRows, rows] = await Promise.all([
+        prisma.$queryRaw<{ c: bigint }[]>`SELECT COUNT(*) AS c FROM (${unioned}) u`,
+        prisma.$queryRaw<any[]>`
+          SELECT * FROM (${unioned}) u
+          ORDER BY u."createdAt" DESC
+          LIMIT ${q.limit} OFFSET ${offset}
+        `,
+      ]);
+
+      const total = Number(countRows[0]?.c ?? 0);
+      const data = rows.map((r) => ({
+        ...r,
+        base: r.baseAmount,
+        // `invoice` conserva el nombre por compatibilidad (certificado PDF y
+        // listado): apunta a la orden de pago que originó la retención.
+        invoice: { id: r.docId, number: r.docNumber, date: r.docDate, currency: r.currency },
+        supplier: { id: r.supplierId, name: r.supplierName, cuit: r.supplierCuit ?? null },
+      }));
+
+      res.json({ status: 'success', data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) });
+    } catch (error) { next(error); }
+  }
 }

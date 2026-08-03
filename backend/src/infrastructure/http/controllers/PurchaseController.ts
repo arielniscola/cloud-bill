@@ -170,7 +170,9 @@ export class PurchaseController {
                pi."dueDate", pi."paymentMethod", pi.currency,
                p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate",
                COALESCE((
-                 SELECT SUM(opi.amount)
+                 SELECT SUM(
+                   CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
+                 )
                  FROM "orden_pago_items" opi
                  JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
                  WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'

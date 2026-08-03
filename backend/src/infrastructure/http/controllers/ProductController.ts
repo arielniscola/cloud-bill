@@ -49,6 +49,7 @@ export class ProductController {
         rubroId: req.body.rubroId ?? null,
         brandId: req.body.brandId ?? null,
         categoryId: req.body.categoryId ?? null,
+        supplierId: req.body.supplierId ?? null,
         barcode: req.body.barcode ?? null,
         unit: req.body.unit ?? null,
         internalNotes: req.body.internalNotes ?? null,
@@ -152,6 +153,7 @@ export class ProductController {
       if (req.body.rubroId !== undefined) updateData.rubroId = req.body.rubroId;
       if (req.body.brandId !== undefined) updateData.brandId = req.body.brandId;
       if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
+      if (req.body.supplierId !== undefined) updateData.supplierId = req.body.supplierId;
       if (req.body.barcode !== undefined) updateData.barcode = req.body.barcode;
       if (req.body.unit !== undefined) updateData.unit = req.body.unit;
       if (req.body.internalNotes !== undefined) updateData.internalNotes = req.body.internalNotes;
@@ -221,7 +223,7 @@ export class ProductController {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
       const ids: string[] = req.body.ids;
-      const data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; isActive?: boolean } = req.body.data ?? {};
+      const data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; supplierId?: string | null; isActive?: boolean } = req.body.data ?? {};
 
       if (!Array.isArray(ids) || ids.length === 0) {
         res.status(400).json({ status: 'error', message: 'No hay productos seleccionados' });
@@ -229,10 +231,11 @@ export class ProductController {
       }
 
       const patch: Record<string, unknown> = {};
-      if (data.brandId  !== undefined) patch.brandId  = data.brandId || null;
-      if (data.rubroId  !== undefined) patch.rubroId  = data.rubroId || null;
-      if (data.taxRate  !== undefined) patch.taxRate  = new Decimal(data.taxRate);
-      if (data.isActive !== undefined) patch.isActive = data.isActive;
+      if (data.brandId    !== undefined) patch.brandId    = data.brandId || null;
+      if (data.rubroId    !== undefined) patch.rubroId    = data.rubroId || null;
+      if (data.supplierId !== undefined) patch.supplierId = data.supplierId || null;
+      if (data.taxRate    !== undefined) patch.taxRate    = new Decimal(data.taxRate);
+      if (data.isActive   !== undefined) patch.isActive   = data.isActive;
 
       if (Object.keys(patch).length === 0) {
         res.status(400).json({ status: 'error', message: 'No hay campos para actualizar' });
@@ -254,6 +257,57 @@ export class ProductController {
       }).catch(() => { /* log no crítico */ });
 
       res.json({ status: 'success', updated: ids.length });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Igual que bulkUpdate pero en vez de una lista de ids, aplica el cambio a
+   * TODOS los productos que matchean un filtro — sin traerlos al navegador.
+   * Escala sin importar cuántos sean (un único UPDATE en la base).
+   */
+  async bulkUpdateByFilter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const productRepository = container.resolve<IProductRepository>('ProductRepository');
+      const rawFilters = req.body.filters ?? {};
+      const data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; supplierId?: string | null; isActive?: boolean } = req.body.data ?? {};
+
+      const patch: Record<string, unknown> = {};
+      if (data.brandId    !== undefined) patch.brandId    = data.brandId || null;
+      if (data.rubroId    !== undefined) patch.rubroId    = data.rubroId || null;
+      if (data.supplierId !== undefined) patch.supplierId = data.supplierId || null;
+      if (data.taxRate    !== undefined) patch.taxRate    = new Decimal(data.taxRate);
+      if (data.isActive   !== undefined) patch.isActive   = data.isActive;
+
+      if (Object.keys(patch).length === 0) {
+        res.status(400).json({ status: 'error', message: 'No hay campos para actualizar' });
+        return;
+      }
+
+      const filters = {
+        search:     rawFilters.search || undefined,
+        rubroId:    rawFilters.rubroId || undefined,
+        brandId:    rawFilters.brandId || undefined,
+        supplierId: rawFilters.supplierId || undefined,
+        isActive:   rawFilters.isActive,
+        minPrice:   rawFilters.minPrice,
+        maxPrice:   rawFilters.maxPrice,
+        companyId:  req.companyId,
+      };
+
+      const updated = await productRepository.updateByFilter(filters, patch as any);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Product',
+        entityId: 'bulk-by-filter',
+        description: `Actualización masiva por filtro de ${updated} producto(s): ${Object.keys(patch).join(', ')}`,
+      }).catch(() => { /* log no crítico */ });
+
+      res.json({ status: 'success', updated });
     } catch (error) {
       next(error);
     }

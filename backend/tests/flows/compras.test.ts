@@ -148,6 +148,139 @@ describe('Flujo crítico: compras (factura proveedor → CC → orden de pago)',
     expect(movements[movements.length - 1]).toEqual({ type: 'CREDIT', amount: 2000 });
   });
 
+  it('la retención se descuenta del pago pero cancela la factura por el bruto', async () => {
+    // Factura de 121.000 (neto 100.000 + IVA 21.000)
+    const created = await api
+      .post('/api/purchase-invoices')
+      .set(auth(A))
+      .send({
+        supplierId,
+        number: '0001-00002222',
+        type: 'FACTURA_A',
+        subtotal: 100000,
+        taxRate: 21,
+        taxAmount: 21000,
+        amount: 121000,
+        saleCondition: 'CUENTA_CORRIENTE',
+      });
+    expectStatus(created, 201);
+    const invoiceId = created.body.data.id;
+
+    const before = (await supplierMovements()).length;
+
+    // Se paga el total reteniendo IIBB 3% sobre el neto = 3.000
+    const op = await api
+      .post('/api/orden-pagos')
+      .set(auth(A))
+      .send({
+        supplierId,
+        paymentMethod: 'BANK_TRANSFER',
+        items: [{ purchaseInvoiceId: invoiceId, amount: 121000 }],
+        retenciones: [{
+          type: 'IIBB', base: 'NETO', baseAmount: 100000, percentage: 3, amount: 3000,
+        }],
+      });
+    expectStatus(op, 201);
+
+    // `amount` es el bruto imputado; el egreso real es amount - retentionAmount
+    expect(Number(op.body.data.amount)).toBe(121000);
+    expect(Number(op.body.data.retentionAmount)).toBe(3000);
+    expect(op.body.data.retenciones).toHaveLength(1);
+    expect(op.body.data.retenciones[0].certificate).toMatch(/^RET-\d{4}-\d{4}$/);
+
+    const paid = await api.post(`/api/orden-pagos/${op.body.data.id}/pay`).set(auth(A));
+    expectStatus(paid, 200);
+
+    // La factura queda saldada por el total, no por el neto pagado
+    expect((await getInvoice(invoiceId)).status).toBe('PAID');
+
+    // El CREDIT es por el BRUTO (121.000), no por los 118.000 que salieron del banco
+    const movements = await supplierMovements();
+    expect(movements).toHaveLength(before + 1);
+    expect(movements[movements.length - 1]).toEqual({ type: 'CREDIT', amount: 121000 });
+
+    // Y la retención aparece en el reporte de retenciones
+    const report = await api.get('/api/purchase-invoices/retenciones').set(auth(A)).query({ limit: 100 });
+    expectStatus(report, 200);
+    const row = report.body.data.find((r: any) => r.origin === 'ORDEN_PAGO' && Number(r.amount) === 3000);
+    expect(row).toBeDefined();
+    expect(row.baseKind).toBe('NETO');
+    expect(row.invoice.number).toBe(op.body.data.number);
+  });
+
+  it('el reporte de retenciones por período trae el detalle, los totales y los códigos ARCA', async () => {
+    const invoice = await api
+      .post('/api/purchase-invoices')
+      .set(auth(A))
+      .send({
+        supplierId,
+        number: '0001-00003333',
+        type: 'FACTURA_A',
+        subtotal: 200000,
+        taxRate: 21,
+        taxAmount: 42000,
+        amount: 242000,
+        saleCondition: 'CUENTA_CORRIENTE',
+      });
+    expectStatus(invoice, 201);
+
+    // Ganancias 2% sobre el neto = 4.000
+    const op = await api
+      .post('/api/orden-pagos')
+      .set(auth(A))
+      .send({
+        supplierId,
+        paymentMethod: 'BANK_TRANSFER',
+        items: [{ purchaseInvoiceId: invoice.body.data.id, amount: 242000 }],
+        retenciones: [{
+          type: 'GANANCIAS', base: 'NETO', baseAmount: 200000, percentage: 2, amount: 4000,
+        }],
+      });
+    expectStatus(op, 201);
+
+    const today = new Date().toISOString().substring(0, 10);
+    const report = await api
+      .get('/api/reports/retentions')
+      .set(auth(A))
+      .query({ dateFrom: today, dateTo: today, type: 'GANANCIAS' });
+    expectStatus(report, 200);
+
+    const row = report.body.data.find((r: any) => r.ordenPagoNumber === op.body.data.number);
+    expect(row).toBeDefined();
+    expect(row.amount).toBe(4000);
+    expect(row.baseAmount).toBe(200000);
+    expect(row.baseKind).toBe('NETO');
+    expect(row.ordenPagoAmount).toBe(242000);      // importe del comprobante para SICORE
+    expect(row.arcaImpuesto).toBe('217');          // default por tipo (Ganancias)
+    expect(row.certificate).toMatch(/^RET-\d{4}-\d{4}$/);
+
+    // Totales y subtotales por régimen
+    expect(report.body.totals.amount).toBeGreaterThanOrEqual(4000);
+    const ganancias = report.body.byType.find((t: any) => t.type === 'GANANCIAS');
+    expect(ganancias.amount).toBeGreaterThanOrEqual(4000);
+
+    // Fuera del período no devuelve nada
+    const empty = await api
+      .get('/api/reports/retentions')
+      .set(auth(A))
+      .query({ dateFrom: '2020-01-01', dateTo: '2020-01-31' });
+    expectStatus(empty, 200);
+    expect(empty.body.data).toHaveLength(0);
+  });
+
+  it('la retención no puede superar el total a pagar', async () => {
+    const res = await api
+      .post('/api/orden-pagos')
+      .set(auth(A))
+      .send({
+        supplierId,
+        paymentMethod: 'CASH',
+        amount: 1000,
+        retenciones: [{ type: 'IIBB', base: 'BRUTO', baseAmount: 1000, percentage: 200, amount: 2000 }],
+      });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
   it('multi-tenant: la empresa B no ve la factura de proveedor de A', async () => {
     const { ADMIN_B } = await import('../fixtures');
     const list = await api.get('/api/purchase-invoices').set(auth(ADMIN_B));

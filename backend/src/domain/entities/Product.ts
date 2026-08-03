@@ -10,6 +10,7 @@ export interface Product {
   rubroId: string | null;
   brandId: string | null;
   categoryId: string | null;
+  supplierId: string | null;
   barcode: string | null;
   unit: string | null;
   internalNotes: string | null;

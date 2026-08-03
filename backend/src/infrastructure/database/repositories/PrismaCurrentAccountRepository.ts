@@ -49,9 +49,9 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     return rows[0] ?? null;
   }
 
-  async findAllByCustomerId(customerId: string): Promise<CurrentAccount[]> {
+  async findAllByCustomerId(customerId: string, fiscalMode?: string): Promise<CurrentAccount[]> {
     return this.prisma.currentAccount.findMany({
-      where: { customerId },
+      where: { customerId, ...(fiscalMode ? { fiscalMode } : {}) },
       include: { customer: true },
     });
   }
@@ -125,11 +125,15 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
   }
 
   async getMovements(
-    currentAccountId: string,
+    currentAccountId: string | string[],
     pagination: PaginationParams = { page: 1, limit: 10 }
   ): Promise<PaginatedResult<AccountMovement>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
+    // "Todos" (modo fiscal) trae varias cuentas (una por fiscalMode) — se
+    // combinan los movimientos de todas en una sola lista ordenada.
+    const ids = Array.isArray(currentAccountId) ? currentAccountId : [currentAccountId];
+    const idsWhere = ids.length === 1 ? Prisma.sql`= ${ids[0]}` : Prisma.sql`IN (${Prisma.join(ids)})`;
 
     const [rows, countRows] = await Promise.all([
       this.prisma.$queryRaw<any[]>`
@@ -142,11 +146,11 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
         FROM "account_movements" m
         LEFT JOIN invoices i ON i.id = m."invoiceId"
         LEFT JOIN budgets  b ON b.id = m."budgetId"
-        WHERE m."currentAccountId" = ${currentAccountId}
+        WHERE m."currentAccountId" ${idsWhere}
         ORDER BY m."createdAt" DESC
         LIMIT ${limit} OFFSET ${skip}
       `,
-      this.prisma.accountMovement.count({ where: { currentAccountId } }),
+      this.prisma.accountMovement.count({ where: { currentAccountId: { in: ids } } }),
     ]);
 
     const data = rows.map((r) => ({
@@ -183,11 +187,12 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     return account ? account.balance.toNumber() : 0;
   }
 
-  async findAllWithDebt(companyId?: string): Promise<CurrentAccount[]> {
+  async findAllWithDebt(companyId?: string, fiscalMode?: string): Promise<CurrentAccount[]> {
     return this.prisma.currentAccount.findMany({
       where: {
         balance: { gt: 0 },
         ...(companyId ? { customer: { companyId } } : {}),
+        ...(fiscalMode ? { fiscalMode } : {}),
       },
       include: { customer: true },
     });

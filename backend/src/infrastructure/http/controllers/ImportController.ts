@@ -2,48 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
 
-// ── CSV parser ────────────────────────────────────────────────────
-function parseRow(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-      else { inQuotes = !inQuotes; }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result;
-}
-
-function parseCsv(raw: string): Array<Record<string, string>> {
-  // Strip UTF-8 BOM
-  const text = raw.replace(/^\uFEFF/, '');
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);
-  if (lines.length < 2) return [];
-  const headers = parseRow(lines[0]).map((h) => h.trim().toLowerCase().replace(/\s+/g, ''));
-  const rows: Array<Record<string, string>> = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseRow(lines[i]);
-    if (values.every((v) => !v.trim())) continue;
-    const row: Record<string, string> = {};
-    headers.forEach((h, idx) => { row[h] = (values[idx] ?? '').trim(); });
-    rows.push(row);
-  }
-  return rows;
-}
-
-function pick(row: Record<string, string>, ...keys: string[]): string {
-  for (const k of keys) if (row[k]) return row[k];
-  return '';
-}
+import { parseCsv, pick, parseNumber } from '../utils/csvImport';
 
 type ImportError = { row: number; message: string };
 
@@ -53,23 +12,28 @@ export class ImportController {
   async importProducts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
+      // El frontend parte archivos grandes en lotes (evita el timeout de las
+      // funciones serverless) — rowOffset ajusta el número de fila reportado
+      // en los errores para que coincida con el archivo original completo.
+      const rowOffset = Number(req.body?.rowOffset) || 0;
       const csv = req.body?.csv as string;
       if (!csv?.trim()) {
         res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
         return;
       }
 
-      const rows = parseCsv(csv);
+      const { rows, malformed } = parseCsv(csv);
       if (rows.length === 0) {
         res.status(400).json({ status: 'error', message: 'El archivo no tiene filas válidas' });
         return;
       }
 
-      // Pre-load rubros and brands by name for this company.
+      // Pre-load rubros, brands and suppliers by name for this company.
       // Solo se vinculan los existentes (no se crean nuevos en la importación).
-      const [rubros, brands] = await Promise.all([
+      const [rubros, brands, supplierRows] = await Promise.all([
         prisma.rubro.findMany({ where: { companyId }, select: { id: true, name: true, parentId: true } }),
         prisma.brand.findMany({ where: { companyId }, select: { id: true, name: true } }),
+        prisma.supplier.findMany({ where: { companyId }, select: { id: true, name: true } }),
       ]);
       const rubroById = new Map(rubros.map((r) => [r.id, r]));
       const rubroByName = new Map<string, string>();        // nombre -> id (fallback)
@@ -80,6 +44,7 @@ export class ImportController {
         if (parentName) rubroByParentChild.set(`${parentName}|${r.name.toLowerCase()}`, r.id);
       }
       const brandMap = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
+      const supplierMap = new Map(supplierRows.map((s) => [s.name.toLowerCase(), s.id]));
 
       let imported = 0;
       let skipped  = 0;
@@ -87,7 +52,10 @@ export class ImportController {
 
       for (let i = 0; i < rows.length; i++) {
         const row    = rows[i];
-        const rowNum = i + 2;
+        const rowNum = i + 2 + rowOffset;
+
+        const structural = malformed.get(i);
+        if (structural) { errors.push({ row: rowNum, message: structural }); skipped++; continue; }
 
         const sku  = pick(row, 'sku');
         const name = pick(row, 'nombre', 'name');
@@ -96,28 +64,30 @@ export class ImportController {
 
         const costStr  = pick(row, 'costo', 'cost');
         const priceStr = pick(row, 'precio', 'price', 'precioventa');
-        const cost     = parseFloat(costStr  || '0');
-        const price    = parseFloat(priceStr || '0');
+        const cost     = parseNumber(costStr  || '0');
+        const price    = parseNumber(priceStr || '0');
         if (isNaN(cost)  || cost  < 0) { errors.push({ row: rowNum, message: 'Costo inválido' });  skipped++; continue; }
         if (isNaN(price) || price < 0) { errors.push({ row: rowNum, message: 'Precio inválido' }); skipped++; continue; }
 
-        let taxRate = parseFloat(pick(row, 'iva', 'taxrate', 'tasaiva') || '21');
+        let taxRate = parseNumber(pick(row, 'iva', 'taxrate', 'tasaiva') || '21');
         // El archivo trae el IVA como fracción (0.21); lo normalizamos a porcentaje.
         if (!isNaN(taxRate) && taxRate > 0 && taxRate <= 1) taxRate = taxRate * 100;
 
         const usdStr = pick(row, 'preciousd', 'salepriceusd', 'preciosivausd', 'precioventausd');
-        const salePriceUSD = usdStr ? parseFloat(usdStr) : NaN;
+        const salePriceUSD = usdStr ? parseNumber(usdStr) : NaN;
         const hasUSD = !isNaN(salePriceUSD) && salePriceUSD > 0;
 
         const rubroName      = pick(row, 'rubro').toLowerCase();
         const superRubroName = pick(row, 'superrubro', 'rubropadre').toLowerCase();
         const brandName      = pick(row, 'marca', 'brand').toLowerCase();
+        const supplierName   = pick(row, 'proveedor', 'supplier').toLowerCase();
         let rubroId: string | null = null;
         if (rubroName) {
           if (superRubroName) rubroId = rubroByParentChild.get(`${superRubroName}|${rubroName}`) ?? null;
           if (!rubroId) rubroId = rubroByName.get(rubroName) ?? null;
         }
         const brandId = brandName ? (brandMap.get(brandName) ?? null) : null;
+        const supplierId = supplierName ? (supplierMap.get(supplierName) ?? null) : null;
 
         const unit          = pick(row, 'unidad', 'unit')                          || 'UN';
         const barcode       = pick(row, 'codigobarras', 'barcode')                  || null;
@@ -128,6 +98,7 @@ export class ImportController {
         try {
           // Check if product exists in this company
           const existing = await prisma.product.findFirst({ where: { sku, companyId }, select: { id: true } });
+          let productId: string;
           if (existing) {
             await prisma.product.update({
               where: { id: existing.id },
@@ -145,8 +116,9 @@ export class ImportController {
                 // internalNotes NO se pisa al actualizar (preserva notas cargadas en la app)
               },
             });
+            productId = existing.id;
           } else {
-            await prisma.product.create({
+            const created = await prisma.product.create({
               data: {
                 sku,
                 name,
@@ -163,6 +135,13 @@ export class ImportController {
                 companyId,
               },
             });
+            productId = created.id;
+          }
+          // supplierId no está en el cliente Prisma generado todavía — raw SQL
+          // (ver PrismaProductRepository). Solo se pisa si el archivo trajo un
+          // proveedor reconocido, para no borrar uno ya cargado a mano.
+          if (supplierId) {
+            await prisma.$executeRaw`UPDATE products SET "supplierId" = ${supplierId} WHERE id = ${productId}`;
           }
           imported++;
         } catch (err: any) {
@@ -182,13 +161,14 @@ export class ImportController {
   async importCustomers(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
+      const rowOffset = Number(req.body?.rowOffset) || 0; // ver comentario en importProducts
       const csv = req.body?.csv as string;
       if (!csv?.trim()) {
         res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
         return;
       }
 
-      const rows = parseCsv(csv);
+      const { rows, malformed } = parseCsv(csv);
       if (rows.length === 0) {
         res.status(400).json({ status: 'error', message: 'El archivo no tiene filas válidas' });
         return;
@@ -211,7 +191,10 @@ export class ImportController {
 
       for (let i = 0; i < rows.length; i++) {
         const row    = rows[i];
-        const rowNum = i + 2;
+        const rowNum = i + 2 + rowOffset;
+
+        const structural = malformed.get(i);
+        if (structural) { errors.push({ row: rowNum, message: structural }); skipped++; continue; }
 
         const name = pick(row, 'nombre', 'name', 'razonsocial');
         if (!name) { errors.push({ row: rowNum, message: 'Nombre requerido' }); skipped++; continue; }
@@ -290,13 +273,14 @@ export class ImportController {
   async importSuppliers(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
+      const rowOffset = Number(req.body?.rowOffset) || 0; // ver comentario en importProducts
       const csv = req.body?.csv as string;
       if (!csv?.trim()) {
         res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
         return;
       }
 
-      const rows = parseCsv(csv);
+      const { rows, malformed } = parseCsv(csv);
       if (rows.length === 0) {
         res.status(400).json({ status: 'error', message: 'El archivo no tiene filas válidas' });
         return;
@@ -319,7 +303,10 @@ export class ImportController {
 
       for (let i = 0; i < rows.length; i++) {
         const row    = rows[i];
-        const rowNum = i + 2;
+        const rowNum = i + 2 + rowOffset;
+
+        const structural = malformed.get(i);
+        if (structural) { errors.push({ row: rowNum, message: structural }); skipped++; continue; }
 
         const name = pick(row, 'nombre', 'name', 'razonsocial');
         if (!name) { errors.push({ row: rowNum, message: 'Nombre requerido' }); skipped++; continue; }
@@ -374,6 +361,75 @@ export class ImportController {
                 NOW(), NOW()
               )
             `;
+          }
+          imported++;
+        } catch (err: any) {
+          errors.push({ row: rowNum, message: err?.message ?? 'Error al procesar' });
+          skipped++;
+        }
+      }
+
+      res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── POST /bancos/import ───────────────────────────────────────
+  // Bancos no tienen un código único confiable (el campo "code" es libre y
+  // muchas veces viene vacío) — se deduplica por nombre, sin distinguir
+  // mayúsculas/minúsculas, dentro de la misma empresa.
+  async importBancos(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const companyId = req.user!.companyId!;
+      const rowOffset = Number(req.body?.rowOffset) || 0; // ver comentario en importProducts
+      const csv = req.body?.csv as string;
+      if (!csv?.trim()) {
+        res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
+        return;
+      }
+
+      const { rows, malformed } = parseCsv(csv);
+      if (rows.length === 0) {
+        res.status(400).json({ status: 'error', message: 'El archivo no tiene filas válidas' });
+        return;
+      }
+
+      const existing = await prisma.banco.findMany({
+        where: { companyId },
+        select: { id: true, name: true },
+      });
+      const byName = new Map(existing.map((b) => [b.name.trim().toLowerCase(), b.id]));
+
+      let imported = 0;
+      let skipped  = 0;
+      const errors: ImportError[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row    = rows[i];
+        const rowNum = i + 2 + rowOffset;
+
+        const structural = malformed.get(i);
+        if (structural) { errors.push({ row: rowNum, message: structural }); skipped++; continue; }
+
+        const name = pick(row, 'nombre', 'name', 'banco');
+        if (!name) { errors.push({ row: rowNum, message: 'Nombre requerido' }); skipped++; continue; }
+
+        const code     = pick(row, 'codigo', 'code') || null;
+        const sucursal = pick(row, 'sucursal', 'branch') || null;
+
+        try {
+          const existingId = byName.get(name.trim().toLowerCase());
+          if (existingId) {
+            await prisma.banco.update({
+              where: { id: existingId },
+              data: { code: code ?? undefined, sucursal: sucursal ?? undefined },
+            });
+          } else {
+            const created = await prisma.banco.create({
+              data: { name, code, sucursal, isActive: true, companyId },
+            });
+            byName.set(name.trim().toLowerCase(), created.id);
           }
           imported++;
         } catch (err: any) {
