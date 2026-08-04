@@ -29,13 +29,6 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   OTHER:         'Otro',
 };
 
-const RETENTION_LABELS: Record<string, string> = {
-  IIBB:      'IIBB',
-  GANANCIAS: 'Ganancias',
-  IVA:       'IVA',
-  OTHER:     'Otro',
-};
-
 const TRIBUTO_LABELS: Record<string, string> = {
   PERCEPCION_IVA:     'Percepción IVA',
   PERCEPCION_IIBB:    'Percepción IIBB',
@@ -52,13 +45,10 @@ interface Props {
 export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito }: Props) {
   const currency = invoice.currency || 'ARS';
   const items = invoice.items ?? [];
-  const retenciones = invoice.retenciones ?? [];
   const tributos = invoice.tributos ?? [];
   const remitos = invoice.remitos ?? [];
 
   const totalTributos    = tributos.reduce((s, t) => s + Number(t.amount), 0);
-  const totalRetenciones = retenciones.reduce((s, r) => s + Number(r.amount), 0);
-  const netoPagar        = Number(invoice.amount) - totalRetenciones;
   const paid             = Number(invoice.paidAmount ?? 0);
   const hasPaid          = invoice.paidAmount !== undefined;
   const saldo            = Number(invoice.amount) - paid;
@@ -200,25 +190,6 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
               </div>
             )}
 
-            {/* Retenciones */}
-            {retenciones.length > 0 && (
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500 mb-2">Retenciones</p>
-                <div className="space-y-1.5">
-                  {retenciones.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between text-sm">
-                      <span className="text-zinc-600 dark:text-slate-400">
-                        {RETENTION_LABELS[r.type] ?? r.type}
-                        {r.jurisdiction ? ` (${r.jurisdiction})` : ''}
-                        {r.percentage ? ` · ${Number(r.percentage)}%` : ''}
-                      </span>
-                      <span className="font-mono tabular-nums text-rose-600 dark:text-rose-400">-{formatCurrency(Number(r.amount), currency)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Remitos vinculados */}
             {remitos.length > 0 && (
               <div>
@@ -255,18 +226,6 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
                   <span className="text-sm font-semibold text-zinc-700 dark:text-slate-200">Total comprobante</span>
                   <span className="text-lg font-bold font-mono tabular-nums tracking-tight text-zinc-900 dark:text-white">{formatCurrency(Number(invoice.amount), currency)}</span>
                 </div>
-                {totalRetenciones > 0 && (
-                  <>
-                    <div className="flex justify-between text-sm pt-1">
-                      <span className="text-zinc-500 dark:text-slate-400">Retenciones</span>
-                      <span className="font-mono tabular-nums text-rose-600 dark:text-rose-400">-{formatCurrency(totalRetenciones, currency)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-semibold">
-                      <span className="text-zinc-700 dark:text-slate-200">Neto a pagar al proveedor</span>
-                      <span className="font-mono tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(netoPagar, currency)}</span>
-                    </div>
-                  </>
-                )}
                 {hasPaid && (
                   <div className="flex justify-between text-sm pt-2.5 mt-1 border-t border-slate-200 dark:border-slate-600/50">
                     <span className="text-zinc-500 dark:text-slate-400">Pagado</span>

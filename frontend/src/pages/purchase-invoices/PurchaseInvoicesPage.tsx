@@ -141,7 +141,7 @@ export default function PurchaseInvoicesPage() {
   // Clic en la fila: editable → form de edición; con pagos imputados → vista de detalle.
   const openRow = (inv: PurchaseInvoice) => (canModify(inv) ? openEdit(inv) : openView(inv));
 
-  // Traemos la factura completa (con ítems/retenciones/tributos) porque la fila
+  // Traemos la factura completa (con ítems/tributos) porque la fila
   // de la lista no los incluye — sin esto el modal abría sin ítems.
   const openEdit = async (inv: PurchaseInvoice) => {
     setPrefill(null);

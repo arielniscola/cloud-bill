@@ -102,9 +102,7 @@ export default function PurchaseInvoicesReportPage() {
         { header: 'Tipo',             key: 'type',           width: 12 },
         { header: 'Subtotal',         key: 'subtotal',       width: 14, format: 'currency' },
         { header: 'IVA',              key: 'taxAmount',      width: 14, format: 'currency' },
-        { header: 'Retenciones',      key: 'retenciones',    width: 14, format: 'currency' },
         { header: 'Total',            key: 'amount',         width: 14, format: 'currency' },
-        { header: 'Neto',             key: 'net',            width: 14, format: 'currency' },
         { header: 'Método pago',      key: 'paymentMethod',  width: 16 },
         { header: 'Vencimiento',      key: 'dueDate',        width: 14 },
         { header: 'Estado',           key: 'status',         width: 12 },
@@ -120,9 +118,7 @@ export default function PurchaseInvoicesReportPage() {
             type:          '',
             subtotal:      totals.subtotal,
             taxAmount:     totals.taxAmount,
-            retenciones:   totals.retenciones,
             amount:        totals.amount,
-            net:           totals.net,
             paymentMethod: '',
             dueDate:       '',
             status:        '',
@@ -137,7 +133,6 @@ export default function PurchaseInvoicesReportPage() {
       { label: 'Facturas',     value: String(totals.count),                icon: FileText,    color: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
       { label: 'Total bruto',  value: formatCurrency(totals.amount),       icon: Receipt,     color: 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400' },
       { label: 'IVA',          value: formatCurrency(totals.taxAmount),    icon: Receipt,     color: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400' },
-      { label: 'Retenciones',  value: formatCurrency(totals.retenciones),  icon: Receipt,     color: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
       { label: 'Neto pagado',  value: formatCurrency(totals.paid),         icon: CheckCircle2,color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
       { label: 'Neto pendiente', value: formatCurrency(totals.pending),    icon: AlertCircle, color: 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' },
     ];
@@ -239,7 +234,7 @@ export default function PurchaseInvoicesReportPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                   <tr>
-                    {['Fecha', 'N° factura', 'Compra', 'Proveedor', 'Tipo', 'Subtotal', 'IVA', 'Retenc.', 'Total', 'Método', 'Vto.', 'Estado'].map((h) => (
+                    {['Fecha', 'N° factura', 'Compra', 'Proveedor', 'Tipo', 'Subtotal', 'IVA', 'Total', 'Método', 'Vto.', 'Estado'].map((h) => (
                       <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -265,7 +260,6 @@ export default function PurchaseInvoicesReportPage() {
                       <td className="px-3 py-3 text-gray-500 dark:text-slate-400 text-xs whitespace-nowrap">{r.type}</td>
                       <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.subtotal)}</td>
                       <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.taxAmount)}</td>
-                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{r.retenciones > 0 ? formatCurrency(r.retenciones) : '—'}</td>
                       <td className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right whitespace-nowrap">{formatCurrency(r.amount)}</td>
                       <td className="px-3 py-3 text-gray-500 dark:text-slate-400 text-xs whitespace-nowrap">
                         {PAYMENT_METHODS[r.paymentMethod as keyof typeof PAYMENT_METHODS] ?? r.paymentMethod}
@@ -285,7 +279,6 @@ export default function PurchaseInvoicesReportPage() {
                       <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Total</td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.subtotal)}</td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.taxAmount)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.retenciones)}</td>
                       <td className="px-3 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatCurrency(totals.amount)}</td>
                       <td colSpan={3} />
                     </tr>

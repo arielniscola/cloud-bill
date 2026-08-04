@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import {
-  Building2, Hash, Phone, Mail,
+  Building2, Phone, Mail,
   MapPin, FileText, Power, Check, CloudDownload,
 } from 'lucide-react';
 import { Button, Card, Textarea } from '../../components/ui';
@@ -31,7 +31,11 @@ const supplierSchema = z.object({
   isActive: z.boolean(),
 });
 
-type SupplierFormData = z.infer<typeof supplierSchema>;
+// El tipo de ENTRADA del formulario (lo que escribe el usuario) y el de SALIDA
+// (lo ya parseado) se declaran por separado para que useForm y handleSubmit usen
+// cada uno el suyo.
+type SupplierFormInput = z.input<typeof supplierSchema>;
+type SupplierFormData = z.output<typeof supplierSchema>;
 
 // ── Tax condition cards ──────────────────────────────────────────
 const TAX_OPTIONS: {
@@ -201,7 +205,7 @@ export default function SupplierFormPage() {
     setValue,
     watch,
     formState: { errors },
-  } = useForm<SupplierFormData>({
+  } = useForm<SupplierFormInput, unknown, SupplierFormData>({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
       taxCondition: 'RESPONSABLE_INSCRIPTO',

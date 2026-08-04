@@ -1,3 +1,21 @@
+import type { RetentionType } from '../types/purchase.types';
+import type { RetentionBase } from '../types/supplier.types';
+
+export const RETENTION_TYPE_OPTIONS: { value: RetentionType; label: string }[] = [
+  { value: 'IIBB',      label: 'IIBB' },
+  { value: 'GANANCIAS', label: 'Ganancias' },
+  { value: 'IVA',       label: 'IVA' },
+  { value: 'SUSS',      label: 'SUSS' },
+  { value: 'OTHER',     label: 'Otro' },
+];
+
+// Base sobre la que se calcula la retención al pagar.
+export const RETENTION_BASE_OPTIONS: { value: RetentionBase; label: string; hint: string }[] = [
+  { value: 'NETO',  label: 'Neto (sin IVA)', hint: 'Ganancias RG 830, IIBB y SUSS' },
+  { value: 'IVA',   label: 'IVA facturado',  hint: 'Retención de IVA RG 2854' },
+  { value: 'BRUTO', label: 'Bruto (total)',  hint: 'IIBB en jurisdicciones que retienen sobre el total' },
+];
+
 export const TAX_CONDITIONS = {
   RESPONSABLE_INSCRIPTO: 'Responsable Inscripto',
   MONOTRIBUTISTA: 'Monotributista',
@@ -151,14 +169,24 @@ export const PAYMENT_METHODS = {
   MERCADO_PAGO: 'Mercado Pago',
   CHECK: 'Cheque',
   CARD: 'Tarjeta',
+  // Exclusivo de Órdenes de Pago (ver OP_PAYMENT_METHOD_OPTIONS) — no aparece en
+  // cobros a clientes ni en filtros de reportes.
+  COMPENSACION: 'Compensación Cli/Prov',
 } as const;
 
 /** AFIP: ventas en efectivo > este monto requieren identificar al cliente */
 export const CASH_ID_THRESHOLD = 30767;
 
-export const PAYMENT_METHOD_OPTIONS = Object.entries(PAYMENT_METHODS).map(
-  ([value, label]) => ({ value, label })
-);
+export const PAYMENT_METHOD_OPTIONS = Object.entries(PAYMENT_METHODS)
+  .filter(([value]) => value !== 'COMPENSACION')
+  .map(([value, label]) => ({ value, label }));
+
+// Métodos de pago de Orden de Pago: incluye Compensación Cli/Prov (no mueve caja,
+// igual que Cheque) además de los métodos generales.
+export const OP_PAYMENT_METHOD_OPTIONS = [
+  ...PAYMENT_METHOD_OPTIONS,
+  { value: 'COMPENSACION', label: PAYMENT_METHODS.COMPENSACION },
+];
 
 export const RECIBO_STATUSES = {
   EMITTED: 'Emitido',

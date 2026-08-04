@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Edit, Trash2, Landmark, Search, Power } from 'lucide-react';
+import { Plus, Edit, Trash2, Landmark, Search, Power, Upload } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
+import CsvImportModal from '../../components/shared/CsvImportModal';
 import { bancosService } from '../../services';
 import type { Banco } from '../../types';
 
@@ -104,6 +105,7 @@ export default function BancosPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editing, setEditing] = useState<Banco | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -202,9 +204,14 @@ export default function BancosPage() {
         title="Bancos"
         subtitle={isFirstLoad ? undefined : `${bancos.length} ${bancos.length === 1 ? 'banco' : 'bancos'} · ${activeCount} activos`}
         actions={
-          <Button onClick={() => openModal()}>
-            <Plus className="w-4 h-4 mr-2" /> Nuevo banco
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" /> Importar CSV
+            </Button>
+            <Button onClick={() => openModal()}>
+              <Plus className="w-4 h-4 mr-2" /> Nuevo banco
+            </Button>
+          </div>
         }
       />
 
@@ -292,6 +299,14 @@ export default function BancosPage() {
         confirmText="Eliminar"
         isLoading={isDeleting}
       />
+
+      {showImport && (
+        <CsvImportModal
+          entity="bancos"
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); fetchBancos(); }}
+        />
+      )}
     </div>
   );
 }

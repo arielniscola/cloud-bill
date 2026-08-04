@@ -14,6 +14,8 @@ export interface Product {
   brand?: Brand;
   categoryId: string | null;
   category?: Category;
+  supplierId: string | null;
+  supplier?: { id: string; name: string };
   barcode: string | null;
   unit: string | null;
   internalNotes: string | null;
@@ -36,6 +38,7 @@ export interface CreateProductDTO {
   rubroId?: string | null;
   brandId?: string | null;
   categoryId?: string | null;
+  supplierId?: string | null;
   barcode?: string | null;
   unit?: string | null;
   internalNotes?: string | null;
@@ -57,6 +60,7 @@ export interface ProductFilters {
   rubroId?: string;
   brandId?: string;
   categoryId?: string;
+  supplierId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;

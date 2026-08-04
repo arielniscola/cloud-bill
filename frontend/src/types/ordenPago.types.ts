@@ -1,7 +1,7 @@
 import type { PaymentMethod } from './recibo.types';
 import type { Currency } from './invoice.types';
-import type { Supplier } from './supplier.types';
-import type { Purchase } from './purchase.types';
+import type { Supplier, RetentionBase } from './supplier.types';
+import type { Purchase, RetentionType } from './purchase.types';
 
 export type OrdenPagoStatus = 'EMITTED' | 'PAID' | 'CANCELLED';
 
@@ -54,11 +54,46 @@ export interface OrdenPago {
   checkDueDate: string | null;
   notes: string | null;
   status: OrdenPagoStatus;
+  // Total retenido: `amount` es el bruto imputado a las facturas y el egreso
+  // real de caja/banco es `amount - retentionAmount`.
+  retentionAmount: number;
   items: OrdenPagoItem[];
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
+  retenciones?: OrdenPagoRetencion[];
   createdAt: string;
   updatedAt: string;
+}
+
+// Retención practicada al pagar. No reduce la deuda con el proveedor: la
+// factura se cancela por el bruto y el importe queda como impuesto a depositar.
+export interface OrdenPagoRetencion {
+  id: string;
+  ordenPagoId: string;
+  supplierRetentionId: string | null;
+  type: RetentionType;
+  jurisdiction: string | null;
+  base: RetentionBase;
+  baseAmount: number;
+  percentage: number;
+  amount: number;
+  arcaImpuesto: string | null;
+  arcaRegimen: string | null;
+  certificate: string | null;
+  notes: string | null;
+}
+
+export interface CreateOrdenPagoRetencionDTO {
+  supplierRetentionId?: string | null;
+  type: RetentionType;
+  jurisdiction?: string | null;
+  base: RetentionBase;
+  baseAmount: number;
+  percentage: number;
+  amount: number;
+  arcaImpuesto?: string | null;
+  arcaRegimen?: string | null;
+  notes?: string | null;
 }
 
 export interface OrdenPagoCheque {
@@ -85,7 +120,7 @@ export interface OrdenPagoAjuste {
 }
 
 export type SupplierMovementKind =
-  | 'FC' | 'NC' | 'ND' | 'OP' | 'NOTE' | 'RETENTION' | 'PURCHASE' | 'OTHER';
+  | 'FC' | 'NC' | 'ND' | 'OP' | 'NOTE' | 'RETENTION' | 'PURCHASE' | 'ADJUSTMENT' | 'OTHER';
 
 export interface SupplierAccountMovement {
   id: string;
@@ -107,8 +142,8 @@ export interface SupplierAccountMovement {
 }
 
 export interface SupplierAccount {
-  balance: number;
-  openingBalance: number; // saldo previo a dateFrom (0 si no hay filtro de fecha)
+  balance: Record<string, number>; // saldo por moneda, p.ej. { ARS: 1000, USD: 50 } — nunca se netean entre sí
+  openingBalance: Record<string, number>; // saldo por moneda previo a dateFrom ({} si no hay filtro de fecha)
   data: SupplierAccountMovement[];
   total: number;
   page: number;
@@ -121,6 +156,7 @@ export interface SupplierMovementFilters {
   limit?: number;
   type?: SupplierMovementType;
   kinds?: SupplierMovementKind[];
+  currency?: string;
   dateFrom?: string;
   dateTo?: string;
   search?: string;
@@ -161,8 +197,47 @@ export interface CreateOrdenPagoDTO {
   items: CreateOrdenPagoItemDTO[];
   amount?: number;  // pago a cuenta (sin facturas)
   ajustes?: CreateOrdenPagoAjusteDTO[];
+  retenciones?: CreateOrdenPagoRetencionDTO[];
   chequesEnCartera?: string[];
   chequesPropios?: CreateOrdenPagoChequePropioDTO[];
+}
+
+// ── Imputación manual de cuenta corriente (fuera del flujo de OP) ──────────
+
+export interface OpenDebitItem {
+  purchaseInvoiceId: string;
+  number: string;
+  type: string;
+  currency: string;
+  amount: number;
+  appliedTotal: number;
+  balance: number;
+  dueDate: string | null;
+}
+
+export interface OpenCreditItem {
+  source: 'INVOICE' | 'MOVEMENT';
+  purchaseInvoiceId?: string;
+  movementId?: string;
+  number: string;
+  currency: string;
+  amount: number;
+  appliedTotal: number;
+  balance: number;
+  date: string;
+}
+
+export interface OpenAccountItems {
+  debits: OpenDebitItem[];
+  credits: OpenCreditItem[];
+}
+
+export interface CreateSupplierCcAdjustmentDTO {
+  currency: string;
+  description?: string;
+  debits: { purchaseInvoiceId: string; amount: number }[];
+  credits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
+  manualAmount?: number;
 }
 
 export interface OrdenPagoFilters {

@@ -42,9 +42,19 @@ export const productsService = {
 
   async bulkUpdate(
     ids: string[],
-    data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; isActive?: boolean }
+    data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; supplierId?: string | null; isActive?: boolean }
   ): Promise<{ updated: number }> {
     const response = await api.patch<{ status: string; updated: number }>('/products/bulk-update', { ids, data });
+    return response.data;
+  },
+
+  // Aplica el cambio a TODOS los productos que matchean el filtro (sin
+  // cargarlos al navegador) — escala sin importar cuántos sean.
+  async bulkUpdateByFilter(
+    filters: ProductFilters,
+    data: { brandId?: string | null; taxRate?: number; rubroId?: string | null; supplierId?: string | null; isActive?: boolean }
+  ): Promise<{ updated: number }> {
+    const response = await api.patch<{ status: string; updated: number }>('/products/bulk-update-by-filter', { filters, data });
     return response.data;
   },
 };

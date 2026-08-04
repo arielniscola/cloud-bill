@@ -16,6 +16,7 @@ import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
 import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, OrdenPedido } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
+import InformalInvoicePDF from '../../components/pdf/InformalInvoicePDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   NOT_DELIVERED: 'Sin entregas',
@@ -234,6 +235,11 @@ export default function InvoiceDetailPage() {
 
   const generateInvoicePdfBlob = async (): Promise<Blob> => {
     const afipConfig = await afipService.getConfig();
+    // Informal (sin CAE, sin validez fiscal): formato reducido, 2 comprobantes
+    // por hoja A4 — no lleva QR/CAE ni desglose de IVA.
+    if (invoice!.fiscalMode === 'INFORMAL') {
+      return pdf(<InformalInvoicePDF invoice={invoice!} afipConfig={afipConfig} />).toBlob();
+    }
     let qrCodeDataUrl: string | undefined;
     if (invoice!.cae && afipConfig) {
       const TYPE_CODES: Record<string, number> = {
@@ -290,16 +296,31 @@ export default function InvoiceDetailPage() {
       window.open(`/print/invoice/${invoice.id}`, '_blank', 'width=420,height=700,scrollbars=yes');
       return;
     }
-    // A4 → generate PDF blob and open it in a new tab so the user can print from the viewer
+    // A4 → genera el PDF y dispara el diálogo de impresión directo, sin pasar
+    // por una pestaña/visor intermedio (iframe oculto, igual que el circuito
+    // ya automático del ticket térmico).
     setIsGeneratingPDF(true);
     try {
       const blob = await generateInvoicePdfBlob();
       const url = URL.createObjectURL(blob);
-      const w = window.open(url, '_blank');
-      if (!w) {
-        toast.error('El navegador bloqueó la ventana — habilitá popups para imprimir');
-        URL.revokeObjectURL(url);
-      }
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+
+      const cleanup = () => { URL.revokeObjectURL(url); iframe.remove(); };
+      iframe.onload = () => {
+        const win = iframe.contentWindow;
+        if (!win) { cleanup(); return; }
+        win.focus();
+        win.print();
+        win.onafterprint = cleanup;
+      };
+      // Red de seguridad por si el navegador no dispara "afterprint" en el visor de PDF embebido.
+      setTimeout(cleanup, 120000);
     } catch (error: unknown) {
       const err = error as { message?: string };
       toast.error(err.message || 'Error al generar PDF');

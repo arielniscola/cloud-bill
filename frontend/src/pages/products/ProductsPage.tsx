@@ -5,10 +5,10 @@ import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, DataTable, SearchInput, ConfirmDialog, CsvImportModal } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
-import { productsService, rubrosService, brandsService } from '../../services';
+import { productsService, rubrosService, brandsService, suppliersService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
-import type { Product, Rubro, Brand } from '../../types';
+import type { Product, Rubro, Brand, Supplier } from '../../types';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function margin(cost: number, price: number) {
@@ -199,6 +199,7 @@ export default function ProductsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [rubroFilter, setRubroFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
@@ -207,11 +208,12 @@ export default function ProductsPage() {
   const [showImport, setShowImport] = useState(false);
   const [rubros, setRubros] = useState<Rubro[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  // Load rubros & brands for filter dropdowns
+  // Load rubros, marcas & proveedores for filter dropdowns
   useEffect(() => {
-    Promise.all([rubrosService.getAll(), brandsService.getAll()])
-      .then(([cats, brnds]) => { setRubros(cats); setBrands(brnds); })
+    Promise.all([rubrosService.getAll(), brandsService.getAll(), suppliersService.getAll({ limit: 500, isActive: true })])
+      .then(([cats, brnds, sups]) => { setRubros(cats); setBrands(brnds); setSuppliers(sups.data); })
       .catch(() => {});
   }, []);
 
@@ -227,6 +229,7 @@ export default function ProductsPage() {
         isActive: isActiveFilter,
         rubroId: rubroFilter || undefined,
         brandId: brandFilter || undefined,
+        supplierId: supplierFilter || undefined,
       });
       setProducts(response.data);
       setTotal(response.total);
@@ -235,7 +238,7 @@ export default function ProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, search, isActiveFilter, rubroFilter, brandFilter]);
+  }, [page, limit, search, isActiveFilter, rubroFilter, brandFilter, supplierFilter]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -274,7 +277,12 @@ export default function ProductsPage() {
     [brands]
   );
 
-  const activeFilterCount = [rubroFilter, brandFilter, statusFilter !== 'all'].filter(Boolean).length;
+  const supplierOptions = useMemo(
+    () => suppliers.map((s) => ({ value: s.id, label: s.name })),
+    [suppliers]
+  );
+
+  const activeFilterCount = [rubroFilter, brandFilter, supplierFilter, statusFilter !== 'all'].filter(Boolean).length;
 
   const columns: Column<Product>[] = [
     {
@@ -453,6 +461,16 @@ export default function ProductsPage() {
               />
             )}
 
+            {/* Supplier filter */}
+            {supplierOptions.length > 0 && (
+              <FilterSelect
+                label="Proveedor"
+                value={supplierFilter}
+                onChange={(v) => { setSupplierFilter(v); resetPage(); }}
+                options={supplierOptions}
+              />
+            )}
+
             {/* Active filter chips */}
             {activeFilterCount > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -468,6 +486,12 @@ export default function ProductsPage() {
                     onRemove={() => { setBrandFilter(''); resetPage(); }}
                   />
                 )}
+                {supplierFilter && (
+                  <FilterChip
+                    label={supplierOptions.find((o) => o.value === supplierFilter)?.label ?? 'Proveedor'}
+                    onRemove={() => { setSupplierFilter(''); resetPage(); }}
+                  />
+                )}
                 {statusFilter !== 'all' && (
                   <FilterChip
                     label={statusFilter === 'active' ? 'Activos' : 'Inactivos'}
@@ -475,7 +499,7 @@ export default function ProductsPage() {
                   />
                 )}
                 <button
-                  onClick={() => { setRubroFilter(''); setBrandFilter(''); setStatusFilter('all'); resetPage(); }}
+                  onClick={() => { setRubroFilter(''); setBrandFilter(''); setSupplierFilter(''); setStatusFilter('all'); resetPage(); }}
                   className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 underline ml-1"
                 >
                   Limpiar todo

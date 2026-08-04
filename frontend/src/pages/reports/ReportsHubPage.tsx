@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, BarChart2, Package,
-  Users, Landmark, ArrowRight, FileText, Hourglass,
+  Users, Landmark, ArrowRight, FileText, Hourglass, Percent,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 
@@ -35,6 +35,13 @@ const REPORTS: ReportCard[] = [
     href:        '/reports/purchase-invoices',
     icon:        FileText,
     color:       'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+  },
+  {
+    title:       'Retenciones practicadas',
+    description: 'Retenciones a proveedores por período, con totales por régimen y archivo de importación para SICORE.',
+    href:        '/reports/retentions',
+    icon:        Percent,
+    color:       'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
   },
   {
     title:       'Rentabilidad de productos',

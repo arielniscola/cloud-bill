@@ -59,12 +59,14 @@ import AccountsReceivableReportPage from '../pages/reports/AccountsReceivableRep
 import CcAgingReportPage from '../pages/reports/CcAgingReportPage';
 import CashFlowReportPage from '../pages/reports/CashFlowReportPage';
 import PurchaseInvoicesReportPage from '../pages/reports/PurchaseInvoicesReportPage';
+import RetentionsReportPage from '../pages/reports/RetentionsReportPage';
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
 import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
 import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
 import PurchaseRemitosPage from '../pages/purchase-remitos/PurchaseRemitosPage';
 import PurchaseRemitoFormPage from '../pages/purchase-remitos/PurchaseRemitoFormPage';
 import PurchaseRemitoDetailPage from '../pages/purchase-remitos/PurchaseRemitoDetailPage';
+import PurchaseRetentionsPage from '../pages/purchase-retentions/PurchaseRetentionsPage';
 import BancoCheques from '../pages/banco-cheques/BancoCheques';
 import ThermalInvoicePrintPage from '../pages/print/ThermalInvoicePrintPage';
 import ThermalOrdenPedidoPrintPage from '../pages/print/ThermalOrdenPedidoPrintPage';
@@ -199,6 +201,7 @@ export default function AppRoutes() {
             <Route path="/reports/accounts-receivable" element={<AccountsReceivableReportPage />} />
             <Route path="/reports/cc-aging" element={<CcAgingReportPage />} />
             <Route path="/reports/cash-flow" element={<CashFlowReportPage />} />
+            <Route path="/reports/retentions" element={<RetentionsReportPage />} />
           </Route>
         </Route>
 
@@ -220,6 +223,9 @@ export default function AppRoutes() {
           <Route path="/purchase-remitos" element={<PurchaseRemitosPage />} />
           <Route path="/purchase-remitos/new" element={<PurchaseRemitoFormPage />} />
           <Route path="/purchase-remitos/:id" element={<PurchaseRemitoDetailPage />} />
+
+          {/* Retenciones practicadas a proveedores (consulta + reimpresión) */}
+          <Route path="/purchase-retentions" element={<PurchaseRetentionsPage />} />
 
           {/* Órdenes de Pago — ADMIN only */}
           <Route path="/orden-pagos" element={<OrdenPagosPage />} />

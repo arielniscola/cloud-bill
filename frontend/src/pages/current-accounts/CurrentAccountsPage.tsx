@@ -8,6 +8,7 @@ import type { Column } from '../../components/shared/DataTable';
 import { customersService, currentAccountsService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type { Customer, CurrentAccount, TaxCondition } from '../../types';
 
 // ── Avatar helpers ───────────────────────────────────────────────
@@ -36,6 +37,7 @@ const TAX_BADGE: Record<TaxCondition, { label: string; className: string }> = {
 
 export default function CurrentAccountsPage() {
   const navigate = useNavigate();
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
   const [customers,       setCustomers]       = useState<Customer[]>([]);
   const [accountsWithDebt,setAccountsWithDebt]= useState<CurrentAccount[]>([]);
   const [isLoading,  setIsLoading]  = useState(true);
@@ -64,11 +66,15 @@ export default function CurrentAccountsPage() {
     currentAccountsService.getAllWithDebt()
       .then(setAccountsWithDebt)
       .catch(() => {});
-  }, []);
+  }, [fiscalMode]);
 
-  // Find account by customer+currency
-  const getAccount = (customerId: string, currency: 'ARS' | 'USD') =>
-    accountsWithDebt.find((a) => a.customerId === customerId && a.currency === currency);
+  // Cuenta por cliente+moneda. En modo "Todos" puede haber una fila FORMAL y
+  // otra INFORMAL con deuda para la misma moneda — se suman para la columna.
+  const getAccount = (customerId: string, currency: 'ARS' | 'USD') => {
+    const matches = accountsWithDebt.filter((a) => a.customerId === customerId && a.currency === currency);
+    if (matches.length <= 1) return matches[0];
+    return { ...matches[0], balance: matches.reduce((s, a) => s + Number(a.balance), 0) };
+  };
 
   const columns: Column<Customer>[] = [
     {

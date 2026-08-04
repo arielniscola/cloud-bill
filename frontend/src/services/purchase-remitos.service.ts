@@ -26,6 +26,11 @@ export const purchaseRemitosService = {
     const response = await api.post<ApiResponse<PurchaseRemito>>(`/purchase-remitos/${id}/cancel`);
     return response.data.data;
   },
+
+  async updateNumber(id: string, number: string): Promise<PurchaseRemito> {
+    const response = await api.patch<ApiResponse<PurchaseRemito>>(`/purchase-remitos/${id}/number`, { number });
+    return response.data.data;
+  },
 };
 
 export default purchaseRemitosService;

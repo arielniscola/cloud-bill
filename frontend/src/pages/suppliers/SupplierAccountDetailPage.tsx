@@ -10,9 +10,13 @@ import { PageHeader } from '../../components/shared';
 import { suppliersService, ordenPagosService, chequesService, internalNotesService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { exportToExcel } from '../../utils/excelExport';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type { Supplier, TaxCondition } from '../../types';
 import { CHEQUE_STATUS_LABELS, type Cheque } from '../../types/cheque.types';
-import type { SupplierAccountMovement, SupplierMovementKind, SupplierMovementType } from '../../types/ordenPago.types';
+import type {
+  SupplierAccountMovement, SupplierMovementKind, SupplierMovementType,
+  OpenAccountItems, OpenDebitItem, OpenCreditItem,
+} from '../../types/ordenPago.types';
 
 // ── Avatar helper ────────────────────────────────────────────────
 const AVATAR_COLORS = [
@@ -44,12 +48,44 @@ const KIND_CFG: Record<SupplierMovementKind, { label: string; className: string 
   NOTE:      { label: 'Nota interna', className: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
   RETENTION: { label: 'Retención',    className: 'text-amber-700 bg-amber-50 border-amber-200' },
   PURCHASE:  { label: 'Compra',       className: 'text-slate-600 bg-slate-100 border-slate-200' },
+  ADJUSTMENT:{ label: 'Ajuste',       className: 'text-violet-700 bg-violet-50 border-violet-200' },
   OTHER:     { label: 'Otro',         className: 'text-gray-500 bg-gray-50 border-gray-200' },
 };
-const KIND_ORDER: SupplierMovementKind[] = ['FC', 'NC', 'ND', 'OP', 'NOTE', 'RETENTION', 'PURCHASE', 'OTHER'];
+const KIND_ORDER: SupplierMovementKind[] = ['FC', 'NC', 'ND', 'OP', 'NOTE', 'RETENTION', 'PURCHASE', 'ADJUSTMENT', 'OTHER'];
 
-// ── Balance card ─────────────────────────────────────────────────
-function BalanceCard({ balance, isLoading }: { balance: number; isLoading: boolean }) {
+// ── Balance card (una por moneda — nunca se netea USD contra ARS) ─
+type BalanceStatus = 'weOwe' | 'favor' | 'settled';
+const BALANCE_STATUS_CFG: Record<BalanceStatus, { label: string; icon: typeof TrendingDown; valueClass: string; badgeClass: string }> = {
+  weOwe:   { label: 'Debemos al proveedor',   icon: TrendingDown, valueClass: 'text-red-600 dark:text-red-400',         badgeClass: 'text-red-600 bg-red-50 border-red-200'            },
+  favor:   { label: 'A favor nuestro',         icon: TrendingUp,   valueClass: 'text-emerald-600 dark:text-emerald-400', badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+  settled: { label: 'Sin saldo pendiente',     icon: Minus,        valueClass: 'text-gray-400 dark:text-slate-500',      badgeClass: 'text-gray-500 bg-gray-100 border-gray-200'        },
+};
+
+function SingleBalanceCard({ currency, balance }: { currency: string; balance: number }) {
+  const status: BalanceStatus = balance > 0 ? 'weOwe' : balance < 0 ? 'favor' : 'settled';
+  const statusCfg = BALANCE_STATUS_CFG[status];
+  const StatusIcon = statusCfg.icon;
+
+  return (
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+          Saldo {currency}
+        </span>
+        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
+          <StatusIcon className="w-3 h-3" />
+          {statusCfg.label}
+        </span>
+      </div>
+
+      <p className={`text-3xl font-bold tabular-nums ${statusCfg.valueClass}`}>
+        {formatCurrency(Math.abs(balance), currency)}
+      </p>
+    </div>
+  );
+}
+
+function BalanceCard({ balances, isLoading }: { balances: Record<string, number>; isLoading: boolean }) {
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-3 animate-pulse">
@@ -60,33 +96,13 @@ function BalanceCard({ balance, isLoading }: { balance: number; isLoading: boole
     );
   }
 
-  type BalanceStatus = 'weOwe' | 'favor' | 'settled';
-  const status: BalanceStatus =
-    balance > 0 ? 'weOwe' : balance < 0 ? 'favor' : 'settled';
-
-  const statusCfg = {
-    weOwe:   { label: 'Debemos al proveedor',   icon: TrendingDown, valueClass: 'text-red-600 dark:text-red-400',         badgeClass: 'text-red-600 bg-red-50 border-red-200'            },
-    favor:   { label: 'A favor nuestro',         icon: TrendingUp,   valueClass: 'text-emerald-600 dark:text-emerald-400', badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-    settled: { label: 'Sin saldo pendiente',     icon: Minus,        valueClass: 'text-gray-400 dark:text-slate-500',      badgeClass: 'text-gray-500 bg-gray-100 border-gray-200'        },
-  }[status];
-
-  const StatusIcon = statusCfg.icon;
+  const currencies = Object.keys(balances).length > 0 ? Object.keys(balances).sort() : ['ARS'];
 
   return (
-    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-          Saldo ARS
-        </span>
-        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
-          <StatusIcon className="w-3 h-3" />
-          {statusCfg.label}
-        </span>
-      </div>
-
-      <p className={`text-3xl font-bold tabular-nums ${statusCfg.valueClass}`}>
-        {formatCurrency(Math.abs(balance), 'ARS')}
-      </p>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {currencies.map((currency) => (
+        <SingleBalanceCard key={currency} currency={currency} balance={balances[currency] ?? 0} />
+      ))}
     </div>
   );
 }
@@ -106,17 +122,28 @@ function PageSkeleton() {
 export default function SupplierAccountDetailPage() {
   const { supplierId } = useParams<{ supplierId: string }>();
   const navigate = useNavigate();
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   const [supplier,  setSupplier]  = useState<Supplier | null>(null);
   const [movements, setMovements] = useState<SupplierAccountMovement[]>([]);
-  const [balance,   setBalance]   = useState(0);
-  const [openingBalance, setOpeningBalance] = useState(0);
+  const [balance,   setBalance]   = useState<Record<string, number>>({});
+  const [openingBalance, setOpeningBalance] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Tab (Movimientos / Cheques)
-  const [tab, setTab] = useState<'movimientos' | 'cheques'>('movimientos');
+  // Tab (Movimientos / Cuenta Corriente / Cheques)
+  const [tab, setTab] = useState<'movimientos' | 'cuentaCorriente' | 'cheques'>('movimientos');
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [chequesLoading, setChequesLoading] = useState(false);
+
+  // Cuenta Corriente: imputación manual de débitos (FC/ND) contra créditos (NC/pago a cuenta)
+  const [openItems, setOpenItems] = useState<OpenAccountItems>({ debits: [], credits: [] });
+  const [openItemsLoading, setOpenItemsLoading] = useState(false);
+  const [ccCurrencyFilter, setCcCurrencyFilter] = useState<'' | 'ARS' | 'USD'>('');
+  const [selectedDebits, setSelectedDebits] = useState<Map<string, string>>(new Map());
+  const [selectedCredits, setSelectedCredits] = useState<Map<string, string>>(new Map());
+  const [manualAmount, setManualAmount] = useState('');
+  const [adjDescription, setAdjDescription] = useState('');
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
 
   // Ajuste manual (ND/NC interna que mueve la cuenta)
   const [showAdjust, setShowAdjust] = useState(false);
@@ -130,16 +157,17 @@ export default function SupplierAccountDetailPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'' | SupplierMovementType>('');
   const [kindFilter, setKindFilter] = useState<Set<SupplierMovementKind>>(new Set());
+  const [currencyFilter, setCurrencyFilter] = useState<'' | 'ARS' | 'USD'>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   // Selection
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const hasActiveFilters = !!(search || typeFilter || kindFilter.size > 0 || dateFrom || dateTo);
+  const hasActiveFilters = !!(search || typeFilter || kindFilter.size > 0 || currencyFilter || dateFrom || dateTo);
 
   const clearFilters = () => {
-    setSearch(''); setTypeFilter(''); setKindFilter(new Set()); setDateFrom(''); setDateTo('');
+    setSearch(''); setTypeFilter(''); setKindFilter(new Set()); setCurrencyFilter(''); setDateFrom(''); setDateTo('');
   };
 
   // Debounce search
@@ -159,14 +187,15 @@ export default function SupplierAccountDetailPage() {
           limit: 1000, // vista analítica: traemos todo el set filtrado para selección/neto
           type: typeFilter || undefined,
           kinds: kindFilter.size > 0 ? Array.from(kindFilter) : undefined,
+          currency: currencyFilter || undefined,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           search: debouncedSearch || undefined,
         }),
       ]);
       setSupplier(supplierData);
-      setBalance(accountData.balance);
-      setOpeningBalance(accountData.openingBalance ?? 0);
+      setBalance(accountData.balance ?? {});
+      setOpeningBalance(accountData.openingBalance ?? {});
       setMovements(accountData.data);
       // prune selección a ids visibles
       setSelected((prev) => {
@@ -181,7 +210,7 @@ export default function SupplierAccountDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [supplierId, typeFilter, kindFilter, dateFrom, dateTo, debouncedSearch, navigate]);
+  }, [supplierId, typeFilter, kindFilter, currencyFilter, dateFrom, dateTo, debouncedSearch, navigate, fiscalMode]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -202,6 +231,97 @@ export default function SupplierAccountDetailPage() {
   useEffect(() => {
     if (tab === 'cheques') fetchCheques();
   }, [tab, fetchCheques]);
+
+  // Ítems abiertos de cuenta corriente (se cargan al abrir la pestaña)
+  const fetchOpenItems = useCallback(async () => {
+    if (!supplierId) return;
+    setOpenItemsLoading(true);
+    try {
+      const data = await ordenPagosService.getOpenItems(supplierId);
+      setOpenItems(data);
+      setSelectedDebits(new Map());
+      setSelectedCredits(new Map());
+      setManualAmount(''); setAdjDescription('');
+    } catch {
+      toast.error('Error al cargar los comprobantes abiertos');
+    } finally {
+      setOpenItemsLoading(false);
+    }
+  }, [supplierId]);
+
+  useEffect(() => {
+    if (tab === 'cuentaCorriente') fetchOpenItems();
+  }, [tab, fetchOpenItems]);
+
+  const toggleDebit = (item: OpenDebitItem) => {
+    setSelectedDebits((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.purchaseInvoiceId)) next.delete(item.purchaseInvoiceId);
+      else next.set(item.purchaseInvoiceId, item.balance.toFixed(2));
+      return next;
+    });
+  };
+  const toggleCredit = (item: OpenCreditItem) => {
+    const key = item.source === 'INVOICE' ? item.purchaseInvoiceId! : item.movementId!;
+    setSelectedCredits((prev) => {
+      const next = new Map(prev);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, item.balance.toFixed(2));
+      return next;
+    });
+  };
+
+  // Moneda de la imputación: la del primer ítem tildado (débito o crédito)
+  const ccCurrency = useMemo(() => {
+    const firstDebit = openItems.debits.find((d) => selectedDebits.has(d.purchaseInvoiceId));
+    if (firstDebit) return firstDebit.currency;
+    const firstCredit = openItems.credits.find((c) =>
+      selectedCredits.has(c.source === 'INVOICE' ? c.purchaseInvoiceId! : c.movementId!));
+    return firstCredit?.currency ?? null;
+  }, [openItems, selectedDebits, selectedCredits]);
+
+  // Filtro de moneda de la pestaña (independiente de la selección ya hecha)
+  const visibleDebits = useMemo(
+    () => ccCurrencyFilter ? openItems.debits.filter((d) => d.currency === ccCurrencyFilter) : openItems.debits,
+    [openItems.debits, ccCurrencyFilter]
+  );
+  const visibleCredits = useMemo(
+    () => ccCurrencyFilter ? openItems.credits.filter((c) => c.currency === ccCurrencyFilter) : openItems.credits,
+    [openItems.credits, ccCurrencyFilter]
+  );
+
+  const ccSumDebits = useMemo(() => Array.from(selectedDebits.values()).reduce((s, v) => s + (parseFloat(v) || 0), 0), [selectedDebits]);
+  const ccSumCredits = useMemo(() => Array.from(selectedCredits.values()).reduce((s, v) => s + (parseFloat(v) || 0), 0), [selectedCredits]);
+  const ccDiff = ccSumDebits - ccSumCredits;
+  const ccHasSelection = selectedDebits.size > 0 || selectedCredits.size > 0;
+
+  const handleCreateCcAdjustment = async () => {
+    if (!supplierId || !ccCurrency) return;
+    const manual = parseFloat(manualAmount) || 0;
+    setSavingAdjustment(true);
+    try {
+      await ordenPagosService.createAdjustment(supplierId, {
+        currency: ccCurrency,
+        description: adjDescription.trim() || undefined,
+        debits: Array.from(selectedDebits.entries()).map(([purchaseInvoiceId, amount]) => ({ purchaseInvoiceId, amount: parseFloat(amount) || 0 })),
+        credits: Array.from(selectedCredits.entries()).map(([id, amount]) => {
+          const src = openItems.credits.find((c) => (c.source === 'INVOICE' ? c.purchaseInvoiceId : c.movementId) === id);
+          return src?.source === 'INVOICE'
+            ? { purchaseInvoiceId: id, amount: parseFloat(amount) || 0 }
+            : { movementId: id, amount: parseFloat(amount) || 0 };
+        }),
+        manualAmount: manual > 0 ? manual : undefined,
+      });
+      toast.success('Ajuste de cuenta corriente registrado');
+      fetchOpenItems();
+      fetchData();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al registrar el ajuste');
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
 
   // Crear ajuste manual (ND interna = débito, NC interna = crédito). Ya mueve la cuenta.
   const handleCreateAdjust = async () => {
@@ -239,10 +359,15 @@ export default function SupplierAccountDetailPage() {
       tipo: KIND_CFG[m.kind ?? 'OTHER'].label,
       comprobante: m.docNumber ?? '',
       descripcion: m.description ?? '',
+      moneda: m.currency,
       debito: m.type === 'DEBIT' ? Number(m.amount) : 0,
       credito: m.type === 'CREDIT' ? Number(m.amount) : 0,
       saldo: Number(m.balance),
     }));
+    // Fila de totales: solo tiene sentido sumar débito/crédito/saldo cuando
+    // todos los movimientos exportados están en la misma moneda.
+    const currenciesPresent = Object.keys(totalsAll);
+    const singleCurrency = currenciesPresent.length === 1 ? currenciesPresent[0] : null;
     exportToExcel(
       `cta_cte_${supplier?.name ?? 'proveedor'}`.replace(/\s+/g, '_'),
       'Cuenta corriente',
@@ -252,12 +377,15 @@ export default function SupplierAccountDetailPage() {
         { header: 'Tipo',           key: 'tipo',             width: 14 },
         { header: 'Comprobante',    key: 'comprobante',      width: 18 },
         { header: 'Descripción',    key: 'descripcion',      width: 36 },
+        { header: 'Moneda',        key: 'moneda',           width: 10 },
         { header: 'Débito',         key: 'debito',           width: 14, format: 'currency' },
         { header: 'Crédito',        key: 'credito',          width: 14, format: 'currency' },
         { header: 'Saldo',          key: 'saldo',            width: 14, format: 'currency' },
       ],
       rows,
-      { descripcion: 'TOTALES', debito: totalsAll.debit, credito: totalsAll.credit, saldo: balance },
+      singleCurrency
+        ? { descripcion: 'TOTALES', moneda: singleCurrency, debito: totalsAll[singleCurrency].debit, credito: totalsAll[singleCurrency].credit, saldo: balance[singleCurrency] ?? 0 }
+        : { descripcion: 'TOTALES (ver por moneda arriba)' },
     );
   };
 
@@ -282,26 +410,27 @@ export default function SupplierAccountDetailPage() {
     setSelected(allSelected ? new Set() : new Set(movements.map((m) => m.id)));
   };
 
-  // Totals of selected (o de todo lo filtrado si no hay selección)
+  // Totales por moneda: nunca se suma un débito en USD con uno en ARS.
+  type CurrencyTotals = Record<string, { debit: number; credit: number }>;
+  const sumByCurrency = (rows: SupplierAccountMovement[]): CurrencyTotals => {
+    const totals: CurrencyTotals = {};
+    for (const m of rows) {
+      const t = (totals[m.currency] ??= { debit: 0, credit: 0 });
+      if (m.type === 'DEBIT') t.debit += Number(m.amount);
+      else t.credit += Number(m.amount);
+    }
+    return totals;
+  };
+
+  // Totals of selected (o de todo lo filtrado si no hay selección), por moneda
   const summary = useMemo(() => {
     const rows = selected.size > 0 ? movements.filter((m) => selected.has(m.id)) : movements;
-    let debit = 0, credit = 0;
-    for (const m of rows) {
-      if (m.type === 'DEBIT') debit += Number(m.amount);
-      else credit += Number(m.amount);
-    }
-    return { count: rows.length, debit, credit, net: debit - credit, isSelection: selected.size > 0 };
+    const byCurrency = sumByCurrency(rows);
+    return { count: rows.length, byCurrency, isSelection: selected.size > 0 };
   }, [movements, selected]);
 
-  // Totales de TODOS los movimientos filtrados (para el pie de la tabla)
-  const totalsAll = useMemo(() => {
-    let debit = 0, credit = 0;
-    for (const m of movements) {
-      if (m.type === 'DEBIT') debit += Number(m.amount);
-      else credit += Number(m.amount);
-    }
-    return { debit, credit };
-  }, [movements]);
+  // Totales de TODOS los movimientos filtrados (para el pie de la tabla), por moneda
+  const totalsAll = useMemo(() => sumByCurrency(movements), [movements]);
 
   if (isLoading && !supplier) {
     return (
@@ -376,11 +505,11 @@ export default function SupplierAccountDetailPage() {
       </div>
 
       {/* ── Balance card ── */}
-      <BalanceCard balance={balance} isLoading={isLoading} />
+      <BalanceCard balances={balance} isLoading={isLoading} />
 
       {/* ── Tabs ── */}
       <div className="flex gap-1 bg-gray-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-        {([['movimientos', 'Movimientos'], ['cheques', 'Cheques']] as const).map(([val, label]) => (
+        {([['movimientos', 'Movimientos'], ['cuentaCorriente', 'Cuenta Corriente'], ['cheques', 'Cheques']] as const).map(([val, label]) => (
           <button key={val} onClick={() => setTab(val)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === val ? 'bg-white dark:bg-slate-600 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-white'
@@ -413,6 +542,19 @@ export default function SupplierAccountDetailPage() {
                 onClick={() => setTypeFilter(val as '' | SupplierMovementType)}
                 className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                   typeFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Currency segmented */}
+          <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            {([['', 'Todas'], ['ARS', 'Pesos'], ['USD', 'Dólares']] as const).map(([val, label]) => (
+              <button key={val}
+                onClick={() => setCurrencyFilter(val as '' | 'ARS' | 'USD')}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                  currencyFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
                 }`}>
                 {label}
               </button>
@@ -484,26 +626,26 @@ export default function SupplierAccountDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-              {/* Saldo al inicio: solo al filtrar por fecha desde */}
-              {!isLoading && dateFrom && (
-                <tr className="bg-gray-50/70 dark:bg-slate-800/40">
+              {/* Saldo al inicio: solo al filtrar por fecha desde, una fila por moneda */}
+              {!isLoading && dateFrom && Object.entries(openingBalance).map(([currency, ob]) => (
+                <tr key={`opening-${currency}`} className="bg-gray-50/70 dark:bg-slate-800/40">
                   <td className="px-4 py-2.5" />
                   <td className="px-4 py-2.5 whitespace-nowrap text-xs text-gray-500 dark:text-slate-400">
                     {new Date(dateFrom).toLocaleDateString('es-AR')}
                   </td>
                   <td className="px-4 py-2.5" colSpan={4}>
-                    <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Saldo al inicio</span>
+                    <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Saldo al inicio ({currency})</span>
                   </td>
                   <td className="px-4 py-2.5" />
                   <td className="px-4 py-2.5 text-right">
                     <span className={`text-sm tabular-nums font-mono ${
-                      openingBalance > 0 ? 'text-red-500 dark:text-red-400' : openingBalance < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
+                      ob > 0 ? 'text-red-500 dark:text-red-400' : ob < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
                     }`}>
-                      {formatCurrency(openingBalance, 'ARS')}
+                      {formatCurrency(ob, currency)}
                     </span>
                   </td>
                 </tr>
-              )}
+              ))}
               {isLoading ? (
                 <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">Cargando…</td></tr>
               ) : movements.length === 0 ? (
@@ -559,14 +701,14 @@ export default function SupplierAccountDetailPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className={`text-sm font-bold tabular-nums ${isCredit ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {isCredit ? '−' : '+'}{formatCurrency(mov.amount, 'ARS')}
+                          {isCredit ? '−' : '+'}{formatCurrency(mov.amount, mov.currency)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className={`text-sm tabular-nums font-mono ${
                           mov.balance > 0 ? 'text-red-500 dark:text-red-400' : mov.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
                         }`}>
-                          {formatCurrency(mov.balance, 'ARS')}
+                          {formatCurrency(mov.balance, mov.currency)}
                         </span>
                       </td>
                     </tr>
@@ -576,24 +718,26 @@ export default function SupplierAccountDetailPage() {
             </tbody>
             {!isLoading && movements.length > 0 && (
               <tfoot className="border-t-2 border-gray-200 dark:border-slate-600 bg-gray-50/70 dark:bg-slate-800/60">
-                <tr>
-                  <td colSpan={6} className="px-4 py-3 text-[11px] font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-                    Totales · {movements.length}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">+{formatCurrency(totalsAll.debit, 'ARS')}</span>
-                      <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">−{formatCurrency(totalsAll.credit, 'ARS')}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`text-sm font-bold tabular-nums font-mono ${
-                      balance > 0 ? 'text-red-600 dark:text-red-400' : balance < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
-                    }`}>
-                      {formatCurrency(balance, 'ARS')}
-                    </span>
-                  </td>
-                </tr>
+                {Object.keys(totalsAll).sort().map((currency) => (
+                  <tr key={currency}>
+                    <td colSpan={6} className="px-4 py-3 text-[11px] font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+                      Totales {currency} · {movements.filter((m) => m.currency === currency).length}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">+{formatCurrency(totalsAll[currency].debit, currency)}</span>
+                        <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">−{formatCurrency(totalsAll[currency].credit, currency)}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`text-sm font-bold tabular-nums font-mono ${
+                        (balance[currency] ?? 0) > 0 ? 'text-red-600 dark:text-red-400' : (balance[currency] ?? 0) < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
+                      }`}>
+                        {formatCurrency(balance[currency] ?? 0, currency)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tfoot>
             )}
           </table>
@@ -607,31 +751,204 @@ export default function SupplierAccountDetailPage() {
             <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
               {`Seleccionados · ${summary.count}`}
             </span>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-              <span className="flex items-center gap-1.5">
-                <span className="text-gray-400">Débitos:</span>
-                <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(summary.debit, 'ARS')}</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="text-gray-400">Créditos:</span>
-                <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(summary.credit, 'ARS')}</span>
-              </span>
-              <span className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-slate-700">
-                <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Neto</span>
-                <span className={`text-base font-bold tabular-nums ${
-                  summary.net > 0 ? 'text-red-600 dark:text-red-400' : summary.net < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'
-                }`}>
-                  {formatCurrency(Math.abs(summary.net), 'ARS')}
-                </span>
-                <span className="text-[11px] text-gray-400">
-                  {summary.net > 0 ? '(debemos)' : summary.net < 0 ? '(a favor)' : ''}
-                </span>
-              </span>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              {Object.entries(summary.byCurrency).sort(([a], [b]) => a.localeCompare(b)).map(([currency, t]) => {
+                const net = t.debit - t.credit;
+                return (
+                  <div key={currency} className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase">{currency}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-gray-400">Débitos:</span>
+                      <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(t.debit, currency)}</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-gray-400">Créditos:</span>
+                      <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(t.credit, currency)}</span>
+                    </span>
+                    <span className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-slate-700">
+                      <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Neto</span>
+                      <span className={`text-base font-bold tabular-nums ${
+                        net > 0 ? 'text-red-600 dark:text-red-400' : net < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'
+                      }`}>
+                        {formatCurrency(Math.abs(net), currency)}
+                      </span>
+                      <span className="text-[11px] text-gray-400">
+                        {net > 0 ? '(debemos)' : net < 0 ? '(a favor)' : ''}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
       </>
+      )}
+
+      {/* ── Cuenta Corriente tab: imputación manual de débitos contra créditos ── */}
+      {tab === 'cuentaCorriente' && (
+        <div className="space-y-4 pb-24">
+          <p className="text-xs text-gray-400 dark:text-slate-500">
+            Seleccioná facturas/ND pendientes y los créditos (NC / pagos a cuenta) que las cubren. Si queda una
+            diferencia chica, cargala como ajuste manual para cerrar el saldo — no hace falta que coincidan exacto.
+          </p>
+
+          {/* Currency segmented */}
+          <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden w-fit">
+            {([['', 'Todas'], ['ARS', 'Pesos'], ['USD', 'Dólares']] as const).map(([val, label]) => (
+              <button key={val}
+                onClick={() => setCcCurrencyFilter(val as '' | 'ARS' | 'USD')}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                  ccCurrencyFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Débitos abiertos */}
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
+                  Facturas / ND pendientes
+                  <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-slate-500">· {visibleDebits.length}</span>
+                </h3>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-slate-700 max-h-96 overflow-y-auto">
+                {openItemsLoading ? (
+                  <p className="px-4 py-8 text-center text-sm text-gray-400">Cargando…</p>
+                ) : visibleDebits.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-gray-400">Sin facturas pendientes</p>
+                ) : visibleDebits.map((item) => {
+                  const disabled = !!ccCurrency && item.currency !== ccCurrency;
+                  const checked = selectedDebits.has(item.purchaseInvoiceId);
+                  return (
+                    <div key={item.purchaseInvoiceId}
+                      className={`px-4 py-3 flex items-center gap-3 ${disabled ? 'opacity-40' : 'cursor-pointer hover:bg-gray-50/60 dark:hover:bg-slate-700/40'}`}
+                      onClick={() => !disabled && toggleDebit(item)}>
+                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleDebit(item)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 dark:text-slate-200">{item.number}</p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500">
+                          Saldo {formatCurrency(item.balance, item.currency)} de {formatCurrency(item.amount, item.currency)}
+                        </p>
+                      </div>
+                      {checked && (
+                        <input type="number" min={0} max={item.balance} step="0.01"
+                          value={selectedDebits.get(item.purchaseInvoiceId) ?? ''}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setSelectedDebits((prev) => new Map(prev).set(item.purchaseInvoiceId, e.target.value))}
+                          className="w-28 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Créditos disponibles */}
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
+                  Créditos disponibles (NC / pagos a cuenta)
+                  <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-slate-500">· {visibleCredits.length}</span>
+                </h3>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-slate-700 max-h-96 overflow-y-auto">
+                {openItemsLoading ? (
+                  <p className="px-4 py-8 text-center text-sm text-gray-400">Cargando…</p>
+                ) : visibleCredits.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-gray-400">Sin créditos disponibles</p>
+                ) : visibleCredits.map((item) => {
+                  const key = item.source === 'INVOICE' ? item.purchaseInvoiceId! : item.movementId!;
+                  const disabled = !!ccCurrency && item.currency !== ccCurrency;
+                  const checked = selectedCredits.has(key);
+                  return (
+                    <div key={key}
+                      className={`px-4 py-3 flex items-center gap-3 ${disabled ? 'opacity-40' : 'cursor-pointer hover:bg-gray-50/60 dark:hover:bg-slate-700/40'}`}
+                      onClick={() => !disabled && toggleCredit(item)}>
+                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleCredit(item)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 dark:text-slate-200">
+                          {item.source === 'INVOICE' ? item.number : (item.number || 'Pago a cuenta')}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500">
+                          Disponible {formatCurrency(item.balance, item.currency)} de {formatCurrency(item.amount, item.currency)}
+                        </p>
+                      </div>
+                      {checked && (
+                        <input type="number" min={0} max={item.balance} step="0.01"
+                          value={selectedCredits.get(key) ?? ''}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setSelectedCredits((prev) => new Map(prev).set(key, e.target.value))}
+                          className="w-28 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Resumen + ajuste manual */}
+          {ccHasSelection && (
+            <div className="sticky bottom-4 z-20 rounded-xl border border-gray-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur shadow-lg px-5 py-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                <span className="text-[11px] font-semibold text-gray-400 uppercase">{ccCurrency}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-gray-400">Débitos:</span>
+                  <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(ccSumDebits, ccCurrency || 'ARS')}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-gray-400">Créditos:</span>
+                  <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(ccSumCredits, ccCurrency || 'ARS')}</span>
+                </span>
+                <span className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-slate-700">
+                  <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Diferencia</span>
+                  <span className={`text-base font-bold tabular-nums ${
+                    ccDiff > 0 ? 'text-red-600 dark:text-red-400' : ccDiff < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'
+                  }`}>
+                    {formatCurrency(Math.abs(ccDiff), ccCurrency || 'ARS')}
+                  </span>
+                </span>
+              </div>
+
+              {ccDiff > 0.01 && (
+                <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Ajuste manual (opcional)</label>
+                    <input type="number" min={0} max={ccDiff} step="0.01" placeholder="0.00"
+                      value={manualAmount}
+                      onChange={(e) => setManualAmount(e.target.value)}
+                      className="w-32 text-sm text-right px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Motivo</label>
+                    <input type="text" placeholder="Ej: diferencia de redondeo, descuento otorgado…"
+                      value={adjDescription}
+                      onChange={(e) => setAdjDescription(e.target.value)}
+                      className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                  </div>
+                  <p className="text-[11px] text-gray-400 basis-full">
+                    Genera un movimiento nuevo en "Movimientos" por la diferencia que decidas cerrar a mano.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button size="sm" onClick={handleCreateCcAdjustment} isLoading={savingAdjustment}>
+                  Ajustar
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Cheques tab ── */}

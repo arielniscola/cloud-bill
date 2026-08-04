@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Edit, Package, ShoppingCart, Calendar, DollarSign, Truck, ExternalLink, CreditCard } from 'lucide-react';
+import { Edit, Package, ShoppingCart, Calendar, DollarSign, Truck, ExternalLink, CreditCard, Percent } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
+import SupplierRetentionsTab from './SupplierRetentionsTab';
 import { suppliersService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { TAX_CONDITION_OPTIONS } from '../../utils/constants';
@@ -39,6 +40,7 @@ export default function SupplierDetailPage() {
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [products, setProducts] = useState<SupplierProductStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [tab, setTab] = useState<'products' | 'retentions'>('products');
 
   useEffect(() => {
     if (!id) return;
@@ -130,7 +132,33 @@ export default function SupplierDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
 
-        {/* ── Products table ── */}
+        <div className="space-y-4">
+          {/* ── Tabs ── */}
+          <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700">
+            {([
+              { key: 'products',   label: 'Productos',   icon: Package },
+              { key: 'retentions', label: 'Retenciones', icon: Percent },
+            ] as const).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  tab === key
+                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+        {tab === 'retentions' ? (
+          <SupplierRetentionsTab supplierId={id!} />
+        ) : (
+        /* ── Products table ── */
         <Card padding="none">
           <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700 flex items-center gap-2">
             <Package className="w-4 h-4 text-gray-400 dark:text-slate-500" />
@@ -200,6 +228,8 @@ export default function SupplierDetailPage() {
             </div>
           )}
         </Card>
+        )}
+        </div>
 
         {/* ── Supplier info ── */}
         <div className="space-y-4">

@@ -301,10 +301,7 @@ interface InvoicePDFProps {
   qrCodeDataUrl?: string;
 }
 
-const COPY_LABELS = ['ORIGINAL', 'DUPLICADO', 'TRIPLICADO'] as const;
-
 interface InvoicePageProps extends InvoicePDFProps {
-  copyLabel: string;
   typeLetter: string;
   typeShort: string;
   isDraft: boolean;
@@ -316,7 +313,7 @@ interface InvoicePageProps extends InvoicePDFProps {
 }
 
 function InvoicePage({
-  invoice, qrCodeDataUrl, copyLabel, typeLetter, typeShort, isDraft,
+  invoice, qrCodeDataUrl, typeLetter, typeShort, isDraft,
   taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
 }: InvoicePageProps) {
   // Factura C does not discriminate IVA
@@ -327,7 +324,7 @@ function InvoicePage({
       {isDraft && <Text style={s.draftWatermark}>BORRADOR</Text>}
 
       {/* Copy label stamp */}
-      <Text style={s.original}>{copyLabel}</Text>
+      <Text style={s.original}>ORIGINAL</Text>
 
       {/* ── HEADER ──────────────────────────────────────────── */}
       <View style={s.header}>
@@ -571,9 +568,7 @@ export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: Invoi
       title={`${INVOICE_TYPE_LABELS[invoice.type]} ${invoiceNumber(invoice)}`}
       author={issuerName || 'Cloud-Bill'}
     >
-      {COPY_LABELS.map((label) => (
-        <InvoicePage key={label} {...pageProps} copyLabel={label} />
-      ))}
+      <InvoicePage {...pageProps} />
     </Document>
   );
 }

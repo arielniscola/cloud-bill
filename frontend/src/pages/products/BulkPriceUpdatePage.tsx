@@ -248,15 +248,13 @@ export default function BulkPriceUpdatePage() {
       // (products live in subrubros); we'll filter client-side across all children.
       const apiRubroId = subrubroId || (!subrubroId && subrubros.length === 0 ? rubroId : undefined);
 
-      const [result, supplierProds] = await Promise.all([
-        productsService.getAll({
-          limit: 500,
-          rubroId: apiRubroId || undefined,
-          brandId:    brandId       || undefined,
-          isActive:   true,
-        }),
-        supplierId ? suppliersService.getProducts(supplierId) : Promise.resolve(null),
-      ]);
+      const result = await productsService.getAll({
+        limit: 500,
+        rubroId: apiRubroId || undefined,
+        brandId:    brandId       || undefined,
+        supplierId: supplierId    || undefined,
+        isActive:   true,
+      });
 
       let filtered = result.data;
 
@@ -264,11 +262,6 @@ export default function BulkPriceUpdatePage() {
       if (rubroId && !subrubroId && subrubros.length > 0) {
         const allowedIds = new Set([rubroId, ...subrubros.map((c) => c.id)]);
         filtered = filtered.filter((p) => p.rubroId != null && allowedIds.has(p.rubroId));
-      }
-
-      if (supplierProds) {
-        const ids = new Set(supplierProds.map((p) => p.id));
-        filtered = filtered.filter((p) => ids.has(p.id));
       }
 
       if (search) {

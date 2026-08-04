@@ -8,6 +8,7 @@ import type { Column } from '../../components/shared/DataTable';
 import { suppliersService, ordenPagosService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type { Supplier, TaxCondition } from '../../types';
 
 // ── Avatar helpers ───────────────────────────────────────────────
@@ -35,8 +36,9 @@ const TAX_BADGE: Record<TaxCondition, { label: string; className: string }> = {
 
 export default function SupplierAccountsPage() {
   const navigate = useNavigate();
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [balances, setBalances] = useState<Record<string, Record<string, number>>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -50,15 +52,15 @@ export default function SupplierAccountsPage() {
       setSuppliers(res.data);
       setTotal(res.total);
 
-      // Fetch balance for each supplier
-      const balanceMap: Record<string, number> = {};
+      // Fetch balance for each supplier (por moneda)
+      const balanceMap: Record<string, Record<string, number>> = {};
       await Promise.all(
         res.data.map(async (s: Supplier) => {
           try {
             const account = await ordenPagosService.getSupplierAccount(s.id, { page: 1, limit: 1 });
             balanceMap[s.id] = account.balance;
           } catch {
-            balanceMap[s.id] = 0;
+            balanceMap[s.id] = {};
           }
         })
       );
@@ -68,7 +70,7 @@ export default function SupplierAccountsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, search]);
+  }, [page, limit, search, fiscalMode]);
 
   useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
@@ -110,13 +112,20 @@ export default function SupplierAccountsPage() {
       key: 'balance',
       header: 'Saldo',
       render: (s) => {
-        const balance = balances[s.id] ?? 0;
-        if (balance === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
-        const weOwe = balance > 0;
+        const byCurrency = balances[s.id] ?? {};
+        const entries = Object.entries(byCurrency).filter(([, v]) => Math.abs(v) > 0.005);
+        if (entries.length === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
         return (
-          <span className={`text-sm font-semibold tabular-nums ${weOwe ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {weOwe ? '' : '+'}{formatCurrency(Math.abs(balance), 'ARS')}
-          </span>
+          <div className="flex flex-col gap-0.5">
+            {entries.map(([currency, balance]) => {
+              const weOwe = balance > 0;
+              return (
+                <span key={currency} className={`text-sm font-semibold tabular-nums ${weOwe ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  {weOwe ? '' : '+'}{formatCurrency(Math.abs(balance), currency)}
+                </span>
+              );
+            })}
+          </div>
         );
       },
     },

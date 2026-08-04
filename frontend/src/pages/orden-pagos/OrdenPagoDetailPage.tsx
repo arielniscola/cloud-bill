@@ -6,8 +6,15 @@ import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
 import { ordenPagosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
-import { PAYMENT_METHODS } from '../../utils/constants';
+import { PAYMENT_METHODS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
 import type { OrdenPago } from '../../types/ordenPago.types';
+
+const RETENTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  RETENTION_TYPE_OPTIONS.map((o) => [o.value, o.label]),
+);
+const RETENTION_BASE_LABELS: Record<string, string> = Object.fromEntries(
+  RETENTION_BASE_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pendiente',
@@ -264,6 +271,34 @@ export default function OrdenPagoDetailPage() {
             </Card>
           )}
 
+          {/* Retenciones practicadas */}
+          {(op.retenciones?.length ?? 0) > 0 && (
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white mb-1">Retenciones</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
+                Descontadas del pago. La deuda con el proveedor se cancela igual por el total: lo retenido
+                queda como impuesto a depositar.
+              </p>
+              <div className="space-y-1.5">
+                {op.retenciones!.map((r) => (
+                  <div key={r.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-violet-700 bg-violet-50 dark:bg-violet-900/20 dark:text-violet-300">
+                      {RETENTION_TYPE_LABELS[r.type] ?? r.type}
+                    </span>
+                    {r.jurisdiction && <span className="text-xs text-gray-500 dark:text-slate-400">{r.jurisdiction}</span>}
+                    <span className="text-xs text-gray-500 dark:text-slate-400 tabular-nums">
+                      {formatCurrency(Number(r.baseAmount), op.currency)} s/{RETENTION_BASE_LABELS[r.base] ?? r.base} × {r.percentage}%
+                    </span>
+                    {r.certificate && <span className="font-mono text-[11px] text-gray-400">{r.certificate}</span>}
+                    <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white ml-auto">
+                      − {formatCurrency(Number(r.amount), op.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Cheques de la orden */}
           {(op.cheques?.length ?? 0) > 0 && (
             <Card>
@@ -290,13 +325,25 @@ export default function OrdenPagoDetailPage() {
         {/* Total sidebar */}
         <div className="space-y-4">
           <Card>
-            <p className="text-xs text-gray-400 dark:text-slate-500 mb-1">Total pagado</p>
+            {Number(op.retentionAmount) > 0 && (
+              <div className="mb-3 pb-3 border-b border-dashed border-gray-200 dark:border-slate-700 space-y-0.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 tabular-nums">
+                  Cancelado al proveedor: {formatCurrency(Number(op.amount), op.currency)}
+                </p>
+                <p className="text-xs text-violet-600 dark:text-violet-400 tabular-nums">
+                  − Retenciones: {formatCurrency(Number(op.retentionAmount), op.currency)}
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-1">
+              {Number(op.retentionAmount) > 0 ? 'Neto pagado' : 'Total pagado'}
+            </p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(Number(op.amount), op.currency)}
+              {formatCurrency(Number(op.amount) - Number(op.retentionAmount ?? 0), op.currency)}
             </p>
             {op.currency === 'USD' && Number(op.exchangeRate) > 1 && (
               <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 tabular-nums mt-1">
-                ≈ {formatCurrency(Number(op.amount) * Number(op.exchangeRate), 'ARS')} · cotiz. {Number(op.exchangeRate).toLocaleString('es-AR')}
+                ≈ {formatCurrency((Number(op.amount) - Number(op.retentionAmount ?? 0)) * Number(op.exchangeRate), 'ARS')} · cotiz. {Number(op.exchangeRate).toLocaleString('es-AR')}
               </p>
             )}
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-2">{op.currency === 'USD' ? 'Dólares' : 'Pesos argentinos'}</p>

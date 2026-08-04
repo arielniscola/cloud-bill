@@ -42,6 +42,7 @@ import {
   Sliders,
   Crown,
   Repeat,
+  Percent,
 } from "lucide-react";
 import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
@@ -125,6 +126,7 @@ const navigationGroups: NavGroup[] = [
           { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard, featureKey: "supplier_accounts" },
           { name: "Facturas",          href: "/purchase-invoices", icon: FileText },
           { name: "Remitos de Compra", href: "/purchase-remitos",  icon: PackageSearch },
+          { name: "Retenciones",       href: "/purchase-retentions", icon: Percent },
           { name: "Notas Internas",    href: "/internal-notes?entity=SUPPLIER", icon: FileEdit },
           { name: "Reporte de facturas",href: "/reports/purchase-invoices", icon: BarChart2, featureKey: "reports" },
           { name: "Órdenes de Pago",   href: "/orden-pagos",       icon: Banknote },

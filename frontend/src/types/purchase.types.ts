@@ -4,7 +4,7 @@ import type { Supplier } from './supplier.types';
 export type PurchaseStatus             = 'REGISTERED' | 'CANCELLED';
 export type PurchaseInvoiceStatus      = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 
-export type RetentionType = 'IIBB' | 'GANANCIAS' | 'IVA' | 'OTHER';
+export type RetentionType = 'IIBB' | 'GANANCIAS' | 'IVA' | 'SUSS' | 'OTHER';
 
 // "Otros tributos" que SUMAN al total (percepciones, impuestos internos, otros)
 export type TributoType = 'PERCEPCION_IVA' | 'PERCEPCION_IIBB' | 'IMPUESTOS_INTERNOS' | 'OTRO';
@@ -18,17 +18,6 @@ export interface PurchaseInvoiceItem {
   subtotal:    number;
   taxAmount:   number;
   total:       number;
-}
-
-export interface PurchaseInvoiceRetencion {
-  id:           string;
-  type:         RetentionType;
-  jurisdiction: string | null;
-  base:         number;
-  percentage:   number;
-  amount:       number;
-  certificate:  string | null;
-  notes:        string | null;
 }
 
 export interface PurchaseInvoiceTributo {
@@ -70,7 +59,6 @@ export interface PurchaseInvoice {
   status: PurchaseInvoiceStatus;
   notes: string | null;
   items: PurchaseInvoiceItem[];
-  retenciones: PurchaseInvoiceRetencion[];
   tributos: PurchaseInvoiceTributo[];
   remitos?: PurchaseInvoiceRemitoLink[];
   originInvoiceId?: string | null;
@@ -84,16 +72,6 @@ export interface CreatePurchaseInvoiceItemDTO {
   quantity:    number;
   unitPrice:   number;
   taxRate:     number;
-}
-
-export interface CreatePurchaseInvoiceRetentionDTO {
-  type:         RetentionType;
-  jurisdiction?: string | null;
-  base:         number;
-  percentage:   number;
-  amount:       number;
-  certificate?: string | null;
-  notes?:       string | null;
 }
 
 export interface CreatePurchaseInvoiceTributoDTO {
@@ -117,7 +95,6 @@ export interface CreatePurchaseInvoiceDTO {
   paymentMethod: string;
   notes?: string | null;
   items?: CreatePurchaseInvoiceItemDTO[];
-  retenciones?: CreatePurchaseInvoiceRetentionDTO[];
   tributos?: CreatePurchaseInvoiceTributoDTO[];
   // Standalone (documento de primer nivel)
   supplierId?: string;
@@ -141,6 +118,37 @@ export interface PurchaseInvoiceFilters {
   dateFrom?: string;
   dateTo?: string;
 }
+// Retención practicada al pagar, enriquecida con la orden de pago y el proveedor
+// (listado / reimpresión de comprobantes — GET /purchase-invoices/retenciones).
+export interface PurchaseInvoiceRetentionRow {
+  id: string;
+  // Las retenciones solo se practican al pagar (Orden de Pago), que es el
+  // momento que corresponde legalmente.
+  origin: 'ORDEN_PAGO';
+  type: RetentionType;
+  jurisdiction: string | null;
+  base: number;                        // importe de la base
+  baseKind: 'NETO' | 'IVA' | 'BRUTO' | null;
+  percentage: number;
+  amount: number;
+  certificate: string | null;
+  notes: string | null;
+  createdAt: string;
+  // Comprobante de origen: la orden de pago.
+  invoice: { id: string; number: string; date: string; currency: string };
+  supplier: { id: string; name: string; cuit: string | null };
+}
+
+export interface PurchaseInvoiceRetentionFilters {
+  page?: number;
+  limit?: number;
+  supplierId?: string;
+  type?: RetentionType;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
 export type PurchasePaymentStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID';
 export type PurchaseSaleCondition = 'CONTADO' | 'CUENTA_CORRIENTE';
 

@@ -11,8 +11,8 @@ import { excelFileToCsv } from '../../utils/importExcel';
 const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: string[] }> = {
   products: {
     filename: 'template_productos.csv',
-    headers: ['sku', 'nombre', 'costo', 'precio', 'preciousd', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'superrubro', 'marca'],
-    example: ['PROD-001', 'Producto de ejemplo', '100', '150', '12.5', '21', 'UN', 'Descripción opcional', '', 'Hortaliza Hibrida', 'Semilla', 'MarcaX'],
+    headers: ['sku', 'nombre', 'costo', 'precio', 'preciousd', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'superrubro', 'marca', 'proveedor'],
+    example: ['PROD-001', 'Producto de ejemplo', '100', '150', '12.5', '21', 'UN', 'Descripción opcional', '', 'Hortaliza Hibrida', 'Semilla', 'MarcaX', 'Proveedor SA'],
   },
   customers: {
     filename: 'template_clientes.csv',
@@ -24,6 +24,11 @@ const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: 
     headers: ['nombre', 'cuit', 'condicioniva', 'email', 'telefono', 'direccion', 'ciudad', 'notas'],
     example: ['Proveedor SA', '30-12345678-9', 'RI', 'proveedor@mail.com', '1112345678', 'Av. Industrial 500', 'Córdoba', ''],
   },
+  bancos: {
+    filename: 'template_bancos.csv',
+    headers: ['nombre', 'codigo', 'sucursal'],
+    example: ['Banco Nación', '011', 'Casa Central'],
+  },
 };
 
 const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
@@ -33,7 +38,7 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
       <li><span className="font-medium">sku, nombre, costo, precio</span> — requeridos</li>
       <li><span className="font-medium">preciousd</span> — precio de venta en USD (opcional)</li>
       <li><span className="font-medium">iva</span> — % o fracción (21 o 0.21). Default: 21</li>
-      <li><span className="font-medium">rubro / superrubro / marca</span> — deben existir (no se crean)</li>
+      <li><span className="font-medium">rubro / superrubro / marca / proveedor</span> — deben existir (no se crean)</li>
       <li>Si el SKU ya existe → <span className="italic">actualiza</span> el producto</li>
     </ul>
   ),
@@ -53,15 +58,23 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
       <li>Si el CUIT ya existe → <span className="italic">actualiza</span> el proveedor</li>
     </ul>
   ),
+  bancos: (
+    <ul className="space-y-1 text-xs text-gray-500 dark:text-slate-400">
+      <li><span className="font-medium">nombre</span> — requerido</li>
+      <li><span className="font-medium">codigo, sucursal</span> — opcionales</li>
+      <li>Si ya existe un banco con ese nombre (sin distinguir mayúsculas) → <span className="italic">actualiza</span> código/sucursal</li>
+    </ul>
+  ),
 };
 
 const ENTITY_LABELS: Record<Entity, string> = {
   products:  'Productos',
   customers: 'Clientes',
   suppliers: 'Proveedores',
+  bancos:    'Bancos',
 };
 
-type Entity = 'products' | 'customers' | 'suppliers';
+type Entity = 'products' | 'customers' | 'suppliers' | 'bancos';
 
 interface Props {
   entity: Entity;
@@ -70,12 +83,49 @@ interface Props {
 }
 
 // ── CSV preview ────────────────────────────────────────────────────────────
-function parsePreview(text: string): { headers: string[]; rows: string[][] } {
+// El delimitador se detecta igual que en el backend (ImportController): Excel
+// exporta con ";" cuando la configuraci\u00F3n regional usa coma decimal.
+function detectDelimiter(headerLine: string): string {
+  let best = ',';
+  let bestCount = -1;
+  for (const d of [',', ';', '\t']) {
+    const count = headerLine.split(d).length - 1;
+    if (count > bestCount) { bestCount = count; best = d; }
+  }
+  return best;
+}
+
+interface Preview {
+  headers: string[];
+  rows: string[][];
+  // Filas del archivo completo con m\u00E1s campos que el encabezado. Se avisan antes
+  // de importar: desalinean las columnas y el backend las rechaza.
+  misalignedRows: number;
+}
+
+function parsePreview(text: string): Preview {
   const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = clean.split('\n').filter(Boolean).slice(0, 6);
-  if (lines.length === 0) return { headers: [], rows: [] };
-  const split = (line: string) => line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-  return { headers: split(lines[0]), rows: lines.slice(1).map(split) };
+  const allLines = clean.split('\n').filter(Boolean);
+  if (allLines.length === 0) return { headers: [], rows: [], misalignedRows: 0 };
+  const delim = detectDelimiter(allLines[0]);
+  const split = (line: string) => line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ''));
+  const headers = split(allLines[0]);
+  const misalignedRows = allLines.slice(1)
+    .filter((l) => l.split(delim).length > headers.length).length;
+  return { headers, rows: allLines.slice(1, 6).map(split), misalignedRows };
+}
+
+// Filas de datos por request. Cada fila implica 1-2 round-trips a la base en
+// el backend; en una función serverless (Vercel) con timeout corto, mandar el
+// archivo completo en una sola request puede cortarse a mitad de camino —
+// las filas ya procesadas quedan guardadas, pero el resto nunca se importa.
+// Por eso se manda en lotes chicos y secuenciales.
+const CHUNK_SIZE = 200;
+
+function splitCsvLines(text: string): { header: string; dataLines: string[] } {
+  const clean = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = clean.split('\n').filter((l) => l.trim().length > 0);
+  return { header: lines[0] ?? '', dataLines: lines.slice(1) };
 }
 
 function downloadTemplate(entity: Entity) {
@@ -93,8 +143,9 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
   const [dragging, setDragging]     = useState(false);
   const [csvText, setCsvText]       = useState<string | null>(null);
   const [fileName, setFileName]     = useState('');
-  const [preview, setPreview]       = useState<{ headers: string[]; rows: string[][] } | null>(null);
+  const [preview, setPreview]       = useState<Preview | null>(null);
   const [isImporting, setImporting] = useState(false);
+  const [progress, setProgress]     = useState<{ done: number; total: number } | null>(null);
   const [result, setResult]         = useState<ImportResult | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -139,27 +190,58 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
     e.target.value = '';
   };
 
+  const importChunk = (csv: string, rowOffset: number): Promise<ImportResult> => {
+    if (entity === 'products')  return importService.importProducts(csv, rowOffset);
+    if (entity === 'customers') return importService.importCustomers(csv, rowOffset);
+    if (entity === 'suppliers') return importService.importSuppliers(csv, rowOffset);
+    return importService.importBancos(csv, rowOffset);
+  };
+
+  // Manda el archivo en lotes secuenciales de CHUNK_SIZE filas (en vez de una
+  // sola request) para no depender de que el backend termine antes del
+  // timeout de la función serverless. Si un lote falla, se corta ahí pero se
+  // conserva lo ya importado.
   const handleImport = async () => {
     if (!csvText) return;
     setImporting(true);
+    setResult(null);
+    const { header, dataLines } = splitCsvLines(csvText);
+    const total = dataLines.length;
+    setProgress({ done: 0, total });
+
+    const acc: ImportResult = { imported: 0, skipped: 0, total: 0, errors: [] };
+    let failed = false;
+
     try {
-      const res = entity === 'products'
-        ? await importService.importProducts(csvText)
-        : entity === 'customers'
-        ? await importService.importCustomers(csvText)
-        : await importService.importSuppliers(csvText);
-      setResult(res);
-      if (res.imported > 0) {
-        toast.success(`${res.imported} ${ENTITY_LABELS[entity].toLowerCase()} importado${res.imported !== 1 ? 's' : ''}`);
-        onSuccess(res.imported);
+      for (let start = 0; start < dataLines.length; start += CHUNK_SIZE) {
+        const chunkLines = dataLines.slice(start, start + CHUNK_SIZE);
+        const chunkCsv = [header, ...chunkLines].join('\n');
+        try {
+          const res = await importChunk(chunkCsv, start);
+          acc.imported += res.imported;
+          acc.skipped  += res.skipped;
+          acc.total    += res.total;
+          acc.errors.push(...res.errors);
+        } catch {
+          failed = true;
+          break;
+        }
+        setProgress({ done: Math.min(start + chunkLines.length, total), total });
       }
-      if (res.skipped > 0 && res.imported === 0) {
+
+      setResult(acc);
+      if (acc.imported > 0) {
+        toast.success(`${acc.imported} ${ENTITY_LABELS[entity].toLowerCase()} importado${acc.imported !== 1 ? 's' : ''}`);
+        onSuccess(acc.imported);
+      }
+      if (failed) {
+        toast.error(`Se cortó la importación en la fila ${acc.total + 2} de ${total + 1} — reintentá con el resto del archivo`);
+      } else if (acc.skipped > 0 && acc.imported === 0) {
         toast.error('No se pudo importar ningún registro');
       }
-    } catch {
-      toast.error('Error al importar');
     } finally {
       setImporting(false);
+      setProgress(null);
     }
   };
 
@@ -244,6 +326,17 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
               <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                 Vista previa (primeras filas)
               </p>
+              {preview.misalignedRows > 0 && (
+                <div className="mb-2 flex gap-2 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-px" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    <span className="font-semibold">{preview.misalignedRows} filas</span> tienen más columnas
+                    que el encabezado y se van a rechazar. Suele pasar cuando los importes usan
+                    coma decimal sin comillas (ej. <span className="font-mono">1234,56</span>).
+                    Guardá los números con punto decimal, o importá el Excel original en vez del CSV.
+                  </p>
+                </div>
+              )}
               <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-slate-700">
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50 dark:bg-slate-700/50">
@@ -317,7 +410,20 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
             <Button onClick={onClose}>Cerrar</Button>
           ) : (
             <>
-              <Button variant="outline" onClick={onClose}>Cancelar</Button>
+              {isImporting && progress && progress.total > CHUNK_SIZE && (
+                <div className="flex-1 flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-500 transition-all duration-200"
+                      style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">
+                    {progress.done} / {progress.total}
+                  </span>
+                </div>
+              )}
+              <Button variant="outline" onClick={onClose} disabled={isImporting}>Cancelar</Button>
               <Button onClick={handleImport} disabled={!csvText} isLoading={isImporting}>
                 <Upload className="w-4 h-4 mr-2" />
                 Importar

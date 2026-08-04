@@ -52,8 +52,6 @@ export interface PurchaseInvoiceReportRow {
   subtotal:       number;
   taxAmount:      number;
   amount:         number;
-  retenciones:    number;
-  net:            number;
   paid:           number;
   pending:        number;
   dueDate:        string | null;
@@ -76,8 +74,6 @@ export interface PurchaseInvoiceReportTotals {
   subtotal:     number;
   taxAmount:    number;
   amount:       number;
-  retenciones:  number;
-  net:          number;
   pending:      number;
   paid:         number;
 }
@@ -174,6 +170,49 @@ export interface CashFlowFilters extends DateRangeParams {
   cashRegisterId?: string;
 }
 
+// ── Retenciones practicadas ───────────────────────────────────────────────────
+// Una fila por retención practicada al pagar. Trae todo lo que necesita el
+// archivo de importación de SICORE (comprobante, CUIT del retenido, códigos ARCA).
+export interface RetentionReportRow {
+  id:              string;
+  type:            string;                       // IIBB | GANANCIAS | IVA | SUSS | OTHER
+  jurisdiction:    string | null;
+  baseKind:        'NETO' | 'IVA' | 'BRUTO';
+  baseAmount:      number;
+  percentage:      number;
+  amount:          number;
+  certificate:     string | null;
+  arcaImpuesto:    string | null;                // 217 Ganancias / 767 IVA
+  arcaRegimen:     string | null;                // según la actividad
+  date:            string;                       // fecha de la OP (= fecha de la retención)
+  ordenPagoId:     string;
+  ordenPagoNumber: string;
+  ordenPagoAmount: number;                       // importe del comprobante (bruto imputado)
+  ordenPagoStatus: string;
+  currency:        string;
+  supplierId:      string;
+  supplierName:    string;
+  supplierCuit:    string | null;
+}
+
+export interface RetentionReportTotals {
+  count:      number;
+  baseAmount: number;
+  amount:     number;
+}
+
+export interface RetentionReportByType {
+  type:       string;
+  count:      number;
+  baseAmount: number;
+  amount:     number;
+}
+
+export interface RetentionsReportFilters extends DateRangeParams {
+  supplierId?: string;
+  type?:       string;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 function clean(params: object): Record<string, string> {
   const out: Record<string, string> = {};
@@ -234,6 +273,15 @@ export const reportsService = {
       '/reports/cash-flow', { params: clean(filters) }
     );
     return { data: res.data.data, totalAmount: res.data.totalAmount };
+  },
+
+  async retentions(filters: RetentionsReportFilters): Promise<{
+    data: RetentionReportRow[]; totals: RetentionReportTotals; byType: RetentionReportByType[];
+  }> {
+    const res = await api.get<{
+      status: string; data: RetentionReportRow[]; totals: RetentionReportTotals; byType: RetentionReportByType[];
+    }>('/reports/retentions', { params: clean(filters) });
+    return { data: res.data.data, totals: res.data.totals, byType: res.data.byType };
   },
 };
 

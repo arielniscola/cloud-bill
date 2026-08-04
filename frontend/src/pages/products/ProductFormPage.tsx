@@ -16,9 +16,10 @@ import {
   brandsService,
   categoriesService,
   productCustomFieldsService,
+  suppliersService,
 } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
-import type { Rubro, Brand, Category } from '../../types';
+import type { Rubro, Brand, Category, Supplier } from '../../types';
 import type { ProductCustomField } from '../../types/product-custom-field.types';
 import ProductCustomFieldsSection from './ProductCustomFieldsSection';
 import ProductVariantsSection from './ProductVariantsSection';
@@ -49,6 +50,7 @@ const productSchema = z.object({
   rubroId: z.string().optional().nullable(),
   brandId: z.string().optional().nullable(),
   categoryId: z.string().optional().nullable(),
+  supplierId: z.string().optional().nullable(),
   barcode: z.string().optional().nullable(),
   unit: z.string().optional().nullable(),
   internalNotes: z.string().optional().nullable(),
@@ -288,6 +290,7 @@ export default function ProductFormPage() {
   const [rubros, setRubros] = useState<Rubro[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [customFields, setCustomFields] = useState<ProductCustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string | undefined>>({});
@@ -306,6 +309,7 @@ export default function ProductFormPage() {
   const rubroId = watch('rubroId') || '';
   const brandId    = watch('brandId')    || '';
   const categoryId    = watch('categoryId')    || '';
+  const supplierId = watch('supplierId') || '';
   const unit       = watch('unit')       || '';
   const taxRate    = watch('taxRate')    ?? 21;
   const cost       = watch('cost')        ?? 0;
@@ -335,12 +339,14 @@ export default function ProductFormPage() {
       brandsService.getAll(),
       categoriesService.getAll(),
       productCustomFieldsService.getAll(true),
+      suppliersService.getAll({ limit: 500, isActive: true }),
     ])
-      .then(([cats, brnds, rbrs, fields]) => {
+      .then(([cats, brnds, rbrs, fields, sups]) => {
         setRubros(cats);
         setBrands(brnds.filter((b) => b.isActive));
         setCategories((rbrs as Category[]).filter((r) => r.isActive));
         setCustomFields(fields);
+        setSuppliers(sups.data);
       })
       .catch(() => {});
   }, []);
@@ -357,6 +363,7 @@ export default function ProductFormPage() {
         setValue('rubroId',    p.rubroId);
         setValue('brandId',       p.brandId);
         setValue('categoryId',       (p as any).categoryId ?? null);
+        setValue('supplierId',    p.supplierId ?? null);
         setValue('barcode',       p.barcode);
         setValue('unit',          p.unit);
         setValue('internalNotes', p.internalNotes);
@@ -410,6 +417,7 @@ export default function ProductFormPage() {
         rubroId:    data.rubroId    || null,
         brandId:       data.brandId       || null,
         categoryId:       data.categoryId       || null,
+        supplierId:    data.supplierId    || null,
         barcode:       data.barcode       || null,
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
@@ -448,6 +456,11 @@ export default function ProductFormPage() {
     { value: '', label: 'Sin marca' },
     ...brands.map((b) => ({ value: b.id, label: b.name })),
   ], [brands]);
+
+  const supplierOptions = useMemo(() => [
+    { value: '', label: 'Sin proveedor' },
+    ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+  ], [suppliers]);
 
   const categoryOptions = useMemo(() => [
     { value: '', label: 'Sin category' },
@@ -541,7 +554,7 @@ export default function ProductFormPage() {
               {/* ── Clasificación ── */}
               <div className="space-y-4">
                 <SectionHeader icon={<Layers className="w-3.5 h-3.5" />} label="Clasificación" />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <Select
                     label="Rubro"
                     options={rubroOptions}
@@ -559,6 +572,12 @@ export default function ProductFormPage() {
                     options={categoryOptions}
                     value={categoryId}
                     onChange={(v) => setValue('categoryId', v || null)}
+                  />
+                  <Select
+                    label="Proveedor"
+                    options={supplierOptions}
+                    value={supplierId}
+                    onChange={(v) => setValue('supplierId', v || null)}
                   />
                 </div>
               </div>

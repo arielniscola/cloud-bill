@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, ChevronLeft, Receipt, Wallet, Trash2 } from 'lucide-react';
+import { Plus, ChevronLeft, Receipt, Wallet, Trash2, Percent } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Input } from '../../components/ui';
 import { PageHeader, BancoSelect, AccountSearchSelect } from '../../components/shared';
@@ -9,12 +9,14 @@ import chequesService from '../../services/cheques.service';
 import chequerasService from '../../services/chequeras.service';
 import { useFeatures } from '../../hooks/useFeatures';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { PAYMENT_METHOD_OPTIONS } from '../../utils/constants';
+import { OP_PAYMENT_METHOD_OPTIONS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
 import type { Supplier, CashRegister } from '../../types';
+import type { SupplierRetention, RetentionBase } from '../../types/supplier.types';
+import type { RetentionType } from '../../types/purchase.types';
 import type { Cheque } from '../../types/cheque.types';
 import type { Chequera } from '../../types/chequera.types';
 import type { Account } from '../../types/accounting.types';
-import type { PendingPurchaseInvoice, CreateOrdenPagoItemDTO, CreateOrdenPagoChequePropioDTO, CreateOrdenPagoAjusteDTO } from '../../types/ordenPago.types';
+import type { PendingPurchaseInvoice, CreateOrdenPagoItemDTO, CreateOrdenPagoChequePropioDTO, CreateOrdenPagoAjusteDTO, CreateOrdenPagoRetencionDTO } from '../../types/ordenPago.types';
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
   FACTURA_A: 'Factura A', FACTURA_B: 'Factura B', FACTURA_C: 'Factura C', FACTURA_M: 'Factura M',
@@ -42,6 +44,20 @@ interface AjusteRow {
   amount: string;
 }
 
+// Retención a practicar en este pago. `baseAmount` se recalcula solo desde las
+// facturas seleccionadas salvo que el usuario lo edite a mano (`manualBase`).
+interface RetencionRow {
+  supplierRetentionId: string | null;
+  type: RetentionType;
+  jurisdiction: string;
+  base: RetentionBase;
+  baseAmount: string;
+  percentage: string;
+  manualBase: boolean;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export default function OrdenPagoFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -63,6 +79,8 @@ export default function OrdenPagoFormPage() {
   const [accountAmount, setAccountAmount]   = useState('');  // pago a cuenta (sin facturas)
   const [ajustes, setAjustes]               = useState<AjusteRow[]>([]);
   const [accounts, setAccounts]             = useState<Account[]>([]);
+  const [retenciones, setRetenciones]       = useState<RetencionRow[]>([]);
+  const [supplierRetentions, setSupplierRetentions] = useState<SupplierRetention[]>([]);
 
   const [suppliers, setSuppliers]           = useState<Supplier[]>([]);
   const [invoices, setInvoices]             = useState<PendingPurchaseInvoice[]>([]);
@@ -118,6 +136,38 @@ export default function OrdenPagoFormPage() {
       .then((accs) => setAccounts(accs.filter((a) => a.isAuxiliary && a.isActive)))
       .catch(() => { /* sin plan de cuentas: la sección queda vacía */ });
   }, [canUseAccounting]);
+
+  // Retenciones configuradas del proveedor: se proponen automáticamente al
+  // elegirlo. El usuario puede quitarlas o ajustarlas antes de emitir.
+  useEffect(() => {
+    if (!supplierId) {
+      setSupplierRetentions([]);
+      setRetenciones([]);
+      return;
+    }
+    suppliersService.getRetentions(supplierId, true)
+      .then((configured) => {
+        setSupplierRetentions(configured);
+        setRetenciones(configured.map((r) => ({
+          supplierRetentionId: r.id,
+          type: r.type,
+          jurisdiction: r.jurisdiction ?? '',
+          base: r.base,
+          baseAmount: '',       // lo completa el efecto de recálculo
+          percentage: String(r.percentage),
+          manualBase: false,
+        })));
+      })
+      .catch(() => { setSupplierRetentions([]); setRetenciones([]); });
+  }, [supplierId]);
+
+  const addRetencion = () => setRetenciones((prev) => [...prev, {
+    supplierRetentionId: null, type: 'IIBB', jurisdiction: '', base: 'NETO',
+    baseAmount: '', percentage: '', manualBase: false,
+  }]);
+  const removeRetencion = (idx: number) => setRetenciones((prev) => prev.filter((_, i) => i !== idx));
+  const updateRetencion = (idx: number, patch: Partial<RetencionRow>) =>
+    setRetenciones((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
   const addAjuste = () => setAjustes((prev) => [...prev, { accountId: '', accountCode: '', description: '', type: 'RESTA', amount: '' }]);
   const removeAjuste = (idx: number) => setAjustes((prev) => prev.filter((_, i) => i !== idx));
@@ -232,8 +282,57 @@ export default function OrdenPagoFormPage() {
   const totalDescuentos = ajustes.filter((a) => a.type === 'RESTA').reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const totalIntereses  = ajustes.filter((a) => a.type === 'SUMA').reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const totalAmount = baseAmount + ajustesNet;
+
+  // ── Bases de retención ────────────────────────────────────────────────────
+  // Se arman desde las facturas seleccionadas, prorrateadas por la porción que
+  // se está pagando de cada una (un pago parcial retiene sobre esa parte). Los
+  // importes quedan en la moneda de liquidación de la OP.
+  const retentionBases = (() => {
+    if (isPagoACuenta) {
+      // Sin facturas no hay discriminación de IVA: la única base posible es el importe.
+      const amount = Number(accountAmount) || 0;
+      return { NETO: amount, IVA: 0, BRUTO: amount };
+    }
+    let neto = 0, iva = 0, bruto = 0;
+    for (const it of items) {
+      const inv = invoices.find((x) => x.id === it.purchaseInvoiceId);
+      if (!inv) continue;
+      const conv = inv.currency === 'USD' ? rate : 1;
+      const paid = itemAmount(it);                 // ya convertido a la moneda de la OP
+      const invTotal = Number(inv.amount) * conv;
+      const ratio = invTotal > 0 ? paid / invTotal : 0;
+      neto  += Number(inv.subtotal)  * conv * ratio;
+      iva   += Number(inv.taxAmount) * conv * ratio;
+      bruto += paid;
+    }
+    return { NETO: round2(neto), IVA: round2(iva), BRUTO: round2(bruto) };
+  })();
+
+  // Refleja la base en las filas que no fueron editadas a mano.
+  const basesKey = `${retentionBases.NETO}|${retentionBases.IVA}|${retentionBases.BRUTO}`;
+  useEffect(() => {
+    setRetenciones((prev) => {
+      let changed = false;
+      const next = prev.map((r) => {
+        if (r.manualBase) return r;
+        const auto = String(retentionBases[r.base] ?? 0);
+        if (auto === r.baseAmount) return r;
+        changed = true;
+        return { ...r, baseAmount: auto };
+      });
+      return changed ? next : prev;
+    });
+  }, [basesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const retencionAmount = (r: RetencionRow) =>
+    round2(((Number(r.baseAmount) || 0) * (Number(r.percentage) || 0)) / 100);
+  const totalRetenciones = round2(retenciones.reduce((s, r) => s + retencionAmount(r), 0));
+  // Lo retenido no se le paga al proveedor, pero su deuda se cancela igual por
+  // el total: `totalAmount` es la imputación y esto es el egreso real de dinero.
+  const netToPay = round2(totalAmount - totalRetenciones);
+
   // Equivalente ARS para mostrar en pago a cuenta en USD (en pago de facturas el total ya está en ARS)
-  const arsEquivalent = effectiveCurrency === 'USD' ? totalAmount * rate : totalAmount;
+  const arsEquivalent = effectiveCurrency === 'USD' ? netToPay * rate : netToPay;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,6 +370,27 @@ export default function OrdenPagoFormPage() {
     }));
     if (totalAmount <= 0) {
       toast.error('El total a pagar debe ser mayor a 0 luego de los ajustes');
+      return;
+    }
+
+    // Retenciones: solo viajan las que tienen alícuota e importe > 0.
+    if (retenciones.some((r) => Number(r.percentage) > 0 && !(Number(r.baseAmount) > 0))) {
+      toast.error('Cada retención necesita una base mayor a 0');
+      return;
+    }
+    const parsedRetenciones: CreateOrdenPagoRetencionDTO[] = retenciones
+      .filter((r) => retencionAmount(r) > 0)
+      .map((r) => ({
+        supplierRetentionId: r.supplierRetentionId,
+        type: r.type,
+        jurisdiction: r.jurisdiction.trim() || null,
+        base: r.base,
+        baseAmount: Number(r.baseAmount),
+        percentage: Number(r.percentage),
+        amount: retencionAmount(r),
+      }));
+    if (totalRetenciones > totalAmount) {
+      toast.error('Las retenciones no pueden superar el total a pagar');
       return;
     }
     if (showRate && rate <= 0) {
@@ -314,6 +434,7 @@ export default function OrdenPagoFormPage() {
         items: parsedItems,
         amount: isPagoACuenta ? Number(accountAmount) : undefined,
         ajustes: parsedAjustes.length > 0 ? parsedAjustes : undefined,
+        retenciones: parsedRetenciones.length > 0 ? parsedRetenciones : undefined,
         chequesEnCartera,
         chequesPropios,
       });
@@ -361,16 +482,22 @@ export default function OrdenPagoFormPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Método de pago *</label>
               <select
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPaymentMethod(v);
+                  // Solo el efectivo mueve caja: al cambiar de método se limpia
+                  // para no mandar una caja que el backend igual va a descartar.
+                  if (v !== 'CASH') setCashRegisterId('');
+                }}
                 className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {PAYMENT_METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {OP_PAYMENT_METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 
             <Input label="Fecha" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
 
-            {cashRegisters.length > 0 && (
+            {paymentMethod === 'CASH' && cashRegisters.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Caja</label>
                 <select
@@ -715,6 +842,90 @@ export default function OrdenPagoFormPage() {
           )}
         </Card>
 
+        {/* Retenciones practicadas en el pago */}
+        <Card>
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-white flex items-center gap-1.5">
+              <Percent className="w-4 h-4 text-gray-400" /> Retenciones
+            </h3>
+            <Button type="button" variant="outline" size="sm" onClick={addRetencion}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> Agregar retención
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
+            Se descuentan de lo que se le paga al proveedor, pero <strong>su deuda se cancela por el total</strong>:
+            lo retenido queda como impuesto a depositar y va al reporte de retenciones.
+            {supplierRetentions.length > 0 && ' Se cargaron las configuradas para este proveedor.'}
+          </p>
+
+          {retenciones.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-slate-500 py-2">
+              {supplierId
+                ? 'Sin retenciones. Configuralas en la ficha del proveedor para que se apliquen solas, o agregá una acá.'
+                : 'Elegí un proveedor para ver sus retenciones configuradas.'}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {retenciones.map((r, idx) => (
+                <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Régimen</label>
+                    <select
+                      value={r.type}
+                      onChange={(e) => updateRetencion(idx, { type: e.target.value as RetentionType })}
+                      className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {RETENTION_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Base</label>
+                    <select
+                      value={r.base}
+                      onChange={(e) => updateRetencion(idx, { base: e.target.value as RetentionBase, manualBase: false })}
+                      className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {RETENTION_BASE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Input
+                      label="Importe base"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={r.baseAmount}
+                      onChange={(e) => updateRetencion(idx, { baseAmount: e.target.value, manualBase: true })}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Input
+                      label="Alícuota %"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.001"
+                      value={r.percentage}
+                      onChange={(e) => updateRetencion(idx, { percentage: e.target.value })}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Retenido</label>
+                    <p className="px-2 py-2 text-sm font-semibold tabular-nums text-gray-800 dark:text-slate-200">
+                      {formatCurrency(retencionAmount(r), effectiveCurrency as any)}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-1 flex justify-end">
+                    <button type="button" onClick={() => removeRetencion(idx)} className="p-2 text-gray-400 hover:text-red-500" title="Quitar">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
         {/* Ajustes: descuentos obtenidos / intereses (plan de cuentas) */}
         {canUseAccounting && (
           <Card>
@@ -780,7 +991,7 @@ export default function OrdenPagoFormPage() {
         )}
 
         {/* Summary + submit */}
-        {(items.length > 0 || (isPagoACuenta && Number(accountAmount) > 0) || ajustes.length > 0) && (
+        {(items.length > 0 || (isPagoACuenta && Number(accountAmount) > 0) || ajustes.length > 0 || totalRetenciones > 0) && (
           <Card>
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-600 dark:text-slate-400">
@@ -789,7 +1000,7 @@ export default function OrdenPagoFormPage() {
                   : `${items.length} factura${items.length !== 1 ? 's' : ''} seleccionada${items.length !== 1 ? 's' : ''}`}
               </p>
               <div className="text-right">
-                {(totalDescuentos > 0 || totalIntereses > 0) && (
+                {(totalDescuentos > 0 || totalIntereses > 0 || totalRetenciones > 0) && (
                   <div className="mb-1.5 space-y-0.5">
                     <p className="text-xs text-gray-400 dark:text-slate-500 tabular-nums">
                       Subtotal facturas: {formatCurrency(baseAmount, effectiveCurrency as any)}
@@ -804,11 +1015,23 @@ export default function OrdenPagoFormPage() {
                         − Descuentos: {formatCurrency(totalDescuentos, effectiveCurrency as any)}
                       </p>
                     )}
+                    {totalRetenciones > 0 && (
+                      <>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 tabular-nums pt-1 border-t border-dashed border-gray-200 dark:border-slate-700">
+                          Se cancela al proveedor: {formatCurrency(totalAmount, effectiveCurrency as any)}
+                        </p>
+                        <p className="text-xs text-violet-600 dark:text-violet-400 tabular-nums">
+                          − Retenciones: {formatCurrency(totalRetenciones, effectiveCurrency as any)}
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
-                <p className="text-xs text-gray-400 dark:text-slate-500">Total a pagar</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  {totalRetenciones > 0 ? 'Neto a pagar' : 'Total a pagar'}
+                </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(totalAmount, effectiveCurrency as any)}
+                  {formatCurrency(netToPay, effectiveCurrency as any)}
                 </p>
                 {effectiveCurrency === 'USD' && rate > 0 && (
                   <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 tabular-nums mt-0.5">

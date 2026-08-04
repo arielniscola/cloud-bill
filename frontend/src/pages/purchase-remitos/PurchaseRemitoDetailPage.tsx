@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Truck, Warehouse as WarehouseIcon, Calendar, CheckCircle2, XCircle, FileText, Package } from 'lucide-react';
+import { Truck, Warehouse as WarehouseIcon, Calendar, CheckCircle2, XCircle, FileText, Package, Pencil, Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
@@ -21,6 +21,9 @@ export default function PurchaseRemitoDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCancel, setShowCancel] = useState(false);
   const [acting, setActing] = useState(false);
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberInput, setNumberInput] = useState('');
+  const [savingNumber, setSavingNumber] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -50,6 +53,30 @@ export default function PurchaseRemitoDetailPage() {
       toast.error(err.response?.data?.message || 'Error al cancelar');
     } finally {
       setActing(false);
+    }
+  };
+
+  const startEditNumber = () => {
+    if (!remito) return;
+    setNumberInput(remito.number);
+    setEditingNumber(true);
+  };
+
+  const handleSaveNumber = async () => {
+    if (!id) return;
+    const trimmed = numberInput.trim();
+    if (!trimmed) { toast.error('Ingresá un número válido'); return; }
+    setSavingNumber(true);
+    try {
+      await purchaseRemitosService.updateNumber(id, trimmed);
+      toast.success('Número actualizado');
+      setEditingNumber(false);
+      fetchData();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al actualizar el número');
+    } finally {
+      setSavingNumber(false);
     }
   };
 
@@ -113,6 +140,35 @@ export default function PurchaseRemitoDetailPage() {
         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.className}`}>
           <StatusIcon className="w-3.5 h-3.5" /> {cfg.label}
         </span>
+        {editingNumber ? (
+          <span className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={numberInput}
+              onChange={(e) => setNumberInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNumber(); if (e.key === 'Escape') setEditingNumber(false); }}
+              className="text-sm font-mono px-2 py-1 rounded-md border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-700 text-gray-900 dark:text-white w-36"
+            />
+            <button onClick={handleSaveNumber} disabled={savingNumber}
+              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-600">
+              <Check className="w-4 h-4" />
+            </button>
+            <button onClick={() => setEditingNumber(false)} disabled={savingNumber}
+              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500">
+              <X className="w-4 h-4" />
+            </button>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-gray-500 dark:text-slate-400">
+            <span className="font-mono text-sm">{remito.number}</span>
+            {remito.status !== 'CANCELLED' && (
+              <button onClick={startEditNumber} title="Editar número"
+                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400 hover:text-gray-600">
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        )}
         <span className="flex items-center gap-1.5 text-gray-600 dark:text-slate-300">
           <Truck className="w-3.5 h-3.5 text-gray-400" /> {remito.supplier?.name ?? '—'}
         </span>

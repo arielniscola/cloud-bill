@@ -1,6 +1,7 @@
 import api from './api';
 import type {
   PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceFilters,
+  PurchaseInvoiceRetentionRow, PurchaseInvoiceRetentionFilters,
   ApiResponse, PaginatedResponse,
 } from '../types';
 
@@ -30,6 +31,11 @@ export const purchaseInvoicesService = {
 
   async remove(id: string): Promise<void> {
     await api.delete(`/purchase-invoices/${id}`);
+  },
+
+  async getRetenciones(filters?: PurchaseInvoiceRetentionFilters): Promise<PaginatedResponse<PurchaseInvoiceRetentionRow>> {
+    const response = await api.get<PaginatedResponse<PurchaseInvoiceRetentionRow>>('/purchase-invoices/retenciones', { params: filters });
+    return response.data;
   },
 };
 

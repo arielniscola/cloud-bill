@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 // que el backend de importación ya entiende. Para productos aplica el mapeo de las
 // columnas del archivo "FORMULARIO PRUEBA" (hoja "BASE DE DATOS").
 
-export type ImportEntity = 'products' | 'customers' | 'suppliers';
+export type ImportEntity = 'products' | 'customers' | 'suppliers' | 'bancos';
 
 const norm = (s: unknown): string =>
   String(s ?? '')
@@ -25,13 +25,14 @@ const PRODUCT_FIELDS: { key: string; aliases: string[] }[] = [
   { key: 'codigobarras',  aliases: ['codigobarras', 'codigodebarras', 'barcode', 'ean'] },
   { key: 'rubro',         aliases: ['rubro'] },
   { key: 'superrubro',    aliases: ['superrubro', 'rubropadre'] },
+  { key: 'proveedor',     aliases: ['proveedor', 'supplier'] },
   { key: 'descripcion',   aliases: ['descripcionlarga', 'descripcion', 'description'] },
   { key: 'notasinternas', aliases: ['codprov', 'codigoproveedor', 'notasinternas', 'internalnotes'] },
 ];
 
 const PRODUCT_CANON_ORDER = [
   'sku', 'nombre', 'costo', 'precio', 'preciousd', 'iva',
-  'unidad', 'codigobarras', 'rubro', 'superrubro', 'descripcion', 'notasinternas',
+  'unidad', 'codigobarras', 'rubro', 'superrubro', 'proveedor', 'descripcion', 'notasinternas',
 ];
 
 function csvEscape(v: unknown): string {
@@ -119,6 +120,7 @@ export async function excelFileToCsv(file: File, entity: ImportEntity): Promise<
       codigobarras:  get(row, 'codigobarras'),
       rubro:         get(row, 'rubro'),
       superrubro:    get(row, 'superrubro'),
+      proveedor:     get(row, 'proveedor'),
       descripcion:   get(row, 'descripcion'),
       notasinternas: get(row, 'notasinternas'),
     };

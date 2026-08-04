@@ -15,6 +15,7 @@ import { currentAccountsService, customersService } from '../../services';
 import CreateInternalNoteModal from '../internal-notes/CreateInternalNoteModal';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type { Customer, CurrentAccount, AccountMovement, Currency, TaxCondition } from '../../types';
 
 // ── Avatar helper ────────────────────────────────────────────────
@@ -151,6 +152,7 @@ function PageSkeleton() {
 export default function AccountDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate = useNavigate();
+  const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   const [customer,  setCustomer]  = useState<Customer | null>(null);
   const [accounts,  setAccounts]  = useState<CurrentAccount[]>([]);
@@ -184,8 +186,8 @@ export default function AccountDetailPage() {
       setCustomer(customerData);
       setAccounts(accountsData);
 
-      const selectedAccount = accountsData.find((a: CurrentAccount) => a.currency === selectedCurrency);
-      if (selectedAccount) {
+      const hasAccount = accountsData.some((a: CurrentAccount) => a.currency === selectedCurrency);
+      if (hasAccount) {
         const movementsData = await currentAccountsService.getMovements(customerId, {
           page, limit, currency: selectedCurrency,
         });
@@ -201,7 +203,7 @@ export default function AccountDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [customerId, page, limit, selectedCurrency, navigate]);
+  }, [customerId, page, limit, selectedCurrency, navigate, fiscalMode]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -250,8 +252,16 @@ export default function AccountDetailPage() {
     }
   };
 
-  const arsAccount = accounts.find((a) => a.currency === 'ARS');
-  const usdAccount = accounts.find((a) => a.currency === 'USD');
+  // En modo "Todos" puede haber una cuenta FORMAL y otra INFORMAL para la
+  // misma moneda — se suman para mostrar un solo saldo total (el límite de
+  // crédito solo se muestra si hay una única cuenta, para no mezclar límites).
+  const mergeAccounts = (list: CurrentAccount[]): CurrentAccount | undefined => {
+    if (list.length === 0) return undefined;
+    if (list.length === 1) return list[0];
+    return { ...list[0], balance: list.reduce((s, a) => s + Number(a.balance), 0), creditLimit: null };
+  };
+  const arsAccount = mergeAccounts(accounts.filter((a) => a.currency === 'ARS'));
+  const usdAccount = mergeAccounts(accounts.filter((a) => a.currency === 'USD'));
 
   const columns: Column<AccountMovement>[] = [
     {

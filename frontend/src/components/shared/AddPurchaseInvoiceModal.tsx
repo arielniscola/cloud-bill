@@ -8,9 +8,7 @@ import type {
   PurchaseInvoice,
   CreatePurchaseInvoiceDTO,
   CreatePurchaseInvoiceItemDTO,
-  CreatePurchaseInvoiceRetentionDTO,
   CreatePurchaseInvoiceTributoDTO,
-  RetentionType,
   TributoType,
   Product,
 } from '../../types';
@@ -53,13 +51,6 @@ const TAX_RATE_OPTIONS = [
   { value: 27,   label: '27%' },
 ];
 
-const RETENTION_TYPE_OPTIONS: { value: RetentionType; label: string }[] = [
-  { value: 'IIBB',      label: 'IIBB' },
-  { value: 'GANANCIAS', label: 'Ganancias' },
-  { value: 'IVA',       label: 'IVA' },
-  { value: 'OTHER',     label: 'Otro' },
-];
-
 const TRIBUTO_TYPE_OPTIONS: { value: TributoType; label: string }[] = [
   { value: 'PERCEPCION_IVA',    label: 'Percepción IVA' },
   { value: 'PERCEPCION_IIBB',   label: 'Percepción IIBB' },
@@ -77,7 +68,7 @@ const AR_PROVINCES = [
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: Omit<CreatePurchaseInvoiceDTO, 'items' | 'retenciones'> = {
+const EMPTY_FORM: Omit<CreatePurchaseInvoiceDTO, 'items'> = {
   number:         '',
   type:           'FACTURA_A',
   subtotal:       0,
@@ -95,16 +86,6 @@ const EMPTY_ITEM: CreatePurchaseInvoiceItemDTO = {
   quantity:    1,
   unitPrice:   0,
   taxRate:     21,
-};
-
-const EMPTY_RET: CreatePurchaseInvoiceRetentionDTO = {
-  type:         'IIBB',
-  jurisdiction: null,
-  base:         0,
-  percentage:   0,
-  amount:       0,
-  certificate:  null,
-  notes:        null,
 };
 
 const EMPTY_TRIB: CreatePurchaseInvoiceTributoDTO = {
@@ -153,6 +134,16 @@ const SALE_CONDITION_OPTIONS = [
 
 const todayISO = () => new Date().toISOString().split('T')[0];
 
+// Completa con ceros a la izquierda "5-8899" → "00005-00008899" al perder el foco.
+// Si no matchea el patrón "dígitos-dígitos" se deja el valor tal cual escribió el usuario.
+const formatInvoiceNumberInput = (raw: string): string => {
+  const parts = raw.trim().split('-');
+  if (parts.length !== 2) return raw.trim();
+  const [left, right] = parts;
+  if (!/^\d{1,5}$/.test(left) || !/^\d{1,8}$/.test(right)) return raw.trim();
+  return `${left.padStart(5, '0')}-${right.padStart(8, '0')}`;
+};
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function AddPurchaseInvoiceModal({
@@ -185,10 +176,8 @@ export function AddPurchaseInvoiceModal({
   const [form,        setForm]        = useState(EMPTY_FORM);
   const [items,       setItems]       = useState<PurchaseInvoiceItemRow[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
-  const [retenciones, setRetenciones] = useState<CreatePurchaseInvoiceRetentionDTO[]>([]);
   const [tributos,    setTributos]    = useState<CreatePurchaseInvoiceTributoDTO[]>([]);
   const [showItems,   setShowItems]   = useState(false);
-  const [showRets,    setShowRets]    = useState(false);
   const [showTribs,   setShowTribs]   = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | 'close' | 'discard'>(null);
 
@@ -260,15 +249,6 @@ export function AddPurchaseInvoiceModal({
         unitPrice:   Number(i.unitPrice),
         taxRate:     Number(i.taxRate),
       }));
-      const existingRets = (existing.retenciones ?? []).map((r) => ({
-        type:         r.type as RetentionType,
-        jurisdiction: r.jurisdiction,
-        base:         Number(r.base),
-        percentage:   Number(r.percentage),
-        amount:       Number(r.amount),
-        certificate:  r.certificate,
-        notes:        r.notes,
-      }));
       const existingTribs = (existing.tributos ?? []).map((t) => ({
         type:         t.type as TributoType,
         jurisdiction: t.jurisdiction,
@@ -278,27 +258,21 @@ export function AddPurchaseInvoiceModal({
         description:  t.description,
       }));
       setItems(existingItems);
-      setRetenciones(existingRets);
       setTributos(existingTribs);
       setShowItems(existingItems.length > 0);
-      setShowRets(existingRets.length > 0);
       setShowTribs(existingTribs.length > 0);
     } else if (fromRemito) {
       setForm({ ...EMPTY_FORM, number: '' });
       setItems(fromRemito.items.map((i) => ({ ...i })));
-      setRetenciones([]);
       setTributos([]);
       setShowItems(fromRemito.items.length > 0);
-      setShowRets(false);
       setShowTribs(false);
     } else {
       const draft = readDraft();
       setForm(draft?.form ?? EMPTY_FORM);
       setItems(draft?.items ?? []);
-      setRetenciones(draft?.retenciones ?? []);
       setTributos(draft?.tributos ?? []);
       setShowItems(draft?.showItems ?? false);
-      setShowRets(draft?.showRets ?? false);
       setShowTribs(draft?.showTribs ?? false);
     }
   }, [isOpen, existing, fromRemito]);
@@ -316,9 +290,9 @@ export function AddPurchaseInvoiceModal({
   // ¿Hay datos cargados? (para confirmar cierre y decidir si guardar el borrador)
   const isDirty = useMemo(() => (
     !!form.number.trim() || Number(form.amount) > 0 || Number(form.subtotal) > 0 ||
-    items.length > 0 || retenciones.length > 0 || tributos.length > 0 ||
+    items.length > 0 || tributos.length > 0 ||
     !!supplierId || !!form.notes || !!originInvoiceId
-  ), [form, items, retenciones, tributos, supplierId, originInvoiceId]);
+  ), [form, items, tributos, supplierId, originInvoiceId]);
 
   // Auto-guardado del borrador (solo factura nueva). Se omite el primer render
   // tras hidratar para no pisar lo restaurado con el estado vacío inicial.
@@ -328,13 +302,13 @@ export function AddPurchaseInvoiceModal({
     if (!isDirty) { clearDraft(); return; }
     const snapshot = {
       supplierId, currencyState, saleCondition, date, exchangeRate, remitoLink,
-      originInvoiceId, form, items, retenciones, tributos, showItems, showRets, showTribs,
+      originInvoiceId, form, items, tributos, showItems, showTribs,
     };
     try { localStorage.setItem(draftKey, JSON.stringify(snapshot)); } catch { /* quota */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isDraftMode, isDirty, supplierId, currencyState, saleCondition, date,
-      exchangeRate, remitoLink, originInvoiceId, form, items, retenciones, tributos,
-      showItems, showRets, showTribs]);
+      exchangeRate, remitoLink, originInvoiceId, form, items, tributos,
+      showItems, showTribs]);
 
   // Cierre con Escape (respeta la confirmación de borrador)
   useEffect(() => {
@@ -384,6 +358,23 @@ export function AddPurchaseInvoiceModal({
   // ── Items ──────────────────────────────────────────────────────────────────
 
   const addItem = () => { setShowItems(true); setItems((prev) => [...prev, { ...EMPTY_ITEM }]); };
+
+  // Modo manual (sin ítems) con más de una alícuota: convierte el neto/IVA
+  // cargado en una línea de ítem genérica y agrega una segunda vacía, para
+  // reusar el desglose por alícuota que ya soportan los ítems (y que además
+  // es lo que lee el Libro IVA para reportar netos por tasa).
+  const rateLabel = (r: number) => r === 0 ? 'Exento / 0%' : `Gravado ${r}%`;
+  const splitIntoTaxLines = () => {
+    const first: PurchaseInvoiceItemRow = {
+      description: rateLabel(form.taxRate),
+      quantity:    1,
+      unitPrice:   form.subtotal,
+      taxRate:     form.taxRate,
+    };
+    const second: PurchaseInvoiceItemRow = { ...EMPTY_ITEM, description: '' };
+    setItems([first, second]);
+    setShowItems(true);
+  };
   const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
   const setItem = (i: number, field: keyof CreatePurchaseInvoiceItemDTO, val: unknown) =>
     setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
@@ -478,24 +469,6 @@ export function AddPurchaseInvoiceModal({
     setForm((prev) => ({ ...prev, amount: val, subtotal, taxAmount }));
   };
 
-  // ── Retenciones ────────────────────────────────────────────────────────────
-
-  const addRet = () => setRetenciones((prev) => [...prev, { ...EMPTY_RET }]);
-  const removeRet = (i: number) => setRetenciones((prev) => prev.filter((_, idx) => idx !== i));
-  const setRet = (i: number, field: keyof CreatePurchaseInvoiceRetentionDTO, val: unknown) =>
-    setRetenciones((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
-
-  const recalcRetAmount = (i: number, base?: number, pct?: number) => {
-    setRetenciones((prev) =>
-      prev.map((r, idx) => {
-        if (idx !== i) return r;
-        const b = base      ?? r.base;
-        const p = pct       ?? r.percentage;
-        return { ...r, base: b, percentage: p, amount: parseFloat((b * p / 100).toFixed(2)) };
-      })
-    );
-  };
-
   // ── Otros tributos ──────────────────────────────────────────────────────────
 
   const addTrib = () => { setShowTribs(true); setTributos((prev) => [...prev, { ...EMPTY_TRIB }]); };
@@ -516,16 +489,12 @@ export function AddPurchaseInvoiceModal({
 
   // ── Summary ────────────────────────────────────────────────────────────────
 
-  const totalRetenciones = retenciones.reduce((s, r) => s + Number(r.amount), 0);
-  const netoPagar        = form.amount - totalRetenciones;
-
-  const isValid = form.number.trim() && form.amount > 0 && (!standalone || !!supplierId)
-    && (!isNote || !!originInvoiceId);
+  const isValid = form.number.trim() && form.amount > 0 && (!standalone || !!supplierId);
 
   const buildPayload = (): CreatePurchaseInvoiceDTO => ({
     ...form,
     items: items.map(({ productId: _productId, ...rest }) => rest),
-    retenciones, tributos,
+    tributos,
     originInvoiceId: isNote ? (originInvoiceId || null) : null,
     ...(standalone ? {
       supplierId,
@@ -538,10 +507,10 @@ export function AddPurchaseInvoiceModal({
   });
 
   const resetToEmpty = () => {
-    setForm(EMPTY_FORM); setItems([]); setRetenciones([]); setTributos([]);
+    setForm(EMPTY_FORM); setItems([]); setTributos([]);
     setSupplierId(''); setCurrencyState(currency); setSaleCondition('CONTADO');
     setDate(todayISO()); setExchangeRate(1); setRemitoLink(null); setOriginInvoiceId('');
-    setShowItems(false); setShowRets(false); setShowTribs(false);
+    setShowItems(false); setShowTribs(false);
   };
 
   // El click afuera no cierra; cerrar con datos cargados pide confirmación.
@@ -616,7 +585,7 @@ export function AddPurchaseInvoiceModal({
       {/* Click afuera NO cierra: evita perder lo cargado por accidente */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[92vh]">
+      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
@@ -710,8 +679,9 @@ export function AddPurchaseInvoiceModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>Número de factura *</label>
-              <input className={inputCls} placeholder="0001-00012345" value={form.number}
-                onChange={(e) => set('number', e.target.value)} />
+              <input className={inputCls} placeholder="00001-00012345" value={form.number}
+                onChange={(e) => set('number', e.target.value)}
+                onBlur={(e) => set('number', formatInvoiceNumberInput(e.target.value))} />
             </div>
             <div>
               <label className={labelCls}>Tipo de comprobante *</label>
@@ -724,14 +694,14 @@ export function AddPurchaseInvoiceModal({
           {/* Comprobante de origen (solo NC/ND) */}
           {isNote && (
             <div>
-              <label className={labelCls}>Comprobante de origen *</label>
+              <label className={labelCls}>Comprobante de origen (opcional)</label>
               <select
                 className={inputCls}
                 value={originInvoiceId}
                 onChange={(e) => handleOriginChange(e.target.value)}
                 disabled={!supplierId}
               >
-                <option value="">{supplierId ? 'Seleccionar factura…' : 'Elegí primero el proveedor'}</option>
+                <option value="">{supplierId ? 'Sin imputar a una factura…' : 'Elegí primero el proveedor'}</option>
                 {originOptions.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.number} · {formatCurrency(o.amount, o.currency || 'ARS')} · {new Date(o.date).toLocaleDateString('es-AR')}
@@ -739,7 +709,9 @@ export function AddPurchaseInvoiceModal({
                 ))}
               </select>
               <p className="text-[11px] text-gray-400 mt-1">
-                La NC/ND queda vinculada a esta factura del proveedor. La letra se ajusta automáticamente.
+                {originInvoiceId
+                  ? 'La NC/ND queda vinculada a esta factura del proveedor. La letra se ajusta automáticamente.'
+                  : 'Sin seleccionar, la NC/ND se carga directo a la cuenta corriente del proveedor para imputar después.'}
               </p>
             </div>
           )}
@@ -809,6 +781,10 @@ export function AddPurchaseInvoiceModal({
                   </p>
                 )}
               </div>
+              <button type="button" onClick={splitIntoTaxLines}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Agregar otra alícuota
+              </button>
             </>
           )}
 
@@ -826,14 +802,16 @@ export function AddPurchaseInvoiceModal({
             </div>
           </div>
 
-          {/* Payment method */}
-          <div>
-            <label className={labelCls}>Forma de pago</label>
-            <select className={inputCls} value={form.paymentMethod}
-              onChange={(e) => set('paymentMethod', e.target.value)}>
-              {PAYMENT_METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
+          {/* Payment method — no aplica en cuenta corriente (se paga luego vía Orden de Pago) */}
+          {saleCondition !== 'CUENTA_CORRIENTE' && (
+            <div>
+              <label className={labelCls}>Forma de pago</label>
+              <select className={inputCls} value={form.paymentMethod}
+                onChange={(e) => set('paymentMethod', e.target.value)}>
+                {PAYMENT_METHOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* ── Items section ── */}
           <div className="border-t border-gray-100 dark:border-slate-700 pt-3">
@@ -849,7 +827,7 @@ export function AddPurchaseInvoiceModal({
             {showItems && items.length > 0 && (
               <div className="mt-2 space-y-2">
                 {/* Column headers */}
-                <div className="hidden sm:grid grid-cols-[1.5fr_1.5fr_64px_100px_84px_104px_28px] gap-1.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                <div className="hidden sm:grid grid-cols-[2.2fr_1fr_64px_100px_84px_104px_28px] gap-1.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                   <span>Producto</span>
                   <span>Descripción</span>
                   <span className="text-right">Cant.</span>
@@ -860,7 +838,7 @@ export function AddPurchaseInvoiceModal({
                 </div>
 
                 {items.map((item, i) => (
-                  <div key={i} className="grid grid-cols-1 sm:grid-cols-[1.5fr_1.5fr_64px_100px_84px_104px_28px] gap-1.5 items-center">
+                  <div key={i} className="grid grid-cols-1 sm:grid-cols-[2.2fr_1fr_64px_100px_84px_104px_28px] gap-1.5 items-center">
                     <ProductSearchSelect
                       products={products}
                       value={item.productId || ''}
@@ -969,103 +947,20 @@ export function AddPurchaseInvoiceModal({
             )}
           </div>
 
-          {/* ── Retenciones section ── */}
-          <div className="border-t border-gray-100 dark:border-slate-700 pt-3">
-            <SectionHeader
-              title="Retenciones"
-              count={retenciones.length}
-              open={showRets}
-              onToggle={() => setShowRets((v) => !v)}
-              onAdd={addRet}
-              addLabel="Agregar retención"
-            />
-
-            {showRets && retenciones.length > 0 && (
-              <div className="mt-2 space-y-2">
-                {/* Column headers */}
-                <div className="hidden sm:grid grid-cols-[1.3fr_1.7fr_110px_80px_120px_32px] gap-1.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-                  <span>Tipo</span>
-                  <span>Jurisdicción</span>
-                  <span className="text-right">Base</span>
-                  <span className="text-right">%</span>
-                  <span className="text-right">Importe</span>
-                  <span />
-                </div>
-
-                {retenciones.map((ret, i) => (
-                  <div key={i} className="grid grid-cols-1 sm:grid-cols-[1.3fr_1.7fr_110px_80px_120px_32px] gap-1.5 items-center">
-                    <select className={tinyInput} value={ret.type}
-                      onChange={(e) => setRet(i, 'type', e.target.value as RetentionType)}>
-                      {RETENTION_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    {ret.type === 'IIBB' ? (
-                      <select className={tinyInput} value={ret.jurisdiction ?? ''}
-                        onChange={(e) => setRet(i, 'jurisdiction', e.target.value || null)}>
-                        <option value="">Jurisdicción</option>
-                        {AR_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                    ) : (
-                      <input className={tinyInput} placeholder="—"
-                        value={ret.jurisdiction ?? ''}
-                        onChange={(e) => setRet(i, 'jurisdiction', e.target.value || null)} />
-                    )}
-                    <input type="number" min={0} step="0.01" className={tinyInput + ' text-right'} placeholder="0.00"
-                      value={ret.base || ''}
-                      onChange={(e) => recalcRetAmount(i, parseFloat(e.target.value) || 0, undefined)} />
-                    <input type="number" min={0} max={100} step="0.01" className={tinyInput + ' text-right'} placeholder="0.00"
-                      value={ret.percentage || ''}
-                      onChange={(e) => recalcRetAmount(i, undefined, parseFloat(e.target.value) || 0)} />
-                    <input type="number" min={0} step="0.01" className={tinyInput + ' text-right font-semibold'} placeholder="0.00"
-                      value={ret.amount || ''}
-                      onChange={(e) => setRet(i, 'amount', parseFloat(e.target.value) || 0)} />
-                    <button type="button" onClick={() => removeRet(i)}
-                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-300 hover:text-red-500 transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-
-                {retenciones.some((r) => r.certificate !== null) && (
-                  <div className="space-y-1 pt-1">
-                    {retenciones.map((ret, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-400 w-20 shrink-0">{ret.type} {ret.jurisdiction ? `(${ret.jurisdiction})` : ''}</span>
-                        <input className={tinyInput + ' flex-1'} placeholder="Nº certificado (opcional)"
-                          value={ret.certificate ?? ''}
-                          onChange={(e) => setRet(i, 'certificate', e.target.value || null)} />
-                      </div>
-                    ))}
-                  </div>
-                )}
+          {/* Total del comprobante (incl. otros tributos). Las retenciones no se
+              cargan acá: se practican al emitir la orden de pago. */}
+          {tributos.length > 0 && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl space-y-1.5">
+              <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
+                <span>Incluye otros tributos</span>
+                <span className="tabular-nums">+ {formatCurrency(totalTributos, currencyState)}</span>
               </div>
-            )}
-
-            {/* Totales: factura (incl. otros tributos) − retenciones = neto a pagar */}
-            {(retenciones.length > 0 || tributos.length > 0) && (
-              <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl space-y-1.5">
-                {totalTributos > 0 && (
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                    <span>Incluye otros tributos</span>
-                    <span className="tabular-nums">+ {formatCurrency(totalTributos, currencyState)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs text-gray-600 dark:text-slate-300">
-                  <span>Total factura</span>
-                  <span className="tabular-nums font-semibold">{formatCurrency(form.amount, currencyState)}</span>
-                </div>
-                {totalRetenciones > 0 && (
-                  <div className="flex justify-between text-xs text-red-600 dark:text-red-400">
-                    <span>Total retenciones</span>
-                    <span className="tabular-nums font-semibold">− {formatCurrency(totalRetenciones, currencyState)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm font-bold border-t border-amber-200 dark:border-amber-700 pt-1.5 text-gray-800 dark:text-white">
-                  <span>Neto a pagar al proveedor</span>
-                  <span className="tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(netoPagar, currencyState)}</span>
-                </div>
+              <div className="flex justify-between text-sm font-bold border-t border-amber-200 dark:border-amber-700 pt-1.5 text-gray-800 dark:text-white">
+                <span>Total factura</span>
+                <span className="tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(form.amount, currencyState)}</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Notes */}
           <div>
@@ -1077,11 +972,7 @@ export function AddPurchaseInvoiceModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100 dark:border-slate-700">
-          {retenciones.length > 0 ? (
-            <span className="text-xs text-gray-500 dark:text-slate-400">
-              Neto a pagar: <strong className="text-emerald-700 dark:text-emerald-400 tabular-nums">{formatCurrency(netoPagar, currencyState)}</strong>
-            </span>
-          ) : <span />}
+          <span />
           <div className="flex items-center gap-3">
             {isDraftMode && isDirty && (
               <button

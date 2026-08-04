@@ -191,7 +191,14 @@ export default function RecurringInvoicesPage() {
 
       {totalPages > 1 && (
         <div className="mt-4">
-          <Pagination currentPage={page} totalPages={totalPages} totalItems={total} onPageChange={setPage} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            limit={20}
+            total={total}
+            onPageChange={setPage}
+            onLimitChange={() => { /* la página fija el tamaño en 20 */ }}
+          />
         </div>
       )}
 
