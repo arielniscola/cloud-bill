@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ChevronLeft, Receipt, Wallet, Trash2, Percent } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -65,6 +65,10 @@ export default function OrdenPagoFormPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [supplierId, setSupplierId]         = useState(searchParams.get('supplierId') ?? '');
+  // Facturas que vienen marcadas desde el listado de facturas de compra.
+  const preselectRef = useRef<string[] | null>(
+    searchParams.get('invoices')?.split(',').filter(Boolean) ?? null
+  );
   const [paymentMethod, setPaymentMethod]   = useState('CASH');
   const [cashRegisterId, setCashRegisterId] = useState('');
   const [currency, setCurrency]             = useState('ARS');
@@ -191,7 +195,18 @@ export default function OrdenPagoFormPage() {
     try {
       const data = await purchasesService.getPendingInvoices(sid);
       setInvoices(data);
-      setItems([]);
+      // Facturas preseleccionadas desde el listado (?invoices=id1,id2). Solo la
+      // primera carga: después manda lo que el usuario marque a mano.
+      const preselect = preselectRef.current;
+      preselectRef.current = null;
+      setItems(preselect
+        ? data
+            .filter((inv) => preselect.includes(inv.id))
+            .map((inv) => ({
+              purchaseInvoiceId: inv.id,
+              amount: (Number(inv.amount) - Number(inv.paidAmount ?? 0)).toFixed(2),
+            }))
+        : []);
     } catch {
       toast.error('Error al cargar facturas pendientes del proveedor');
     } finally {

@@ -14,6 +14,14 @@ import { ordenPedidosService, customersService, productsService, appSettingsServ
 import type { ProductVariant } from '../../types/product-variant.types';
 import type { Budget, AppSettings, Warehouse, OrdenPedido } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
+import { isOffline } from '../../stores/offline.store';
+import { checkStockOffline, queueSaleOffline } from '../../lib/offline/offlineSale';
+import {
+  getAppSettingsOffline,
+  getWarehousesOffline,
+  searchCustomersOffline,
+  searchProductsOffline,
+} from '../../lib/offline/adapters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import type { Customer, Product, Currency } from '../../types';
 
@@ -70,6 +78,9 @@ export default function OrdenPedidoFormPage() {
   const fromOrdenPedido = (location.state as { fromOrdenPedido?: OrdenPedido } | null)?.fromOrdenPedido ?? null;
   const isEditing = !!id;
   const [customers, setCustomers] = useState<Customer[]>([]);
+  // El cliente elegido con búsqueda server-side no está en `customers`: se
+  // cachea para poder resolverlo en la autoselección por cliente.
+  const [customerCache, setCustomerCache] = useState<Record<string, Customer>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [resolvedWarehouseId, setResolvedWarehouseId] = useState<string | null>(null);
@@ -81,8 +92,34 @@ export default function OrdenPedidoFormPage() {
   const [stockWarnings, setStockWarnings] = useState<Array<{ productName: string; requested: number; available: number }>>([]);
 
 
+  /**
+   * Cotización de la orden. Antes se mandaba `exchangeRate: 1` fijo aunque la
+   * moneda fuera USD, y ese 1 se propagaba: la conversión a factura lo copia
+   * tal cual (OrdenPedidoController), de ahí sale el MonCotiz que se declara
+   * a ARCA y el importe con el que la orden entra en los reportes en pesos.
+   */
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [rateLoading, setRateLoading] = useState(false);
+
+  const fetchDayRate = async () => {
+    setRateLoading(true);
+    try {
+      const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
+      const data = await res.json();
+      if (data?.venta) setExchangeRate(Number(data.venta));
+    } catch {
+      /* sin conexión: queda el valor actual, editable a mano */
+    } finally {
+      setRateLoading(false);
+    }
+  };
+
   const [discountType, setDiscountType] = useState<'%' | '$'>('%');
   const [discountValue, setDiscountValue] = useState(0);
+  // La orden cargada puede traer un descuento distinto por línea (p. ej. venida
+  // de un presupuesto). Mientras sea así se respeta tal cual: el control global
+  // recién los unifica cuando el usuario lo toca.
+  const [hasPerItemDiscount, setHasPerItemDiscount] = useState(false);
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
 
@@ -101,6 +138,19 @@ export default function OrdenPedidoFormPage() {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
+
+  /**
+   * Refleja en el control de descuento los porcentajes que trae una orden
+   * cargada. Si todas las líneas comparten el mismo, se muestra como descuento
+   * global; si difieren, se marca `hasPerItemDiscount` para no pisarlos.
+   */
+  const syncDiscountFromItems = (loaded: Array<{ discountPct?: number | string | null }>) => {
+    const pcts = loaded.map((item) => Number(item.discountPct) || 0);
+    const uniform = pcts.length > 0 && pcts.every((pct) => pct === pcts[0]);
+    setHasPerItemDiscount(!uniform);
+    setDiscountType('%');
+    setDiscountValue(uniform ? pcts[0] : 0);
+  };
 
   const barcodeRef = useRef<BarcodeProductInputHandle>(null);
 
@@ -129,7 +179,8 @@ export default function OrdenPedidoFormPage() {
   // Auto-fill sale condition from customer
   useEffect(() => {
     if (isEditing) return;
-    const customer = customers.find((c) => c.id === customerId);
+    // El cliente elegido por búsqueda server-side puede no estar en `customers`.
+    const customer = customerCache[customerId] ?? customers.find((c) => c.id === customerId);
     if (customer?.saleCondition === 'CUENTA_CORRIENTE') {
       setValue('saleCondition', 'CUENTA_CORRIENTE');
       setValue('paymentTerms', 'Cuenta Corriente');
@@ -153,14 +204,24 @@ export default function OrdenPedidoFormPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [customersData, productsData, settingsData, warehousesData] = await Promise.all([
-          customersService.getAll({ limit: 1000, isActive: true }),
-          productsService.getAll({ limit: 1000 }),
-          appSettingsService.get().catch(() => null),
-          warehousesService.getAll().catch(() => [] as Warehouse[]),
-        ]);
-        setCustomers(customersData.data);
-        setProducts(productsData.data);
+        // Sin conexión todo esto sale de la caché local. Es lo que hace que el
+        // formulario sea usable offline: sin depósitos resueltos, la validación
+        // de stock termina bloqueando la venta.
+        const [customersList, productsList, settingsData, warehousesData] = isOffline()
+          ? await Promise.all([
+              searchCustomersOffline('', 50),
+              searchProductsOffline('', 1000),
+              getAppSettingsOffline(),
+              getWarehousesOffline(),
+            ])
+          : await Promise.all([
+              customersService.getAll({ limit: 50, isActive: true }).then((r) => r.data),
+              productsService.getAll({ limit: 1000 }).then((r) => r.data),
+              appSettingsService.get().catch(() => null),
+              warehousesService.getAll().catch(() => [] as Warehouse[]),
+            ]);
+        setCustomers(customersList);
+        setProducts(productsList);
         if (settingsData) {
           setPriceSettings({
             stalePriceWarnDays1: settingsData.stalePriceWarnDays1 ?? 10,
@@ -200,6 +261,8 @@ export default function OrdenPedidoFormPage() {
               taxRate: Number(item.taxRate),
             })),
           });
+          syncDiscountFromItems(fromBudget.items);
+          setExchangeRate(Number(fromBudget.exchangeRate) > 0 ? Number(fromBudget.exchangeRate) : 1);
         }
 
         // Pre-fill from existing OP if duplicating
@@ -220,6 +283,8 @@ export default function OrdenPedidoFormPage() {
               taxRate: Number(item.taxRate),
             })),
           });
+          syncDiscountFromItems(fromOrdenPedido.items);
+          setExchangeRate(Number(fromOrdenPedido.exchangeRate) > 0 ? Number(fromOrdenPedido.exchangeRate) : 1);
         }
       } catch {
         toast.error('Error al cargar datos');
@@ -252,9 +317,12 @@ export default function OrdenPedidoFormPage() {
             description: item.description,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
+            discountPct: Number(item.discountPct) || 0,
             taxRate: Number(item.taxRate),
           })),
         });
+        syncDiscountFromItems(op.items);
+        setExchangeRate(Number(op.exchangeRate) > 0 ? Number(op.exchangeRate) : 1);
       } catch {
         toast.error('Error al cargar orden de pedido');
         navigate('/orden-pedidos');
@@ -306,11 +374,18 @@ export default function OrdenPedidoFormPage() {
     }
   };
 
+  // Se depende del set de productos, no de la cantidad de filas: al editar una
+  // orden de un solo ítem el largo no cambia respecto de la fila vacía inicial
+  // y las variantes nunca se cargaban.
+  const itemProductIdsKey = Array.from(
+    new Set(items.map((it: any) => it.productId).filter(Boolean) as string[])
+  ).join(',');
+
   useEffect(() => {
-    const pids = new Set<string>();
-    items.forEach((it: any) => { if (it.productId) pids.add(it.productId); });
-    pids.forEach((pid) => { if (!variantsByProduct[pid]) void loadVariantsFor(pid); });
-  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    itemProductIdsKey.split(',').filter(Boolean).forEach((pid) => {
+      if (!variantsByProduct[pid]) void loadVariantsFor(pid);
+    });
+  }, [itemProductIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBarcodeAdd = (product: Product, qty: number = 1) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
@@ -333,26 +408,49 @@ export default function OrdenPedidoFormPage() {
     }
   };
 
-  const calcItemTotal = (item: typeof items[0]) => {
-    const base = item.quantity * item.unitPrice;
-    return base + base * (item.taxRate / 100);
+  const itemBase = (item: typeof items[0] | undefined) =>
+    (Number(item?.quantity) || 0) * (Number(item?.unitPrice) || 0);
+
+  const subtotalBase = items.reduce((acc, item) => acc + itemBase(item), 0);
+
+  // El backend guarda el descuento como un porcentaje por ítem, así que el
+  // descuento global en $ se expresa como el % equivalente sobre el subtotal.
+  // Líneas y resumen se calculan con este mismo porcentaje: es lo que evita
+  // que la columna "Total" no cierre con el total de la orden.
+  const globalDiscountPct = discountType === '%'
+    ? Math.min(discountValue, 100)
+    : (subtotalBase > 0 ? (Math.min(discountValue, subtotalBase) / subtotalBase) * 100 : 0);
+
+  const itemDiscountPct = (index: number) =>
+    hasPerItemDiscount ? Number(items[index]?.discountPct) || 0 : globalDiscountPct;
+
+  const calcItemAmounts = (index: number) => {
+    const item = items[index];
+    const base = itemBase(item);
+    const discount = (base * itemDiscountPct(index)) / 100;
+    const net = base - discount;
+    const tax = net * ((Number(item?.taxRate) || 0) / 100);
+    return { base, discount, net, tax, total: net + tax };
   };
 
-  const subtotalBase = items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-  const discountAmount = discountType === '%'
-    ? subtotalBase * discountValue / 100
-    : Math.min(discountValue, subtotalBase);
-  const totals = {
-    subtotal: subtotalBase,
-    discountAmount,
-    taxAmount: items.reduce((acc, item) => {
-      const base = item.quantity * item.unitPrice;
-      const proportion = subtotalBase > 0 ? base / subtotalBase : 0;
-      const taxable = base - discountAmount * proportion;
-      return acc + taxable * (item.taxRate / 100);
-    }, 0),
-  };
+  const totals = items.reduce(
+    (acc, _item, index) => {
+      const { base, discount, tax } = calcItemAmounts(index);
+      return {
+        subtotal: acc.subtotal + base,
+        discountAmount: acc.discountAmount + discount,
+        taxAmount: acc.taxAmount + tax,
+      };
+    },
+    { subtotal: 0, discountAmount: 0, taxAmount: 0 }
+  );
   const grandTotal = totals.subtotal - totals.discountAmount + totals.taxAmount;
+
+  const setGlobalDiscount = (nextType: '%' | '$', nextValue: number) => {
+    setHasPerItemDiscount(false);
+    setDiscountType(nextType);
+    setDiscountValue(nextValue);
+  };
 
   // Returns 0 = ok, 1 = amber warning, 2 = red warning
   const getPriceStaleness = (productId: string | null | undefined): 0 | 1 | 2 => {
@@ -383,36 +481,52 @@ export default function OrdenPedidoFormPage() {
     };
   };
 
-  const onSubmit = async (data: OrdenPedidoFormData) => {
-    if (data.stockBehavior === 'DISCOUNT') {
-      const productQuantities = new Map<string, number>();
-      for (const item of data.items) {
-        if (item.productId) {
-          productQuantities.set(item.productId, (productQuantities.get(item.productId) ?? 0) + item.quantity);
-        }
+  /** Validación de stock contra el backend (el camino de siempre). */
+  const checkStockOnline = async (items: OrdenPedidoFormData['items']) => {
+    const productQuantities = new Map<string, number>();
+    for (const item of items) {
+      if (item.productId) {
+        productQuantities.set(item.productId, (productQuantities.get(item.productId) ?? 0) + item.quantity);
       }
-      if (productQuantities.size > 0) {
-        const checks = await Promise.all(
-          Array.from(productQuantities.entries()).map(async ([productId, requestedQty]) => {
-            try {
-              const stocks = await stockService.getProductStock(productId);
-              const available = stocks.reduce((sum, s) => sum + (Number(s.quantity) - Number(s.reservedQuantity)), 0);
-              return { productId, requestedQty, available };
-            } catch {
-              return { productId, requestedQty, available: Infinity };
-            }
-          })
-        );
-        const warnings = checks
-          .filter(({ requestedQty, available }) => requestedQty > available)
-          .map(({ productId, requestedQty, available }) => {
-            const product = products.find((p) => p.id === productId);
-            return { productName: product?.name ?? productId, requested: requestedQty, available };
-          });
-        if (warnings.length > 0) {
-          setStockWarnings(warnings);
-          return;
+    }
+    if (productQuantities.size === 0) return [];
+
+    const checks = await Promise.all(
+      Array.from(productQuantities.entries()).map(async ([productId, requestedQty]) => {
+        try {
+          const stocks = await stockService.getProductStock(productId);
+          const available = stocks.reduce((sum, s) => sum + (Number(s.quantity) - Number(s.reservedQuantity)), 0);
+          return { productId, requestedQty, available };
+        } catch {
+          return { productId, requestedQty, available: Infinity };
         }
+      })
+    );
+    return checks
+      .filter(({ requestedQty, available }) => requestedQty > available)
+      .map(({ productId, requestedQty, available }) => {
+        const product = products.find((p) => p.id === productId);
+        return { productName: product?.name ?? productId, requested: requestedQty, available };
+      });
+  };
+
+  const onSubmit = async (data: OrdenPedidoFormData) => {
+    // Sin conexion no se puede editar una venta ya guardada en el servidor:
+    // no la tenemos y no hay forma de resolver el conflicto despues.
+    if (isOffline() && isEditing) {
+      toast.error('Sin conexion no se pueden editar ordenes ya guardadas');
+      return;
+    }
+
+    if (data.stockBehavior === 'DISCOUNT') {
+      // Offline el stock sale de la cache local (foto del último sync);
+      // online se consulta al backend como siempre.
+      const warnings = isOffline()
+        ? await checkStockOffline(data.items, resolvedWarehouseId)
+        : await checkStockOnline(data.items);
+      if (warnings.length > 0) {
+        setStockWarnings(warnings);
+        return;
       }
     }
 
@@ -425,9 +539,6 @@ export default function OrdenPedidoFormPage() {
 
     setIsLoading(true);
     try {
-      const discountPct = discountType === '%'
-        ? discountValue
-        : (subtotalBase > 0 ? (discountAmount / subtotalBase) * 100 : 0);
       const payload = {
         customerId: data.customerId || null,
         dueDate: data.dueDate || null,
@@ -436,10 +547,33 @@ export default function OrdenPedidoFormPage() {
         saleCondition: data.saleCondition,
         stockBehavior: data.stockBehavior,
         currency: data.currency,
-        exchangeRate: 1,
+        // En pesos la cotización no aplica; en USD va la que cargó el usuario.
+        exchangeRate: data.currency === 'ARS' ? 1 : (exchangeRate || 1),
         warehouseId: resolvedWarehouseId,
-        items: data.items.map((item) => buildItemDTO(item, discountPct)),
+        items: data.items.map((item) =>
+          buildItemDTO(item, hasPerItemDiscount ? Number(item.discountPct) || 0 : globalDiscountPct)
+        ),
       };
+      // ── Sin conexión: la venta se guarda en la cola local ──────────
+      // Toma número provisional y descuenta el stock cacheado. El número
+      // definitivo lo asigna el servidor cuando la venta se sube.
+      if (isOffline()) {
+        const queued = await queueSaleOffline({
+          payload: { ...payload, budgetId: fromBudget?.id ?? null },
+          items: data.items,
+          warehouseId: resolvedWarehouseId,
+          stockBehavior: data.stockBehavior,
+          total: grandTotal,
+          customerName: data.customerId
+            ? (customerCache[data.customerId] ??
+               customers.find((c) => c.id === data.customerId))?.name ?? null
+            : null,
+        });
+        toast.success(`Venta guardada sin conexión — ${queued.provisionalNumber}`);
+        navigate('/ventas-pendientes');
+        return;
+      }
+
       if (isEditing) {
         await ordenPedidosService.update(id, payload);
         toast.success('Orden de pedido actualizada');
@@ -622,15 +756,17 @@ export default function OrdenPedidoFormPage() {
                         />
                       </div>
 
-                      {/* Total */}
+                      {/* Total — ya neto del descuento, para que cierre con el resumen */}
                       <div className="text-right">
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(
-                            calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, discountPct: 0, taxRate: 0 }),
-                            currency
-                          )}
+                          {formatCurrency(calcItemAmounts(index).total, currency)}
                         </span>
+                        {calcItemAmounts(index).discount > 0 && (
+                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums leading-tight mt-0.5">
+                            -{formatCurrency(calcItemAmounts(index).discount, currency)} ({itemDiscountPct(index).toFixed(2).replace(/\.?0+$/, '')}%)
+                          </span>
+                        )}
                       </div>
 
                       {/* Remove */}
@@ -673,9 +809,15 @@ export default function OrdenPedidoFormPage() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Descuento</p>
-                  {discountAmount > 0 && (
+                  {hasPerItemDiscount ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                      Esta orden tiene descuentos distintos por línea. Si cargás un valor acá, se aplica a todos los ítems.
+                    </p>
+                  ) : totals.discountAmount > 0 && (
                     <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
-                      {discountType === '%' ? `${discountValue}% sobre el subtotal` : `Importe fijo descontado`}
+                      {discountType === '%'
+                        ? `${discountValue}% sobre el subtotal`
+                        : `Importe fijo — equivale a ${globalDiscountPct.toFixed(2)}% por ítem`}
                     </p>
                   )}
                 </div>
@@ -684,12 +826,12 @@ export default function OrdenPedidoFormPage() {
                   <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 text-xs font-semibold">
                     <button
                       type="button"
-                      onClick={() => setDiscountType('%')}
+                      onClick={() => setGlobalDiscount('%', discountValue)}
                       className={`px-3 py-2 transition-colors ${discountType === '%' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                     >%</button>
                     <button
                       type="button"
-                      onClick={() => setDiscountType('$')}
+                      onClick={() => setGlobalDiscount('$', discountValue)}
                       className={`px-3 py-2 border-l border-gray-200 dark:border-slate-600 transition-colors ${discountType === '$' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                     >$</button>
                   </div>
@@ -701,7 +843,7 @@ export default function OrdenPedidoFormPage() {
                       max={discountType === '%' ? 100 : undefined}
                       step={0.01}
                       value={discountValue || ''}
-                      onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
+                      onChange={(e) => setGlobalDiscount(discountType, Number(e.target.value) || 0)}
                       placeholder="0"
                       className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none min-w-0"
                     />
@@ -743,8 +885,13 @@ export default function OrdenPedidoFormPage() {
                 <CustomerSearchSelect
                   customers={customers}
                   value={customerId}
-                  onChange={(id) => setValue('customerId', id || null)}
+                  onChange={(id, picked) => {
+                    if (picked) setCustomerCache((prev) => ({ ...prev, [id]: picked }));
+                    setValue('customerId', id || null);
+                  }}
                   clearLabel="Sin cliente (consumidor final)"
+                  searchParams={{ isActive: true }}
+                  serverSearch
                 />
               </div>
 
@@ -786,9 +933,39 @@ export default function OrdenPedidoFormPage() {
                 onChange={(value) => setValue('currency', value as Currency)}
               />
               {currency === 'USD' && (
-                <p className="text-xs text-indigo-600 dark:text-indigo-400 -mt-1">
-                  La cotización se aplica al momento del pago (Banco Nación).
-                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
+                    Cotización (USD → ARS)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={exchangeRate || ''}
+                      placeholder="0.00"
+                      onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 text-sm text-right rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={fetchDayRate}
+                      disabled={rateLoading}
+                      className="shrink-0 text-xs px-2.5 py-2 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50"
+                    >
+                      {rateLoading ? '…' : 'Hoy'}
+                    </button>
+                  </div>
+                  {grandTotal > 0 && exchangeRate > 0 ? (
+                    <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                      ≈ {formatCurrency(grandTotal * exchangeRate, 'ARS')} (Banco Nación venta, editable)
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                      Sin cotización la orden queda a 1, y ese valor se copia a la factura y al CAE.
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Stock behavior */}

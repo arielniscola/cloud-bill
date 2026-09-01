@@ -79,7 +79,7 @@ export default function RemitoFormPage() {
         if (invoiceId) {
           const [inv, customersData] = await Promise.all([
             invoicesService.getById(invoiceId),
-            customersService.getAll({ limit: 1000 }),
+            customersService.getAll({ limit: 50 }),
           ]);
           setSourceDoc(inv as Invoice);
           setCustomers(customersData.data);
@@ -104,7 +104,7 @@ export default function RemitoFormPage() {
         } else if (budgetId) {
           const [bud, customersData] = await Promise.all([
             budgetsService.getById(budgetId),
-            customersService.getAll({ limit: 1000 }),
+            customersService.getAll({ limit: 50 }),
           ]);
           setSourceDoc(bud as Budget);
           setCustomers(customersData.data);
@@ -130,7 +130,7 @@ export default function RemitoFormPage() {
           }
         } else {
           const [customersData, productsData] = await Promise.all([
-            customersService.getAll({ limit: 1000 }),
+            customersService.getAll({ limit: 50 }),
             productsService.getAll({ limit: 1000 }),
           ]);
           setCustomers(customersData.data);
@@ -330,6 +330,7 @@ export default function RemitoFormPage() {
                     label="Cliente *"
                     error={errors.customerId?.message}
                     disabled={hasSource && !!sourceDoc && !!(sourceDoc as any).customerId}
+                    serverSearch
                   />
                 </div>
                 <div>

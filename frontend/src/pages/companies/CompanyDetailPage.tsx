@@ -6,7 +6,7 @@ import { clsx } from 'clsx';
 import { Button } from '../../components/ui';
 import companiesService from '../../services/companies.service';
 import type { Company } from '../../types/company.types';
-import { MODULE_LABELS, ALL_MODULE_KEYS, type ModuleKey } from '../../types/company.types';
+import { MODULE_LABELS, ALL_MODULE_KEYS, OPT_IN_MODULE_KEYS, moduleIsEnabled, type ModuleKey } from '../../types/company.types';
 import { formatDate } from '../../utils/formatters';
 import {
   PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, PLAN_COLORS,
@@ -42,14 +42,18 @@ export default function CompanyDetailPage() {
   const handleToggleModule = async (key: ModuleKey) => {
     if (!id || !company) return;
     const current = company.enabledModules ?? [];
+    // 'ALL' no cubre los módulos opt-in, así que al expandirlo hay que dejarlos
+    // afuera: si no, tocar cualquier módulo prendería 'imagenes' de rebote.
+    const coveredByAll = ALL_MODULE_KEYS.filter((k) => !OPT_IN_MODULE_KEYS.includes(k));
     const expanded: string[] = current.includes('ALL')
-      ? [...ALL_MODULE_KEYS]
+      ? [...coveredByAll]
       : current.filter((k) => k !== 'ALL');
     const next = expanded.includes(key)
       ? expanded.filter((k) => k !== key)
       : [...expanded, key];
-    const finalList = next.length === ALL_MODULE_KEYS.length
-      && ALL_MODULE_KEYS.every((k) => next.includes(k))
+    // Vuelve a colapsar a 'ALL' sólo si están todos los no-opt-in y ninguno opt-in.
+    const finalList = coveredByAll.every((k) => next.includes(k))
+      && !next.some((k) => OPT_IN_MODULE_KEYS.includes(k as ModuleKey))
       ? ['ALL']
       : next;
 
@@ -236,7 +240,7 @@ export default function CompanyDetailPage() {
         <div className="p-5">
           <div className="grid grid-cols-2 gap-2">
             {ALL_MODULE_KEYS.map((key) => {
-              const enabled = company?.enabledModules?.includes('ALL') || company?.enabledModules?.includes(key) || false;
+              const enabled = moduleIsEnabled(company?.enabledModules, key);
               const { label, description } = MODULE_LABELS[key];
               const isToggling = togglingModule === key;
               return (

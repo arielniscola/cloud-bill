@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Printer, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
@@ -34,6 +34,7 @@ function SkeletonDetail() {
 export default function OrdenPagoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [op, setOp]           = useState<OrdenPago | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -49,6 +50,19 @@ export default function OrdenPagoDetailPage() {
       .catch(() => toast.error('Error al cargar la orden de pago'))
       .finally(() => setIsLoading(false));
   }, [id]);
+
+  // `?print=1`: se llega desde el listado con la intención de imprimir. Se
+  // espera a tener la orden cargada, si no se imprimiría el esqueleto.
+  useEffect(() => {
+    if (!op || searchParams.get('print') !== '1') return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('print');
+      return next;
+    }, { replace: true });
+    const t = setTimeout(() => window.print(), 100);
+    return () => clearTimeout(t);
+  }, [op]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePay = async () => {
     if (!op) return;

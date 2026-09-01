@@ -28,6 +28,25 @@ export function formatDate(date: string | Date): string {
   }).format(d);
 }
 
+/**
+ * Días calendario desde hoy hasta `date` (negativo = ya pasó, 0 = hoy).
+ * Se calcula sobre la fecha tal como la muestra `formatDate` (misma zona
+ * horaria), para que "vence en 3 d" nunca contradiga la fecha de al lado.
+ */
+export function daysUntil(date: string | Date | null | undefined): number | null {
+  if (!date) return null;
+  const d = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(date + 'T12:00:00Z')
+    : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  // "YYYY-MM-DD" en la zona de la app, para ambos extremos.
+  const inTz = (x: Date) =>
+    new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: TZ }).format(x);
+  const a = Date.parse(inTz(new Date()) + 'T00:00:00Z');
+  const b = Date.parse(inTz(d) + 'T00:00:00Z');
+  return Math.round((b - a) / 86_400_000);
+}
+
 export function formatDateTime(date: string | Date): string {
   return new Intl.DateTimeFormat('es-AR', {
     year: 'numeric',

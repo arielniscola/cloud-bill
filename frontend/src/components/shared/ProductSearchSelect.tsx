@@ -2,6 +2,11 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown, Package, Loader2 } from 'lucide-react';
 import { productsService } from '../../services';
+import { isNetworkError } from '../../services/api';
+import { isOffline } from '../../stores/offline.store';
+import { searchProductsOffline } from '../../lib/offline/adapters';
+import { getProductLocal } from '../../lib/offline/catalogCache';
+import { toProduct } from '../../lib/offline/adapters';
 import type { Product, ProductFilters } from '../../types';
 
 export interface ProductSearchSelectProps {
@@ -41,14 +46,47 @@ export default function ProductSearchSelect({
   // seleccionado aunque no esté en el array `products` precargado.
   const [fetchedById, setFetchedById] = useState<Record<string, Product>>({});
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  /** Opción resaltada, movible con las flechas. Cuenta la fila "Sin producto". */
+  const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
     () => products.find((p) => p.id === value) ?? fetchedById[value] ?? null,
     [products, value, fetchedById]
   );
+
+  // Con serverSearch el producto elegido puede no estar precargado (p.ej. al
+  // editar un comprobante viejo, o con un catálogo más grande que la precarga):
+  // se resuelve por id una sola vez para no mostrar la fila en blanco.
+  useEffect(() => {
+    if (!serverSearch || !value || selected) return;
+    let cancelled = false;
+    const resolveLocal = async () => {
+      const cached = await getProductLocal(value);
+      if (cached && !cancelled) {
+        setFetchedById((prev) => ({ ...prev, [cached.id]: toProduct(cached) }));
+      }
+    };
+
+    if (isOffline()) {
+      void resolveLocal();
+      return () => { cancelled = true; };
+    }
+
+    productsService.getById(value)
+      .then((product) => {
+        if (!cancelled) setFetchedById((prev) => ({ ...prev, [product.id]: product }));
+      })
+      .catch((err) => {
+        // Sin rótulo el trigger muestra el placeholder; si fue la red, la
+        // cache local todavia puede tener el nombre.
+        if (isNetworkError(err)) void resolveLocal();
+      });
+    return () => { cancelled = true; };
+  }, [serverSearch, value, selected]);
 
   // Calculate and set dropdown position based on trigger rect
   const updatePosition = () => {
@@ -124,6 +162,26 @@ export default function ProductSearchSelect({
     let cancelled = false;
     setIsSearching(true);
     const timer = setTimeout(async () => {
+      // Sin conexion la busqueda va contra IndexedDB. El catalogo completo
+      // entra holgado en la cache local, asi que offline incluso responde mas
+      // rapido que el backend.
+      const searchLocally = async () => {
+        const local = await searchProductsOffline(q, 50);
+        if (cancelled) return;
+        setRemoteResults(local);
+        setFetchedById((prev) => {
+          const next = { ...prev };
+          for (const p of local) next[p.id] = p;
+          return next;
+        });
+      };
+
+      if (isOffline()) {
+        try { await searchLocally(); } catch { if (!cancelled) setRemoteResults([]); }
+        if (!cancelled) setIsSearching(false);
+        return;
+      }
+
       try {
         const res = await productsService.getAll({ ...searchParams, search: q, limit: 50 });
         if (cancelled) return;
@@ -133,8 +191,15 @@ export default function ProductSearchSelect({
           for (const p of res.data) next[p.id] = p;
           return next;
         });
-      } catch {
-        if (!cancelled) setRemoteResults([]);
+      } catch (err) {
+        // Si se corto la red justo en esta busqueda, reintentar local antes
+        // de mostrar "sin resultados".
+        if (cancelled) return;
+        if (isNetworkError(err)) {
+          try { await searchLocally(); } catch { setRemoteResults([]); }
+        } else {
+          setRemoteResults([]);
+        }
       } finally {
         if (!cancelled) setIsSearching(false);
       }
@@ -167,6 +232,73 @@ export default function ProductSearchSelect({
     setQuery('');
   };
 
+  // ── Navegación con teclado ───────────────────────────────────────
+  // La lista recorrible es la que se está viendo: con `serverSearch` son los
+  // resultados del backend, sin él el array filtrado en memoria. Si `optional`
+  // está activo, "Sin producto" es la opción 0 y también se alcanza con flechas.
+  const clearOffset = optional ? 1 : 0;
+  const optionCount = clearOffset + filtered.length;
+
+  /** Deja el resaltado sobre el producto ya elegido, o sobre el primero. */
+  const initialIndex = () => {
+    const i = filtered.findIndex((p) => p.id === value);
+    return i >= 0 ? i + clearOffset : Math.min(clearOffset, Math.max(optionCount - 1, 0));
+  };
+
+  // Al abrir, y cada vez que cambia lo tecleado, el resaltado se recalcula: si
+  // no, quedaría apuntando a una posición que ahora es otro producto.
+  useEffect(() => {
+    if (!isOpen) return;
+    setActiveIndex(initialIndex());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, query]);
+
+  // Los resultados remotos llegan después del tecleo: al aterrizar, arriba de todo.
+  useEffect(() => {
+    if (!isOpen || !serverSearch) return;
+    setActiveIndex(clearOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteResults]);
+
+  const scrollActiveIntoView = (index: number) => {
+    listRef.current
+      ?.querySelector(`[data-idx="${index}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      // No debe llegar al atajo de "cancelar" del formulario que lo contiene.
+      e.stopPropagation();
+      setIsOpen(false);
+      setQuery('');
+      return;
+    }
+
+    if (optionCount === 0) return;
+
+    const move = (next: number) => {
+      e.preventDefault();
+      setActiveIndex(next);
+      scrollActiveIntoView(next);
+    };
+
+    if (e.key === 'ArrowDown') return move((activeIndex + 1) % optionCount);
+    if (e.key === 'ArrowUp') return move((activeIndex - 1 + optionCount) % optionCount);
+    if (e.key === 'Home') return move(0);
+    if (e.key === 'End') return move(optionCount - 1);
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Con la búsqueda remota en vuelo la lista todavía es la anterior:
+      // elegir ahí sería elegir un producto que ya no corresponde.
+      if (isSearching) return;
+      if (optional && activeIndex === 0) { onChange(''); setIsOpen(false); setQuery(''); return; }
+      const product = filtered[activeIndex - clearOffset];
+      if (product) handleSelect(product);
+    }
+  };
+
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange('');
@@ -189,16 +321,22 @@ export default function ProductSearchSelect({
           {optional && (
             <button
               type="button"
+              id="product-search-opt-0"
+              role="option"
+              aria-selected={activeIndex === 0}
               onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActiveIndex(0)}
               onClick={handleClear}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-gray-400 dark:text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-700 border-b border-gray-100 dark:border-slate-700 transition-colors"
+              className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-gray-400 dark:text-slate-500 border-b border-gray-100 dark:border-slate-700 transition-colors ${
+                activeIndex === 0 ? 'bg-gray-100 dark:bg-slate-700' : ''
+              }`}
             >
               <X className="w-3.5 h-3.5" />
               Sin producto (opcional)
             </button>
           )}
 
-          <div className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
+          <div ref={listRef} role="listbox" className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
             {isSearching ? (
               <div className="px-4 py-6 text-center">
                 <Loader2 className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2 animate-spin" />
@@ -212,16 +350,25 @@ export default function ProductSearchSelect({
                 </p>
               </div>
             ) : (
-              filtered.map((p) => {
+              filtered.map((p, i) => {
                 const isSelected = p.id === value;
+                const idx = i + clearOffset;
+                const isActive = idx === activeIndex;
                 return (
                   <button
                     key={p.id}
                     type="button"
+                    id={`product-search-opt-${idx}`}
+                    data-idx={idx}
+                    role="option"
+                    aria-selected={isActive}
                     onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(idx)}
                     onClick={() => handleSelect(p)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 ${
-                      isSelected ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                      isSelected
+                        ? isActive ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-indigo-50 dark:bg-indigo-900/30'
+                        : isActive ? 'bg-gray-100 dark:bg-slate-700' : ''
                     }`}
                   >
                     <span className="font-mono text-[10px] font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">
@@ -307,7 +454,13 @@ export default function ProductSearchSelect({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onInputKeyDown}
             placeholder="Buscar por SKU, nombre, marca…"
+            role="combobox"
+            aria-expanded={optionCount > 0}
+            aria-activedescendant={
+              optionCount > 0 ? `product-search-opt-${activeIndex}` : undefined
+            }
             className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
           />
           <button

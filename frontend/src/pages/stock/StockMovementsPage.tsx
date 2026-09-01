@@ -127,7 +127,7 @@ export default function StockMovementsPage() {
 
   useEffect(() => {
     Promise.all([
-      productsService.getAll({ limit: 1000 }),
+      productsService.getAll({ limit: 50 }),
       warehousesService.getAll(),
     ]).then(([p, w]) => {
       setProducts(p.data);
@@ -310,6 +310,7 @@ export default function StockMovementsPage() {
                 onChange={(v) => { setFilterProduct(v); setPage(1); }}
                 placeholder="Filtrar por producto…"
                 optional
+                serverSearch
               />
             </div>
 
@@ -361,6 +362,7 @@ export default function StockMovementsPage() {
               value={productId}
               onChange={(v) => setValue('productId', v)}
               error={errors.productId?.message}
+              serverSearch
             />
           </div>
 

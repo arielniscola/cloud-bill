@@ -61,6 +61,7 @@ import CashFlowReportPage from '../pages/reports/CashFlowReportPage';
 import PurchaseInvoicesReportPage from '../pages/reports/PurchaseInvoicesReportPage';
 import RetentionsReportPage from '../pages/reports/RetentionsReportPage';
 import OrdenPedidosPage from '../pages/orden-pedidos/OrdenPedidosPage';
+import PendingSalesPage from '../pages/offline/PendingSalesPage';
 import OrdenPedidoFormPage from '../pages/orden-pedidos/OrdenPedidoFormPage';
 import OrdenPedidoDetailPage from '../pages/orden-pedidos/OrdenPedidoDetailPage';
 import PurchaseRemitosPage from '../pages/purchase-remitos/PurchaseRemitosPage';
@@ -280,6 +281,8 @@ export default function AppRoutes() {
 
         {/* Órdenes de Pedido */}
         <Route path="/orden-pedidos" element={<OrdenPedidosPage />} />
+        {/* Ventas cargadas sin conexion: accesible siempre, tambien offline */}
+        <Route path="/ventas-pendientes" element={<PendingSalesPage />} />
         <Route path="/orden-pedidos/:id" element={<OrdenPedidoDetailPage />} />
         <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
           <Route path="/orden-pedidos/new" element={<OrdenPedidoFormPage />} />

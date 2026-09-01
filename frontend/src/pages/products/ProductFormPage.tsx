@@ -23,6 +23,7 @@ import type { Rubro, Brand, Category, Supplier } from '../../types';
 import type { ProductCustomField } from '../../types/product-custom-field.types';
 import ProductCustomFieldsSection from './ProductCustomFieldsSection';
 import ProductVariantsSection from './ProductVariantsSection';
+import ProductImageSection from './ProductImageSection';
 import { usePermissions } from '../../hooks/usePermissions';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ export default function ProductFormPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditing = !!id;
-  const { isModuleEnabled } = usePermissions();
+  const { isModuleEnabled, canUseModule } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
   const [rubros, setRubros] = useState<Rubro[]>([]);
@@ -294,6 +295,7 @@ export default function ProductFormPage() {
   const [customFields, setCustomFields] = useState<ProductCustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string | undefined>>({});
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   const {
     register,
@@ -373,6 +375,7 @@ export default function ProductFormPage() {
         setValue('taxRate',       p.taxRate);
         setValue('trackStock',    p.trackStock ?? true);
         setValue('isActive',      p.isActive);
+        setImageUrl(p.imageUrl ?? null);
         if (p.customFieldValues && p.customFieldValues.length > 0) {
           const map: Record<string, string> = {};
           for (const cv of p.customFieldValues) {
@@ -602,6 +605,15 @@ export default function ProductFormPage() {
                   />
                 </div>
               </div>
+
+              {/* ── Imagen (módulo activable por empresa) ── */}
+              {canUseModule('imagenes') && (
+                <ProductImageSection
+                  productId={id ?? null}
+                  imageUrl={imageUrl}
+                  onChange={setImageUrl}
+                />
+              )}
 
               {/* ── Campos personalizados ── */}
               <ProductCustomFieldsSection

@@ -41,10 +41,42 @@ export interface SetCreditLimitDTO {
   creditLimit: number | null;
 }
 
+export type MovementOrigin = 'INVOICE' | 'CREDIT_DEBIT_NOTE' | 'RECIBO' | 'INTERNAL_NOTE';
+
 export interface AccountMovementFilters {
   page?: number;
   limit?: number;
   type?: MovementType;
+  origin?: MovementOrigin;
+  search?: string;
   startDate?: string;
   endDate?: string;
+}
+
+/** Antigüedad de la deuda de un cliente, por comprobantes impagos. */
+export interface CurrentAccountAging {
+  entityId: string;
+  name: string;
+  notDue: number;
+  d0_30: number;
+  d31_60: number;
+  d61_90: number;
+  d90plus: number;
+  total: number;
+  docCount: number;
+  /** Días de atraso del comprobante vencido más antiguo (0 si nada venció). */
+  oldestDays: number;
+}
+
+export interface CurrentAccountStats {
+  aging: CurrentAccountAging[];
+  collectedThisMonth: { currency: string; total: number; count: number }[];
+}
+
+export interface CurrentAccountSummary {
+  aging: CurrentAccountAging | null;
+  avgPaymentDelayDays: number | null;
+  collected90: { currency: string; total: number }[];
+  invoiced90: { currency: string; total: number }[];
+  lastInternalNote: { reason: string; notes: string | null; createdAt: string } | null;
 }

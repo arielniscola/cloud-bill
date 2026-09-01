@@ -49,6 +49,7 @@ export interface PurchaseInvoice {
   taxAmount: number;
   amount: number;          // total del comprobante (neto + IVA + otros tributos)
   paidAmount?: number;     // suma de OP pagadas que imputan a esta factura (computado en el listado)
+  tributosAmount?: number; // suma de "otros tributos" (computado en el listado; en el detalle vienen los tributos)
   currency: string;
   exchangeRate?: number;
   saleCondition: PurchaseSaleCondition;
@@ -104,6 +105,21 @@ export interface CreatePurchaseInvoiceDTO {
   date?: string | null;
   remitoIds?: string[];
   originInvoiceId?: string | null;
+}
+
+// Totales de la consulta (todo el filtro, no solo la página). Los importes van
+// en ARS: las facturas en moneda extranjera se convierten con SU cotización.
+export interface PurchaseInvoiceSummary {
+  count: number;
+  supplierCount: number;
+  totalArs: number;
+  paidArs: number;
+  balanceArs: number;
+  overdueArs: number;
+  overdueCount: number;
+  dueSoonArs: number;
+  dueSoonCount: number;
+  oldestOverdueDate: string | null;
 }
 
 export interface PurchaseInvoiceFilters {

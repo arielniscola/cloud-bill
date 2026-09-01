@@ -6,10 +6,16 @@ import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import NotificationBell from '../notifications/NotificationBell';
 import OfflineBanner from './OfflineBanner';
+import OfflineRouteGuard from './OfflineRouteGuard';
+import { useOfflineSync } from '../../lib/offline/useOfflineSync';
 import FiscalModeTopBorder from './FiscalModeTopBorder';
 
 export default function MainLayout() {
   const { menuType, sidebarOpen, toggleMobileMenu } = useUIStore();
+
+  // Monitorea la conexion y mantiene al dia la cache offline. Va aca y no en
+  // App para que no corra en /login, donde todavia no hay token.
+  useOfflineSync();
 
   if (menuType === 'navbar') {
     return (
@@ -19,7 +25,7 @@ export default function MainLayout() {
         <Navbar />
         <main className="pt-16">
           <div className="max-w-7xl mx-auto px-6 py-6">
-            <Outlet />
+            <OfflineRouteGuard><Outlet /></OfflineRouteGuard>
           </div>
         </main>
       </div>
@@ -59,13 +65,15 @@ export default function MainLayout() {
           'min-h-screen',
           // Mobile: full width under the top bar
           'pt-14 md:pt-0',
-          // Desktop: offset by sidebar width, with transition
+          // Desktop: offset by sidebar width, with transition.
+          // Los valores tienen que coincidir EXACTO con el aside: riel de 68 px
+          // solo, o riel + panel del módulo (68 + 232 = 300).
           'transition-[margin-left] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-          sidebarOpen ? 'md:ml-64' : 'md:ml-20',
+          sidebarOpen ? 'md:ml-[300px]' : 'md:ml-[68px]',
         )}
       >
-        <div className="p-4 md:p-6 max-w-[1400px]">
-          <Outlet />
+        <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
+          <OfflineRouteGuard><Outlet /></OfflineRouteGuard>
         </div>
       </main>
     </div>

@@ -239,7 +239,7 @@ export default function SalesReportPage() {
 
   useEffect(() => {
     usersService.getAll().then(setUsers).catch(() => null);
-    customersService.getAll({ limit: 500 }).then((r) => setCustomers(r.data)).catch(() => null);
+    customersService.getAll({ limit: 50 }).then((r) => setCustomers(r.data)).catch(() => null);
   }, []);
 
   const invoiceFilters = {
@@ -557,6 +557,7 @@ export default function SalesReportPage() {
               customers={customers}
               value={customerId}
               onChange={setCustomerId}
+              serverSearch
               clearLabel="Todos los clientes"
             />
           </div>

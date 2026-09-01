@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone, Trash2,
+  XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone, Trash2, ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
@@ -10,9 +10,11 @@ import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal, DocumentTimeline, RelatedDocuments } from '../../components/shared';
 import type { TimelineEvent, RelatedDocGroup } from '../../components/shared';
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
+import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { invoicesService, recibosService, afipService, appSettingsService, activityLogsService, remitosService, ordenPedidosService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../../utils/formatters';
+import { buildAfipQrUrl } from '../../utils/afipFiscal';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
 import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, OrdenPedido } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
@@ -40,6 +42,92 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
   CANCELLED: 'error',
   PARTIALLY_PAID: 'warning',
 };
+
+interface MoreAction {
+  label: string;
+  icon: React.ElementType;
+  onClick: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+/**
+ * Menú "Más": todo lo que no es la acción principal ni PDF/Enviar. Sustituye a
+ * la fila de hasta trece botones outline que envolvía en dos líneas.
+ */
+function MoreActionsMenu({ actions }: { actions: MoreAction[] }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <Button
+        variant="outline"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        Más
+        <ChevronDown className={`w-4 h-4 ml-1.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </Button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden z-30 py-1"
+        >
+          {actions.map((action, i) => {
+            const Icon = action.icon;
+            const prevDanger = actions[i - 1]?.danger;
+            return (
+              <div key={action.label}>
+                {action.danger && !prevDanger && i > 0 && (
+                  <div className="my-1 border-t border-gray-100 dark:border-slate-700" />
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={action.disabled}
+                  title={action.disabled ? action.disabledReason : undefined}
+                  onClick={() => { setOpen(false); action.onClick(); }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors ${
+                    action.disabled
+                      ? 'opacity-40 cursor-not-allowed'
+                      : action.danger
+                        ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        : 'text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/60'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {action.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SkeletonDetail() {
   return (
@@ -87,6 +175,7 @@ export default function InvoiceDetailPage() {
   const [cancelReciboId, setCancelReciboId] = useState<string | null>(null);
   const [isCancellingRecibo, setIsCancellingRecibo] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'items' | 'history'>('items');
   const [showMpModal,    setShowMpModal]    = useState(false);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [linkedRemitos, setLinkedRemitos] = useState<Remito[]>([]);
@@ -241,29 +330,8 @@ export default function InvoiceDetailPage() {
       return pdf(<InformalInvoicePDF invoice={invoice!} afipConfig={afipConfig} />).toBlob();
     }
     let qrCodeDataUrl: string | undefined;
-    if (invoice!.cae && afipConfig) {
-      const TYPE_CODES: Record<string, number> = {
-        FACTURA_A: 1, FACTURA_B: 6, FACTURA_C: 11,
-        NOTA_DEBITO_A: 2, NOTA_DEBITO_B: 7, NOTA_DEBITO_C: 12,
-        NOTA_CREDITO_A: 3, NOTA_CREDITO_B: 8, NOTA_CREDITO_C: 13,
-      };
-      const qrPayload = {
-        ver: 1,
-        fecha: invoice!.date.slice(0, 10),
-        cuit: afipConfig.cuit.replace(/\D/g, ''),
-        ptoVta: invoice!.afipPtVenta ?? afipConfig.salePoint,
-        tipoCmp: TYPE_CODES[invoice!.type] ?? 6,
-        nroCmp: invoice!.afipCbtNum ?? 0,
-        importe: invoice!.total,
-        moneda: invoice!.currency === 'USD' ? 'DOL' : 'PES',
-        ctz: invoice!.currency === 'USD' ? (invoice!.exchangeRate ?? 1) : 1,
-        tipoDocRec: invoice!.customer?.taxId ? 80 : 99,
-        nroDocRec: invoice!.customer?.taxId?.replace(/\D/g, '') ?? '0',
-        tipoCodAut: 'E',
-        codAut: invoice!.cae,
-      };
-      const encoded = btoa(JSON.stringify(qrPayload));
-      const qrUrl = `https://www.afip.gob.ar/fe/qr/?p=${encoded}`;
+    const qrUrl = buildAfipQrUrl(invoice!, afipConfig?.cuit, afipConfig?.salePoint);
+    if (qrUrl) {
       qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
     }
     return pdf(
@@ -364,6 +432,53 @@ export default function InvoiceDetailPage() {
   // Un borrador no movió stock: entregar por remito descontaría mercadería inexistente.
   const canGenerateRemito = !isDraft && !isCancelled && invoice.deliveryStatus !== 'DELIVERED';
 
+  /** Días de atraso del saldo, o null si no está vencida. */
+  const overdueDays = (() => {
+    if (!invoice.dueDate || isCancelled || isDraft || remaining <= 0.009) return null;
+    const due = new Date(invoice.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.floor((today.getTime() - due.getTime()) / 86_400_000);
+    return days > 0 ? days : null;
+  })();
+
+  const canRegisterPayment = canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId;
+
+  /**
+   * Una sola acción primaria, la que corresponde al estado. Antes había hasta
+   * trece botones del mismo peso y la que importaba se perdía entre las demás.
+   */
+  const primaryAction: { label: string; icon: typeof Send; onClick: () => void } | null =
+    isCancelled ? null
+    : isDraft ? { label: 'Emitir', icon: Send, onClick: () => setShowIssueDialog(true) }
+    : canRegisterPayment
+      ? {
+          label: isCreditNote ? 'Registrar devolución' : 'Registrar cobro',
+          icon: Banknote,
+          onClick: () => setShowPayModal(true),
+        }
+      : null;
+
+  /** Todo lo demás, detrás de "Más". El orden es de más a menos frecuente. */
+  const moreActions: MoreAction[] = [
+    ...(isDraft ? [{ label: 'Editar', icon: Pencil, onClick: () => navigate(`/invoices/${invoice.id}/edit`) }] : []),
+    ...(canEmitArca ? [{
+      label: 'Emitir a ARCA',
+      icon: Zap,
+      onClick: () => setShowEmitDialog(true),
+      disabled: !isInternetOnline,
+      disabledReason: 'Sin conexión a internet — ARCA no disponible',
+    }] : []),
+    ...(canRegisterPayment && !isCreditNote ? [{ label: 'Cobrar con MercadoPago', icon: Smartphone, onClick: () => setShowMpModal(true) }] : []),
+    ...(canGenerateRemito ? [{ label: 'Generar remito', icon: ClipboardList, onClick: () => navigate(`/remitos/new?invoiceId=${invoice.id}`) }] : []),
+    { label: `Imprimir (${printFormat === 'THERMAL_80MM' ? '80mm' : 'A4'})`, icon: Printer, onClick: handlePrint },
+    ...(canGenerateNC ? [{ label: 'Generar nota de crédito', icon: RotateCcw, onClick: () => navigate('/invoices/new', { state: { creditNoteFrom: invoice } }) }] : []),
+    ...(canGenerateND ? [{ label: 'Generar nota de débito', icon: ArrowRight, onClick: () => navigate('/invoices/new', { state: { debitNoteFrom: invoice } }) }] : []),
+    ...(isDraft ? [{ label: 'Eliminar borrador', icon: Trash2, onClick: () => setShowDeleteDialog(true), danger: true }] : []),
+    ...(canCancel && !isDraft ? [{ label: 'Anular factura', icon: XCircle, onClick: () => setShowCancelDialog(true), danger: true }] : []),
+  ];
+
   // ── Timeline: creada → emitida → CAE → cobros → saldo ──
   const timelineEvents: TimelineEvent[] = (() => {
     const dated: TimelineEvent[] = [{ date: invoice.createdAt, title: 'Creada', detail: 'Borrador' }];
@@ -388,6 +503,16 @@ export default function InvoiceDetailPage() {
         title: `${isCreditNote ? 'Devolución' : 'Cobro'} ${r.number}`,
         detail: formatCurrency(Number(r.amount), invoice.currency),
         tone: 'success',
+      });
+    }
+    // Los remitos existían solo en "Documentos relacionados", sin fecha ni
+    // orden respecto del resto: en la historia cuentan cuándo se entregó.
+    for (const r of linkedRemitos) {
+      if (r.status === 'CANCELLED') continue;
+      dated.push({
+        date: r.date,
+        title: `${r.status === 'DELIVERED' ? 'Entrega' : 'Entrega parcial'} · remito ${r.number}`,
+        tone: r.status === 'DELIVERED' ? 'success' : 'pending',
       });
     }
     dated.sort((a, b) => new Date(a.date as string).getTime() - new Date(b.date as string).getTime());
@@ -438,134 +563,112 @@ export default function InvoiceDetailPage() {
 
   return (
     <div>
-      <PageHeader
-        title={`Factura ${formatInvoiceNumber(invoice)}`}
-        subtitle={INVOICE_TYPES[invoice.type]}
-        backTo="/invoices"
-        actions={
-          <div className="flex items-center gap-2 flex-wrap">
-            {isDraft && (
-              <Button variant="outline" onClick={() => navigate(`/invoices/${invoice.id}/edit`)}>
-                <Pencil className="w-4 h-4 mr-2" />
-                Editar
-              </Button>
-            )}
-            {isDraft && (
-              <Button onClick={() => setShowIssueDialog(true)}>
-                <Send className="w-4 h-4 mr-2" />
-                Emitir
-              </Button>
-            )}
-            {canEmitArca && (
-              <span title={!isInternetOnline ? 'Sin conexión a internet — AFIP no disponible' : undefined}>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowEmitDialog(true)}
-                  disabled={!isInternetOnline}
-                >
-                  <Zap className="w-4 h-4 mr-2" />
-                  Emitir a ARCA
-                </Button>
+      {/* ── Cabecera: identidad, plata y una sola acción principal ── */}
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl mb-6">
+        <div className="px-5 pt-4 pb-4 flex flex-col lg:flex-row lg:items-start gap-5">
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => navigate('/invoices')}
+              className="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors mb-2"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Facturas
+            </button>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset text-indigo-700 bg-indigo-50 ring-indigo-200/60 dark:text-indigo-300 dark:bg-indigo-900/30 dark:ring-indigo-700/60 leading-none uppercase">
+                {INVOICE_TYPES[invoice.type]}
               </span>
-            )}
-            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && (
-              <Button variant="outline" onClick={() => setShowPayModal(true)}>
-                <Banknote className="w-4 h-4 mr-2" />
-                {isCreditNote ? 'Registrar devolución' : 'Registrar pago'}
-              </Button>
-            )}
-            {canMarkAsPaid && remaining > 0 && !invoice.ordenPedidoId && !isCreditNote && (
-              <Button variant="outline" onClick={() => setShowMpModal(true)}>
-                <Smartphone className="w-4 h-4 mr-2" />
-                Cobrar con MP
-              </Button>
-            )}
-            {canGenerateRemito && (
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/remitos/new?invoiceId=${invoice.id}`)}
-              >
-                <ClipboardList className="w-4 h-4 mr-2" />
-                Generar remito
-              </Button>
-            )}
-            <Button variant="outline" onClick={handleDownloadPDF} isLoading={isGeneratingPDF}>
-              <FileDown className="w-4 h-4 mr-2" />
-              PDF
-            </Button>
-            <Button variant="outline" onClick={handlePrint} isLoading={isGeneratingPDF && printFormat === 'A4'}>
-              <Printer className="w-4 h-4 mr-2" />
-              Imprimir ({printFormat === 'THERMAL_80MM' ? '80mm' : 'A4'})
-            </Button>
-            <Button variant="outline" onClick={() => setShowEmailModal(true)}>
-              <Mail className="w-4 h-4 mr-2" />
-              Enviar
-            </Button>
-            {canGenerateNC && (
-              <Button
-                variant="outline"
-                onClick={() => navigate('/invoices/new', { state: { creditNoteFrom: invoice } })}
-              >
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Generar NC
-              </Button>
-            )}
-            {canGenerateND && (
-              <Button
-                variant="outline"
-                onClick={() => navigate('/invoices/new', { state: { debitNoteFrom: invoice } })}
-              >
-                <ArrowRight className="w-4 h-4 mr-2" />
-                Generar ND
-              </Button>
-            )}
-            {isDraft && (
-              <Button variant="danger" onClick={() => setShowDeleteDialog(true)}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Eliminar
-              </Button>
-            )}
-            {canCancel && !isDraft && (
-              <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
-                <XCircle className="w-4 h-4 mr-2" />
-                Cancelar
-              </Button>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight tabular-nums">
+                {formatInvoiceNumber(invoice)}
+              </h1>
+              <Badge variant={STATUS_VARIANT[invoice.status] ?? 'default'} dot>
+                {INVOICE_STATUSES[invoice.status]}
+              </Badge>
+              <FiscalModeBadge mode={invoice.fiscalMode} />
+            </div>
+
+            <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">
+              <span className="font-semibold text-gray-900 dark:text-white">{invoice.customer?.name ?? 'Consumidor final'}</span>
+              {invoice.customer?.taxId && <> · CUIT {formatCuit(invoice.customer.taxId)}</>}
+              <> · {formatDate(invoice.date)}</>
+              {invoice.dueDate && <> · vence {formatDate(invoice.dueDate)}</>}
+            </p>
+            {overdueDays !== null && (
+              <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                Vencida hace {overdueDays} {overdueDays === 1 ? 'día' : 'días'}
+              </p>
             )}
           </div>
-        }
-      />
 
-      {/* Status strip */}
-      {!isCancelled && (
-        <div className="flex items-center gap-2 mb-6 flex-wrap">
-          {(['DRAFT', 'ISSUED', 'PAID'] as const).map((step, i, arr) => {
-            const labels: Record<string, string> = { DRAFT: 'Borrador', ISSUED: 'Emitida', PAID: 'Pagada' };
-            const order = ['DRAFT', 'ISSUED', 'PAID'];
-            const currentIdx = order.indexOf(invoice.status === 'PARTIALLY_PAID' ? 'ISSUED' : invoice.status);
-            const stepIdx = order.indexOf(step);
-            const isDone = stepIdx < currentIdx;
-            const isCurrent = stepIdx === currentIdx;
-            return (
-              <div key={step} className="flex items-center gap-2">
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors duration-200 ${
-                  isCurrent ? 'bg-indigo-600 text-white' :
-                  isDone ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' :
-                  'bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500'
-                }`}>
-                  {isDone && <CheckCircle className="w-3.5 h-3.5" />}
-                  {labels[step]}
-                </div>
-                {i < arr.length - 1 && (
-                  <ArrowRight className={`w-3 h-3 flex-shrink-0 ${stepIdx < currentIdx ? 'text-emerald-400 dark:text-emerald-500' : 'text-gray-300 dark:text-slate-600'}`} />
-                )}
+          {/* Total / cobrado / saldo — lo que antes estaba al pie de la tabla */}
+          <div className="flex items-start gap-6 lg:gap-7 shrink-0 lg:text-right">
+            <div>
+              <p className="text-[11px] text-gray-500 dark:text-slate-400">Total</p>
+              <p className="mt-1 text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                {formatCurrency(Number(invoice.total), invoice.currency)}
+              </p>
+            </div>
+            {!isDraft && (
+              <div>
+                <p className="text-[11px] text-gray-500 dark:text-slate-400">{isCreditNote ? 'Devuelto' : 'Cobrado'}</p>
+                <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(paidAmount, invoice.currency)}
+                </p>
               </div>
-            );
-          })}
-          {invoice.status === 'PARTIALLY_PAID' && (
-            <Badge variant="warning" dot>Pago parcial</Badge>
+            )}
+            {!isDraft && remaining > 0.009 && (
+              <div className="pl-6 lg:pl-7 border-l border-gray-200 dark:border-slate-700">
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Saldo</p>
+                <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400 tracking-tight tabular-nums">
+                  {formatCurrency(remaining, invoice.currency)}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Avance del cobro */}
+        {!isDraft && !isCancelled && Number(invoice.total) > 0 && (
+          <div className="mx-5 h-1 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 transition-[width] duration-300"
+              style={{ width: `${Math.min(100, (paidAmount / Number(invoice.total)) * 100)}%` }}
+            />
+          </div>
+        )}
+
+        {/* Acciones: una primaria, dos frecuentes, el resto en el menú */}
+        <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap">
+          {primaryAction && (
+            <Button onClick={primaryAction.onClick}>
+              <primaryAction.icon className="w-4 h-4 mr-2" />
+              {primaryAction.label}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleDownloadPDF} isLoading={isGeneratingPDF}>
+            <FileDown className="w-4 h-4 mr-2" />
+            PDF
+          </Button>
+          <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+            <Mail className="w-4 h-4 mr-2" />
+            Enviar
+          </Button>
+          {moreActions.length > 0 && (
+            <MoreActionsMenu actions={moreActions} />
+          )}
+
+          {invoice.cae && (
+            <span className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+              <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-400">CAE {invoice.cae}</span>
+              {invoice.caeExpiry && <span className="hidden sm:inline">· vto. {formatDate(invoice.caeExpiry)}</span>}
+            </span>
           )}
         </div>
-      )}
+      </div>
+
 
       {/* Cancelled banner */}
       {isCancelled && (
@@ -583,24 +686,48 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
-      {/* CAE banner when issued via ARCA */}
-      {invoice.cae && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-sm text-emerald-800 dark:text-emerald-300">
-          <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-          <span>Emitida ante ARCA.</span>
-          <span className="font-mono font-semibold ml-1">CAE: {invoice.cae}</span>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
 
         {/* ── Left: items table + notes ── */}
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h3>
+            {/* Ítems por defecto; Historia al lado, que antes vivía perdida
+                al fondo del sidebar. */}
+            <div className="px-5 border-b border-gray-100 dark:border-slate-700 flex items-center gap-6">
+              {([
+                { key: 'items' as const, label: 'Ítems', count: invoice.items.length },
+                { key: 'history' as const, label: 'Historia', count: timelineEvents.length },
+              ]).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  aria-current={activeTab === tab.key ? 'page' : undefined}
+                  className={`flex items-center gap-1.5 py-3 text-sm border-b-2 -mb-px transition-colors ${
+                    activeTab === tab.key
+                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-semibold'
+                      : 'border-transparent text-gray-500 dark:text-slate-400 font-medium hover:text-gray-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+                    activeTab === tab.key
+                      ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
+                      : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400'
+                  }`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
             </div>
-            <div className="overflow-x-auto">
+
+            {activeTab === 'history' && (
+              <div className="px-5 py-5">
+                <DocumentTimeline events={timelineEvents} />
+              </div>
+            )}
+
+            <div className={`overflow-x-auto ${activeTab === 'items' ? '' : 'hidden'}`}>
               <table className="min-w-full">
                 <thead className="bg-gray-50/80 dark:bg-slate-700/50">
                   <tr>
@@ -832,11 +959,9 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
 
-          {/* Documentos relacionados */}
+          {/* Documentos relacionados. La historia ya no va acá: se movió a la
+              pestaña Historia, junto a los ítems. */}
           <RelatedDocuments groups={relatedGroups} />
-
-          {/* Historia del documento */}
-          <DocumentTimeline events={timelineEvents} />
         </div>
       </div>
 

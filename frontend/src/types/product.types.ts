@@ -24,11 +24,18 @@ export interface Product {
   salePriceUSD: number | null;
   taxRate: number;
   trackStock: boolean;
+  /** URL pública de la imagen — módulo "imagenes". null si no tiene. */
+  imageUrl?: string | null;
   priceUpdatedAt: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
   customFieldValues?: ProductCustomFieldValue[];
+  // Agregado del listado (GET /products): suma de todos los depósitos.
+  stockQuantity?: number;
+  stockReserved?: number;
+  /** Suma de mínimos; null si ningún depósito tiene mínimo definido. */
+  stockMinQuantity?: number | null;
 }
 
 export interface CreateProductDTO {
@@ -64,4 +71,10 @@ export interface ProductFilters {
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
+  stockState?: StockStateFilter;
+  sortBy?: ProductSortKey;
+  sortOrder?: 'asc' | 'desc';
 }
+
+export type StockStateFilter = 'with' | 'low' | 'out';
+export type ProductSortKey = 'name' | 'sku' | 'cost' | 'price' | 'priceUpdatedAt';

@@ -1,70 +1,38 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useOfflineStore } from '../stores/offline.store';
 
 export interface OnlineStatus {
-  /** true = internet disponible (navigator.onLine) */
+  /** true = el backend responde (y por lo tanto puede hablar con ARCA) */
   isInternetOnline: boolean;
-  /** true = backend local responde al /health */
+  /** true = el backend responde al /health */
   isBackendOnline: boolean;
-  /** true = todo funciona (internet + backend) */
+  /** true = todo funciona */
   isFullyOnline: boolean;
-  /** true = backend ok pero sin internet (AFIP no disponible) */
+  /** true = trabajando contra la cache local */
   isLocalOnly: boolean;
 }
 
-const HEALTH_URL = '/health';
-const POLL_INTERVAL_MS = 30_000; // 30 s
-const HEALTH_TIMEOUT_MS = 5_000; // 5 s
-
-async function checkBackend(): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(HEALTH_URL, { signal: ctrl.signal, cache: 'no-store' });
-    clearTimeout(timer);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
+/**
+ * Adaptador sobre el store de conectividad.
+ *
+ * Antes este hook tenia su propio poller contra `/health` con una URL relativa.
+ * Eso funcionaba solo en la instalacion local: en la nube el `/health` relativo
+ * pega contra el frontend, que por el fallback del SPA devuelve 200 con el
+ * index.html — o sea, reportaba "backend online" siempre, incluso caido.
+ *
+ * Ahora la unica fuente de verdad es connectivity.ts, que pingea el backend
+ * real a traves de la baseURL de axios. Este hook queda como compatibilidad
+ * para los gates de ARCA que ya lo usaban.
+ */
 export function useOnlineStatus(): OnlineStatus {
-  const [isInternetOnline, setIsInternetOnline] = useState<boolean>(navigator.onLine);
-  const [isBackendOnline, setIsBackendOnline] = useState<boolean>(true); // optimistic
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const runHealthCheck = useCallback(async () => {
-    const ok = await checkBackend();
-    setIsBackendOnline(ok);
-  }, []);
-
-  useEffect(() => {
-    // Initial check
-    runHealthCheck();
-
-    // Browser online/offline events
-    const onOnline = () => {
-      setIsInternetOnline(true);
-      runHealthCheck(); // recheck immediately
-    };
-    const onOffline = () => setIsInternetOnline(false);
-
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-
-    // Poll backend health every 30 s
-    pollRef.current = setInterval(runHealthCheck, POLL_INTERVAL_MS);
-
-    return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [runHealthCheck]);
+  const connection = useOfflineStore((s) => s.connection);
+  const online = connection === 'online';
 
   return {
-    isInternetOnline,
-    isBackendOnline,
-    isFullyOnline: isInternetOnline && isBackendOnline,
-    isLocalOnly: isBackendOnline && !isInternetOnline,
+    isInternetOnline: online,
+    isBackendOnline: online,
+    isFullyOnline: online,
+    isLocalOnly: !online,
   };
 }
+
+export default useOnlineStatus;

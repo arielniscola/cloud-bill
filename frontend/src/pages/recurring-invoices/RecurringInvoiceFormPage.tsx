@@ -88,7 +88,7 @@ export default function RecurringInvoiceFormPage() {
 
   useEffect(() => {
     Promise.all([
-      customersService.getAll({ limit: 1000, isActive: true }),
+      customersService.getAll({ limit: 50, isActive: true }),
       productsService.getAll({ limit: 1000 }),
       warehousesService.getAll().catch(() => [] as Warehouse[]),
     ])
@@ -210,6 +210,8 @@ export default function RecurringInvoiceFormPage() {
                 value={watch('customerId') || ''}
                 onChange={(v) => setValue('customerId', v)}
                 error={errors.customerId?.message}
+                searchParams={{ isActive: true }}
+                serverSearch
               />
             </div>
 

@@ -68,6 +68,9 @@ export default function BudgetFormPage() {
   const { id } = useParams();
   const isEditing = !!id;
   const [customers, setCustomers] = useState<Customer[]>([]);
+  // El cliente elegido con búsqueda server-side no está en `customers`: se
+  // cachea para poder resolverlo en la autoselección por cliente.
+  const [customerCache, setCustomerCache] = useState<Record<string, Customer>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [companyTaxCondition, setCompanyTaxCondition] = useState<string>('RESPONSABLE_INSCRIPTO');
   const [isLoading, setIsLoading] = useState(false);
@@ -116,7 +119,8 @@ export default function BudgetFormPage() {
   // Auto-select invoice type + payment terms from customer
   useEffect(() => {
     if (isEditing) return;
-    const customer = customers.find((c) => c.id === customerId);
+    // El cliente elegido por búsqueda server-side puede no estar en `customers`.
+    const customer = customerCache[customerId] ?? customers.find((c) => c.id === customerId);
     if (type.startsWith('FACTURA_')) {
       const autoType = getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition);
       if (autoType !== type) setValue('type', autoType);
@@ -143,7 +147,7 @@ export default function BudgetFormPage() {
     const fetchData = async () => {
       try {
         const [customersData, productsData, settingsData] = await Promise.all([
-          customersService.getAll({ limit: 1000, isActive: true }),
+          customersService.getAll({ limit: 50, isActive: true }),
           productsService.getAll({ limit: 1000 }),
           appSettingsService.get().catch(() => null),
         ]);
@@ -236,12 +240,18 @@ export default function BudgetFormPage() {
     }
   };
 
-  // Pre-cargar variantes en edit
+  // Pre-cargar variantes en edit. Se depende del set de productos, no de la
+  // cantidad de filas: al editar un comprobante de un solo ítem el largo no
+  // cambia respecto de la fila vacía inicial y las variantes nunca se cargaban.
+  const itemProductIdsKey = Array.from(
+    new Set(items.map((it: any) => it.productId).filter(Boolean) as string[])
+  ).join(',');
+
   useEffect(() => {
-    const pids = new Set<string>();
-    items.forEach((it: any) => { if (it.productId) pids.add(it.productId); });
-    pids.forEach((pid) => { if (!variantsByProduct[pid]) void loadVariantsFor(pid); });
-  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    itemProductIdsKey.split(',').filter(Boolean).forEach((pid) => {
+      if (!variantsByProduct[pid]) void loadVariantsFor(pid);
+    });
+  }, [itemProductIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBarcodeAdd = (product: Product, qty: number = 1) => {
     const existingIndex = items.findIndex((item) => item.productId === product.id);
@@ -523,9 +533,14 @@ export default function BudgetFormPage() {
               <CustomerSearchSelect
                 customers={customers}
                 value={customerId}
-                onChange={(id) => setValue('customerId', id || null)}
+                onChange={(id, picked) => {
+                  if (picked) setCustomerCache((prev) => ({ ...prev, [id]: picked }));
+                  setValue('customerId', id || null);
+                }}
                 label="Cliente"
                 clearLabel="Sin cliente (consumidor final)"
+                searchParams={{ isActive: true }}
+                serverSearch
               />
 
               <Input

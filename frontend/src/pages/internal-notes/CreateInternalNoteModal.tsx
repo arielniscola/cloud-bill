@@ -38,7 +38,7 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    customersService.getAll({ limit: 500 })
+    customersService.getAll({ limit: 50 })
       .then((r) => setCustomers(r.data))
       .catch(() => {});
     suppliersService.getAll({ limit: 500 })
@@ -169,6 +169,7 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
                 value={form.customerId ?? ''}
                 onChange={(v) => set('customerId', v || null)}
                 placeholder="Buscar cliente..."
+                serverSearch
               />
             </div>
           )}

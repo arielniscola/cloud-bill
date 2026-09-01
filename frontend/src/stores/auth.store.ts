@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '../types';
+// Import directo a db.ts (no a catalogCache) para no crear un ciclo
+// auth.store → catalogCache → api.ts → auth.store.
+import { clearCache } from '../lib/offline/db';
 
 interface AuthState {
   user: User | null;
@@ -22,12 +25,17 @@ export const useAuthStore = create<AuthState>()(
           token,
           isAuthenticated: true,
         }),
-      logout: () =>
+      logout: () => {
+        // El catalogo cacheado es de una empresa concreta: no puede quedar
+        // visible para quien inicie sesion despues en la misma maquina.
+        // NOTA (Fase 3): la cola de ventas pendientes NO debe borrarse aca.
+        void clearCache().catch(() => { /* la cache se rehace en el proximo login */ });
         set({
           user: null,
           token: null,
           isAuthenticated: false,
-        }),
+        });
+      },
     }),
     {
       name: 'auth-storage',

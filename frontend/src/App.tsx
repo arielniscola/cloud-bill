@@ -5,6 +5,7 @@ import AppRoutes from './routes/AppRoutes';
 import { useUIStore } from './stores';
 import { GlobalSearch } from './components/shared/GlobalSearch';
 import { FiscalModeQuickSwitch } from './components/shared/FiscalModeQuickSwitch';
+import { PwaUpdatePrompt } from './components/pwa/PwaUpdatePrompt';
 
 function App() {
   const { isDarkMode } = useUIStore();
@@ -18,6 +19,7 @@ function App() {
       <AppRoutes />
       <GlobalSearch />
       <FiscalModeQuickSwitch />
+      <PwaUpdatePrompt />
       <Toaster
         position="top-right"
         gutter={8}

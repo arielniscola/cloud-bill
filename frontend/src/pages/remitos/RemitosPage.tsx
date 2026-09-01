@@ -95,13 +95,16 @@ export default function RemitosPage() {
   // Filters
   const [statusFilter,   setStatusFilter]   = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
+  // Con la búsqueda server-side el cliente filtrado puede no estar en los 50
+  // precargados: se guarda su nombre al elegirlo para poder rotular el chip.
+  const [customerFilterName, setCustomerFilterName] = useState('');
   const [dateFrom,       setDateFrom]       = useState('');
   const [dateTo,         setDateTo]         = useState('');
   const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   // Load customers once
   useEffect(() => {
-    customersService.getAll({ limit: 1000 })
+    customersService.getAll({ limit: 50 })
       .then(res => setCustomers(res.data))
       .catch(() => {});
   }, []);
@@ -132,6 +135,7 @@ export default function RemitosPage() {
   const clearFilters = () => {
     setStatusFilter('');
     setCustomerFilter('');
+    setCustomerFilterName('');
     setDateFrom('');
     setDateTo('');
     setPage(1);
@@ -194,8 +198,13 @@ export default function RemitosPage() {
               <CustomerSearchSelect
                 customers={customers}
                 value={customerFilter}
-                onChange={(v) => { setCustomerFilter(v); setPage(1); }}
+                onChange={(v, picked) => {
+                  setCustomerFilter(v);
+                  setCustomerFilterName(picked?.name ?? '');
+                  setPage(1);
+                }}
                 clearLabel="Todos los clientes"
+                serverSearch
               />
             </div>
 
@@ -224,7 +233,7 @@ export default function RemitosPage() {
               )}
               {customerFilter && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700">
-                  {customers.find(c => c.id === customerFilter)?.name ?? 'Cliente'}
+                  {customerFilterName || customers.find(c => c.id === customerFilter)?.name || 'Cliente'}
                   <button onClick={() => { setCustomerFilter(''); setPage(1); }}>
                     <X className="w-2.5 h-2.5" />
                   </button>

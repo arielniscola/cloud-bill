@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Package, FileText, CreditCard, Check, AlertCircle, Landmark, ClipboardList, ShoppingCart } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
@@ -36,8 +37,24 @@ function urgencyDotColor(urgency?: string): string {
   return 'bg-indigo-400';
 }
 
-export default function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
+interface NotificationBellProps {
+  align?: 'left' | 'right';
+  /**
+   * Estilo del disparador. El sidebar le pasa el de sus tiles de 44 px para que
+   * la campana no sea el único botón del riel con hover y tamaño propios; el
+   * navbar y la barra mobile se quedan con el estilo claro por defecto.
+   */
+  triggerClassName?: string;
+  iconClassName?: string;
+}
+
+export default function NotificationBell({
+  align = 'right',
+  triggerClassName,
+  iconClassName,
+}: NotificationBellProps) {
   const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
@@ -49,6 +66,58 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
   const urgentCount = notifications.filter(
     (n) => !isRead(n.id) && (n.urgency === 'overdue' || n.urgency === 'critical')
   ).length;
+
+  /**
+   * El panel se posiciona contra el viewport, no contra el botón.
+   *
+   * Con `absolute top-full` abría siempre hacia abajo y hacia un lado fijo: en
+   * el riel del sidebar la campana está al fondo de la pantalla, así que los
+   * 460 px del panel se salían por abajo. Ahora vuela en un portal, se da
+   * vuelta si no entra debajo y se recorta contra los bordes.
+   */
+  const PANEL_WIDTH = 320;
+  const MAX_PANEL_HEIGHT = 460;
+  const MARGIN = 8;
+
+  const updatePosition = () => {
+    const trigger = buttonRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+    const spaceAbove = rect.top - MARGIN;
+    const openUp = spaceBelow < Math.min(MAX_PANEL_HEIGHT, 240) && spaceAbove > spaceBelow;
+    const height = Math.min(MAX_PANEL_HEIGHT, Math.max(openUp ? spaceAbove : spaceBelow, 160));
+
+    // Alineación preferida por `align`, pero siempre dentro de la pantalla.
+    const preferredLeft = align === 'left' ? rect.left : rect.right - PANEL_WIDTH;
+    const left = Math.min(
+      Math.max(MARGIN, preferredLeft),
+      window.innerWidth - PANEL_WIDTH - MARGIN
+    );
+
+    setPanelStyle({
+      position: 'fixed',
+      left,
+      width: PANEL_WIDTH,
+      maxHeight: height,
+      ...(openUp
+        ? { bottom: window.innerHeight - rect.top + MARGIN }
+        : { top: rect.bottom + MARGIN }),
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    const onScroll = () => updatePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, align]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -80,10 +149,11 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
-        className="relative p-1.5 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-white transition-colors"
+        className={triggerClassName ?? 'relative p-1.5 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-white transition-colors'}
         aria-label="Notificaciones"
+        aria-expanded={open}
       >
-        <Bell className="w-4 h-4" />
+        <Bell className={iconClassName ?? 'w-4 h-4'} />
         {unreadCount > 0 && (
           <span
             className={clsx(
@@ -96,11 +166,11 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
         )}
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
-          className={clsx("absolute top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden", align === 'left' ? 'left-0' : 'right-0')}
-          style={{ maxHeight: '460px' }}
+          className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-2xl z-[70] flex flex-col overflow-hidden"
+          style={panelStyle}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-700">
@@ -187,7 +257,8 @@ export default function NotificationBell({ align = 'right' }: { align?: 'left' |
               </ul>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

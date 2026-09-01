@@ -1,5 +1,6 @@
 import { useAuthStore } from '../stores';
 import type { UserRole } from '../types';
+import { moduleIsEnabled } from '../types/company.types';
 
 export function usePermissions() {
   const user = useAuthStore((s) => s.user);
@@ -8,8 +9,16 @@ export function usePermissions() {
 
   function isModuleEnabled(key: string): boolean {
     if (role === 'SUPER_ADMIN') return false; // SUPER_ADMIN sees its own nav, not module nav
-    if (enabledModules.includes('ALL')) return true;
-    return enabledModules.includes(key);
+    return moduleIsEnabled(enabledModules, key);
+  }
+
+  /**
+   * Igual que isModuleEnabled pero sin la excepción de SUPER_ADMIN, que existe
+   * sólo para el nav. Para habilitar UI dentro de una pantalla hay que preguntar
+   * por el módulo de la empresa activa, no por quién está mirando.
+   */
+  function canUseModule(key: string): boolean {
+    return moduleIsEnabled(enabledModules, key);
   }
 
   return {
@@ -30,5 +39,6 @@ export function usePermissions() {
     canAccessFinances: role === 'ADMIN' || role === 'FINANCES',
     enabledModules,
     isModuleEnabled,
+    canUseModule,
   };
 }

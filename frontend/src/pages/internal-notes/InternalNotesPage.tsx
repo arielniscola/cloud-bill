@@ -105,7 +105,7 @@ export default function InternalNotesPage() {
   }, [page, limit, typeFilter, statusFilter, entityFilter, customerFilter, supplierFilter, dateFrom, dateTo]);
 
   useEffect(() => {
-    customersService.getAll({ limit: 500 })
+    customersService.getAll({ limit: 50 })
       .then((r) => setCustomers(r.data))
       .catch(() => {});
     suppliersService.getAll({ limit: 500 })
@@ -188,6 +188,7 @@ export default function InternalNotesPage() {
                 value={customerFilter}
                 onChange={(v) => { setCustomerFilter(v); setPage(1); }}
                 placeholder="Filtrar por cliente"
+                serverSearch
                 clearLabel="Todos los clientes"
               />
             </div>

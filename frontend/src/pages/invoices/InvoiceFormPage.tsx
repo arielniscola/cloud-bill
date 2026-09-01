@@ -1,22 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
+import type { FieldErrors, UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search } from 'lucide-react';
+import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search, ChevronDown, FileText, Send, Zap, RotateCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
-import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService } from '../../services';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { useAuthStore } from '../../stores/auth.store';
+import { useFiscalModeStore } from '../../stores/fiscalMode.store';
+import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService, afipService } from '../../services';
 import type { ProductVariant } from '../../types/product-variant.types';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
-import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse } from '../../types';
+import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse, Stock } from '../../types';
 import { INVOICE_TYPES } from '../../utils/constants';
+import InvoiceFastLayout from './InvoiceFastLayout';
 
 const NC_TYPE_MAP: Partial<Record<InvoiceType, InvoiceType>> = {
   FACTURA_A: 'NOTA_CREDITO_A',
@@ -30,6 +35,80 @@ const ND_TYPE_MAP: Partial<Record<InvoiceType, InvoiceType>> = {
   FACTURA_C: 'NOTA_DEBITO_C',
 };
 import { PaymentModal } from '../../components/shared';
+
+/** Qué hacer al confirmar el formulario. */
+type SubmitAction = 'draft' | 'issue' | 'arca';
+
+const SUBMIT_ACTION_KEY = 'cloud-bill:invoice-submit-action';
+/**
+ * Layout del formulario, elegido por el usuario y recordado en este navegador.
+ * `classic` es la vista de siempre (grilla + sidebar); `fast` es la carga
+ * rápida: comprobante plegado, buscador protagonista y filas grandes.
+ */
+const LAYOUT_KEY = 'cloud-bill:invoice-layout';
+type FormLayout = 'classic' | 'fast';
+/**
+ * Dentro de la carga rápida, si la lista arranca en modo columnas editables.
+ * Es preferencia del usuario, no de la factura: quien negocia precios lo deja
+ * prendido y nunca ve el modo compacto.
+ */
+const PRICE_EDIT_KEY = 'cloud-bill:invoice-price-edit';
+/**
+ * Borrador local de la factura nueva, por si se cierra la pestaña sin guardar.
+ * La clave se scopea por empresa y modo fiscal: con el selector de empresa un
+ * borrador de otra empresa trae un `customerId` que ahí no existe, y un
+ * borrador FORMAL no corresponde ofrecerlo en INFORMAL (ni al revés).
+ */
+const localDraftKey = (companyId: string | null | undefined, fiscalMode: string) =>
+  `cloud-bill:invoice-draft:new:${companyId ?? 'sin-empresa'}:${fiscalMode}`;
+/** Pasado un día el borrador local deja de ofrecerse: ya no es lo que el usuario tenía en mente. */
+const LOCAL_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface LocalDraft {
+  savedAt: number;
+  customerName: string;
+  itemCount: number;
+  values: Partial<InvoiceFormData>;
+  discountType: '%' | '$';
+  discountValue: number;
+  hasPerItemDiscount: boolean;
+  warehouseId: string;
+}
+
+function readLocalDraft(key: string): LocalDraft | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as LocalDraft;
+    if (!draft?.savedAt || Date.now() - draft.savedAt > LOCAL_DRAFT_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
+function clearLocalDraft(key: string) {
+  try { localStorage.removeItem(key); } catch { /* noop */ }
+}
+
+/**
+ * Disponible = Σ (cantidad − reservado). Un registro con la cantidad o el
+ * reservado nulos no debe envenenar la suma con NaN (se mostraba "Disp. NaN").
+ */
+function sumAvailable(stocks: Stock[]): number {
+  return stocks.reduce((sum, s) => {
+    const qty = Number(s.quantity);
+    const reserved = Number(s.reservedQuantity);
+    return sum + ((Number.isFinite(qty) ? qty : 0) - (Number.isFinite(reserved) ? reserved : 0));
+  }, 0);
+}
+
+function errorMessage(error: unknown): string | undefined {
+  return (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+}
 
 const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Seleccioná un producto'),
@@ -87,6 +166,114 @@ function SkeletonForm() {
   );
 }
 
+/**
+ * Botón partido de confirmación: la acción principal es la última que usó el
+ * usuario y el resto queda en el desplegable. Evita el rodeo de crear el
+ * borrador y tener que emitirlo desde la pantalla de detalle.
+ */
+function SubmitSplitButton({
+  action, options, isLoading, disabled, onSelect, onSubmit,
+}: {
+  action: SubmitAction;
+  options: Array<{ value: SubmitAction; label: string; hint: string; icon: typeof Send; disabledReason?: string }>;
+  isLoading: boolean;
+  disabled?: boolean;
+  onSelect: (action: SubmitAction) => void;
+  onSubmit: (action: SubmitAction) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    // Escape cierra el menú y no debe llegar al atajo global de "cancelar",
+    // que abriría la confirmación de salida.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = options.find((o) => o.value === action) ?? options[0];
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="flex">
+        <Button
+          type="button"
+          isLoading={isLoading}
+          disabled={disabled}
+          onClick={() => onSubmit(current.value)}
+          className="flex-1 justify-center rounded-r-none"
+        >
+          {current.label}
+          <kbd className="ml-1.5 text-[10px] font-mono font-normal opacity-60 px-1 py-0.5 rounded bg-white/20 border border-white/30 leading-none">Ctrl+↵</kbd>
+        </Button>
+        <Button
+          type="button"
+          disabled={disabled || isLoading}
+          aria-label="Más opciones de guardado"
+          aria-expanded={open}
+          aria-haspopup="menu"
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-l-none border-l border-white/25 px-2.5"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </Button>
+      </div>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full right-0 mb-2 w-full min-w-[260px] bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden z-20"
+        >
+          {options.map((option) => {
+            const Icon = option.icon;
+            const isDisabled = !!option.disabledReason;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitem"
+                disabled={isDisabled}
+                title={option.disabledReason}
+                onClick={() => {
+                  setOpen(false);
+                  onSelect(option.value);
+                  onSubmit(option.value);
+                }}
+                className={`w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left transition-colors ${
+                  isDisabled
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'hover:bg-indigo-50 dark:hover:bg-slate-700/60'
+                } ${option.value === action ? 'bg-indigo-50/60 dark:bg-slate-700/40' : ''}`}
+              >
+                <Icon className="w-4 h-4 mt-0.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900 dark:text-white">{option.label}</span>
+                  <span className="block text-xs text-gray-500 dark:text-slate-400 leading-snug">
+                    {option.disabledReason ?? option.hint}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function InvoiceFormPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -109,8 +296,46 @@ export default function InvoiceFormPage() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [discountType, setDiscountType] = useState<'%' | '$'>('%');
   const [discountValue, setDiscountValue] = useState(0);
+  // El comprobante cargado puede traer un descuento distinto por línea (p. ej.
+  // generado por un abono). Mientras sea así se respeta tal cual: el control
+  // global recién los unifica cuando el usuario lo toca.
+  const [hasPerItemDiscount, setHasPerItemDiscount] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [warehouseId, setWarehouseId] = useState<string>('');
+  // Los productos elegidos con búsqueda server-side no están en `products`;
+  // se cachean para poder nombrarlos en los avisos de stock.
+  const [productCache, setProductCache] = useState<Record<string, Product>>({});
+  const [customerCache, setCustomerCache] = useState<Record<string, Customer>>({});
+  const [submitAction, setSubmitAction] = useState<SubmitAction>(() => {
+    const stored = localStorage.getItem(SUBMIT_ACTION_KEY);
+    return stored === 'draft' || stored === 'issue' || stored === 'arca' ? stored : 'issue';
+  });
+  const [showArcaConfirm, setShowArcaConfirm] = useState(false);
+  const [layout, setLayout] = useState<FormLayout>(() =>
+    localStorage.getItem(LAYOUT_KEY) === 'fast' ? 'fast' : 'classic'
+  );
+  const [priceEditMode, setPriceEditMode] = useState(() => localStorage.getItem(PRICE_EDIT_KEY) === '1');
+
+  const chooseLayout = (next: FormLayout) => {
+    setLayout(next);
+    try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* noop */ }
+  };
+
+  const choosePriceEditMode = (next: boolean) => {
+    setPriceEditMode(next);
+    try { localStorage.setItem(PRICE_EDIT_KEY, next ? '1' : '0'); } catch { /* noop */ }
+  };
+
+  const { isInternetOnline } = useOnlineStatus();
+  const fiscalMode = useFiscalModeStore((s) => s.mode);
+  const companyId = useAuthStore((s) => s.user?.companyId ?? null);
+  const draftKey = localDraftKey(companyId, fiscalMode);
+
+  // Se lee de forma sincrónica en el primer render: el auto-guardado no debe
+  // pisar el borrador antes de que el usuario decida si lo restaura.
+  const [pendingDraft, setPendingDraft] = useState<LocalDraft | null>(
+    () => (isEditing || creditNoteFrom || debitNoteFrom ? null : readLocalDraft(draftKey))
+  );
 
   const {
     register, control, handleSubmit, setValue, watch, reset,
@@ -132,11 +357,18 @@ export default function InvoiceFormPage() {
 
   const barcodeRef = useRef<BarcodeProductInputHandle>(null);
   const prefilledRef = useRef(false);
+  const submitActionRef = useRef<SubmitAction>(submitAction);
+  // Restaurar un borrador no debe disparar la autoselección por cliente: pisaría
+  // el tipo de comprobante y la condición de venta que el usuario había elegido.
+  // Se guarda el customerId restaurado en vez de un booleano "saltear una vez":
+  // si el efecto no llega a dispararse (el cliente restaurado coincide con el
+  // actual), un flag suelto se comería la siguiente autoselección legítima.
+  const skipCustomerAutoForRef = useRef<string | null>(null);
 
   const appendItem = () => append({ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 });
 
   useFormKeyboardShortcuts({
-    onSubmit: () => handleSubmit(onSubmit)(),
+    onSubmit: () => runSubmit(effectiveAction),
     onAddItem: appendItem,
     onCancel: () => setShowExitConfirm(true),
     onDuplicateLastItem: () => {
@@ -158,6 +390,37 @@ export default function InvoiceFormPage() {
   const isService = watch('isService');
   const originInvoiceId = watch('originInvoiceId');
   const isNcNd = type.startsWith('NOTA_CREDITO_') || type.startsWith('NOTA_DEBITO_');
+
+  /**
+   * Refleja en el control de descuento los porcentajes que trae un comprobante
+   * cargado. Si todas las líneas comparten el mismo, se muestra como descuento
+   * global; si difieren, se marca `hasPerItemDiscount` para no pisarlos.
+   */
+  const syncDiscountFromItems = (loaded: Array<{ discountPct?: number | string | null }>) => {
+    const pcts = loaded.map((item) => Number(item.discountPct) || 0);
+    const uniform = pcts.length > 0 && pcts.every((pct) => pct === pcts[0]);
+    setHasPerItemDiscount(!uniform);
+    setDiscountType('%');
+    setDiscountValue(uniform ? pcts[0] : 0);
+  };
+
+  const cacheProducts = (loaded: Array<{ productId: string; product?: Product }>) => {
+    const found = loaded.filter((item) => item.product);
+    if (found.length === 0) return;
+    setProductCache((prev) => ({
+      ...prev,
+      ...Object.fromEntries(found.map((item) => [item.productId, item.product as Product])),
+    }));
+  };
+
+  const findProduct = (productId: string) =>
+    productCache[productId] ?? products.find((p) => p.id === productId);
+
+  // El cliente elegido por búsqueda server-side puede no estar en `customers`.
+  const findCustomer = useCallback(
+    (id: string) => customerCache[id] ?? customers.find((c) => c.id === id),
+    [customerCache, customers]
+  );
 
   // Pre-fill from credit/debit note origin once products are loaded
   useEffect(() => {
@@ -186,6 +449,9 @@ export default function InvoiceFormPage() {
         taxRate: Number(item.taxRate),
       })),
     });
+    cacheProducts(origin.items);
+    syncDiscountFromItems(origin.items);
+    if (origin.customer) setCustomerCache((prev) => ({ ...prev, [origin.customerId]: origin.customer! }));
   }, [products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load facturas available as origin for NC/ND
@@ -204,7 +470,8 @@ export default function InvoiceFormPage() {
   // Auto-select invoice type + sale condition from customer
   useEffect(() => {
     if (isEditing || creditNoteFrom || debitNoteFrom) return;
-    const customer = customers.find((c) => c.id === customerId);
+    if (skipCustomerAutoForRef.current === customerId) { skipCustomerAutoForRef.current = null; return; }
+    const customer = findCustomer(customerId);
     if (type.startsWith('FACTURA_')) {
       const autoType = getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition);
       if (autoType !== type) setValue('type', autoType);
@@ -222,7 +489,9 @@ export default function InvoiceFormPage() {
     const fetchData = async () => {
       try {
         const [customersData, productsData, settingsData, warehousesData] = await Promise.all([
-          customersService.getAll({ limit: 1000, isActive: true }),
+          // Solo la lista inicial del desplegable: el resto lo resuelve la
+          // búsqueda server-side, que no está limitada por esta precarga.
+          customersService.getAll({ limit: 50, isActive: true }),
           productsService.getAll({ limit: 1000 }),
           appSettingsService.get().catch(() => null),
           warehousesService.getAll().catch(() => [] as Warehouse[]),
@@ -272,10 +541,15 @@ export default function InvoiceFormPage() {
             variantId: item.variantId ?? null,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
-            discountPct: 0,
+            discountPct: Number(item.discountPct) || 0,
             taxRate: Number(item.taxRate),
           })),
         });
+        cacheProducts(invoice.items);
+        syncDiscountFromItems(invoice.items);
+        // Con la precarga acotada, el cliente de la factura puede no estar en
+        // `customers`: sin esto el aviso de CUIT dispararía de más.
+        if (invoice.customer) setCustomerCache((prev) => ({ ...prev, [invoice.customerId]: invoice.customer! }));
       } catch {
         toast.error('Error al cargar factura');
         navigate('/invoices');
@@ -285,6 +559,92 @@ export default function InvoiceFormPage() {
     };
     fetchInvoice();
   }, [id, isEditing, reset, navigate]);
+
+  // ── Borrador local ──────────────────────────────────────────────────────
+  // Red de seguridad ante el cierre accidental de la pestaña. No reemplaza al
+  // borrador del servidor: ese recién existe cuando se guarda la factura.
+  const isLocalDraftMode = !isEditing && !creditNoteFrom && !debitNoteFrom;
+  const draftSnapshot = JSON.stringify({
+    values: watch(), discountType, discountValue, hasPerItemDiscount, warehouseId,
+  });
+
+  useEffect(() => {
+    if (!isLocalDraftMode) return;
+    const snapshot = JSON.parse(draftSnapshot) as Omit<LocalDraft, 'savedAt' | 'customerName' | 'itemCount'>;
+    const draftItems = snapshot.values.items ?? [];
+    // Elegir cliente o producto solo puede venir del usuario: sirve para
+    // distinguir una carga real del formulario recién montado.
+    const worthSaving = !!snapshot.values.customerId || draftItems.some((item) => item.productId);
+
+    // El banner no puede congelar el auto-guardado. Si el usuario lo ignora y
+    // arranca una factura nueva, esa carga pasa a ser el borrador vigente: de
+    // lo contrario todo lo que escriba queda sin red hasta que lo conteste.
+    if (pendingDraft) {
+      if (!worthSaving) return;
+      setPendingDraft(null);
+      return;
+    }
+
+    if (!worthSaving) { clearLocalDraft(draftKey); return; }
+    const timer = setTimeout(() => {
+      const draft: LocalDraft = {
+        ...snapshot,
+        savedAt: Date.now(),
+        customerName: findCustomer(snapshot.values.customerId ?? '')?.name ?? '',
+        itemCount: draftItems.filter((item) => item.productId).length,
+      };
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* quota */ }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [isLocalDraftMode, pendingDraft, draftSnapshot, findCustomer, draftKey]);
+
+  const restoreDraft = () => {
+    if (!pendingDraft) return;
+    skipCustomerAutoForRef.current = pendingDraft.values.customerId ?? '';
+    reset(pendingDraft.values as InvoiceFormData);
+    setDiscountType(pendingDraft.discountType);
+    setDiscountValue(pendingDraft.discountValue);
+    setHasPerItemDiscount(pendingDraft.hasPerItemDiscount);
+    if (pendingDraft.warehouseId) setWarehouseId(pendingDraft.warehouseId);
+    setPendingDraft(null);
+    toast.success('Borrador restaurado');
+  };
+
+  const discardDraft = () => {
+    clearLocalDraft(draftKey);
+    setPendingDraft(null);
+  };
+
+  // ── Stock por fila ──────────────────────────────────────────────────────
+  // Se cachea el stock completo del producto (todos los depósitos y variantes)
+  // y se filtra al mostrar, así cambiar de depósito no vuelve a pedir nada.
+  const [stockByProduct, setStockByProduct] = useState<Record<string, Stock[] | 'loading' | 'error'>>({});
+
+  const loadStockFor = async (productId: string) => {
+    if (productId in stockByProduct) return;
+    setStockByProduct((prev) => ({ ...prev, [productId]: 'loading' }));
+    try {
+      const stocks = await stockService.getProductStock(productId);
+      setStockByProduct((prev) => ({ ...prev, [productId]: stocks }));
+    } catch {
+      // No se marca 0: no saber cuánto hay no es lo mismo que no haber.
+      setStockByProduct((prev) => ({ ...prev, [productId]: 'error' }));
+    }
+  };
+
+  /** Disponible (cantidad − reservado) en el depósito y la variante de la fila. */
+  const stockFor = (productId: string, variantId: string | null):
+    { state: 'loading' | 'error' } | { state: 'ok'; available: number } => {
+    const entry = stockByProduct[productId];
+    if (entry === undefined || entry === 'loading') return { state: 'loading' };
+    if (entry === 'error') return { state: 'error' };
+    return {
+      state: 'ok',
+      available: sumAvailable(entry
+        .filter((s) => (!effectiveWarehouseId || s.warehouseId === effectiveWarehouseId)
+          && (s.variantId ?? null) === variantId)),
+    };
+  };
 
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariant[]>>({});
 
@@ -305,16 +665,42 @@ export default function InvoiceFormPage() {
       setValue(`items.${index}.variantId`, null);
       setValue(`items.${index}.unitPrice`, product.price);
       setValue(`items.${index}.taxRate`, product.taxRate);
+      setProductCache((prev) => ({ ...prev, [productId]: product }));
       void loadVariantsFor(productId);
+      if (product.trackStock !== false) void loadStockFor(productId);
     }
   };
 
-  // Pre-cargar variantes cuando hay items con productId (modo edit / NC/ND)
+  // Pre-cargar variantes y stock cuando hay items con productId (modo edit /
+  // NC/ND / borrador restaurado, donde no pasaron por handleProductChange).
+  // Se depende del set de productos, no de la cantidad de filas: restaurar un
+  // borrador de 1 ítem sobre la fila vacía inicial no cambia el largo, y así
+  // quedaba sin variantes y con el stock "consultando" para siempre.
+  const itemProductIds = Array.from(
+    new Set(items.map((it: any) => it.productId).filter(Boolean) as string[])
+  );
+  const itemProductIdsKey = itemProductIds.join(',');
+
   useEffect(() => {
-    const pids = new Set<string>();
-    items.forEach((it: any) => { if (it.productId) pids.add(it.productId); });
-    pids.forEach((pid) => { if (!variantsByProduct[pid]) void loadVariantsFor(pid); });
-  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    itemProductIds.forEach((pid) => {
+      if (!variantsByProduct[pid]) void loadVariantsFor(pid);
+      if (!isNcNd && !(pid in stockByProduct)) void loadStockFor(pid);
+    });
+  }, [itemProductIdsKey, isNcNd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // El catálogo supera la precarga de 1000, así que un ítem restaurado de un
+  // borrador (o traído de una factura) puede referir a un producto que no está
+  // en memoria. La carga rápida muestra el nombre como texto — no dentro de un
+  // selector que sepa resolverlo — así que hay que traerlo por id.
+  useEffect(() => {
+    itemProductIds
+      .filter((pid) => !productCache[pid] && !products.some((p) => p.id === pid))
+      .forEach((pid) => {
+        productsService.getById(pid)
+          .then((product) => setProductCache((prev) => (prev[pid] ? prev : { ...prev, [pid]: product })))
+          .catch(() => { /* el nombre queda genérico; no bloquea la carga */ });
+      });
+  }, [itemProductIdsKey, products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleVariantChange = (index: number, variantId: string) => {
     const item = items[index];
@@ -327,6 +713,8 @@ export default function InvoiceFormPage() {
   };
 
   const handleBarcodeAdd = (product: Product, qty: number = 1) => {
+    setProductCache((prev) => ({ ...prev, [product.id]: product }));
+    if (!isNcNd && product.trackStock !== false) void loadStockFor(product.id);
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
@@ -377,29 +765,111 @@ export default function InvoiceFormPage() {
     ? ['Producto', 'Cant.', 'Precio unit.', 'Total', '']
     : ['Producto', 'Cant.', 'Precio unit.', 'IVA %', 'Total', ''];
 
-  const calcItemTotal = (item: typeof items[0]) => {
-    const base = item.quantity * item.unitPrice;
-    return isTypeC ? base : base + base * (item.taxRate / 100);
+  const itemBase = (item: typeof items[0] | undefined) =>
+    (Number(item?.quantity) || 0) * (Number(item?.unitPrice) || 0);
+
+  const subtotalBase = items.reduce((acc, item) => acc + itemBase(item), 0);
+
+  // El backend guarda el descuento como un porcentaje por ítem, así que el
+  // descuento global en $ se expresa como el % equivalente sobre el subtotal.
+  // Líneas y resumen se calculan con este mismo porcentaje: es lo que evita
+  // que la columna "Total" no cierre con el total del comprobante.
+  const globalDiscountPct = discountType === '%'
+    ? Math.min(discountValue, 100)
+    : (subtotalBase > 0 ? (Math.min(discountValue, subtotalBase) / subtotalBase) * 100 : 0);
+
+  const itemDiscountPct = (index: number) =>
+    hasPerItemDiscount ? Number(items[index]?.discountPct) || 0 : globalDiscountPct;
+
+  const calcItemAmounts = (index: number) => {
+    const item = items[index];
+    const base = itemBase(item);
+    const discount = (base * itemDiscountPct(index)) / 100;
+    const net = base - discount;
+    const tax = isTypeC ? 0 : net * ((Number(item?.taxRate) || 0) / 100);
+    return { base, discount, net, tax, total: net + tax };
   };
 
-  const subtotalBase = items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-  const discountAmount = discountType === '%'
-    ? subtotalBase * discountValue / 100
-    : Math.min(discountValue, subtotalBase);
-  const totals = {
-    subtotal: subtotalBase,
-    discountAmount,
-    taxAmount: isTypeC ? 0 : items.reduce((acc, item) => {
-      const base = item.quantity * item.unitPrice;
-      const proportion = subtotalBase > 0 ? base / subtotalBase : 0;
-      const taxable = base - discountAmount * proportion;
-      return acc + taxable * (item.taxRate / 100);
-    }, 0),
-  };
+  const totals = items.reduce(
+    (acc, _item, index) => {
+      const { base, discount, tax } = calcItemAmounts(index);
+      return {
+        subtotal: acc.subtotal + base,
+        discountAmount: acc.discountAmount + discount,
+        taxAmount: acc.taxAmount + tax,
+      };
+    },
+    { subtotal: 0, discountAmount: 0, taxAmount: 0 }
+  );
   const grandTotal = totals.subtotal - totals.discountAmount + totals.taxAmount;
 
+  const setGlobalDiscount = (nextType: '%' | '$', nextValue: number) => {
+    setHasPerItemDiscount(false);
+    setDiscountType(nextType);
+    setDiscountValue(nextValue);
+  };
+
+  // ── Handlers compartidos por los dos layouts ────────────────────────────
+  const paymentTermsValue =
+    saleCondition === 'CUENTA_CORRIENTE' && watch('paymentTerms') === 'Cuenta Corriente'
+      ? 'CUENTA_CORRIENTE'
+      : (watch('paymentTerms') ?? '');
+
+  const handlePaymentTermsChange = (value: string) => {
+    if (value === 'CUENTA_CORRIENTE') {
+      setValue('saleCondition', 'CUENTA_CORRIENTE');
+      setValue('paymentTerms', 'Cuenta Corriente');
+    } else if (DEFERRED_PAYMENT_DAYS[value]) {
+      setValue('saleCondition', 'CUENTA_CORRIENTE');
+      setValue('paymentTerms', value);
+      const due = new Date();
+      due.setDate(due.getDate() + DEFERRED_PAYMENT_DAYS[value]);
+      setValue('dueDate', due.toISOString().substring(0, 10));
+    } else {
+      setValue('saleCondition', 'CONTADO');
+      setValue('paymentTerms', value || null);
+    }
+  };
+
+  /** Elegir el comprobante de origen de una NC/ND ajusta la letra. */
+  const handleOriginChange = (value: string) => {
+    setValue('originInvoiceId', value || null);
+    const origin = originInvoices.find((inv) => inv.id === value);
+    if (!origin) return;
+    const letter = origin.type.split('_')[1]; // A, B o C
+    if (type.startsWith('NOTA_CREDITO_')) setValue('type', `NOTA_CREDITO_${letter}` as InvoiceType);
+    else if (type.startsWith('NOTA_DEBITO_')) setValue('type', `NOTA_DEBITO_${letter}` as InvoiceType);
+  };
+
+  const handleQuantityChange = (index: number, quantity: number) => {
+    setValue(`items.${index}.quantity`, quantity);
+  };
+
+  /**
+   * Descuento tocado desde una línea. Pasa el comprobante a descuentos por
+   * ítem: el control global recién los vuelve a unificar si el usuario lo usa.
+   */
+  const handleItemDiscountChange = (index: number, pct: number) => {
+    if (!hasPerItemDiscount) {
+      // Al pasar a por-línea, las demás filas conservan lo que estaban
+      // mostrando (el porcentaje global), en vez de volver a cero.
+      items.forEach((_item, i) => {
+        if (i !== index) setValue(`items.${i}.discountPct`, itemDiscountPct(i));
+      });
+      setHasPerItemDiscount(true);
+      setDiscountValue(0);
+    }
+    setValue(`items.${index}.discountPct`, Math.min(Math.max(pct, 0), 100));
+  };
+
+  // Depósito del que va a salir el stock. Si el comprobante no fija uno, el
+  // backend cae al por defecto (o al primero activo): se replica acá para que
+  // la verificación de stock mire el mismo depósito que el descuento real.
+  const effectiveWarehouseId =
+    warehouseId || warehouses.find((w) => w.isDefault)?.id || warehouses[0]?.id || '';
+
   // ── Derived warnings ────────────────────────────────────────────────────
-  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const selectedCustomer = findCustomer(customerId);
   const needsCustomerId =
     saleCondition === 'CONTADO' &&
     grandTotal > CASH_ID_THRESHOLD &&
@@ -415,61 +885,160 @@ export default function InvoiceFormPage() {
   const onSubmit = async (data: InvoiceFormData) => {
     const isNcOrNd = data.type.startsWith('NOTA_CREDITO_') || data.type.startsWith('NOTA_DEBITO_');
     if (data.stockBehavior === 'DISCOUNT' && !isNcOrNd) {
-      const productQuantities = new Map<string, number>();
+      // El backend descuenta del depósito del comprobante y lleva el stock
+      // separado por variante: hay que mirar exactamente ese bucket, no el
+      // total del producto en todos los depósitos.
+      const requested = new Map<string, { productId: string; variantId: string | null; qty: number }>();
       for (const item of data.items) {
-        if (item.productId) {
-          productQuantities.set(item.productId, (productQuantities.get(item.productId) ?? 0) + item.quantity);
-        }
+        if (!item.productId) continue;
+        const variantId = item.variantId ?? null;
+        const key = `${item.productId}|${variantId ?? ''}`;
+        const entry = requested.get(key);
+        if (entry) entry.qty += Number(item.quantity) || 0;
+        else requested.set(key, { productId: item.productId, variantId, qty: Number(item.quantity) || 0 });
       }
-      if (productQuantities.size > 0) {
-        const checks = await Promise.all(
-          Array.from(productQuantities.entries()).map(async ([productId, requestedQty]) => {
+      if (requested.size > 0) {
+        const productIds = Array.from(new Set(Array.from(requested.values(), (r) => r.productId)));
+        const stockByProduct = new Map<string, Stock[] | null>();
+        await Promise.all(
+          productIds.map(async (productId) => {
             try {
-              const stocks = await stockService.getProductStock(productId);
-              const available = stocks.reduce((sum, s) => sum + (Number(s.quantity) - Number(s.reservedQuantity)), 0);
-              return { productId, requestedQty, available };
+              stockByProduct.set(productId, await stockService.getProductStock(productId));
             } catch {
-              return { productId, requestedQty, available: Infinity };
+              stockByProduct.set(productId, null); // sin dato: no bloquear la venta
             }
           })
         );
-        const warnings = checks
-          .filter(({ requestedQty, available }) => requestedQty > available)
-          .map(({ productId, requestedQty, available }) => {
-            const product = products.find((p) => p.id === productId);
-            return { productName: product?.name ?? productId, requested: requestedQty, available };
-          });
+        const warnings: typeof stockWarnings = [];
+        for (const { productId, variantId, qty } of requested.values()) {
+          const stocks = stockByProduct.get(productId);
+          if (!stocks) continue;
+          const available = sumAvailable(stocks
+            .filter((s) => (!effectiveWarehouseId || s.warehouseId === effectiveWarehouseId)
+              && (s.variantId ?? null) === variantId));
+          if (qty > available) {
+            const product = findProduct(productId);
+            const variant = variantId
+              ? (variantsByProduct[productId] ?? []).find((v) => v.id === variantId)
+              : null;
+            warnings.push({
+              productName: `${product?.name ?? productId}${variant ? ` · ${variant.name}` : ''}`,
+              requested: qty,
+              available,
+            });
+          }
+        }
         if (warnings.length > 0) {
           setStockWarnings(warnings);
           return;
         }
       }
     }
+    const action = submitActionRef.current;
     setIsLoading(true);
     try {
-      const discountPct = discountType === '%'
-        ? discountValue
-        : (subtotalBase > 0 ? (discountAmount / subtotalBase) * 100 : 0);
-      const itemsWithDiscount = data.items.map((item) => ({ ...item, discountPct }));
-      if (isEditing) {
-        await invoicesService.update(id, { ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null, warehouseId: warehouseId || null });
-        toast.success('Factura actualizada');
-        navigate(`/invoices/${id}`);
-      } else {
-        const invoice = await invoicesService.create({ ...data, items: itemsWithDiscount, currency: 'ARS', exchangeRate: 1, saleCondition: data.saleCondition, stockBehavior: data.stockBehavior, date: data.date, originInvoiceId: data.originInvoiceId ?? null, warehouseId: warehouseId || null });
-        toast.success('Factura creada');
-        if (registerPayment) {
-          setCreatedInvoiceId(invoice.id);
+      const itemsWithDiscount = data.items.map((item) => ({
+        ...item,
+        discountPct: hasPerItemDiscount ? Number(item.discountPct) || 0 : globalDiscountPct,
+      }));
+      const payload = {
+        ...data,
+        items: itemsWithDiscount,
+        currency: 'ARS' as const,
+        exchangeRate: 1,
+        saleCondition: data.saleCondition,
+        stockBehavior: data.stockBehavior,
+        date: data.date,
+        originInvoiceId: data.originInvoiceId ?? null,
+        warehouseId: warehouseId || null,
+      };
+
+      let invoiceId = id ?? '';
+      try {
+        if (isEditing) {
+          await invoicesService.update(id, payload);
         } else {
-          navigate(`/invoices/${invoice.id}`);
+          invoiceId = (await invoicesService.create(payload)).id;
+        }
+        // Solo el borrador de "factura nueva": editar o emitir una NC no debe
+        // descartar una carga a medio hacer que quedó en otra pestaña.
+        if (isLocalDraftMode) clearLocalDraft(draftKey);
+      } catch (error: unknown) {
+        toast.error(errorMessage(error) || 'Error al guardar factura');
+        return;
+      }
+
+      // La emisión va después de guardar. Si falla, la factura ya quedó
+      // persistida como borrador: se avisa y se navega al detalle para
+      // reintentar desde ahí, sin perder la carga.
+      if (action === 'draft') {
+        toast.success(isEditing ? 'Borrador actualizado' : 'Borrador guardado');
+      } else {
+        try {
+          if (action === 'arca') {
+            const { invoice: emitted, warnings } = await afipService.emitInvoice(invoiceId);
+            toast.success(`Factura emitida ante ARCA. CAE: ${emitted.cae}`);
+            if (warnings) toast(`Observaciones ARCA: ${warnings}`, { icon: '⚠️', duration: 8000 });
+          } else {
+            await invoicesService.updateStatus(invoiceId, { status: 'ISSUED' });
+            toast.success('Factura emitida');
+          }
+        } catch (error: unknown) {
+          toast.error(
+            `${errorMessage(error) || 'Error al emitir'} — la factura quedó guardada como borrador`,
+            { duration: 8000 }
+          );
+          navigate(`/invoices/${invoiceId}`);
+          return;
         }
       }
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar factura');
+
+      if (!isEditing && registerPayment) setCreatedInvoiceId(invoiceId);
+      else navigate(`/invoices/${invoiceId}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /**
+   * React Hook Form ya enfoca el primer input con error, pero solo los que
+   * pasan por register(): producto, cliente y comprobante de origen son
+   * selects a medida y quedaban afuera, así que el submit no hacía nada
+   * visible si el error estaba fuera de pantalla.
+   */
+  const onInvalid = (formErrors: FieldErrors<InvoiceFormData>) => {
+    const itemErrors = Array.isArray(formErrors.items) ? formErrors.items : [];
+    const productIndex = itemErrors.findIndex((itemError) => itemError?.productId);
+    const targetId = productIndex >= 0
+      ? `invoice-item-${productIndex}`
+      : formErrors.customerId || formErrors.originInvoiceId
+        ? 'invoice-meta'
+        : null;
+    if (targetId) {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const firstMessage =
+      formErrors.customerId?.message ??
+      formErrors.originInvoiceId?.message ??
+      formErrors.items?.message ??
+      itemErrors.find((itemError) => itemError)?.productId?.message ??
+      'Revisá los campos marcados en rojo';
+    toast.error(firstMessage);
+  };
+
+  const runSubmit = (action: SubmitAction) => {
+    submitActionRef.current = action;
+    // El CAE es irreversible: se confirma antes de crear, no después.
+    if (action === 'arca') {
+      void handleSubmit(() => setShowArcaConfirm(true), onInvalid)();
+      return;
+    }
+    void handleSubmit(onSubmit, onInvalid)();
+  };
+
+  const chooseAction = (action: SubmitAction) => {
+    setSubmitAction(action);
+    try { localStorage.setItem(SUBMIT_ACTION_KEY, action); } catch { /* noop */ }
   };
 
   const handlePaymentConfirm = async (data: CreateReciboDTO) => {
@@ -487,6 +1056,38 @@ export default function InvoiceFormPage() {
     }
   };
 
+  // ARCA no aplica en modo informal (el comprobante no es fiscal) ni sin
+  // internet: se ofrece deshabilitado con el motivo, no oculto.
+  const arcaDisabledReason = fiscalMode === 'INFORMAL'
+    ? 'No disponible en modo informal'
+    : !isInternetOnline
+      ? 'Sin conexión a internet'
+      : undefined;
+
+  const submitOptions = [
+    {
+      value: 'issue' as const,
+      label: isEditing ? 'Guardar y emitir' : 'Crear y emitir',
+      hint: 'Genera stock y cuenta corriente. Sin CAE.',
+      icon: Send,
+    },
+    {
+      value: 'arca' as const,
+      label: isEditing ? 'Guardar y facturar en ARCA' : 'Crear y facturar en ARCA',
+      hint: 'Emite y obtiene el CAE en un solo paso.',
+      icon: Zap,
+      disabledReason: arcaDisabledReason,
+    },
+    {
+      value: 'draft' as const,
+      label: isEditing ? 'Guardar cambios' : 'Guardar borrador',
+      hint: 'No genera movimientos. Editable después.',
+      icon: FileText,
+    },
+  ];
+  const effectiveAction: SubmitAction =
+    submitAction === 'arca' && arcaDisabledReason ? 'issue' : submitAction;
+
   const pageTitle = isEditing ? 'Editar Factura'
     : creditNoteFrom ? 'Nueva Nota de Crédito'
     : debitNoteFrom ? 'Nueva Nota de Débito'
@@ -499,6 +1100,63 @@ export default function InvoiceFormPage() {
     </div>
   );
 
+  // Los dos layouts comparten confirmación y cobro: mismos botones, distinta
+  // disposición — apilados en el sidebar clásico, en línea en el pie de la
+  // carga rápida.
+  const renderFormActions = (direction: 'stacked' | 'inline') => (
+    <div className={direction === 'stacked' ? 'flex flex-col gap-2.5' : 'flex flex-row-reverse items-center gap-2.5'}>
+      <SubmitSplitButton
+        action={effectiveAction}
+        options={submitOptions}
+        isLoading={isLoading}
+        onSelect={chooseAction}
+        onSubmit={runSubmit}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        className={direction === 'stacked' ? 'w-full justify-center' : 'justify-center'}
+        onClick={() => setShowExitConfirm(true)}
+      >
+        Cancelar
+      </Button>
+    </div>
+  );
+
+  const paymentToggle = !isEditing && saleCondition !== 'CUENTA_CORRIENTE' ? (
+    <label className="flex items-center gap-3 cursor-pointer">
+      <input
+        type="checkbox"
+        className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
+        checked={registerPayment}
+        onChange={(e) => setRegisterPayment(e.target.checked)}
+      />
+      <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Registrar pago al crear</span>
+    </label>
+  ) : null;
+
+  const layoutSwitch = (
+    <div className="flex items-center gap-1 rounded-lg border border-gray-200 dark:border-slate-600 p-0.5 bg-white dark:bg-slate-800">
+      {([
+        ['classic', 'Clásico'],
+        ['fast', 'Carga rápida'],
+      ] as Array<[FormLayout, string]>).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => chooseLayout(value)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            layout === value
+              ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
+              : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -506,7 +1164,101 @@ export default function InvoiceFormPage() {
         backTo={isEditing ? `/invoices/${id}` : '/invoices'}
       />
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      {pendingDraft && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl px-4 py-3">
+          <RotateCcw className="w-4 h-4 text-indigo-500 shrink-0" />
+          <p className="text-sm text-indigo-900 dark:text-indigo-200 min-w-0 flex-1">
+            Quedó una factura sin terminar
+            {pendingDraft.customerName ? ` de ${pendingDraft.customerName}` : ''}
+            {pendingDraft.itemCount > 0
+              ? ` con ${pendingDraft.itemCount} ${pendingDraft.itemCount === 1 ? 'ítem' : 'ítems'}`
+              : ''}.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button type="button" size="sm" onClick={restoreDraft}>Restaurar</Button>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="flex items-center gap-1 text-xs text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 px-2 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              Descartar
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-end mb-3">{layoutSwitch}</div>
+
+      <form onSubmit={(e) => { e.preventDefault(); runSubmit(effectiveAction); }}>
+        {layout === 'fast' ? (
+          <InvoiceFastLayout
+            customers={customers}
+            customerId={customerId}
+            selectedCustomer={selectedCustomer}
+            onCustomerChange={(pickedId, picked) => {
+              if (picked) setCustomerCache((prev) => ({ ...prev, [pickedId]: picked }));
+              setValue('customerId', pickedId);
+            }}
+            customerError={errors.customerId?.message}
+            type={type}
+            typeOptions={INVOICE_TYPE_OPTIONS}
+            onTypeChange={(value) => setValue('type', value as InvoiceType)}
+            typeError={errors.type?.message}
+            isNcNd={isNcNd}
+            isTypeC={isTypeC}
+            originInvoices={originInvoices}
+            originInvoiceId={originInvoiceId}
+            onOriginChange={handleOriginChange}
+            originError={errors.originInvoiceId?.message}
+            paymentTermsValue={paymentTermsValue}
+            paymentTermsOptions={PAYMENT_TERMS_OPTIONS}
+            onPaymentTermsChange={handlePaymentTermsChange}
+            saleCondition={saleCondition}
+            invoiceDate={invoiceDate}
+            isService={isService}
+            stockBehavior={stockBehavior}
+            onStockBehaviorChange={(next) => setValue('stockBehavior', next)}
+            warehouses={warehouses}
+            warehouseId={warehouseId}
+            effectiveWarehouseId={effectiveWarehouseId}
+            onWarehouseChange={setWarehouseId}
+            needsCustomerId={needsCustomerId}
+            cashIdThreshold={CASH_ID_THRESHOLD}
+            dateAdvanceWarning={dateAdvanceWarning}
+            advanceDaysLimit={advanceDaysLimit}
+            register={register as unknown as (name: string) => UseFormRegisterReturn}
+            products={products}
+            fields={fields}
+            items={items}
+            itemErrors={Array.isArray(errors.items) ? errors.items : []}
+            itemsError={errors.items?.message}
+            findProduct={findProduct}
+            variantsByProduct={variantsByProduct}
+            stockFor={stockFor}
+            calcItemAmounts={calcItemAmounts}
+            itemDiscountPct={itemDiscountPct}
+            onProductChange={handleProductChange}
+            onVariantChange={handleVariantChange}
+            onAddProduct={handleBarcodeAdd}
+            onQuantityChange={handleQuantityChange}
+            onItemDiscountChange={handleItemDiscountChange}
+            onRemoveItem={remove}
+            onOpenCatalog={() => setShowCatalog(true)}
+            onOpenImport={!isEditing && !isNcNd && customerId ? () => setShowImportModal(true) : undefined}
+            barcodeSlot={<BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />}
+            discountType={discountType}
+            discountValue={discountValue}
+            hasPerItemDiscount={hasPerItemDiscount}
+            onGlobalDiscountChange={setGlobalDiscount}
+            totals={totals}
+            grandTotal={grandTotal}
+            priceEditMode={priceEditMode}
+            onPriceEditModeChange={choosePriceEditMode}
+            actions={renderFormActions('inline')}
+            paymentToggle={paymentToggle}
+          />
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
 
           {/* ── Left: items + notes ── */}
@@ -550,6 +1302,7 @@ export default function InvoiceFormPage() {
                   {fields.map((field, index) => (
                     <div
                       key={field.id}
+                      id={`invoice-item-${index}`}
                       className={`grid ${itemGridCols} gap-3 items-center py-3`}
                     >
                       {/* Product */}
@@ -562,6 +1315,39 @@ export default function InvoiceFormPage() {
                           error={errors.items?.[index]?.productId?.message}
                           serverSearch
                         />
+                        {/* Disponible en el depósito y variante de la fila, antes
+                            de guardar: el aviso de faltante ya no llega recién
+                            al confirmar el comprobante. */}
+                        {!isNcNd && items[index]?.productId && findProduct(items[index].productId)?.trackStock !== false && (() => {
+                          const stock = stockFor(items[index].productId, items[index].variantId ?? null);
+                          if (stock.state !== 'ok') {
+                            return (
+                              <span className="block mt-1 text-[10px] text-gray-300 dark:text-slate-600">
+                                {stock.state === 'loading' ? 'Consultando stock…' : 'Stock no disponible'}
+                              </span>
+                            );
+                          }
+                          const available = stock.available;
+                          const requested = Number(items[index]?.quantity) || 0;
+                          const short = requested > available;
+                          return (
+                            <span
+                              title={`Disponible en ${warehouses.find((w) => w.id === effectiveWarehouseId)?.name ?? 'el depósito'} (cantidad menos reservado)`}
+                              className={`inline-flex items-center gap-1 mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border leading-none ${
+                                short
+                                  ? 'text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-900/30 dark:border-red-800'
+                                  : available <= 0
+                                    ? 'text-gray-500 bg-gray-50 border-gray-200 dark:text-slate-400 dark:bg-slate-700 dark:border-slate-600'
+                                    : 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800'
+                              }`}
+                            >
+                              {short && <AlertTriangle className="w-2.5 h-2.5" />}
+                              {available <= 0
+                                ? 'Sin stock'
+                                : `Disp. ${formatNumber(available, Number.isInteger(available) ? 0 : 2)}`}
+                            </span>
+                          );
+                        })()}
                         {items[index]?.productId && (variantsByProduct[items[index].productId]?.length ?? 0) > 0 && (
                           <select
                             className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
@@ -624,15 +1410,17 @@ export default function InvoiceFormPage() {
                         </div>
                       )}
 
-                      {/* Total */}
+                      {/* Total — ya neto del descuento, para que cierre con el resumen */}
                       <div className="text-right">
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(
-                            calcItemTotal(items[index] || { quantity: 0, unitPrice: 0, discountPct: 0, taxRate: 0 }),
-                            'ARS'
-                          )}
+                          {formatCurrency(calcItemAmounts(index).total, 'ARS')}
                         </span>
+                        {calcItemAmounts(index).discount > 0 && (
+                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums leading-tight mt-0.5">
+                            -{formatCurrency(calcItemAmounts(index).discount, 'ARS')} ({itemDiscountPct(index).toFixed(2).replace(/\.?0+$/, '')}%)
+                          </span>
+                        )}
                       </div>
 
                       {/* Remove */}
@@ -674,9 +1462,15 @@ export default function InvoiceFormPage() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">Descuento</p>
-                  {discountAmount > 0 && (
+                  {hasPerItemDiscount ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                      Este comprobante tiene descuentos distintos por línea. Si cargás un valor acá, se aplica a todos los ítems.
+                    </p>
+                  ) : totals.discountAmount > 0 && (
                     <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
-                      {discountType === '%' ? `${discountValue}% sobre el subtotal` : `Importe fijo descontado`}
+                      {discountType === '%'
+                        ? `${discountValue}% sobre el subtotal`
+                        : `Importe fijo — equivale a ${globalDiscountPct.toFixed(2)}% por ítem`}
                     </p>
                   )}
                 </div>
@@ -685,12 +1479,12 @@ export default function InvoiceFormPage() {
                   <div className="flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600 text-xs font-semibold">
                     <button
                       type="button"
-                      onClick={() => setDiscountType('%')}
+                      onClick={() => setGlobalDiscount('%', discountValue)}
                       className={`px-3 py-2 transition-colors ${discountType === '%' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                     >%</button>
                     <button
                       type="button"
-                      onClick={() => setDiscountType('$')}
+                      onClick={() => setGlobalDiscount('$', discountValue)}
                       className={`px-3 py-2 border-l border-gray-200 dark:border-slate-600 transition-colors ${discountType === '$' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                     >$</button>
                   </div>
@@ -702,7 +1496,7 @@ export default function InvoiceFormPage() {
                       max={discountType === '%' ? 100 : undefined}
                       step={0.01}
                       value={discountValue || ''}
-                      onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
+                      onChange={(e) => setGlobalDiscount(discountType, Number(e.target.value) || 0)}
                       placeholder="0"
                       className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-white outline-none min-w-0"
                     />
@@ -728,13 +1522,18 @@ export default function InvoiceFormPage() {
           {/* ── Right: sticky sidebar ── */}
           <div className="lg:sticky lg:top-6 space-y-4">
             {/* Metadata */}
-            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
+            <div id="invoice-meta" className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
               <CustomerSearchSelect
                 customers={customers}
                 value={customerId}
-                onChange={(id) => setValue('customerId', id)}
+                onChange={(id, picked) => {
+                  if (picked) setCustomerCache((prev) => ({ ...prev, [id]: picked }));
+                  setValue('customerId', id);
+                }}
                 label="Cliente *"
                 error={errors.customerId?.message}
+                serverSearch
+                searchParams={{ isActive: true }}
               />
 
               <Select
@@ -864,26 +1663,8 @@ export default function InvoiceFormPage() {
               <Select
                 label="Condición de venta"
                 options={PAYMENT_TERMS_OPTIONS}
-                value={
-                  saleCondition === 'CUENTA_CORRIENTE' && watch('paymentTerms') === 'Cuenta Corriente'
-                    ? 'CUENTA_CORRIENTE'
-                    : (watch('paymentTerms') ?? '')
-                }
-                onChange={(v) => {
-                  if (v === 'CUENTA_CORRIENTE') {
-                    setValue('saleCondition', 'CUENTA_CORRIENTE');
-                    setValue('paymentTerms', 'Cuenta Corriente');
-                  } else if (DEFERRED_PAYMENT_DAYS[v]) {
-                    setValue('saleCondition', 'CUENTA_CORRIENTE');
-                    setValue('paymentTerms', v);
-                    const due = new Date();
-                    due.setDate(due.getDate() + DEFERRED_PAYMENT_DAYS[v]);
-                    setValue('dueDate', due.toISOString().substring(0, 10));
-                  } else {
-                    setValue('saleCondition', 'CONTADO');
-                    setValue('paymentTerms', v || null);
-                  }
-                }}
+                value={paymentTermsValue}
+                onChange={handlePaymentTermsChange}
               />
 
             </div>
@@ -927,38 +1708,18 @@ export default function InvoiceFormPage() {
             </div>
 
             {/* Register payment at creation — hidden for CC/deferred (movement auto-created) */}
-            {!isEditing && saleCondition !== 'CUENTA_CORRIENTE' && (
+            {paymentToggle && (
               <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
-                    checked={registerPayment}
-                    onChange={(e) => setRegisterPayment(e.target.checked)}
-                  />
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Registrar pago al crear</span>
-                </label>
+                {paymentToggle}
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex flex-col gap-2.5">
-              <Button type="submit" isLoading={isLoading} className="w-full justify-center">
-                {isEditing ? 'Guardar cambios' : 'Crear factura'}
-                <kbd className="ml-1.5 text-[10px] font-mono font-normal opacity-60 px-1 py-0.5 rounded bg-white/20 border border-white/30 leading-none">Ctrl+↵</kbd>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-center"
-                onClick={() => navigate(isEditing ? `/invoices/${id}` : '/invoices')}
-              >
-                Cancelar
-              </Button>
-            </div>
+            {renderFormActions('stacked')}
           </div>
 
         </div>
+        )}
       </form>
 
       <PaymentModal
@@ -994,9 +1755,22 @@ export default function InvoiceFormPage() {
         onConfirm={() => navigate(isEditing ? `/invoices/${id}` : '/invoices')}
         variant="warning"
         title="¿Salir sin guardar?"
-        message="Los cambios que no hayas guardado se perderán."
+        message={isLocalDraftMode
+          ? 'La carga queda guardada en este navegador por 24 horas: al volver a "Nueva factura" vas a poder restaurarla.'
+          : 'Los cambios que no hayas guardado se perderán.'}
         confirmText="Salir"
         cancelText="Seguir editando"
+      />
+
+      <ConfirmDialog
+        isOpen={showArcaConfirm}
+        onClose={() => setShowArcaConfirm(false)}
+        onConfirm={() => { setShowArcaConfirm(false); void handleSubmit(onSubmit)(); }}
+        variant="info"
+        title="Facturar en ARCA"
+        message={`Se va a guardar el comprobante por ${formatCurrency(grandTotal, 'ARS')} y solicitar el CAE a ARCA. Una vez autorizado no se puede anular: la corrección es por nota de crédito.`}
+        confirmText="Emitir ante ARCA"
+        cancelText="Volver"
       />
 
       <Modal isOpen={stockWarnings.length > 0} onClose={() => setStockWarnings([])} size="sm">

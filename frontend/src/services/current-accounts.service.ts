@@ -5,6 +5,9 @@ import type {
   RegisterPaymentDTO,
   SetCreditLimitDTO,
   AccountMovementFilters,
+  CurrentAccountStats,
+  CurrentAccountSummary,
+  Currency,
   ApiResponse,
   PaginatedResponse,
 } from '../types';
@@ -58,9 +61,30 @@ export const currentAccountsService = {
     return response.data.data;
   },
 
-  async getAllWithDebt(): Promise<CurrentAccount[]> {
+  /**
+   * Antigüedad de la deuda por cliente y cobranza del mes, para el listado.
+   * La antigüedad es de la moneda pedida (no mezcla ARS con USD).
+   */
+  async getStats(currency: Currency = 'ARS'): Promise<CurrentAccountStats> {
+    const response = await api.get<ApiResponse<CurrentAccountStats>>('/current-accounts/stats', {
+      params: { currency },
+    });
+    return response.data.data;
+  },
+
+  /** Antigüedad y comportamiento de pago de un cliente, para el detalle. */
+  async getSummary(customerId: string, currency: Currency = 'ARS'): Promise<CurrentAccountSummary> {
+    const response = await api.get<ApiResponse<CurrentAccountSummary>>(
+      `/current-accounts/customer/${customerId}/summary`,
+      { params: { currency } }
+    );
+    return response.data.data;
+  },
+
+  /** `includeCredit`: suma los saldos a favor del cliente (balance < 0). */
+  async getAllWithDebt(includeCredit = false): Promise<CurrentAccount[]> {
     const response = await api.get<ApiResponse<CurrentAccount[]>>('/current-accounts', {
-      params: { hasDebt: 'true' },
+      params: { hasDebt: 'true', ...(includeCredit ? { includeCredit: 'true' } : {}) },
     });
     return response.data.data;
   },

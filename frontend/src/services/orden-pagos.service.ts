@@ -1,12 +1,15 @@
 import api from './api';
 import type {
-  OrdenPago, CreateOrdenPagoDTO, OrdenPagoFilters, SupplierAccount, SupplierMovementFilters,
-  OpenAccountItems, CreateSupplierCcAdjustmentDTO,
+  OrdenPago, CreateOrdenPagoDTO, OrdenPagoFilters, OrdenPagoSummary, SupplierAccount,
+  SupplierMovementFilters, OpenAccountItems, CreateSupplierCcAdjustmentDTO,
 } from '../types/ordenPago.types';
 import type { PaginatedResponse } from '../types/api.types';
 
+// El listado devuelve además los totales de la consulta completa.
+export type OrdenPagoListResponse = PaginatedResponse<OrdenPago> & { summary: OrdenPagoSummary };
+
 const ordenPagosService = {
-  getAll(filters?: OrdenPagoFilters): Promise<PaginatedResponse<OrdenPago>> {
+  getAll(filters?: OrdenPagoFilters): Promise<OrdenPagoListResponse> {
     return api.get('/orden-pagos', { params: filters }).then((r) => r.data);
   },
 

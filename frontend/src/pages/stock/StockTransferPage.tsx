@@ -36,6 +36,8 @@ function SectionCard({ title, children }: { title: string; children: React.React
 export default function StockTransferPage() {
   const navigate = useNavigate();
   const [products,       setProducts]       = useState<Product[]>([]);
+  // Producto elegido en el buscador server-side, que puede no estar precargado.
+  const [pickedProduct,  setPickedProduct]  = useState<Product | null>(null);
   const [warehouses,     setWarehouses]     = useState<Warehouse[]>([]);
   const [isLoading,      setIsLoading]      = useState(false);
   const [currentStock,   setCurrentStock]   = useState<number | null>(null);
@@ -51,7 +53,7 @@ export default function StockTransferPage() {
 
   useEffect(() => {
     Promise.all([
-      productsService.getAll({ limit: 1000 }),
+      productsService.getAll({ limit: 50 }),
       warehousesService.getAll(),
     ]).then(([p, w]) => {
       setProducts(p.data);
@@ -85,7 +87,10 @@ export default function StockTransferPage() {
   const warehouseOptions = warehouses.map((w) => ({ value: w.id, label: w.name }));
   const fromWarehouse    = warehouses.find((w) => w.id === fromWarehouseId);
   const toWarehouse      = warehouses.find((w) => w.id === toWarehouseId);
-  const selectedProduct  = products.find((p) => p.id === productId);
+  // Con la búsqueda server-side el elegido puede no estar en los precargados.
+  const selectedProduct  = pickedProduct?.id === productId
+    ? pickedProduct
+    : products.find((p) => p.id === productId);
 
   const stockInsufficient = currentStock !== null && quantity > 0 && quantity > currentStock;
   const stockLevel =
@@ -109,8 +114,9 @@ export default function StockTransferPage() {
             <ProductSearchSelect
               products={products}
               value={productId}
-              onChange={(v) => setValue('productId', v)}
+              onChange={(v, picked) => { setPickedProduct(picked ?? null); setValue('productId', v); }}
               error={errors.productId?.message}
+              serverSearch
             />
           </SectionCard>
 

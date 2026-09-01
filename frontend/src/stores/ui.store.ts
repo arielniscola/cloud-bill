@@ -5,6 +5,10 @@ import type { NavThemeKey } from '../utils/navThemes';
 type MenuType = 'sidebar' | 'navbar';
 
 interface UIState {
+  /**
+   * Panel del módulo fijado junto al riel. Persiste entre sesiones: el riel de
+   * 68 px siempre está, así que soltarlo no deja al usuario sin navegación.
+   */
   sidebarOpen: boolean;
   mobileMenuOpen: boolean;
   menuType: MenuType;
@@ -41,6 +45,9 @@ export const useUIStore = create<UIState>()(
         menuType: state.menuType,
         isDarkMode: state.isDarkMode,
         navTheme: state.navTheme,
+        // El módulo activo NO se guarda: sale siempre de la ruta, así un link
+        // directo o un F5 nunca abren el panel de otro módulo.
+        sidebarOpen: state.sidebarOpen,
       }),
     }
   )

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Receipt, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Receipt, Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Package } from 'lucide-react';
 import { Button } from '../ui';
-import ProductSearchSelect from './ProductSearchSelect';
+import ProductPickerModal from './ProductPickerModal';
 import { formatCurrency } from '../../utils/formatters';
 import { purchaseInvoicesService, productsService } from '../../services';
 import type {
@@ -178,6 +178,10 @@ export function AddPurchaseInvoiceModal({
   const [products,    setProducts]    = useState<Product[]>([]);
   const [tributos,    setTributos]    = useState<CreatePurchaseInvoiceTributoDTO[]>([]);
   const [showItems,   setShowItems]   = useState(false);
+  // Buscador de productos: 'multi' agrega varias líneas; un número edita esa fila.
+  const [picker,      setPicker]      = useState<null | 'multi' | number>(null);
+  // Productos ya elegidos, para poder rotular la fila (el productId no se persiste).
+  const [productById, setProductById] = useState<Record<string, Product>>({});
   const [showTribs,   setShowTribs]   = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | 'close' | 'discard'>(null);
 
@@ -383,6 +387,7 @@ export function AddPurchaseInvoiceModal({
   // El productId queda solo en el estado local (no se envía al backend).
   const selectProduct = (i: number, productId: string, picked?: Product) => {
     const product = picked ?? products.find((p) => p.id === productId);
+    if (product) setProductById((prev) => ({ ...prev, [product.id]: product }));
     setItems((prev) => prev.map((item, idx) => {
       if (idx !== i) return item;
       if (!product) return { ...item, productId: null };
@@ -394,6 +399,23 @@ export function AddPurchaseInvoiceModal({
         taxRate: Number(product.taxRate),
       };
     }));
+  };
+
+  // Alta desde el buscador de productos: una línea por producto elegido.
+  const addItemsFromProducts = (picked: Product[]) => {
+    if (picked.length === 0) return;
+    setProductById((prev) => ({ ...prev, ...Object.fromEntries(picked.map((p) => [p.id, p])) }));
+    setItems((prev) => [
+      ...prev,
+      ...picked.map((p) => ({
+        productId:   p.id,
+        description: p.name,
+        quantity:    1,
+        unitPrice:   Number(p.cost) || 0,
+        taxRate:     Number(p.taxRate),
+      })),
+    ]);
+    setShowItems(true);
   };
 
   const itemSubtotal = (item: CreatePurchaseInvoiceItemDTO) =>
@@ -491,6 +513,13 @@ export function AddPurchaseInvoiceModal({
 
   const isValid = form.number.trim() && form.amount > 0 && (!standalone || !!supplierId);
 
+  // Lo que falta para poder guardar, en los mismos términos que `isValid`.
+  // Se muestra en la columna de totales para no obligar a buscar el error.
+  const missing: string[] = [];
+  if (standalone && !supplierId)  missing.push('Elegí el proveedor');
+  if (!form.number.trim())        missing.push('Cargá el número de factura');
+  if (!(form.amount > 0))         missing.push('El total tiene que ser mayor a cero');
+
   const buildPayload = (): CreatePurchaseInvoiceDTO => ({
     ...form,
     items: items.map(({ productId: _productId, ...rest }) => rest),
@@ -551,8 +580,11 @@ export function AddPurchaseInvoiceModal({
   // ── Section toggle header ──────────────────────────────────────────────────
 
   const SectionHeader = ({
-    title, count, open, onToggle, onAdd, addLabel,
-  }: { title: string; count: number; open: boolean; onToggle: () => void; onAdd: () => void; addLabel: string }) => (
+    title, count, open, onToggle, onAdd, addLabel, extra,
+  }: {
+    title: string; count: number; open: boolean; onToggle: () => void;
+    onAdd: () => void; addLabel: string; extra?: React.ReactNode;
+  }) => (
     <div className="flex items-center justify-between py-2">
       <button
         type="button"
@@ -567,14 +599,17 @@ export function AddPurchaseInvoiceModal({
           </span>
         )}
       </button>
-      <button
-        type="button"
-        onClick={() => { if (!open) onToggle(); onAdd(); }}
-        className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium"
-      >
-        <Plus className="w-3.5 h-3.5" />
-        {addLabel}
-      </button>
+      <div className="flex items-center gap-3">
+        {extra}
+        <button
+          type="button"
+          onClick={() => { if (!open) onToggle(); onAdd(); }}
+          className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {addLabel}
+        </button>
+      </div>
     </div>
   );
 
@@ -585,24 +620,34 @@ export function AddPurchaseInvoiceModal({
       {/* Click afuera NO cierra: evita perder lo cargado por accidente */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh]">
+      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
               <Receipt className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-              {existing ? 'Editar factura' : 'Agregar factura del proveedor'}
-            </h2>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                {existing ? 'Editar factura' : 'Agregar factura del proveedor'}
+              </h2>
+              {isDraftMode && isDirty && (
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                  Borrador guardado — se restaura si cerrás
+                </p>
+              )}
+            </div>
           </div>
           <button onClick={attemptClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        {/* Body: carga a la izquierda, totales fijos a la derecha */}
+        <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+
+        {/* Columna de carga */}
+        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5 space-y-4">
 
           {/* Standalone header: proveedor / moneda / condición / fecha */}
           {standalone && (
@@ -716,35 +761,11 @@ export function AddPurchaseInvoiceModal({
             </div>
           )}
 
-          {/* IVA + Total — auto when items exist, manual otherwise */}
+          {/* Importes — manuales; con ítems se calculan y se ven en la columna de totales */}
           {hasItems ? (
-            <div className="rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-900/10 px-4 py-3 space-y-1.5">
-              <p className="text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-2">
-                Totales calculados desde los ítems
-              </p>
-              {Object.entries(taxByRate).sort(([a], [b]) => Number(a) - Number(b)).map(([rate, val]) => (
-                <div key={rate} className="flex justify-between text-xs text-gray-600 dark:text-slate-300">
-                  <span>Neto {Number(rate) === 0 ? '(exento)' : `gravado ${rate}%`}</span>
-                  <span className="tabular-nums">{formatCurrency(val.subtotal, currencyState)}</span>
-                </div>
-              ))}
-              {Object.entries(taxByRate).filter(([r]) => Number(r) > 0).map(([rate, val]) => (
-                <div key={`iva-${rate}`} className="flex justify-between text-xs text-gray-400 dark:text-slate-500">
-                  <span>IVA {rate}%</span>
-                  <span className="tabular-nums">{formatCurrency(val.tax, currencyState)}</span>
-                </div>
-              ))}
-              {totalTributos > 0 && (
-                <div className="flex justify-between text-xs text-gray-600 dark:text-slate-300">
-                  <span>Otros tributos</span>
-                  <span className="tabular-nums">+ {formatCurrency(totalTributos, currencyState)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-sm font-bold text-gray-900 dark:text-white border-t border-indigo-200 dark:border-indigo-800 pt-2 mt-1">
-                <span>Total factura</span>
-                <span className="tabular-nums text-indigo-700 dark:text-indigo-400">{formatCurrency(itemsTotal + totalTributos, currencyState)}</span>
-              </div>
-            </div>
+            <p className="text-xs text-gray-400 dark:text-slate-500">
+              Los importes se calculan desde los ítems. El detalle y el total están a la derecha.
+            </p>
           ) : (
             <>
               <div className="grid grid-cols-3 gap-3">
@@ -821,7 +842,17 @@ export function AddPurchaseInvoiceModal({
               open={showItems}
               onToggle={() => setShowItems((v) => !v)}
               onAdd={addItem}
-              addLabel="Agregar ítem"
+              addLabel="Línea en blanco"
+              extra={
+                <button
+                  type="button"
+                  onClick={() => setPicker('multi')}
+                  className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium"
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  Buscar productos
+                </button>
+              }
             />
 
             {showItems && items.length > 0 && (
@@ -839,14 +870,41 @@ export function AddPurchaseInvoiceModal({
 
                 {items.map((item, i) => (
                   <div key={i} className="grid grid-cols-1 sm:grid-cols-[2.2fr_1fr_64px_100px_84px_104px_28px] gap-1.5 items-center">
-                    <ProductSearchSelect
-                      products={products}
-                      value={item.productId || ''}
-                      onChange={(productId, picked) => selectProduct(i, productId, picked)}
-                      placeholder="Elegir producto…"
-                      optional
-                      serverSearch
-                    />
+                    {/* Abre el buscador en modal: el catálogo se ve entero, con
+                        código, costo e IVA, en vez de un desplegable angosto. */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPicker(i)}
+                        className={`flex-1 min-w-0 flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md border text-left transition-colors ${
+                          item.productId
+                            ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-900/20 text-gray-800 dark:text-slate-200'
+                            : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-400 hover:border-indigo-300'
+                        }`}
+                      >
+                        <Package className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        <span className="truncate">
+                          {item.productId
+                            ? (productById[item.productId]?.name || item.description || 'Producto')
+                            : 'Elegir producto…'}
+                        </span>
+                        {item.productId && productById[item.productId]?.sku && (
+                          <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-400">
+                            {productById[item.productId].sku}
+                          </span>
+                        )}
+                      </button>
+                      {item.productId && (
+                        <button
+                          type="button"
+                          onClick={() => selectProduct(i, '')}
+                          title="Quitar el producto (la línea queda como descripción libre)"
+                          className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                     <input className={tinyInput} placeholder="Descripción"
                       value={item.description}
                       onChange={(e) => setItem(i, 'description', e.target.value)} />
@@ -947,21 +1005,6 @@ export function AddPurchaseInvoiceModal({
             )}
           </div>
 
-          {/* Total del comprobante (incl. otros tributos). Las retenciones no se
-              cargan acá: se practican al emitir la orden de pago. */}
-          {tributos.length > 0 && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl space-y-1.5">
-              <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
-                <span>Incluye otros tributos</span>
-                <span className="tabular-nums">+ {formatCurrency(totalTributos, currencyState)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-bold border-t border-amber-200 dark:border-amber-700 pt-1.5 text-gray-800 dark:text-white">
-                <span>Total factura</span>
-                <span className="tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(form.amount, currencyState)}</span>
-              </div>
-            </div>
-          )}
-
           {/* Notes */}
           <div>
             <label className={labelCls}>Notas</label>
@@ -970,26 +1013,105 @@ export function AddPurchaseInvoiceModal({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100 dark:border-slate-700">
-          <span />
-          <div className="flex items-center gap-3">
-            {isDraftMode && isDirty && (
-              <button
-                type="button"
-                onClick={() => setConfirmAction('discard')}
-                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-              >
-                Descartar borrador
-              </button>
+        {/* Columna de totales: acompaña la carga sin obligar a scrollear hasta el pie.
+            Las retenciones no se cargan acá: se practican al emitir la orden de pago. */}
+        <aside className="w-full lg:w-[344px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-gray-100 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40">
+          <div className="flex-1 lg:overflow-y-auto px-5 py-5 space-y-4">
+
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2.5">
+                Totales
+              </p>
+              <div className="space-y-1.5">
+                {hasItems ? (
+                  <>
+                    {Object.entries(taxByRate).sort(([a], [b]) => Number(a) - Number(b)).map(([rate, val]) => (
+                      <div key={rate}>
+                        <div className="flex justify-between text-[13px] text-gray-600 dark:text-slate-300">
+                          <span>Neto {Number(rate) === 0 ? '(exento)' : `gravado ${rate}%`}</span>
+                          <span className="tabular-nums">{formatCurrency(val.subtotal, currencyState)}</span>
+                        </div>
+                        {Number(rate) > 0 && (
+                          <div className="flex justify-between text-xs text-gray-400 dark:text-slate-500 pl-2.5 mt-0.5">
+                            <span>IVA {rate}%</span>
+                            <span className="tabular-nums">{formatCurrency(val.tax, currencyState)}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-[13px] text-gray-600 dark:text-slate-300">
+                      <span>Neto gravado</span>
+                      <span className="tabular-nums">{formatCurrency(form.subtotal, currencyState)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400 dark:text-slate-500 pl-2.5">
+                      <span>IVA {form.taxRate}%</span>
+                      <span className="tabular-nums">{formatCurrency(form.taxAmount, currencyState)}</span>
+                    </div>
+                  </>
+                )}
+                {totalTributos > 0 && (
+                  <div className="flex justify-between text-[13px] text-amber-700 dark:text-amber-400 border-t border-dashed border-gray-200 dark:border-slate-700 pt-2 mt-1">
+                    <span>Otros tributos</span>
+                    <span className="tabular-nums">+ {formatCurrency(totalTributos, currencyState)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 px-4 py-3.5">
+              <p className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                Total del comprobante
+              </p>
+              <p className="mt-1.5 text-[26px] font-bold tracking-tight tabular-nums text-gray-900 dark:text-white">
+                {formatCurrency(form.amount, currencyState)}
+              </p>
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                Moneda {currencyState}
+                {saleCondition === 'CUENTA_CORRIENTE' ? ' · se imputa a cuenta corriente' : ' · pago contado'}
+              </p>
+              {currencyState !== 'ARS' && Number(exchangeRate) > 0 && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400 tabular-nums">
+                  ≈ {formatCurrency(form.amount * Number(exchangeRate), 'ARS')} a {Number(exchangeRate).toLocaleString('es-AR')}
+                </p>
+              )}
+            </div>
+
+            {!isValid && (
+              <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 px-4 py-3">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-red-700 dark:text-red-400">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Falta para poder guardar
+                </p>
+                <ul className="mt-1.5 space-y-1 text-xs text-red-800 dark:text-red-300 leading-relaxed">
+                  {missing.map((m) => <li key={m}>· {m}</li>)}
+                </ul>
+              </div>
             )}
-            <Button variant="outline" size="sm" onClick={attemptClose} disabled={isLoading}>Cancelar</Button>
-            <Button size="sm"
-              onClick={handleSaveClick}
-              isLoading={isLoading} disabled={!isValid}>
+          </div>
+
+          <div className="px-5 py-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2">
+            <Button className="w-full" onClick={handleSaveClick} isLoading={isLoading} disabled={!isValid}>
               {existing ? 'Guardar cambios' : standalone ? 'Crear factura' : 'Agregar factura'}
             </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={attemptClose} disabled={isLoading}>
+                Cancelar
+              </Button>
+              {isDraftMode && isDirty && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction('discard')}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2"
+                >
+                  Descartar borrador
+                </button>
+              )}
+            </div>
           </div>
+        </aside>
+
         </div>
 
         {/* Confirmación de cierre / descarte (overlay sobre el panel) */}
@@ -1021,6 +1143,20 @@ export function AddPurchaseInvoiceModal({
           </div>
         )}
       </div>
+
+      <ProductPickerModal
+        isOpen={picker !== null}
+        onClose={() => setPicker(null)}
+        multiple={picker === 'multi'}
+        selectedId={typeof picker === 'number' ? (items[picker]?.productId ?? null) : null}
+        supplierId={supplierId || null}
+        supplierName={suppliers.find((s) => s.id === supplierId)?.name}
+        currency={currencyState}
+        onSelect={(picked) => {
+          if (picker === 'multi') addItemsFromProducts(picked);
+          else if (typeof picker === 'number' && picked[0]) selectProduct(picker, picked[0].id, picked[0]);
+        }}
+      />
     </div>
   );
 }

@@ -1,17 +1,29 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, X, ChevronDown, User } from 'lucide-react';
-import type { Customer } from '../../types';
+import { Search, X, ChevronDown, User, Loader2 } from 'lucide-react';
+import { customersService } from '../../services';
+import { isNetworkError } from '../../services/api';
+import { isOffline } from '../../stores/offline.store';
+import { searchCustomersOffline, toCustomer } from '../../lib/offline/adapters';
+import { getCustomerLocal } from '../../lib/offline/catalogCache';
+import type { Customer, CustomerFilters } from '../../types';
 
 export interface CustomerSearchSelectProps {
   customers: Customer[];
   value: string;                    // customerId or ''
-  onChange: (id: string) => void;
+  // El 2do argumento trae el cliente elegido (útil con serverSearch, cuando
+  // puede no estar en el array `customers` precargado). '' al limpiar.
+  onChange: (id: string, customer?: Customer) => void;
   placeholder?: string;
   clearLabel?: string;              // e.g. "Todos los clientes" or "Sin cliente" — if set, shows a clear option
   label?: string;                   // renders a label above the trigger
   error?: string;
   disabled?: boolean;
+  // Cuando hay más clientes que los precargados, busca contra el backend a
+  // medida que se tipea (en vez de filtrar solo el array `customers`).
+  serverSearch?: boolean;
+  // Filtros extra para la búsqueda remota (p.ej. { isActive: true }).
+  searchParams?: CustomerFilters;
 }
 
 export default function CustomerSearchSelect({
@@ -23,18 +35,56 @@ export default function CustomerSearchSelect({
   label,
   error,
   disabled = false,
+  serverSearch = false,
+  searchParams,
 }: CustomerSearchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Resultados de la búsqueda remota (null = aún no se buscó / query vacío).
+  const [remoteResults, setRemoteResults] = useState<Customer[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  // Cache de clientes traídos del backend, para resolver el rótulo del
+  // seleccionado aunque no esté en el array `customers` precargado.
+  const [fetchedById, setFetchedById] = useState<Record<string, Customer>>({});
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
-    () => customers.find((c) => c.id === value) ?? null,
-    [customers, value]
+    () => customers.find((c) => c.id === value) ?? fetchedById[value] ?? null,
+    [customers, value, fetchedById]
   );
+
+  // Con serverSearch el cliente elegido puede no estar precargado (p.ej. al
+  // volver a un formulario ya guardado): se resuelve por id una sola vez.
+  useEffect(() => {
+    if (!serverSearch || !value || selected) return;
+    let cancelled = false;
+    const resolveLocal = async () => {
+      const cached = await getCustomerLocal(value);
+      if (cached && !cancelled) {
+        const c = toCustomer(cached);
+        setFetchedById((prev) => ({ ...prev, [c.id]: c }));
+      }
+    };
+
+    if (isOffline()) {
+      void resolveLocal();
+      return () => { cancelled = true; };
+    }
+
+    customersService.getById(value)
+      .then((customer) => {
+        if (!cancelled) setFetchedById((prev) => ({ ...prev, [customer.id]: customer }));
+      })
+      .catch((err) => {
+        // Sin rótulo el trigger muestra el placeholder; si fue la red, la
+        // cache local todavia puede tener el nombre.
+        if (isNetworkError(err)) void resolveLocal();
+      });
+    return () => { cancelled = true; };
+  }, [serverSearch, value, selected]);
 
   const updatePosition = () => {
     if (!containerRef.current) return;
@@ -86,18 +136,74 @@ export default function CustomerSearchSelect({
     };
   }, [isOpen]);
 
+  // Búsqueda remota (debounce) cuando serverSearch está activo.
+  useEffect(() => {
+    if (!serverSearch) return;
+    const q = query.trim();
+    if (!q) { setRemoteResults(null); setIsSearching(false); return; }
+
+    let cancelled = false;
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      const searchLocally = async () => {
+        const local = await searchCustomersOffline(q, 50);
+        if (cancelled) return;
+        setRemoteResults(local);
+        setFetchedById((prev) => {
+          const next = { ...prev };
+          for (const c of local) next[c.id] = c;
+          return next;
+        });
+      };
+
+      if (isOffline()) {
+        try { await searchLocally(); } catch { if (!cancelled) setRemoteResults([]); }
+        if (!cancelled) setIsSearching(false);
+        return;
+      }
+
+      try {
+        const res = await customersService.getAll({ ...searchParams, search: q, limit: 50 });
+        if (cancelled) return;
+        setRemoteResults(res.data);
+        setFetchedById((prev) => {
+          const next = { ...prev };
+          for (const c of res.data) next[c.id] = c;
+          return next;
+        });
+      } catch (err) {
+        if (cancelled) return;
+        if (isNetworkError(err)) {
+          try { await searchLocally(); } catch { setRemoteResults([]); }
+        } else {
+          setRemoteResults([]);
+        }
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, serverSearch]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (serverSearch) {
+      // Sin texto: mostramos lo precargado. Con texto: resultados del backend.
+      if (!q) return customers.slice(0, 50);
+      return (remoteResults ?? []).slice(0, 50);
+    }
     if (!q) return customers.slice(0, 50);
     return customers.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         (c.taxId ?? '').toLowerCase().includes(q)
     ).slice(0, 50);
-  }, [customers, query]);
+  }, [customers, query, serverSearch, remoteResults]);
 
   const handleSelect = (customer: Customer) => {
-    onChange(customer.id);
+    onChange(customer.id, customer);
     setIsOpen(false);
     setQuery('');
   };
@@ -157,7 +263,12 @@ export default function CustomerSearchSelect({
           )}
 
           <div className="max-h-56 overflow-y-auto [scrollbar-width:thin]">
-            {filtered.length === 0 ? (
+            {isSearching && filtered.length === 0 ? (
+              <div className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-gray-400 dark:text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Buscando…
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="px-4 py-6 text-center">
                 <User className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-400 dark:text-slate-500">

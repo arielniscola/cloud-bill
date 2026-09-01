@@ -6,6 +6,8 @@ export interface AfipConfigSummary {
   businessAddress: string | null;
   taxCondition: string | null;
   activityStartDate: string | null;
+  grossIncome: string | null;
+  consumerDefensePhone: string | null;
   isProduction: boolean;
   isActive: boolean;
   hasCert: boolean;
@@ -21,6 +23,8 @@ export interface AfipConfigDTO {
   businessAddress?: string;
   taxCondition?: string;
   activityStartDate?: string;
+  grossIncome?: string;
+  consumerDefensePhone?: string;
   cert: string;
   privateKey: string;
   isProduction: boolean;

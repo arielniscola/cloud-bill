@@ -112,7 +112,7 @@ export default function BudgetsPage() {
   const fiscalMode = useFiscalModeStore((s) => s.viewMode);
 
   useEffect(() => {
-    customersService.getAll({ limit: 1000 }).then((r) => setCustomers(r.data)).catch(() => {});
+    customersService.getAll({ limit: 50 }).then((r) => setCustomers(r.data)).catch(() => {});
   }, []);
 
   const fetchBudgets = useCallback(async () => {
@@ -244,6 +244,7 @@ export default function BudgetsPage() {
                 value={customerFilter}
                 onChange={(v) => { setCustomerFilter(v); setPage(1); }}
                 clearLabel="Todos los clientes"
+                serverSearch
               />
             </div>
 

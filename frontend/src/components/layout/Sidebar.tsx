@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
 import {
   Home,
@@ -15,9 +15,6 @@ import {
   ClipboardCheck,
   CreditCard,
   Landmark,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
   LogOut,
   Settings,
   ArrowRightLeft,
@@ -43,8 +40,14 @@ import {
   Crown,
   Repeat,
   Percent,
+  Pin,
+  PinOff,
+  Coins,
+  Wallet,
+  PieChart,
+  ClipboardX,
+  CloudOff,
 } from "lucide-react";
-import { useState } from "react";
 import { useUIStore, useAuthStore } from "../../stores";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useFeatures } from "../../hooks/useFeatures";
@@ -52,27 +55,39 @@ import { getNavTheme } from "../../utils/navThemes";
 import NotificationBell from "../notifications/NotificationBell";
 import CompanySwitcher from "../shared/CompanySwitcher";
 import { useCompanyStore } from "../../stores/company.store";
+import { confirmLogoutWithPendingSales } from '../../lib/offline/logoutGuard';
+import { isAvailableOffline, OFFLINE_UNAVAILABLE_HINT } from '../../lib/offline/offlineRoutes';
+import { useOfflineStore } from '../../stores/offline.store';
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
-  children?: NavItem[];
-  featureKey?: string; // hide item if company plan doesn't include this feature
+  featureKey?: string;  // se oculta si el plan no incluye la feature
+  section?: string;     // subtítulo dentro del panel del módulo
 }
 
-interface NavGroup {
-  label: string;
-  moduleKey?: string;
-  featureKey?: string; // hide entire group if plan doesn't include this feature
+/**
+ * Un módulo = un icono del riel. Sin `items` el tile navega directo (Inicio,
+ * Estadísticas); con `items` abre el panel.
+ */
+interface NavModule {
+  key: string;
+  name: string;
+  icon: React.ElementType;
+  href: string;
+  items?: NavItem[];
+  moduleKey?: string;                 // enabledModules de la empresa
+  featureKey?: string;
   requiredRoles?: readonly string[];
-  items: NavItem[];
 }
 
-// Navigation for SUPER_ADMIN only
-const superAdminGroups: NavGroup[] = [
+const superAdminModules: NavModule[] = [
   {
-    label: "Gestión Global",
+    key: "global",
+    name: "Gestión Global",
+    icon: Building2,
+    href: "/companies",
     items: [
       { name: "Empresas", href: "/companies", icon: Building2 },
       { name: "Usuarios", href: "/users",     icon: Users },
@@ -81,172 +96,169 @@ const superAdminGroups: NavGroup[] = [
   },
 ];
 
-const navigationGroups: NavGroup[] = [
+const navModules: NavModule[] = [
+  { key: "inicio",       name: "Inicio",       icon: Home,       href: "/" },
+  { key: "estadisticas", name: "Estadísticas", icon: TrendingUp, href: "/dashboard" },
+
   {
-    label: "",
-    items: [
-      { name: "Inicio",       href: "/",          icon: Home },
-      { name: "Estadísticas", href: "/dashboard",  icon: TrendingUp },
-    ],
-  },
-  {
-    label: "Ventas",
+    key: "ventas",
+    name: "Ventas",
+    icon: Store,
+    href: "/invoices",
     moduleKey: "ventas",
     requiredRoles: ["ADMIN", "SELLER", "WAREHOUSE_CLERK", "FINANCES"] as const,
     items: [
-      {
-        name: "Ventas",
-        href: "/ventas",
-        icon: Store,
-        children: [
-          { name: "Órdenes de Pedido", href: "/orden-pedidos",    icon: ShoppingBag },
-          { name: "Presupuestos",      href: "/budgets",          icon: Calculator },
-          { name: "Facturas",          href: "/invoices",         icon: FileText },
-          { name: "Abonos",            href: "/recurring-invoices", icon: Repeat },
-          { name: "Remitos",           href: "/remitos",          icon: ClipboardList },
-          { name: "Recibos",           href: "/recibos",          icon: Receipt },
-          { name: "Clientes",          href: "/customers",        icon: Users },
-          { name: "Cuentas Corrientes",href: "/current-accounts", icon: CreditCard, featureKey: "current_accounts" },
-          { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER",  icon: FileEdit },
-        ],
-      },
+      { name: "Órdenes de Pedido", href: "/orden-pedidos",      icon: ShoppingBag },
+      { name: "Ventas pendientes", href: "/ventas-pendientes",  icon: CloudOff },
+      { name: "Presupuestos",      href: "/budgets",            icon: Calculator },
+      { name: "Facturas",          href: "/invoices",           icon: FileText },
+      { name: "Abonos",            href: "/recurring-invoices", icon: Repeat },
+      { name: "Remitos",           href: "/remitos",            icon: ClipboardList },
+      { name: "Recibos",           href: "/recibos",            icon: Receipt },
+      { name: "Clientes",          href: "/customers",          icon: Users },
+      { name: "Cuentas Corrientes",href: "/current-accounts",   icon: CreditCard, featureKey: "current_accounts" },
+      { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER", icon: FileEdit },
     ],
   },
+
   {
-    label: "Compras",
+    key: "compras",
+    name: "Compras",
+    icon: ShoppingCart,
+    href: "/purchase-invoices",
     moduleKey: "compras",
     requiredRoles: ["ADMIN", "FINANCES", "PURCHASES"] as const,
     items: [
-      {
-        name: "Compras",
-        href: "/purchase-invoices",
-        icon: ShoppingCart,
-        children: [
-          { name: "Proveedores",       href: "/suppliers",         icon: Truck },
-          { name: "Ctas. Ctes.",       href: "/supplier-accounts", icon: CreditCard, featureKey: "supplier_accounts" },
-          { name: "Facturas",          href: "/purchase-invoices", icon: FileText },
-          { name: "Remitos de Compra", href: "/purchase-remitos",  icon: PackageSearch },
-          { name: "Retenciones",       href: "/purchase-retentions", icon: Percent },
-          { name: "Notas Internas",    href: "/internal-notes?entity=SUPPLIER", icon: FileEdit },
-          { name: "Reporte de facturas",href: "/reports/purchase-invoices", icon: BarChart2, featureKey: "reports" },
-          { name: "Órdenes de Pago",   href: "/orden-pagos",       icon: Banknote },
-        ],
-      },
+      { name: "Proveedores",       href: "/suppliers",           icon: Truck },
+      { name: "Ctas. Ctes.",       href: "/supplier-accounts",   icon: CreditCard, featureKey: "supplier_accounts" },
+      { name: "Facturas",          href: "/purchase-invoices",   icon: FileText },
+      { name: "Remitos de Compra", href: "/purchase-remitos",    icon: PackageSearch },
+      { name: "Retenciones",       href: "/purchase-retentions", icon: Percent },
+      { name: "Órdenes de Pago",   href: "/orden-pagos",         icon: Banknote },
+      { name: "Notas Internas",    href: "/internal-notes?entity=SUPPLIER", icon: FileEdit },
     ],
   },
+
   {
-    label: "Catálogo",
+    key: "catalogo",
+    name: "Catálogo",
+    icon: Package,
+    href: "/products",
     moduleKey: "catalogo",
     items: [
-      {
-        name: "Productos",
-        href: "/products",
-        icon: Package,
-        children: [
-          { name: "Lista",      href: "/products",   icon: Package },
-          { name: "Rubros", href: "/rubros", icon: FolderTree },
-          { name: "Marcas",     href: "/brands",     icon: Tag },
-          { name: "Categorías",     href: "/categories",     icon: Layers },
-          { name: "Campos personalizados", href: "/products/custom-fields", icon: Sliders },
-        ],
-      },
-      {
-        name: "Stock",
-        href: "/stock",
-        icon: PackageSearch,
-        children: [
-          { name: "Inventario",    href: "/stock",                icon: PackageSearch },
-          { name: "Movimientos",   href: "/stock/movements",      icon: BarChart2 },
-          { name: "Transferencias",href: "/stock/transfer",       icon: ArrowRightLeft, featureKey: "multi_warehouse" },
-          { name: "Conteo físico", href: "/stock/physical-count", icon: ClipboardCheck },
-          { name: "Almacenes",     href: "/warehouses",           icon: Warehouse },
-          { name: "Inteligente",   href: "/stock/intelligence",   icon: Brain, featureKey: "stock_intelligence" },
-        ],
-      },
+      { name: "Productos",             href: "/products",                icon: Package,       section: "Productos" },
+      { name: "Rubros",                href: "/rubros",                  icon: FolderTree,    section: "Productos" },
+      { name: "Marcas",                href: "/brands",                  icon: Tag,           section: "Productos" },
+      { name: "Categorías",            href: "/categories",              icon: Layers,        section: "Productos" },
+      { name: "Campos personalizados", href: "/products/custom-fields",  icon: Sliders,       section: "Productos" },
+      { name: "Inventario",            href: "/stock",                   icon: PackageSearch, section: "Stock" },
+      { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock" },
+      { name: "Transferencias",        href: "/stock/transfer",          icon: ArrowRightLeft,section: "Stock", featureKey: "multi_warehouse" },
+      { name: "Conteo físico",         href: "/stock/physical-count",    icon: ClipboardCheck,section: "Stock" },
+      { name: "Almacenes",             href: "/warehouses",              icon: Warehouse,     section: "Stock" },
+      { name: "Inteligente",           href: "/stock/intelligence",      icon: Brain,         section: "Stock", featureKey: "stock_intelligence" },
     ],
   },
+
   {
-    label: "Finanzas",
+    key: "finanzas",
+    name: "Finanzas",
+    icon: Landmark,
+    href: "/cash-registers",
     moduleKey: "finanzas",
     requiredRoles: ["ADMIN", "FINANCES"] as const,
     items: [
-      {
-        name: "Finanzas",
-        href: "/cash-registers",
-        icon: Landmark,
-        children: [
-          { name: "Cajas",             href: "/cash-registers", icon: Landmark },
-          { name: "Bancos",            href: "/bancos",         icon: Building2 },
-          { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  featureKey: "bank_module" },
-          { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  featureKey: "bank_module" },
-          { name: "Tarjetas",          href: "/cards",          icon: CreditCard, featureKey: "cards" },
-          { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone, featureKey: "mercadopago" },
-          { name: "Libro IVA",         href: "/iva",      icon: BookOpen,  featureKey: "iva_book" },
-          { name: "Reportes",          href: "/reports",  icon: BarChart2, featureKey: "reports" },
-        ],
-      },
+      { name: "Cajas",             href: "/cash-registers", icon: Landmark,  section: "Tesorería" },
+      { name: "Bancos",            href: "/bancos",         icon: Building2, section: "Tesorería" },
+      { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  section: "Tesorería", featureKey: "bank_module" },
+      { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  section: "Tesorería", featureKey: "bank_module" },
+      { name: "Tarjetas",          href: "/cards",          icon: CreditCard,section: "Tesorería", featureKey: "cards" },
+      { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone,section: "Tesorería", featureKey: "mercadopago" },
+      // Libro IVA vive acá y solo acá: antes estaba duplicado en Contabilidad.
+      { name: "Libro IVA",         href: "/iva",            icon: BookOpen,  section: "Tesorería", featureKey: "iva_book" },
+      // Contabilidad se pliega dentro de Finanzas: sin Libro IVA le quedaban
+      // 2 pantallas, que no sostienen un icono propio en el riel.
+      { name: "Asientos Contables", href: "/accounting/journal-entries", icon: BookOpen,   section: "Contabilidad", featureKey: "accounting" },
+      { name: "Plan de Cuentas",    href: "/accounting/accounts",        icon: BookMarked, section: "Contabilidad", featureKey: "accounting" },
     ],
   },
+
   {
-    label: "Contabilidad",
-    moduleKey: "finanzas",
-    featureKey: "accounting",
+    // Los informes son transversales (ventas, compras, stock, cobranzas): no
+    // pertenecen a Compras ni a Finanzas. Un módulo propio sobre el hub.
+    key: "reportes",
+    name: "Reportes",
+    icon: BarChart2,
+    href: "/reports",
+    featureKey: "reports",
     requiredRoles: ["ADMIN", "FINANCES"] as const,
     items: [
-      {
-        name: "Contabilidad",
-        href: "/accounting/journal-entries",
-        icon: BookMarked,
-        children: [
-          { name: "Asientos Contables", href: "/accounting/journal-entries", icon: BookOpen },
-          { name: "Libro IVA",          href: "/iva",                        icon: BookOpen,    featureKey: "iva_book" },
-          { name: "Plan de Cuentas",    href: "/accounting/accounts",        icon: BookMarked },
-        ],
-      },
+      { name: "Todos los reportes",       href: "/reports",                        icon: BarChart2 },
+      { name: "Ventas",                   href: "/reports/sales",                  icon: TrendingUp },
+      { name: "Compras por proveedor",    href: "/reports/purchases",              icon: Truck },
+      { name: "Facturas de compras",      href: "/reports/purchase-invoices",      icon: FileText },
+      { name: "Retenciones practicadas",  href: "/reports/retentions",             icon: Percent },
+      { name: "Rentabilidad de productos",href: "/reports/profitability",          icon: PieChart },
+      { name: "Valorización de stock",    href: "/reports/stock-valuation",        icon: Coins },
+      { name: "Cuentas a cobrar",         href: "/reports/accounts-receivable",    icon: Wallet },
+      { name: "Deuda por antigüedad",     href: "/reports/cc-aging",               icon: ClipboardX },
+      { name: "Flujo de cobros",          href: "/reports/cash-flow",              icon: Banknote },
     ],
   },
+
   {
-    label: "Sistema",
+    key: "sistema",
+    name: "Sistema",
+    icon: Settings,
+    href: "/settings",
     requiredRoles: ["ADMIN"] as const,
     items: [
-      {
-        name: "Configuración",
-        href: "/settings",
-        icon: Settings,
-        children: [
-          { name: "General",   href: "/settings", icon: Settings },
-          { name: "Historial", href: "/activity", icon: History, featureKey: "activity_log" },
-        ],
-      },
+      { name: "General",   href: "/settings", icon: Settings },
+      { name: "Historial", href: "/activity", icon: History, featureKey: "activity_log" },
     ],
   },
 ];
 
-const allNavItems = navigationGroups.flatMap((g) => g.items);
+/** href puede incluir query (?entity=...): separamos el path para comparar. */
+const hrefPath = (h: string) => {
+  const i = h.indexOf("?");
+  return i >= 0 ? h.slice(0, i) : h;
+};
 
 export default function Sidebar() {
-  const { sidebarOpen, toggleSidebar, mobileMenuOpen, closeMobileMenu, navTheme } =
-    useUIStore();
+  const { sidebarOpen, toggleSidebar, mobileMenuOpen, closeMobileMenu, navTheme } = useUIStore();
   const { user, logout } = useAuthStore();
   const { role, isModuleEnabled } = usePermissions();
   const { hasFeature } = useFeatures();
   const theme = getNavTheme(navTheme);
   const { companies, activeCompany } = useCompanyStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const connection = useOfflineStore((s) => s.connection);
+  const pendingSales = useOfflineStore((s) => s.pendingSales);
+
   const displayCompanyName =
-    role === 'SUPER_ADMIN'
-      ? activeCompany()?.name ?? 'Cloud Bill'
-      : user?.companyName ?? 'Cloud Bill';
+    role === "SUPER_ADMIN"
+      ? activeCompany()?.name ?? "Cloud Bill"
+      : user?.companyName ?? "Cloud Bill";
   const displayLogoUrl =
-    role === 'SUPER_ADMIN'
+    role === "SUPER_ADMIN"
       ? activeCompany()?.logoUrl ?? null
       : user?.companyLogoUrl ?? null;
-  const location = useLocation();
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // href puede incluir query (?entity=...): separamos el path para comparar.
-  const hrefPath = (h: string) => { const i = h.indexOf('?'); return i >= 0 ? h.slice(0, i) : h; };
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState(false);
+  /** Índice resaltado en la lista de resultados, movible con las flechas. */
+  const [activeIndex, setActiveIndex] = useState(0);
+  /** Módulo mostrado en el flyout (panel suelto). null = cerrado. */
+  const [flyoutKey, setFlyoutKey] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const flyoutOpenerRef = useRef<HTMLElement | null>(null);
+
   const childIsActive = (href: string) => {
-    const i = href.indexOf('?');
+    const i = href.indexOf("?");
     const path = i >= 0 ? href.slice(0, i) : href;
     if (location.pathname !== path) return false;
     if (i < 0) return true;
@@ -256,106 +268,350 @@ export default function Sidebar() {
     return true;
   };
 
-  const visibleGroups = role === 'SUPER_ADMIN'
-    ? superAdminGroups
-    : navigationGroups.filter((g) => {
-        if (g.requiredRoles && !g.requiredRoles.includes(role)) return false;
-        if (g.moduleKey && !isModuleEnabled(g.moduleKey)) return false;
-        if (g.featureKey && !hasFeature(g.featureKey as any)) return false;
+  const visibleModules = useMemo(() => {
+    const source = role === "SUPER_ADMIN" ? superAdminModules : navModules;
+    return source
+      .filter((m) => {
+        if (m.requiredRoles && !m.requiredRoles.includes(role)) return false;
+        if (m.moduleKey && !isModuleEnabled(m.moduleKey)) return false;
+        if (m.featureKey && !hasFeature(m.featureKey as any)) return false;
         return true;
-      });
+      })
+      .map((m) => ({
+        ...m,
+        items: m.items?.filter((i) => !i.featureKey || hasFeature(i.featureKey as any)),
+      }))
+      // Un módulo cuyos items quedaron todos ocultos por el plan no va al riel.
+      .filter((m) => !m.items || m.items.length > 0);
+  }, [role, isModuleEnabled, hasFeature]);
 
-  // Close mobile drawer and clear search on navigation
-  useEffect(() => {
-    closeMobileMenu();
-    setSearchQuery('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
-  // Flat list of all searchable items derived from visibleGroups
-  interface SearchableItem {
-    name: string;
-    href: string;
-    icon: React.ElementType;
-    breadcrumb: string;
-  }
-  const searchableItems: SearchableItem[] = visibleGroups.flatMap((g) =>
-    g.items.flatMap((item) => {
-      if (item.children) {
-        return item.children.map((child) => ({
-          name: child.name,
-          href: child.href,
-          icon: child.icon,
-          breadcrumb: g.label ? `${g.label} › ${item.name}` : item.name,
-        }));
+  /**
+   * Módulo activo derivado de la ruta — nunca de estado guardado, así un link
+   * directo o un F5 no abren el panel de otro módulo.
+   */
+  const activeModule = useMemo(() => {
+    let best: NavModule | null = null;
+    let bestLen = -1;
+    for (const m of visibleModules) {
+      for (const target of [m.href, ...(m.items ?? []).map((i) => i.href)]) {
+        const path = hrefPath(target);
+        const hit =
+          location.pathname === path ||
+          (path !== "/" && location.pathname.startsWith(path + "/"));
+        if (hit && path.length > bestLen) { best = m; bestLen = path.length; }
       }
-      return [{
-        name: item.name,
-        href: item.href,
-        icon: item.icon,
-        breadcrumb: g.label ?? '',
-      }];
-    })
+    }
+    return best;
+  }, [visibleModules, location.pathname]);
+
+  const searchableItems = useMemo(
+    () =>
+      visibleModules.flatMap((m) =>
+        (m.items ?? [{ name: m.name, href: m.href, icon: m.icon }]).map((i) => ({
+          name: i.name,
+          href: i.href,
+          icon: i.icon,
+          breadcrumb: m.items ? m.name : "",
+        }))
+      ),
+    [visibleModules]
   );
 
   const q = searchQuery.trim().toLowerCase();
   const searchResults = q
     ? searchableItems.filter(
-        (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.breadcrumb.toLowerCase().includes(q),
+        (i) => i.name.toLowerCase().includes(q) || i.breadcrumb.toLowerCase().includes(q)
       )
     : [];
+  /** Lo que realmente se lista: los resultados, o los primeros ítems sin query. */
+  const searchList = q ? searchResults : searchableItems.slice(0, 12);
 
-  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    allNavItems.forEach((item) => {
-      if (!item.children) return;
-      const childActive = item.children.some(
-        (c) =>
-          location.pathname === hrefPath(c.href) ||
-          location.pathname.startsWith(hrefPath(c.href) + "/"),
-      );
-      if (childActive) initial[item.name] = true;
-    });
-    return initial;
-  });
-
-  // Auto-open the relevant sub-menu only when a specific child route is active
+  // Al navegar: cerrar cajón, flyout y búsqueda.
   useEffect(() => {
-    allNavItems.forEach((item) => {
-      if (!item.children) return;
-      const childActive = item.children.some(
-        (c) =>
-          location.pathname === hrefPath(c.href) ||
-          location.pathname.startsWith(hrefPath(c.href) + "/"),
-      );
-      setOpenMenus((prev) => {
-        if (childActive && !prev[item.name]) return { ...prev, [item.name]: true };
-        if (!childActive && prev[item.name]) return { ...prev, [item.name]: false };
-        return prev;
-      });
-    });
-  }, [location.pathname]);
+    closeMobileMenu();
+    setFlyoutKey(null);
+    setSearchMode(false);
+    setSearchQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
 
-  const toggleMenu = (name: string) =>
-    setOpenMenus((prev) => ({ ...prev, [name]: !prev[name] }));
+  const openSearch = () => {
+    setSearchMode(true);
+    setActiveIndex(0);
+    if (!sidebarOpen) setFlyoutKey("__search");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
+  // Al cambiar lo tecleado, el resaltado vuelve arriba: si no, queda apuntando
+  // a una posición que ya es otra pantalla.
+  useEffect(() => { setActiveIndex(0); }, [q]);
+
+  /**
+   * Flechas para moverse por los resultados y Enter para entrar. El scroll se
+   * resuelve dentro del panel desde el que se tecleó — el buscador se monta dos
+   * veces (panel fijado y flyout) y no deben pisarse.
+   */
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Escape: primero limpia lo tecleado, recién después cierra el buscador.
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      if (searchQuery) { setSearchQuery(""); return; }
+      setSearchMode(false);
+      setFlyoutKey(null);
+      flyoutOpenerRef.current?.focus();
+      return;
+    }
+
+    if (searchList.length === 0) return;
+
+    const move = (next: number) => {
+      e.preventDefault();
+      setActiveIndex(next);
+      const root = e.currentTarget.closest("[data-search-root]");
+      root?.querySelector(`[data-idx="${next}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+
+    if (e.key === "ArrowDown") return move((activeIndex + 1) % searchList.length);
+    if (e.key === "ArrowUp") return move((activeIndex - 1 + searchList.length) % searchList.length);
+    if (e.key === "Home") return move(0);
+    if (e.key === "End") return move(searchList.length - 1);
+    if (e.key === "Enter") {
+      const item = searchList[activeIndex];
+      if (!item) return;
+      e.preventDefault();
+      navigate(item.href);
+    }
+  };
+
+  // Sin atajo global acá a propósito: Ctrl+K ya lo tiene GlobalSearch (busca
+  // registros: clientes, productos, comprobantes) y Ctrl+B enfoca el lector de
+  // código de barras en los formularios. Este buscador es solo de pantallas y
+  // se abre desde su tile del riel.
+
+  // Flyout: cierre por click afuera y por Escape, con foco devuelto al tile.
+  useEffect(() => {
+    if (!flyoutKey) return;
+    const closeFlyout = () => {
+      setFlyoutKey(null);
+      setSearchMode(false);
+      flyoutOpenerRef.current?.focus();
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (flyoutRef.current?.contains(target)) return;
+      if (flyoutOpenerRef.current?.contains(target)) return;
+      setFlyoutKey(null);
+      setSearchMode(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // No debe llegar al atajo global de "cancelar" de los formularios.
+        e.stopPropagation();
+        closeFlyout();
+        return;
+      }
+      if (e.key !== "Tab" || !flyoutRef.current) return;
+      // Trampa de foco: el flyout es un overlay, el Tab no debe escaparse.
+      const focusables = flyoutRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [flyoutKey]);
+
+  // Al abrir el flyout de un módulo, el foco entra en el panel.
+  useEffect(() => {
+    if (!flyoutKey || flyoutKey === "__search") return;
+    flyoutRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+  }, [flyoutKey]);
+
+  const handleTileClick = (module: NavModule, e: React.MouseEvent<HTMLElement>) => {
+    if (!module.items) { navigate(module.href); return; }
+    if (sidebarOpen) { navigate(module.href); return; }
+    flyoutOpenerRef.current = e.currentTarget;
+    setFlyoutKey((prev) => (prev === module.key ? null : module.key));
+  };
 
   const userInitials =
-    user?.name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) ?? "?";
+    user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "?";
 
-  // On mobile (drawer): always show full text.
-  // On desktop: controlled by sidebarOpen.
-  const showText = sidebarOpen || mobileMenuOpen;
+  const flyoutModule = visibleModules.find((m) => m.key === flyoutKey) ?? null;
+  /** El panel del módulo se ve si está fijado, o dentro del cajón mobile. */
+  const showPanel = sidebarOpen || mobileMenuOpen;
+  const panelModule = searchMode ? null : activeModule;
+
+  /** Sin conexión, todo lo que no lea de la caché local queda deshabilitado. */
+  const offlineBlocked = (href: string) =>
+    connection === 'offline' && !isAvailableOffline(href);
+
+  // ── Sub-render: contenido del panel de un módulo ──
+  const renderItems = (items: NavItem[], onNavigate?: () => void) => {
+    let lastSection: string | undefined;
+    return items.map((item) => {
+      const showSection = item.section && item.section !== lastSection;
+      lastSection = item.section;
+      return (
+        <li key={item.href}>
+          {showSection && (
+            <p className="px-2 pt-3 pb-1 text-[10px] font-semibold text-white/35 uppercase tracking-[0.12em]">
+              {item.section}
+            </p>
+          )}
+          <NavLink
+            to={item.href}
+            end
+            onClick={(e) => {
+              // Sin conexión no navega: la pantalla de destino no funcionaría.
+              if (offlineBlocked(item.href)) { e.preventDefault(); return; }
+              onNavigate?.();
+            }}
+            aria-disabled={offlineBlocked(item.href) || undefined}
+            title={offlineBlocked(item.href) ? OFFLINE_UNAVAILABLE_HINT : undefined}
+            className={clsx(
+              "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px]",
+              "transition-[background-color,color] duration-150 ease-out",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+              offlineBlocked(item.href)
+                ? "text-white/25 cursor-not-allowed font-medium"
+                : childIsActive(item.href)
+                ? "bg-indigo-600 text-white font-semibold shadow-sm shadow-indigo-900/60"
+                : "text-white/60 hover:bg-white/10 hover:text-white font-medium"
+            )}
+          >
+            <item.icon className="w-4 h-4 flex-shrink-0" />
+            <span className="truncate">{item.name}</span>
+            {offlineBlocked(item.href) ? (
+              <CloudOff className="w-3 h-3 ml-auto flex-shrink-0 text-white/25" />
+            ) : (
+              item.href === '/ventas-pendientes' && pendingSales > 0 && (
+                <span className="ml-auto rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold leading-[16px] text-white">
+                  {pendingSales}
+                </span>
+              )
+            )}
+          </NavLink>
+        </li>
+      );
+    });
+  };
+
+  const searchPanel = (
+    <div className="flex-1 min-h-0 flex flex-col" data-search-root>
+      <div className="px-2.5 pt-3 pb-2 flex-shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={onSearchKeyDown}
+            placeholder="Buscar menú…"
+            role="combobox"
+            aria-expanded={searchList.length > 0}
+            aria-controls="menu-search-results"
+            aria-activedescendant={
+              searchList[activeIndex] ? `menu-search-opt-${activeIndex}` : undefined
+            }
+            className="w-full bg-white/[0.08] text-white/80 placeholder-white/30 text-xs rounded-lg pl-8 pr-7 py-2 outline-none focus:ring-1 focus:ring-white/30 transition-shadow"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors"
+              aria-label="Limpiar búsqueda"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+      <ul
+        id="menu-search-results"
+        role="listbox"
+        className="flex-1 overflow-y-auto px-2.5 pb-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {q && searchResults.length === 0 ? (
+          <li className="px-3 py-4 text-center text-xs text-white/35">Sin resultados</li>
+        ) : (
+          searchList.map((item, idx) => {
+            const highlighted = idx === activeIndex;
+            return (
+              <li key={item.href}>
+                <NavLink
+                  to={item.href}
+                  end={item.href === "/"}
+                  id={`menu-search-opt-${idx}`}
+                  data-idx={idx}
+                  role="option"
+                  aria-selected={highlighted}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  className={clsx(
+                    "flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                    highlighted ? "bg-white/10 text-white" : "text-white/60"
+                  )}
+                >
+                  <item.icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block leading-none truncate">{item.name}</span>
+                    {item.breadcrumb && (
+                      <span
+                        className={clsx(
+                          "block text-[10px] leading-none mt-0.5",
+                          highlighted ? "text-white/45" : "text-white/30"
+                        )}
+                      >
+                        {item.breadcrumb}
+                      </span>
+                    )}
+                  </span>
+                </NavLink>
+              </li>
+            );
+          })
+        )}
+      </ul>
+
+      {searchList.length > 0 && (
+        <div className="flex items-center gap-3 px-3 py-2 border-t border-white/[0.08] flex-shrink-0">
+          <span className="flex items-center gap-1 text-[10px] text-white/30">
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-white/45 font-sans">↑</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-white/45 font-sans">↓</kbd>
+            moverse
+          </span>
+          <span className="flex items-center gap-1 text-[10px] text-white/30">
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-white/45 font-sans">↵</kbd>
+            abrir
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const tileClass = (active: boolean) =>
+    clsx(
+      "relative flex items-center justify-center w-11 h-11 rounded-[10px] flex-shrink-0",
+      "transition-[background-color,color] duration-150 ease-out",
+      "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+      active
+        ? "bg-indigo-500/[0.18] text-indigo-300"
+        : "text-white/50 hover:bg-white/10 hover:text-white"
+    );
 
   return (
     <>
-      {/* ── Mobile backdrop ── */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -367,338 +623,209 @@ export default function Sidebar() {
       <aside
         style={{ backgroundColor: theme.bg }}
         className={clsx(
-          "fixed left-0 top-0 z-50 h-screen flex flex-col",
-          // Width: mobile drawer always wide; desktop controlled by sidebarOpen
-          "w-72",
-          sidebarOpen ? "md:w-64" : "md:w-[68px]",
-          // Transition: transform for mobile slide, width for desktop collapse
+          "fixed left-0 top-0 z-50 h-screen flex",
+          // Mobile: cajón con riel + panel juntos. Desktop: riel, + panel si está fijado.
+          "w-[300px]",
+          sidebarOpen ? "md:w-[300px]" : "md:w-[68px]",
           "transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-          // Mobile: slide in/out. Desktop: always visible
-          mobileMenuOpen
-            ? "translate-x-0"
-            : "-translate-x-full md:translate-x-0",
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
-        {/* ── Header ── */}
-        <div className="relative flex items-center h-16 px-3.5 border-b border-white/10 flex-shrink-0">
-          {/* Logo */}
+        {/* ── Riel: 68 px, nunca desaparece ── */}
+        <div className="w-[68px] flex-shrink-0 h-full flex flex-col items-center py-3 gap-1">
           <div
-            className={clsx(
-              "flex items-center gap-2.5 flex-1 min-w-0",
-              !showText && "md:justify-center",
-            )}
+            className="w-[34px] h-[34px] rounded-[9px] bg-white flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden mb-2.5"
+            title={displayCompanyName}
           >
-            {(() => {
-              const avatar = (
-                <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden">
-                  {displayLogoUrl ? (
-                    <img
-                      src={displayLogoUrl}
-                      alt={displayCompanyName}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-base font-extrabold text-primary-600 uppercase">
-                      {displayCompanyName.charAt(0)}
-                    </span>
-                  )}
-                </div>
-              );
-              return showText ? (
-                <>
-                  {avatar}
-                  <span
-                    className="text-sm font-semibold text-white tracking-tight leading-tight break-words line-clamp-2"
-                    title={displayCompanyName}
-                  >
-                    {displayCompanyName}
-                  </span>
-                </>
-              ) : (
-                avatar
-              );
-            })()}
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {/* Bell — desktop only (mobile has it in the top bar) */}
-            {showText && (
-              <span className="hidden md:inline-flex">
-                <NotificationBell align="left" />
+            {displayLogoUrl ? (
+              <img src={displayLogoUrl} alt={displayCompanyName} className="w-full h-full object-contain" />
+            ) : (
+              <span className="text-[15px] font-extrabold text-primary-600 uppercase leading-none">
+                {displayCompanyName.charAt(0)}
               </span>
             )}
-
-            {/* Desktop collapse/expand */}
-            <button
-              onClick={toggleSidebar}
-              className="hidden md:block p-1.5 rounded-lg text-white/40 hover:bg-white/10 hover:text-white/80 transition-[background-color,color] duration-150"
-              title={sidebarOpen ? "Contraer" : "Expandir"}
-            >
-              {sidebarOpen ? (
-                <ChevronLeft className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-
-            {/* Mobile close button */}
-            <button
-              onClick={closeMobileMenu}
-              className="md:hidden p-1.5 rounded-lg text-white/40 hover:bg-white/10 hover:text-white/80 transition-[background-color,color] duration-150"
-              aria-label="Cerrar menú"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
 
-          {/* Notification bell — desktop collapsed mode (below header) */}
-          {!showText && (
-            <div className="hidden md:flex absolute -bottom-10 left-0 w-full justify-center">
-              <NotificationBell align="left" />
+          <button
+            type="button"
+            onClick={(e) => { flyoutOpenerRef.current = e.currentTarget; openSearch(); }}
+            className={tileClass(searchMode)}
+            title="Buscar pantallas"
+            aria-label="Buscar en el menú"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+
+          <div className="w-8 h-px bg-white/10 my-1.5 flex-shrink-0" />
+
+          <div className="flex-1 min-h-0 w-full overflow-y-auto flex flex-col items-center gap-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {visibleModules.map((module) => {
+              const active = activeModule?.key === module.key && !searchMode;
+              // Un módulo queda atenuado solo si NINGUNA de sus pantallas
+              // funciona sin conexión: Ventas sigue vivo por la carga de
+              // ventas y por las pendientes.
+              const dimmed =
+                connection === 'offline' &&
+                [module.href, ...(module.items ?? []).map((i) => i.href)].every(
+                  (h) => !isAvailableOffline(h)
+                );
+              return (
+                <button
+                  key={module.key}
+                  type="button"
+                  onClick={(e) => handleTileClick(module, e)}
+                  className={clsx(tileClass(active || flyoutKey === module.key), dimmed && "opacity-40")}
+                  title={dimmed ? `${module.name} — ${OFFLINE_UNAVAILABLE_HINT}` : module.name}
+                  aria-label={module.name}
+                  aria-current={active ? "page" : undefined}
+                  aria-expanded={module.items ? flyoutKey === module.key : undefined}
+                >
+                  {active && (
+                    <span className="absolute -left-3 top-2.5 w-[3px] h-[22px] rounded-r-[3px] bg-indigo-500" />
+                  )}
+                  <module.icon className="w-5 h-5" />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-auto flex flex-col items-center gap-2 flex-shrink-0 pt-2">
+            {/* Con el panel suelto ésta es la única forma de volver a fijarlo:
+                va en el riel y no flotando, que se solapaba con el flyout. */}
+            {!sidebarOpen && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className={clsx(tileClass(false), "hidden md:flex")}
+                title="Fijar panel"
+                aria-label="Fijar panel"
+              >
+                <PinOff className="w-[18px] h-[18px]" />
+              </button>
+            )}
+            <NotificationBell
+              align="left"
+              triggerClassName={tileClass(false)}
+              iconClassName="w-5 h-5"
+            />
+            <button
+              type="button"
+              onClick={() => { if (confirmLogoutWithPendingSales()) logout(); }}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+              className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white/40 hover:bg-red-500/20 hover:text-red-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <LogOut className="w-[18px] h-[18px]" />
+            </button>
+            <div
+              className="w-[30px] h-[30px] rounded-full bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0"
+              title={user?.name ?? undefined}
+            >
+              <span className="text-indigo-300 text-[10px] font-bold leading-none">{userInitials}</span>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Spacer for collapsed desktop notification bell */}
-        {!showText && <div className="hidden md:block h-8 flex-shrink-0" />}
-
-        {/* Search box — fixed above scrollable nav, only when expanded */}
-        {showText && (
-          <div className="px-2.5 pt-2 pb-2 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar menú…"
-                className="w-full bg-white/[0.08] text-white/80 placeholder-white/30 text-xs rounded-lg pl-8 pr-3 py-2 outline-none focus:ring-1 focus:ring-white/30 transition-shadow"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+        {/* ── Panel del módulo: 232 px, fijado ── */}
+        {showPanel && (
+          <div className="w-[232px] flex-shrink-0 h-full flex flex-col border-r border-white/[0.08] bg-white/[0.03] min-w-0">
+            {/* Identidad de la empresa: siempre arriba de todo. */}
+            <div className="flex items-center gap-2.5 px-3.5 pt-3.5 pb-3 flex-shrink-0 border-b border-white/[0.08]">
+              <div className="w-8 h-8 rounded-[9px] bg-white flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
+                {displayLogoUrl ? (
+                  <img src={displayLogoUrl} alt={displayCompanyName} className="w-full h-full object-contain" />
+                ) : (
+                  <span className="text-[14px] font-extrabold text-primary-600 uppercase leading-none">
+                    {displayCompanyName.charAt(0)}
+                  </span>
+                )}
+              </div>
+              <p className="min-w-0 flex-1 text-[13px] font-bold text-white tracking-tight truncate" title={displayCompanyName}>
+                {displayCompanyName}
+              </p>
             </div>
+
+            <div className="flex items-center gap-2 px-3.5 pt-3 pb-2 flex-shrink-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-bold text-white tracking-tight truncate">
+                  {searchMode ? "Buscar" : panelModule?.name ?? "Inicio"}
+                </p>
+                {!searchMode && panelModule?.items && (
+                  <p className="text-[11px] text-white/35 mt-0.5">
+                    {panelModule.items.length} pantallas
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden md:flex w-[26px] h-[26px] rounded-[7px] items-center justify-center bg-white/10 text-indigo-300 hover:bg-white/20 transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                title="Soltar panel"
+                aria-label="Soltar panel"
+              >
+                <Pin className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={closeMobileMenu}
+                className="md:hidden w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white/80 transition-colors flex-shrink-0"
+                aria-label="Cerrar menú"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {searchMode ? (
+              searchPanel
+            ) : panelModule?.items ? (
+              <ul className="flex-1 overflow-y-auto px-2.5 pb-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {renderItems(panelModule.items)}
+              </ul>
+            ) : (
+              /* Sin módulo abierto (Inicio): no hay pantallas que listar. */
+              <div className="flex-1 min-h-0 flex items-center justify-center px-4 pb-6 text-center">
+                <p className="text-[12px] text-white/35 leading-snug">
+                  Elegí un módulo del riel para ver sus pantallas.
+                </p>
+              </div>
+            )}
+
+            {role === "SUPER_ADMIN" && companies.length > 0 && (
+              <div className="px-2.5 pb-2.5 flex-shrink-0">
+                <CompanySwitcher showText />
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── Navigation ── */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {/* Search results */}
-          {q && showText ? (
-            <ul className="px-2.5 space-y-0.5">
-              {searchResults.length === 0 ? (
-                <li className="px-3 py-4 text-center text-xs text-slate-500">
-                  Sin resultados
-                </li>
-              ) : (
-                searchResults.map((item) => (
-                  <li key={item.href}>
-                    <NavLink
-                      to={item.href}
-                      end={item.href === '/'}
-                      className={({ isActive }) =>
-                        clsx(
-                          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                          "transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98]",
-                          isActive
-                            ? "bg-indigo-600 text-white shadow-sm shadow-indigo-900/60"
-                            : "text-white/60 hover:bg-white/10 hover:text-white",
-                        )
-                      }
-                    >
-                      <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="leading-none">{item.name}</p>
-                        {item.breadcrumb && (
-                          <p className="text-[10px] text-slate-500 leading-none mt-0.5">{item.breadcrumb}</p>
-                        )}
-                      </div>
-                    </NavLink>
-                  </li>
-                ))
-              )}
-            </ul>
-          ) : (
-          <ul className="px-2.5">
-            {visibleGroups.map((group, gi) => (
-              <li key={gi}>
-                {/* Section label / divider */}
-                {group.label &&
-                  (showText ? (
-                    <div
-                      className={clsx("px-2 pb-1.5", gi > 0 ? "pt-5" : "pt-2")}
-                    >
-                      <span className="text-[10px] font-semibold text-white/40 uppercase tracking-[0.12em]">
-                        {group.label}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="mx-2 my-3.5 border-t border-white/10" />
-                  ))}
-
-                <ul className="space-y-0.5">
-                  {group.items.map((item) =>
-                    item.children ? (
-                      /* ── Expandable group ── */
-                      <li key={item.name}>
-                        <button
-                          onClick={() => toggleMenu(item.name)}
-                          title={!showText ? item.name : undefined}
-                          className={clsx(
-                            "relative flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium",
-                            "transition-[background-color,color,transform] duration-150 ease-out",
-                            "active:scale-[0.98]",
-                            !showText && "md:justify-center",
-                            (location.pathname.startsWith(item.href) ||
-                              item.children.some(
-                                (c) => location.pathname === hrefPath(c.href) || location.pathname.startsWith(hrefPath(c.href) + "/"),
-                              ))
-                              ? "bg-white/[0.12] text-white"
-                              : "text-white/60 hover:bg-white/10 hover:text-white",
-                          )}
-                        >
-                          <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                          {showText && (
-                            <>
-                              <span className="flex-1 text-left leading-none">
-                                {item.name}
-                              </span>
-                              <ChevronDown
-                                className={clsx(
-                                  "w-3.5 h-3.5 text-white/30 flex-shrink-0",
-                                  "transition-transform duration-200 ease-out",
-                                  openMenus[item.name] && "rotate-180",
-                                )}
-                              />
-                            </>
-                          )}
-                        </button>
-
-                        {showText && openMenus[item.name] && (
-                          <ul className="mt-0.5 ml-[14px] pl-3 border-l border-white/[0.08] space-y-0.5 pb-0.5">
-                            {item.children.filter((child) =>
-                              !child.featureKey || hasFeature(child.featureKey as any)
-                            ).map((child) => (
-                              <li key={child.href}>
-                                <NavLink
-                                  to={child.href}
-                                  end
-                                  className={clsx(
-                                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm",
-                                    "transition-[background-color,color,transform] duration-150 ease-out",
-                                    "active:scale-[0.98]",
-                                    childIsActive(child.href)
-                                      ? "bg-indigo-500/20 text-indigo-300 font-semibold"
-                                      : "text-white/50 hover:bg-white/10 hover:text-white font-medium",
-                                  )}
-                                >
-                                  <child.icon className="w-[15px] h-[15px] flex-shrink-0" />
-                                  <span>{child.name}</span>
-                                </NavLink>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </li>
-                    ) : (
-                      /* ── Regular link ── */
-                      <li key={item.name}>
-                        <NavLink
-                          to={item.href}
-                          end={item.href === "/"}
-                          title={!showText ? item.name : undefined}
-                          className={({ isActive }) =>
-                            clsx(
-                              "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium",
-                              "transition-[background-color,color,transform] duration-150 ease-out",
-                              "active:scale-[0.98]",
-                              !showText && "md:justify-center",
-                              isActive
-                                ? "bg-indigo-600 text-white shadow-sm shadow-indigo-900/60"
-                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
-                            )
-                          }
-                        >
-                          <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-                          {showText && (
-                            <span className="leading-none">{item.name}</span>
-                          )}
-                        </NavLink>
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </li>
-            ))}
-          </ul>
-          )}
-        </nav>
-
-        {/* ── Footer ── */}
-        <div className="border-t border-white/10 p-2.5 flex-shrink-0">
-          {/* User card — expanded */}
-          {showText && user && (
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white/[0.06] mb-2">
-              <div className="w-7 h-7 rounded-full bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
-                <span className="text-indigo-300 text-[11px] font-bold leading-none">
-                  {userInitials}
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-white truncate leading-tight">
-                  {user.name}
-                </p>
-                <p className="text-[11px] text-white/40 truncate leading-tight mt-0.5">
-                  @{user.username}
-                </p>
-                <p className="text-[10px] text-indigo-400/70 truncate leading-tight mt-0.5 font-medium">
-                  {role === "SUPER_ADMIN" ? "Super Administrador" : role === "ADMIN" ? "Administrador" : role === "SELLER" ? "Vendedor" : "Solo lectura"}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* User avatar — collapsed desktop only */}
-          {!showText && user && (
-            <div className="hidden md:flex justify-center mb-2">
-              <div
-                className="w-7 h-7 rounded-full bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center"
-                title={user.name}
-              >
-                <span className="text-indigo-300 text-[11px] font-bold leading-none">
-                  {userInitials}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {role === 'SUPER_ADMIN' && companies.length > 0 && (
-            <div className="mb-1">
-              <CompanySwitcher showText={showText} />
-            </div>
-          )}
-
-          <button
-            onClick={logout}
-            title={!showText ? "Cerrar sesión" : undefined}
-            className={clsx(
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full mt-0.5",
-              "transition-[background-color,color] duration-150 ease-out",
-              !showText && "md:justify-center",
-              "text-white/40 hover:bg-red-500/20 hover:text-red-400",
-            )}
-          >
-            <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
-            {showText && <span>Cerrar sesión</span>}
-          </button>
-        </div>
       </aside>
+
+      {/* ── Flyout: el panel del módulo cuando está suelto ── */}
+      {!sidebarOpen && flyoutKey && (
+        <div
+          ref={flyoutRef}
+          role="dialog"
+          aria-label={flyoutModule?.name ?? "Buscar"}
+          style={{ backgroundColor: theme.bg }}
+          className="hidden md:flex fixed left-[76px] top-3 z-[60] w-[232px] max-h-[calc(100vh-24px)] flex-col rounded-xl border border-white/[0.12] shadow-2xl shadow-black/50 overflow-hidden"
+        >
+          {flyoutKey === "__search" ? (
+            searchPanel
+          ) : (
+            <>
+              <div className="px-3.5 pt-3 pb-2 border-b border-white/[0.08] flex-shrink-0">
+                <p className="text-[13px] font-bold text-white tracking-tight">{flyoutModule?.name}</p>
+                <p className="text-[10px] text-white/35 mt-0.5">
+                  {flyoutModule?.items?.length ?? 0} pantallas
+                </p>
+              </div>
+              <ul className="flex-1 overflow-y-auto p-2 space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {flyoutModule?.items && renderItems(flyoutModule.items, () => setFlyoutKey(null))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

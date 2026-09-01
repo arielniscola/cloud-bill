@@ -129,4 +129,31 @@ export interface InvoiceFilters {
   saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   dateFrom?: string;
   dateTo?: string;
+  /** Número de comprobante, razón social o CUIT del cliente. */
+  search?: string;
+}
+
+/** Totales de una moneda dentro del conjunto filtrado. */
+export interface InvoiceCurrencyStats {
+  currency: string;
+  count: number;
+  total: number;
+  taxAmount: number;
+  pendingCount: number;
+  pendingAmount: number;
+  overdueCount: number;
+  overdueAmount: number;
+}
+
+/**
+ * Totales del conjunto filtrado COMPLETO — no de la página visible.
+ *
+ * Los importes vienen por moneda y NO se suman entre sí: la cuenta corriente
+ * del cliente es por moneda, así que pesos y dólares son escalas distintas.
+ */
+export interface InvoiceStats {
+  /** Comprobantes del filtro, sin importar la moneda. */
+  count: number;
+  /** Un tramo por moneda presente, de mayor a menor facturado. */
+  byCurrency: InvoiceCurrencyStats[];
 }

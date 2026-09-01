@@ -2,6 +2,9 @@ import { Fragment, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
+import { confirmLogoutWithPendingSales } from '../../lib/offline/logoutGuard';
+import { isAvailableOffline, OFFLINE_UNAVAILABLE_HINT } from '../../lib/offline/offlineRoutes';
+import { useOfflineStore } from '../../stores/offline.store';
 import {
   Home,
   TrendingUp,
@@ -39,6 +42,7 @@ import {
   Sliders,
   Building2,
   Crown,
+  CloudOff,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -104,6 +108,7 @@ const navigation: NavEntry[] = [
         heading: 'Documentos',
         items: [
           { name: 'Órdenes de Pedido', href: '/orden-pedidos', icon: ShoppingBag },
+          { name: 'Ventas pendientes', href: '/ventas-pendientes', icon: CloudOff },
           { name: 'Presupuestos',      href: '/budgets',       icon: Calculator },
           { name: 'Facturas',          href: '/invoices',      icon: FileText },
           { name: 'Remitos',           href: '/remitos',       icon: ClipboardList },
@@ -206,11 +211,17 @@ export default function Navbar() {
   const { hasFeature } = useFeatures();
   const theme = getNavTheme(navTheme);
   const navigate = useNavigate();
+  const connection = useOfflineStore((s) => s.connection);
 
   const handleLogout = () => {
+    if (!confirmLogoutWithPendingSales()) return;
     logout();
     navigate('/login');
   };
+
+  /** Sin conexión, todo lo que no lea de la caché local queda deshabilitado. */
+  const offlineBlocked = (href: string) =>
+    connection === 'offline' && !isAvailableOffline(href);
 
   const visibleEntries = useMemo<NavEntry[]>(() => {
     if (role === 'SUPER_ADMIN') return superAdminNavigation;
@@ -320,10 +331,19 @@ export default function Navbar() {
                                       <NavLink
                                         to={item.href}
                                         end
+                                        onClick={(e) => {
+                                          // Sin conexión no navega: la pantalla
+                                          // de destino no funcionaría.
+                                          if (offlineBlocked(item.href)) e.preventDefault();
+                                        }}
+                                        aria-disabled={offlineBlocked(item.href) || undefined}
+                                        title={offlineBlocked(item.href) ? OFFLINE_UNAVAILABLE_HINT : undefined}
                                         className={({ isActive }) =>
                                           clsx(
                                             'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
-                                            isActive
+                                            offlineBlocked(item.href)
+                                              ? 'text-gray-300 dark:text-slate-600 cursor-not-allowed'
+                                              : isActive
                                               ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
                                               : active
                                               ? 'bg-gray-50 dark:bg-slate-700/80 text-gray-900 dark:text-slate-200'

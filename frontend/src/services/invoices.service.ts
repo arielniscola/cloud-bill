@@ -5,6 +5,7 @@ import type {
   UpdateInvoiceStatusDTO,
   PayInvoiceDTO,
   InvoiceFilters,
+  InvoiceStats,
   ApiResponse,
   PaginatedResponse,
   AfipError,
@@ -16,6 +17,19 @@ export const invoicesService = {
       params: filters,
     });
     return response.data;
+  },
+
+  /**
+   * Totales del conjunto filtrado completo. Va aparte del listado: sumar la
+   * página y rotularla "Total" era el número que engañaba.
+   */
+  async getStats(filters?: InvoiceFilters): Promise<InvoiceStats> {
+    // La paginación no aplica: los totales son del conjunto entero.
+    const params: InvoiceFilters = { ...filters };
+    delete params.page;
+    delete params.limit;
+    const response = await api.get<ApiResponse<InvoiceStats>>('/invoices/stats', { params });
+    return response.data.data;
   },
 
   async getById(id: string): Promise<Invoice> {

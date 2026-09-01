@@ -1,13 +1,18 @@
 import api from './api';
 import type {
-  PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceFilters,
+  PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceFilters, PurchaseInvoiceSummary,
   PurchaseInvoiceRetentionRow, PurchaseInvoiceRetentionFilters,
   ApiResponse, PaginatedResponse,
 } from '../types';
 
+// El listado devuelve además los totales de la consulta completa.
+export type PurchaseInvoiceListResponse = PaginatedResponse<PurchaseInvoice> & {
+  summary: PurchaseInvoiceSummary;
+};
+
 export const purchaseInvoicesService = {
-  async getAll(filters?: PurchaseInvoiceFilters): Promise<PaginatedResponse<PurchaseInvoice>> {
-    const response = await api.get<PaginatedResponse<PurchaseInvoice>>('/purchase-invoices', { params: filters });
+  async getAll(filters?: PurchaseInvoiceFilters): Promise<PurchaseInvoiceListResponse> {
+    const response = await api.get<PurchaseInvoiceListResponse>('/purchase-invoices', { params: filters });
     return response.data;
   },
 

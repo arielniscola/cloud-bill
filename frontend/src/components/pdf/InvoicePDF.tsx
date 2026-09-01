@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Invoice } from '../../types/invoice.types';
 import type { AfipConfigSummary } from '../../types/afip.types';
+import { fiscalTransparency, FISCAL_TRANSPARENCY_LEGEND } from '../../utils/afipFiscal';
 
 // ─── Colors ────────────────────────────────────────────────────────────────
 const BLUE = '#1a3a6b';
@@ -204,6 +205,18 @@ const s = StyleSheet.create({
   notesLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: GRAY, marginBottom: 2 },
   notesText: { fontSize: 7.5, color: DARK },
 
+  // ── Régimen de Transparencia Fiscal (Ley 27.743) ──
+  fiscalBox: {
+    marginTop: 8,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: DARK,
+  },
+  fiscalLegend: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
+  fiscalRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
+  fiscalLabel: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
+  fiscalValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
+
   // ── Footer (CAE + QR) ──
   footer: {
     marginTop: 14,
@@ -310,14 +323,18 @@ interface InvoicePageProps extends InvoicePDFProps {
   issuerAddress: string;
   issuerCuit: string;
   issuerTaxCondition: string;
+  issuerGrossIncome: string;
+  issuerActivityStart: string;
 }
 
 function InvoicePage({
   invoice, qrCodeDataUrl, typeLetter, typeShort, isDraft,
   taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
+  issuerGrossIncome, issuerActivityStart,
 }: InvoicePageProps) {
   // Factura C does not discriminate IVA
   const isTypeC = typeLetter === 'C';
+  const transparency = fiscalTransparency(invoice);
   return (
     <Page size="A4" style={s.page}>
       {/* Draft watermark */}
@@ -347,6 +364,18 @@ function InvoicePage({
             <Text style={s.labelGray}>Condición frente al IVA:</Text>
             <Text style={s.valueText}>{issuerTaxCondition}</Text>
           </View>
+          {issuerGrossIncome ? (
+            <View style={s.row}>
+              <Text style={s.labelGray}>Ingresos Brutos:</Text>
+              <Text style={s.valueText}>{issuerGrossIncome}</Text>
+            </View>
+          ) : null}
+          {issuerActivityStart ? (
+            <View style={s.row}>
+              <Text style={s.labelGray}>Inicio de Actividades:</Text>
+              <Text style={s.valueText}>{fmtDate(issuerActivityStart)}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Center: type letter */}
@@ -487,6 +516,21 @@ function InvoicePage({
         </View>
       </View>
 
+      {/* ── RÉGIMEN DE TRANSPARENCIA FISCAL (Ley 27.743) ─────── */}
+      {transparency.applies && (
+        <View style={s.fiscalBox}>
+          <Text style={s.fiscalLegend}>{FISCAL_TRANSPARENCY_LEGEND}</Text>
+          {transparency.showAmount && (
+            <View style={s.fiscalRow}>
+              <Text style={s.fiscalLabel}>I.V.A. Contenido</Text>
+              <Text style={s.fiscalValue}>
+                {fmtCurrency(transparency.ivaContenido, invoice.currency)}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* ── NOTES ────────────────────────────────────────────── */}
       {invoice.notes && (
         <View style={s.notes}>
@@ -557,10 +601,13 @@ export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: Invoi
   const issuerAddress = afipConfig?.businessAddress ?? '';
   const issuerCuit = afipConfig?.cuit ? fmtCuit(afipConfig.cuit) : '';
   const issuerTaxCondition = afipConfig?.taxCondition ?? 'Responsable Inscripto';
+  const issuerGrossIncome = afipConfig?.grossIncome ?? '';
+  const issuerActivityStart = afipConfig?.activityStartDate ?? '';
 
   const pageProps = {
     invoice, afipConfig, qrCodeDataUrl, typeLetter, typeShort, isDraft,
     taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
+    issuerGrossIncome, issuerActivityStart,
   };
 
   return (

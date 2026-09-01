@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "../stores/auth.store";
+import { useOfflineStore } from "../stores/offline.store";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -64,10 +65,31 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+/** true cuando axios fallo sin llegar al servidor (red caida, DNS, timeout). */
+export function isNetworkError(error: unknown): boolean {
+  const e = error as AxiosError | undefined;
+  if (!e || !e.isAxiosError) return false;
+  return !e.response;
+}
+
 // Response interceptor - handle errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Toda respuesta del servidor confirma que hay conexion, sin pingear.
+    if (useOfflineStore.getState().connection !== 'online') {
+      useOfflineStore.getState().setConnection('online');
+    }
+    return response;
+  },
   (error: AxiosError) => {
+    // Sin respuesta = no llegamos al servidor. NO es un problema de sesion:
+    // desloguear acá echaria al usuario justo cuando se corta internet, que es
+    // cuando mas necesita seguir trabajando (y con ventas pendientes de subir).
+    if (isNetworkError(error)) {
+      useOfflineStore.getState().setConnection('offline');
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
       // Token expired or invalid (not a login attempt)
       useAuthStore.getState().logout();

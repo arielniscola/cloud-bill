@@ -246,6 +246,28 @@ export interface OrdenPagoFilters {
   supplierId?: string;
   status?: OrdenPagoStatus;
   paymentMethod?: PaymentMethod;
+  currency?: string;
+  /** Número de orden o nombre del proveedor. */
+  search?: string;
+  onlyRetentions?: boolean;
+  onlyOnAccount?: boolean;
   dateFrom?: string;
   dateTo?: string;
+}
+
+/**
+ * Totales de TODO el filtro (no solo la página), en ARS: las órdenes en moneda
+ * extranjera se convierten con su propia cotización. Ignoran el filtro de
+ * estado, así que los contadores de las pestañas no se vacían al cambiarlas.
+ */
+export interface OrdenPagoSummary {
+  paidArs: number;
+  paidCount: number;
+  pendingArs: number;
+  pendingCount: number;
+  retentionArs: number;
+  retentionCount: number;
+  onAccountArs: number;
+  onAccountCount: number;
+  statusCounts: { all: number; EMITTED: number; PAID: number; CANCELLED: number };
 }

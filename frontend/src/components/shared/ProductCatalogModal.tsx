@@ -33,7 +33,10 @@ export default function ProductCatalogModal({
   const [stockByProduct, setStockByProduct] = useState<Record<string, number> | null>(null);
   const [stockLoading, setStockLoading] = useState(false);
   const [justAdded, setJustAdded] = useState<Record<string, number>>({});
+  /** Fila resaltada, movible con las flechas. */
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const addedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Cargar stock disponible por producto al abrir (una sola vez por apertura)
@@ -107,6 +110,33 @@ export default function ProductCatalogModal({
     }, 1600);
   };
 
+  // Al cambiar lo tecleado el resaltado vuelve arriba: si no, quedaría
+  // apuntando a una fila que ahora es otro producto.
+  useEffect(() => { setActiveIndex(0); }, [query]);
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (filtered.length === 0) return;
+
+    const move = (next: number) => {
+      e.preventDefault();
+      setActiveIndex(next);
+      listRef.current?.querySelector(`[data-idx="${next}"]`)?.scrollIntoView({ block: 'nearest' });
+    };
+
+    if (e.key === 'ArrowDown') return move((activeIndex + 1) % filtered.length);
+    if (e.key === 'ArrowUp') return move((activeIndex - 1 + filtered.length) % filtered.length);
+    if (e.key === 'Home') return move(0);
+    if (e.key === 'End') return move(filtered.length - 1);
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const product = filtered[activeIndex];
+      // Agrega y deja el modal abierto: es el punto de esta pantalla, cargar
+      // varios sin salir. El foco se queda en la búsqueda para seguir tipeando.
+      if (product) handleAdd(product);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Buscar producto" size="full" showCloseButton>
       {/* Search box */}
@@ -117,7 +147,14 @@ export default function ProductCatalogModal({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onSearchKeyDown}
           placeholder="Buscar por código, nombre, marca, rubro o código de barras…"
+          role="combobox"
+          aria-expanded={filtered.length > 0}
+          aria-controls="catalog-results"
+          aria-activedescendant={
+            filtered[activeIndex] ? `catalog-opt-${activeIndex}` : undefined
+          }
           className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
         />
         {query && (
@@ -141,7 +178,12 @@ export default function ProductCatalogModal({
       </div>
 
       {/* Rows */}
-      <div className="max-h-[55vh] overflow-y-auto [scrollbar-width:thin] divide-y divide-gray-50 dark:divide-slate-700/60">
+      <div
+        ref={listRef}
+        id="catalog-results"
+        role="listbox"
+        className="max-h-[55vh] overflow-y-auto [scrollbar-width:thin] divide-y divide-gray-50 dark:divide-slate-700/60"
+      >
         {filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <Package className="w-8 h-8 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
@@ -150,13 +192,21 @@ export default function ProductCatalogModal({
             </p>
           </div>
         ) : (
-          filtered.map((p) => {
+          filtered.map((p, idx) => {
             const added = justAdded[p.id];
             const stock = stockByProduct?.[p.id];
+            const isActive = idx === activeIndex;
             return (
               <div
                 key={p.id}
-                className="grid grid-cols-[120px_1fr_120px_100px_88px] gap-3 items-center px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors"
+                id={`catalog-opt-${idx}`}
+                data-idx={idx}
+                role="option"
+                aria-selected={isActive}
+                onMouseEnter={() => setActiveIndex(idx)}
+                className={`grid grid-cols-[120px_1fr_120px_100px_88px] gap-3 items-center px-3 py-2.5 transition-colors ${
+                  isActive ? 'bg-gray-50 dark:bg-slate-700/40' : ''
+                }`}
               >
                 {/* SKU */}
                 <span className="font-mono text-[11px] font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded truncate" title={p.sku}>

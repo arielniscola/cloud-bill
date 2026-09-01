@@ -213,7 +213,7 @@ export default function OrdenPedidoDetailPage() {
     setIsConverting(true);
     try {
       const invoice = await ordenPedidosService.convertToInvoice(id, { invoiceType: selectedInvoiceType });
-      toast.success(`Factura ${invoice.number} creada en borrador`);
+      toast.success(`Factura ${invoice.number} generada`);
       setShowConvertModal(false);
       navigate(`/invoices/${invoice.id}`);
     } catch (error: unknown) {
@@ -757,8 +757,9 @@ export default function OrdenPedidoDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-slate-400">
-            Se creará una factura en borrador con los ítems de esta orden de pedido.
-            La orden quedará marcada como convertida.
+            Se creará una factura emitida con los ítems de esta orden de pedido.
+            El stock y la cuenta corriente ya se registraron al crear la orden, así que
+            la factura no vuelve a moverlos. La orden quedará marcada como convertida.
           </p>
 
           {!op.customerId && (

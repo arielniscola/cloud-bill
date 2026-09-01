@@ -32,6 +32,8 @@ export default function AfipSettingsCard() {
     businessAddress: '',
     taxCondition: 'RESPONSABLE_INSCRIPTO',
     activityStartDate: '',
+    grossIncome: '',
+    consumerDefensePhone: '',
     cert: '',
     privateKey: '',
     isProduction: false,
@@ -51,6 +53,8 @@ export default function AfipSettingsCard() {
             businessAddress: data.businessAddress ?? '',
             taxCondition: normalizeTaxCondition(data.taxCondition),
             activityStartDate: data.activityStartDate ? data.activityStartDate.slice(0, 10) : '',
+            grossIncome: data.grossIncome ?? '',
+            consumerDefensePhone: data.consumerDefensePhone ?? '',
             isProduction: data.isProduction,
           }));
         }
@@ -182,6 +186,21 @@ export default function AfipSettingsCard() {
             placeholder="20123456789"
             value={form.cuit}
             onChange={(e) => setForm((f) => ({ ...f, cuit: e.target.value }))}
+          />
+          <Input
+            label="Ingresos Brutos"
+            placeholder="0371696"
+            value={form.grossIncome ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, grossIncome: e.target.value }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input
+            label="Defensa del Consumidor (teléfono)"
+            placeholder="Defensa del consumidor mza 0800-222-6678"
+            value={form.consumerDefensePhone ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, consumerDefensePhone: e.target.value }))}
           />
         </div>
 

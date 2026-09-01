@@ -82,7 +82,7 @@ export default function RecibosPage() {
   };
 
   useEffect(() => {
-    customersService.getAll({ limit: 1000, isActive: true })
+    customersService.getAll({ limit: 50, isActive: true })
       .then((r) => setCustomers(r.data))
       .catch(() => {});
   }, []);
@@ -113,6 +113,8 @@ export default function RecibosPage() {
               customers={customers}
               value={customerFilter}
               onChange={handleFilterChange(setCustomerFilter)}
+              searchParams={{ isActive: true }}
+              serverSearch
               clearLabel="Todos los clientes"
             />
           </div>
