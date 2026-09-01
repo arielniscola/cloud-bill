@@ -351,7 +351,7 @@ export default function InvoicesPage() {
             {/* Tipo */}
             <select
               value={typeFilter}
-              onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
+              onChange={(e) => setTypeFilter(e.target.value)}
               className="h-[34px] px-2.5 pr-7 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all appearance-none"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
@@ -362,7 +362,7 @@ export default function InvoicesPage() {
             {/* Estado */}
             <select
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="h-[34px] px-2.5 pr-7 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all appearance-none"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
@@ -373,7 +373,7 @@ export default function InvoicesPage() {
             {/* Condición de venta */}
             <select
               value={saleConditionFilter}
-              onChange={(e) => { setSaleConditionFilter(e.target.value); setPage(1); }}
+              onChange={(e) => setSaleConditionFilter(e.target.value)}
               className={`h-[34px] px-2.5 pr-7 text-xs rounded-lg border transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 ${
                 saleConditionFilter
                   ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
@@ -391,7 +391,7 @@ export default function InvoicesPage() {
               <CustomerSearchSelect
                 customers={customers}
                 value={customerFilter}
-                onChange={(v) => { setCustomerFilter(v); setPage(1); }}
+                onChange={setCustomerFilter}
                 clearLabel="Todos los clientes"
                 serverSearch
               />
@@ -412,12 +412,12 @@ export default function InvoicesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Search className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600" />
             <span className="text-xs text-gray-400 dark:text-slate-500">Período:</span>
-            <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setPage(1); }} />
+            <DateInput value={dateFrom} onChange={setDateFrom} />
             <span className="text-gray-300 dark:text-slate-600 text-xs select-none">→</span>
-            <DateInput value={dateTo} onChange={(v) => { setDateTo(v); setPage(1); }} />
+            <DateInput value={dateTo} onChange={setDateTo} />
             {(dateFrom || dateTo) && (
               <button
-                onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
+                onClick={() => setValues({ dateFrom: '', dateTo: '', page: '1' })}
                 className="text-xs text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 flex items-center gap-0.5"
               >
                 <X className="w-3 h-3" />
@@ -629,7 +629,7 @@ export default function InvoicesPage() {
                 limit={limit}
                 total={total}
                 onPageChange={setPage}
-                onLimitChange={(l) => { setLimit(l); setPage(1); }}
+                onLimitChange={setLimit}
               />
             )}
           </div>

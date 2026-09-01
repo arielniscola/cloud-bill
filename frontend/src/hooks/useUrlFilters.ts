@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 /**
@@ -21,6 +21,15 @@ export function useUrlFilters<T extends Record<string, string>>(defaults: T) {
   // desde el componente y cambiarían de identidad en cada pasada.
   const [initialDefaults] = useState(defaults);
 
+  // `setSearchParams(fn)` de react-router 6 le pasa a `fn` el `searchParams`
+  // capturado en el closure del render, no el último valor escrito. Dos
+  // llamadas en el mismo handler ("poné el filtro" + "volvé a la página 1")
+  // parten entonces del MISMO estado viejo y la segunda pisa a la primera: el
+  // filtro se escribía y se borraba en el mismo tick. Este ref guarda lo último
+  // escrito para que las llamadas encadenadas compongan.
+  const latestRef = useRef<URLSearchParams | null>(null);
+  latestRef.current = searchParams;
+
   const values = useMemo(() => {
     const out = { ...initialDefaults };
     for (const key of Object.keys(initialDefaults) as (keyof T)[]) {
@@ -34,12 +43,13 @@ export function useUrlFilters<T extends Record<string, string>>(defaults: T) {
     (patch: Partial<T>) => {
       setSearchParams(
         (prev) => {
-          const next = new URLSearchParams(prev);
+          const next = new URLSearchParams(latestRef.current ?? prev);
           for (const [key, value] of Object.entries(patch)) {
             if (value === undefined) continue;
             if (value === '' || value === initialDefaults[key]) next.delete(key);
             else next.set(key, value);
           }
+          latestRef.current = next;
           return next;
         },
         { replace: true }
@@ -53,11 +63,12 @@ export function useUrlFilters<T extends Record<string, string>>(defaults: T) {
     (keep?: (keyof T)[]) => {
       setSearchParams(
         (prev) => {
-          const next = new URLSearchParams(prev);
+          const next = new URLSearchParams(latestRef.current ?? prev);
           for (const key of Object.keys(initialDefaults)) {
             if (keep?.includes(key as keyof T)) continue;
             next.delete(key);
           }
+          latestRef.current = next;
           return next;
         },
         { replace: true }

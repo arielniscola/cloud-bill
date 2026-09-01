@@ -534,7 +534,7 @@ export default function PurchaseInvoicesPage() {
           <div className="flex gap-1.5">
             {TABS.map((t) => (
               <button key={t.key}
-                onClick={() => { setTab(t.key); setPage(1); }}
+                onClick={() => setTab(t.key)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   tab === t.key ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700'
                 }`}>
@@ -602,14 +602,14 @@ export default function PurchaseInvoicesPage() {
               <div className="absolute right-0 top-full mt-2 z-20 w-80 p-4 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-lg space-y-3">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Proveedor</label>
-                  <select value={supplierFilter} onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }} className={SELECT_CLS}>
+                  <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} className={SELECT_CLS}>
                     <option value="">Todos los proveedores</option>
                     {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Tipo de comprobante</label>
-                  <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className={SELECT_CLS}>
+                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={SELECT_CLS}>
                     <option value="">Todos los tipos</option>
                     {TYPE_FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -617,7 +617,7 @@ export default function PurchaseInvoicesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Condición</label>
-                    <select value={conditionFilter} onChange={(e) => { setConditionFilter(e.target.value); setPage(1); }} className={SELECT_CLS}>
+                    <select value={conditionFilter} onChange={(e) => setConditionFilter(e.target.value)} className={SELECT_CLS}>
                       <option value="">Toda condición</option>
                       <option value="CONTADO">Contado</option>
                       <option value="CUENTA_CORRIENTE">Cuenta corriente</option>
@@ -625,7 +625,7 @@ export default function PurchaseInvoicesPage() {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Moneda</label>
-                    <select value={currencyFilter} onChange={(e) => { setCurrencyFilter(e.target.value); setPage(1); }} className={SELECT_CLS}>
+                    <select value={currencyFilter} onChange={(e) => setCurrencyFilter(e.target.value)} className={SELECT_CLS}>
                       <option value="">Toda moneda</option>
                       <option value="ARS">ARS</option>
                       <option value="USD">USD</option>
@@ -635,11 +635,11 @@ export default function PurchaseInvoicesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Desde</label>
-                    <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className={SELECT_CLS} />
+                    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={SELECT_CLS} />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Hasta</label>
-                    <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className={SELECT_CLS} />
+                    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={SELECT_CLS} />
                   </div>
                 </div>
                 {hasFilters && (
@@ -665,7 +665,7 @@ export default function PurchaseInvoicesPage() {
             {activeFilters.map((f) => (
               <span key={f.key} className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-full pl-2.5 pr-2 py-1">
                 {f.label}
-                <button onClick={() => { f.clear(); setPage(1); }} className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                <button onClick={f.clear} className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
               </span>
             ))}
             <button type="button" onClick={clearAllFilters} className="text-xs text-gray-400 hover:text-red-500 px-1.5 py-1">
@@ -930,7 +930,7 @@ export default function PurchaseInvoicesPage() {
               limit={limit}
               total={total}
               onPageChange={setPage}
-              onLimitChange={(l) => { setLimit(l); setPage(1); }}
+              onLimitChange={setLimit}
             />
           </>
         )}
