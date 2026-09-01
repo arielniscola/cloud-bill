@@ -10,6 +10,7 @@ import {
 } from '../../../domain/entities/Remito';
 import { PaginationParams, PaginatedResult, RemitoStatus } from '../../../shared/types';
 import prisma from '../prisma';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 @injectable()
 export class PrismaRemitoRepository implements IRemitoRepository {
@@ -87,7 +88,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
 
   async create(data: CreateRemitoInput, tx?: Prisma.TransactionClient): Promise<RemitoWithItems> {
     const client = tx ?? this.prisma;
-    const number = await this.getNextRemitoNumber();
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const number = await this.getNextRemitoNumber(companyId, tx);
 
     // Auto-deliver every DISCOUNT remito: stock was already moved upstream
     // (invoice/budget/OP creation for linked, or remito creation for standalone),
@@ -109,7 +111,7 @@ export class PrismaRemitoRepository implements IRemitoRepository {
         invoiceId: data.invoiceId ?? null,
         budgetId: data.budgetId ?? null,
         ordenPedidoId: data.ordenPedidoId ?? null,
-        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        companyId,
         fiscalMode: (data as any).fiscalMode ?? 'FORMAL',
         items: {
           create: data.items.map((item) => ({
@@ -160,25 +162,8 @@ export class PrismaRemitoRepository implements IRemitoRepository {
     });
   }
 
-  async getNextRemitoNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `REM-${year}-`;
-
-    const lastRemito = await this.prisma.remito.findFirst({
-      where: {
-        number: { startsWith: prefix },
-      },
-      orderBy: { number: 'desc' },
-    });
-
-    let nextNumber = 1;
-    if (lastRemito) {
-      const parts = lastRemito.number.split('-');
-      const lastNumber = parseInt(parts[parts.length - 1], 10);
-      nextNumber = lastNumber + 1;
-    }
-
-    return `${prefix}${nextNumber.toString().padStart(8, '0')}`;
+  async getNextRemitoNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('REMITO', companyId, { tx });
   }
 
   async delete(id: string): Promise<void> {

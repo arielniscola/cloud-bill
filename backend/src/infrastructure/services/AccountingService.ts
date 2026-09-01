@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import prisma from '../database/prisma';
 import { AccountType, CreateAccountInput } from '../../domain/entities/Accounting';
 import { companyHasFeature } from '../http/middlewares/featureMiddleware';
+import { allocateDocumentNumber } from '../database/DocumentSequence';
 
 // ─── System account codes used for automatic journal entries ─────────────────
 export const ACCOUNT_CODES = {
@@ -177,14 +178,7 @@ async function getAccountId(code: string, companyId: string): Promise<string | n
 
 // ─── Auto-generate the next journal entry number ──────────────────────────────
 async function nextJournalNumber(companyId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `ASI-${year}-`;
-  const rows = await prisma.$queryRaw<{ c: bigint }[]>`
-    SELECT COUNT(*) AS c FROM "journal_entries"
-    WHERE "companyId" = ${companyId} AND number LIKE ${prefix + '%'}
-  `;
-  const n = Number(rows[0]?.c ?? 0n) + 1;
-  return `${prefix}${String(n).padStart(6, '0')}`;
+  return allocateDocumentNumber('JOURNAL_ENTRY', companyId);
 }
 
 // ─── Create a journal entry + its lines ──────────────────────────────────────

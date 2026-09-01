@@ -5,6 +5,7 @@ import prisma from '../prisma';
 import { IInternalNoteRepository, InternalNoteFilters } from '../../../domain/repositories/IInternalNoteRepository';
 import { InternalNote, CreateInternalNoteInput } from '../../../domain/entities/InternalNote';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 const SELECT = `
   n.id, n.number, n.type, n."customerId", n."supplierId", n."userId", n."companyId",
@@ -46,16 +47,8 @@ function mapRow(row: any): InternalNote {
 @injectable()
 export class PrismaInternalNoteRepository implements IInternalNoteRepository {
 
-  async getNextNumber(): Promise<string> {
-    const year   = new Date().getFullYear();
-    const prefix = `NI-${year}-`;
-    const [last] = await prisma.$queryRaw<{ number: string }[]>`
-      SELECT number FROM "internal_notes"
-      WHERE number LIKE ${prefix + '%'}
-      ORDER BY number DESC LIMIT 1
-    `;
-    const seq = last ? parseInt(last.number.split('-')[2], 10) + 1 : 1;
-    return `${prefix}${seq.toString().padStart(8, '0')}`;
+  async getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('INTERNAL_NOTE', companyId, { tx });
   }
 
   async findById(id: string, companyId?: string): Promise<InternalNote | null> {
@@ -118,7 +111,7 @@ export class PrismaInternalNoteRepository implements IInternalNoteRepository {
 
   async create(data: CreateInternalNoteInput): Promise<InternalNote> {
     const id     = randomUUID();
-    const number = await this.getNextNumber();
+    const number = await this.getNextNumber(data.companyId);
 
     await prisma.$executeRaw`
       INSERT INTO "internal_notes"

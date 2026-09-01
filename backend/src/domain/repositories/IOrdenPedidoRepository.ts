@@ -1,5 +1,6 @@
 import { OrdenPedido, OrdenPedidoWithItems, CreateOrdenPedidoInput, UpdateOrdenPedidoInput } from '../entities/OrdenPedido';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface OrdenPedidoFilters {
   customerId?: string;
@@ -19,5 +20,5 @@ export interface IOrdenPedidoRepository {
   create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems>;
   update(id: string, data: UpdateOrdenPedidoInput): Promise<OrdenPedidoWithItems>;
   delete(id: string): Promise<void>;
-  getNextNumber(): Promise<string>;
+  getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 }

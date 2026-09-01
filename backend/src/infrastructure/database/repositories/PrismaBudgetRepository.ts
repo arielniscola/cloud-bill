@@ -10,6 +10,7 @@ import {
 } from '../../../domain/entities/Budget';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 const includeRelations = {
   items: {
@@ -95,7 +96,8 @@ export class PrismaBudgetRepository implements IBudgetRepository {
   }
 
   async create(data: CreateBudgetInput): Promise<BudgetWithItems> {
-    const number = await this.getNextBudgetNumber();
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const number = await this.getNextBudgetNumber(companyId);
 
     const itemsWithVariant = data.items.map((item) => ({
       productId: item.productId ?? null,
@@ -123,7 +125,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         paymentTerms: data.paymentTerms ?? null,
         saleCondition: data.saleCondition ?? 'CONTADO',
         stockBehavior: (data as any).stockBehavior ?? 'DISCOUNT',
-        companyId: (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        companyId,
         fiscalMode: (data as any).fiscalMode ?? 'FORMAL',
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
@@ -185,14 +187,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     await prisma.budget.delete({ where: { id } });
   }
 
-  async getNextBudgetNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const count = await prisma.budget.count({
-      where: {
-        number: { startsWith: `PRES-${year}-` },
-      },
-    });
-    const seq = String(count + 1).padStart(4, '0');
-    return `PRES-${year}-${seq}`;
+  async getNextBudgetNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('BUDGET', companyId, { tx });
   }
 }

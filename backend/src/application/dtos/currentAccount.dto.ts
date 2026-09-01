@@ -17,6 +17,14 @@ export const movementQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
   currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD']).optional()),
+  type: z.preprocess(emptyToUndefined, z.enum(['DEBIT', 'CREDIT']).optional()),
+  origin: z.preprocess(
+    emptyToUndefined,
+    z.enum(['INVOICE', 'CREDIT_DEBIT_NOTE', 'RECIBO', 'INTERNAL_NOTE']).optional()
+  ),
+  search: z.preprocess(emptyToUndefined, z.string().optional()),
+  startDate: z.preprocess(emptyToUndefined, z.string().optional()),
+  endDate: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type CreatePaymentDTO = z.infer<typeof createPaymentSchema>;

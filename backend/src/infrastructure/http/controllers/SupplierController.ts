@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ISupplierRepository } from '../../../domain/repositories/ISupplierRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
-import { NotFoundError } from '../../../shared/errors/AppError';
+import { NotFoundError, ConflictError } from '../../../shared/errors/AppError';
 import { createSupplierRetentionSchema, updateSupplierRetentionSchema } from '../../../application/dtos/supplier.dto';
 import prisma from '../../database/prisma';
 
@@ -41,6 +41,14 @@ export class SupplierController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+
+      // Sin esta guarda, el CUIT repetido llegaba al índice único de Postgres y
+      // salía como un 500 con el error crudo de Prisma (ruta del archivo incluida).
+      if (req.body.cuit) {
+        const duplicado = await repo.findByCuit(req.body.cuit, req.companyId);
+        if (duplicado) throw new ConflictError('Ya existe un proveedor con este CUIT en tu empresa');
+      }
+
       const supplier = await repo.create({ ...req.body, companyId: req.companyId });
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
@@ -63,6 +71,14 @@ export class SupplierController {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
       const existing = await repo.findById(req.params.id, req.companyId);
       if (!existing) throw new NotFoundError('Supplier');
+
+      if (req.body.cuit && req.body.cuit !== existing.cuit) {
+        const duplicado = await repo.findByCuit(req.body.cuit, req.companyId);
+        if (duplicado && duplicado.id !== req.params.id) {
+          throw new ConflictError('Ya existe un proveedor con este CUIT en tu empresa');
+        }
+      }
+
       const supplier = await repo.update(req.params.id, req.body);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');

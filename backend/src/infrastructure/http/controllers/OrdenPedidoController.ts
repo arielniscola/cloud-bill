@@ -24,6 +24,24 @@ import { resolveSaleWarehouse, setSaleWarehouse, getSaleWarehouseId } from '../.
 import prisma from '../../database/prisma';
 
 /**
+ * Busca una orden ya creada a partir del UUID que generó el cliente.
+ *
+ * Scopeada por empresa: un clientUuid de otra empresa no puede resolverse acá
+ * (el unique de la columna es global, el aislamiento multi-tenant no).
+ */
+async function findByClientUuid(clientUuid: string, companyId?: string) {
+  const repo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "orden_pedidos"
+    WHERE "clientUuid" = ${clientUuid}
+      AND ("companyId" = ${companyId ?? null} OR ${companyId ?? null}::text IS NULL)
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return repo.findById(rows[0].id);
+}
+
+/**
  * Revierte los efectos que generó el create() de la orden: movimientos de
  * stock (SALE → RETURN, o liberación de reserva) y el débito en cuenta
  * corriente. Lo usan tanto la cancelación como la eliminación de un borrador —
@@ -136,6 +154,21 @@ export class OrdenPedidoController {
 
       const data = createOrdenPedidoSchema.parse(req.body);
 
+      // ── Idempotencia (ventas cargadas sin conexión) ──────────────────
+      // El navegador genera el UUID ANTES de intentar subir. Si el reintento
+      // llega sobre un envío que en realidad sí se había procesado, acá se
+      // devuelve la orden existente en vez de crear una segunda.
+      const clientUuid =
+        data.clientUuid ?? (req.headers['idempotency-key'] as string | undefined) ?? null;
+
+      if (clientUuid) {
+        const existing = await findByClientUuid(clientUuid, req.companyId);
+        if (existing) {
+          res.status(200).json({ status: 'success', data: existing, idempotent: true });
+          return;
+        }
+      }
+
       if (data.customerId) {
         const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
         const customer = await customerRepo.findById(data.customerId);
@@ -170,6 +203,7 @@ export class OrdenPedidoController {
         invoiceCashRegisterId: data.invoiceCashRegisterId ?? null,
         companyId: req.companyId,
         fiscalMode: req.fiscalMode,
+        clientUuid,
         subtotal,
         taxAmount,
         total: subtotal + taxAmount,
@@ -275,6 +309,21 @@ export class OrdenPedidoController {
 
       res.status(201).json({ status: 'success', data: op });
     } catch (error) {
+      // Dos reintentos del mismo clientUuid en paralelo: los dos pasan el
+      // chequeo previo y el unique parcial frena al segundo. Ese caso no es un
+      // error para quien llama — la orden existe, se devuelve.
+      if ((error as any)?.code === 'P2002') {
+        const clientUuid =
+          (req.body?.clientUuid as string | undefined) ??
+          (req.headers['idempotency-key'] as string | undefined);
+        if (clientUuid) {
+          const existing = await findByClientUuid(clientUuid, req.companyId).catch(() => null);
+          if (existing) {
+            res.status(200).json({ status: 'success', data: existing, idempotent: true });
+            return;
+          }
+        }
+      }
       next(error);
     }
   }
@@ -469,6 +518,13 @@ export class OrdenPedidoController {
 
         await invoiceRepo.update(invoice.id, { status: newStatus });
         invoice.status = newStatus as any;
+      } else {
+        // Sin cobros previos la factura nace EMITIDA, no en borrador: el alta de
+        // la orden ya aplicó stock y cuenta corriente, y un borrador habilitaría
+        // "Emitir", que volvería a dispararlos (applyIssuanceEffects duplicando
+        // el DEBIT y reservando stock ya descontado).
+        await invoiceRepo.update(invoice.id, { status: 'ISSUED' });
+        invoice.status = 'ISSUED' as any;
       }
 
       await activityLogRepo.create({
@@ -532,89 +588,104 @@ export class OrdenPedidoController {
       }
 
       if (!op.customerId) throw new AppError('La orden debe tener un cliente para registrar un pago', 400);
+      // Capturado fuera del callback: TypeScript no sostiene el narrowing del
+      // guard de arriba a través del closure de la transacción.
+      const customerId = op.customerId;
 
-      // Create recibo
-      const recibo = await reciboRepo.create({
-        ordenPedidoId: op.id,
-        customerId: op.customerId,
-        userId: req.user!.userId,
-        cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
-        bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
-        amount: paymentData.amount,
-        currency: op.currency,
-        exchangeRate: paymentData.exchangeRate ?? 1,
-        paymentMethod: paymentData.paymentMethod,
-        reference: paymentData.reference ?? null,
-        bank: paymentData.bank ?? null,
-        checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
-        installments: paymentData.installments ?? null,
-        notes: paymentData.notes ?? null,
-        companyId: req.companyId,
-        fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-      } as any);
-
-      // For BANK_TRANSFER with a bankAccountId, create a bank movement
-      if (isBankTransfer && (paymentData as any).bankAccountId) {
-        await (prisma as any).bankMovement.create({
-          data: {
-            bankAccountId: (paymentData as any).bankAccountId,
-            type: 'CREDIT',
-            amount: paymentData.amount,
-            description: `Cobro Orden ${op.number} (${recibo.number})`,
-            reciboId: recibo.id,
-            companyId: req.companyId,
-          },
-        });
-        await (prisma as any).$executeRaw`
-          UPDATE "bank_accounts" SET balance = balance + ${paymentData.amount}, "updatedAt" = NOW()
-          WHERE id = ${(paymentData as any).bankAccountId}
-        `;
-      }
-
-      const exchangeRate = paymentData.exchangeRate ?? 1;
-      const arsAmount = Number(paymentData.amount) * exchangeRate;
-      const isCC = effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE';
-
-      if (isCC) {
-        let currentAccount = await currentAccountRepo.findByCustomerId(op.customerId, op.currency as any, req.fiscalMode);
-        if (!currentAccount) {
-          currentAccount = await currentAccountRepo.createForCustomer(op.customerId, op.currency as any, undefined, req.fiscalMode);
-        }
-        const movement = await currentAccountRepo.addMovement({
-          currentAccountId: currentAccount.id,
-          type: 'CREDIT',
-          amount: paymentData.amount,
-          description: `Cobro ${cashRegisterName || paymentData.paymentMethod} - Orden ${op.number} (${recibo.number})`,
-          cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
-          ordenPedidoId: op.id,
-        } as any);
-        if (movement?.id) {
-          await prisma.accountMovement.update({ where: { id: movement.id }, data: { reciboId: recibo.id } });
-        }
-      }
-
-      if (usesCaja && paymentData.cashRegisterId && !isCC) {
-        let arsAccount = await currentAccountRepo.findByCustomerId(op.customerId, 'ARS', req.fiscalMode);
-        if (!arsAccount) {
-          arsAccount = await currentAccountRepo.createForCustomer(op.customerId, 'ARS', undefined, req.fiscalMode);
-        }
-        await prisma.accountMovement.create({
-          data: {
-            currentAccountId: arsAccount.id,
-            type: 'CREDIT',
-            amount: arsAmount,
-            balance: arsAccount.balance,
-            description: `Cobro ${cashRegisterName} - Orden ${op.number} (${recibo.number})`,
-            cashRegisterId: paymentData.cashRegisterId,
-            reciboId: recibo.id,
-          },
-        });
-      }
-
-      // Update OP status
+      // Todo el cobro se confirma o se revierte junto: el recibo, el
+      // movimiento bancario, el saldo de la cuenta bancaria, la cuenta
+      // corriente y el estado de la orden. Antes eran llamadas sueltas: un
+      // fallo a mitad dejaba el recibo emitido sin impactar el banco, o el
+      // saldo bancario movido sin recibo que lo respalde.
       const newPaid = alreadyPaid + paymentData.amount;
       const newStatus = newPaid >= total - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-      const updated = await opRepo.update(req.params.id, { status: newStatus as any });
+
+      let recibo!: Awaited<ReturnType<IReciboRepository['create']>>;
+      await prisma.$transaction(async (tx) => {
+        recibo = await reciboRepo.create({
+          ordenPedidoId: op.id,
+          customerId: customerId,
+          userId: req.user!.userId,
+          cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
+          bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
+          amount: paymentData.amount,
+          currency: op.currency,
+          exchangeRate: paymentData.exchangeRate ?? 1,
+          paymentMethod: paymentData.paymentMethod,
+          reference: paymentData.reference ?? null,
+          bank: paymentData.bank ?? null,
+          checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
+          installments: paymentData.installments ?? null,
+          notes: paymentData.notes ?? null,
+          companyId: req.companyId,
+          fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
+        } as any, tx);
+
+        // For BANK_TRANSFER with a bankAccountId, create a bank movement
+        if (isBankTransfer && (paymentData as any).bankAccountId) {
+          await (tx as any).bankMovement.create({
+            data: {
+              bankAccountId: (paymentData as any).bankAccountId,
+              type: 'CREDIT',
+              amount: paymentData.amount,
+              description: `Cobro Orden ${op.number} (${recibo.number})`,
+              reciboId: recibo.id,
+              companyId: req.companyId,
+            },
+          });
+          await tx.$executeRaw`
+            UPDATE "bank_accounts" SET balance = balance + ${paymentData.amount}, "updatedAt" = NOW()
+            WHERE id = ${(paymentData as any).bankAccountId}
+          `;
+        }
+
+        const exchangeRate = paymentData.exchangeRate ?? 1;
+        const arsAmount = Number(paymentData.amount) * exchangeRate;
+        const isCC = effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE';
+
+        if (isCC) {
+          let currentAccount = await currentAccountRepo.findByCustomerId(customerId, op.currency as any, req.fiscalMode);
+          if (!currentAccount) {
+            currentAccount = await currentAccountRepo.createForCustomer(customerId, op.currency as any, undefined, req.fiscalMode, tx);
+          }
+          const movement = await currentAccountRepo.addMovement({
+            currentAccountId: currentAccount.id,
+            type: 'CREDIT',
+            amount: paymentData.amount,
+            description: `Cobro ${cashRegisterName || paymentData.paymentMethod} - Orden ${op.number} (${recibo.number})`,
+            cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
+            ordenPedidoId: op.id,
+          } as any, tx);
+          if (movement?.id) {
+            await tx.accountMovement.update({ where: { id: movement.id }, data: { reciboId: recibo.id } });
+          }
+        }
+
+        if (usesCaja && paymentData.cashRegisterId && !isCC) {
+          let arsAccount = await currentAccountRepo.findByCustomerId(customerId, 'ARS', req.fiscalMode);
+          if (!arsAccount) {
+            arsAccount = await currentAccountRepo.createForCustomer(customerId, 'ARS', undefined, req.fiscalMode, tx);
+          }
+          await tx.accountMovement.create({
+            data: {
+              currentAccountId: arsAccount.id,
+              type: 'CREDIT',
+              amount: arsAmount,
+              balance: arsAccount.balance,
+              description: `Cobro ${cashRegisterName} - Orden ${op.number} (${recibo.number})`,
+              cashRegisterId: paymentData.cashRegisterId,
+              reciboId: recibo.id,
+            },
+          });
+        }
+
+        await tx.$executeRaw`
+          UPDATE "orden_pedidos" SET status = ${newStatus}::"OrdenPedidoStatus", "updatedAt" = NOW()
+          WHERE id = ${req.params.id}
+        `;
+      });
+
+      const updated = await opRepo.findById(req.params.id, req.companyId);
 
       await activityLogRepo.create({
         userId: req.user!.userId,

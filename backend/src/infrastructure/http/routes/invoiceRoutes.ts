@@ -21,6 +21,8 @@ router.post(
   invoiceController.create
 );
 router.get('/', validate({ query: invoiceQuerySchema }), invoiceController.findAll);
+// Antes de '/:id' para que "stats" no se lea como un id.
+router.get('/stats', validate({ query: invoiceQuerySchema }), invoiceController.stats);
 router.get('/:id', invoiceController.findById);
 router.put(
   '/:id',

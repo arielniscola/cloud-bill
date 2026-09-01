@@ -5,6 +5,7 @@ import { IReciboRepository, ReciboFilters, CheckFilters } from '../../../domain/
 import { ReciboWithRelations, CreateReciboInput } from '../../../domain/entities/Recibo';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 const includeRelations = {
   customer: { select: { id: true, name: true } },
@@ -106,7 +107,8 @@ export class PrismaReciboRepository implements IReciboRepository {
 
   async create(data: CreateReciboInput, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations> {
     const client = tx ?? prisma;
-    const number = await this.getNextNumber();
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const number = await this.getNextNumber(companyId, tx);
 
     // Create without exchangeRate (stale Prisma client doesn't know the column yet)
     const recibo = await client.recibo.create({
@@ -132,7 +134,6 @@ export class PrismaReciboRepository implements IReciboRepository {
 
     // Set exchangeRate + companyId + card fields via raw SQL (bypasses stale Prisma client types)
     const rate = new Decimal(data.exchangeRate ?? 1);
-    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
     const cardId = (data as any).cardId ?? null;
     const surchargePercent = (data as any).surchargePercent != null ? new Decimal((data as any).surchargePercent) : null;
     const surchargeAmount = (data as any).surchargeAmount != null ? new Decimal((data as any).surchargeAmount) : null;
@@ -207,12 +208,7 @@ export class PrismaReciboRepository implements IReciboRepository {
     }) as Promise<ReciboWithRelations>;
   }
 
-  async getNextNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const count = await prisma.recibo.count({
-      where: { number: { startsWith: `REC-${year}-` } },
-    });
-    const seq = String(count + 1).padStart(8, '0');
-    return `REC-${year}-${seq}`;
+  async getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('RECIBO', companyId, { tx });
   }
 }

@@ -10,6 +10,8 @@ import {
 } from '../../../domain/entities/OrdenPedido';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { Prisma } from '@prisma/client';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 const includeWithoutItems = {
   customer: { select: { id: true, name: true, taxId: true, email: true, address: true } },
@@ -100,8 +102,8 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
   }
 
   async create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {
-    const number = await this.getNextNumber();
     const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const number = await this.getNextNumber(companyId);
 
     const op = await (prisma as any).ordenPedido.create({
       data: {
@@ -122,6 +124,10 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),
+        // Idempotencia de ventas offline: va en el mismo INSERT que la orden,
+        // así el unique parcial de la columna es lo que resuelve una carrera
+        // entre dos reintentos, sin ventana entre el alta y el marcado.
+        clientUuid: (data as any).clientUuid ?? null,
       },
     });
 
@@ -280,17 +286,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
     }
   }
 
-  async getNextNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `OP-${year}-`;
-    const rows = await prisma.$queryRaw<{ number: string }[]>`
-      SELECT number FROM "orden_pedidos"
-      WHERE number LIKE ${prefix + '%'}
-      ORDER BY number DESC
-      LIMIT 1
-    `;
-    const lastSeq = rows.length > 0 ? parseInt(rows[0].number.replace(prefix, ''), 10) : 0;
-    const seq = String(lastSeq + 1).padStart(4, '0');
-    return `${prefix}${seq}`;
+  async getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('ORDEN_PEDIDO', companyId, { tx });
   }
 }

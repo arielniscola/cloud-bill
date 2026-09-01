@@ -96,6 +96,15 @@ export class PrismaSupplierRepository implements ISupplierRepository {
     return { ...supplier, ...retention } as Supplier;
   }
 
+  async findByCuit(cuit: string, companyId?: string): Promise<Supplier | null> {
+    const supplier = await prisma.supplier.findFirst({
+      where: { cuit, ...(companyId ? ({ companyId } as any) : {}) },
+    });
+    if (!supplier) return null;
+    const retention = await this.getRetention(supplier.id);
+    return { ...supplier, ...retention } as Supplier;
+  }
+
   async create(data: CreateSupplierInput): Promise<Supplier> {
     const { retentionType = null, retentionPercentage = null, ...rest } = data as any;
     const created = await prisma.supplier.create({

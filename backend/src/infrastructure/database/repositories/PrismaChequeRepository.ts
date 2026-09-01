@@ -4,6 +4,8 @@ import prisma from '../prisma';
 import { IChequeRepository, ChequeFilters } from '../../../domain/repositories/IChequeRepository';
 import { Cheque, CreateChequeInput, ChequeStatus } from '../../../domain/entities/Cheque';
 import { IChequeraRepository } from '../../../domain/repositories/IChequeraRepository';
+import { Prisma } from '@prisma/client';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 type RawCheque = {
   id:             string;
@@ -66,15 +68,8 @@ function mapCheque(r: RawCheque): Cheque {
 }
 
 export class PrismaChequeRepository implements IChequeRepository {
-  async nextNumber(companyId: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count FROM "cheques"
-      WHERE "companyId" = ${companyId}
-        AND EXTRACT(YEAR FROM "createdAt") = ${year}
-    `;
-    const seq = Number(rows[0].count) + 1;
-    return `CHQ-${year}-${String(seq).padStart(6, '0')}`;
+  async nextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('CHEQUE', companyId, { tx });
   }
 
   async findAll(filters: ChequeFilters): Promise<{ data: Cheque[]; total: number }> {
@@ -133,9 +128,13 @@ export class PrismaChequeRepository implements IChequeRepository {
     return rows.length > 0 ? mapCheque(rows[0]) : null;
   }
 
-  async create(data: CreateChequeInput & { userId: string; companyId: string }): Promise<Cheque> {
+  async create(
+    data: CreateChequeInput & { userId: string; companyId: string },
+    tx?: Prisma.TransactionClient
+  ): Promise<Cheque> {
+    const client = tx ?? prisma;
     const id     = randomUUID();
-    const number = await this.nextNumber(data.companyId);
+    const number = await this.nextNumber(data.companyId, tx);
 
     // Si sale de una chequera: heredamos el banco y, si no se indicó N° de cheque,
     // tomamos el próximo número del talonario (y lo avanzamos).
@@ -147,13 +146,13 @@ export class PrismaChequeRepository implements IChequeRepository {
       if (chequera) {
         if (!bank) bank = chequera.bank;
         if (!checkNumber) {
-          const used = await chequeraRepo.consumeNextNumber(data.chequeraId, data.companyId);
+          const used = await chequeraRepo.consumeNextNumber(data.chequeraId, data.companyId, tx);
           if (used !== null) checkNumber = String(used);
         }
       }
     }
 
-    await prisma.$executeRaw`
+    await client.$executeRaw`
       INSERT INTO "cheques" (
         "id", "number", "type", "checkNumber", "bank",
         "amount", "currency", "exchangeRate",

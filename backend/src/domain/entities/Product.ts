@@ -19,6 +19,10 @@ export interface Product {
   salePriceUSD?: Decimal | null;
   taxRate: Decimal;
   leadTimeDays?: number | null;
+  /** URL pública de la imagen — módulo "imagenes". */
+  imageUrl?: string | null;
+  /** Key del objeto en el bucket, para poder borrarlo al reemplazar/eliminar. */
+  imageKey?: string | null;
   trackStock?: boolean;
   priceUpdatedAt?: Date | null;
   isActive: boolean;

@@ -30,6 +30,8 @@ export class AfipController {
           businessAddress: config.businessAddress,
           taxCondition: config.taxCondition,
           activityStartDate: config.activityStartDate ?? null,
+          grossIncome: config.grossIncome ?? null,
+          consumerDefensePhone: config.consumerDefensePhone ?? null,
           isProduction: config.isProduction,
           isActive: config.isActive,
           hasCert: config.cert.length > 0,
@@ -46,7 +48,7 @@ export class AfipController {
   async saveConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const { cuit, salePoint, cert, privateKey, isProduction, businessName, businessAddress, taxCondition, activityStartDate } = req.body;
+      const { cuit, salePoint, cert, privateKey, isProduction, businessName, businessAddress, taxCondition, activityStartDate, grossIncome, consumerDefensePhone } = req.body;
 
       // salePoint is now derived per-user from the assigned PdV (managed in PdvSettingsCard).
       // We keep the legacy column for back-compat: preserve existing value if not in payload,
@@ -66,6 +68,8 @@ export class AfipController {
         businessAddress: businessAddress || null,
         taxCondition: taxCondition || null,
         activityStartDate: activityStartDate ? new Date(activityStartDate) : null,
+        grossIncome: grossIncome || null,
+        consumerDefensePhone: consumerDefensePhone || null,
       }, req.companyId);
 
       res.json({
@@ -78,6 +82,8 @@ export class AfipController {
           businessAddress: config.businessAddress,
           taxCondition: config.taxCondition,
           activityStartDate: config.activityStartDate ?? null,
+          grossIncome: config.grossIncome ?? null,
+          consumerDefensePhone: config.consumerDefensePhone ?? null,
           isProduction: config.isProduction,
           isActive: config.isActive,
           hasCert: config.cert.length > 0,

@@ -16,7 +16,9 @@ router.use(authMiddleware);
 router.use(requireFeature('current_accounts'));
 
 router.get('/', currentAccountController.findAll);
+router.get('/stats', currentAccountController.getStats);
 router.get('/customer/:customerId', currentAccountController.findByCustomerId);
+router.get('/customer/:customerId/summary', currentAccountController.getSummary);
 router.get('/customer/:customerId/balance', currentAccountController.getBalance);
 router.get(
   '/customer/:customerId/movements',

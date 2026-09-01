@@ -11,24 +11,38 @@ function parseModules(raw: string | null | undefined): string[] {
 }
 
 async function withModules(company: any): Promise<Company> {
-  const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string }[]>`
-    SELECT "enabledModules", "plan" FROM companies WHERE id = ${company.id}
+  const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string; grossIncome: string | null }[]>`
+    SELECT "enabledModules", "plan", "grossIncome" FROM companies WHERE id = ${company.id}
   `;
-  return { ...company, enabledModules: parseModules(rows[0]?.enabledModules), plan: rows[0]?.plan ?? 'PRO' };
+  return {
+    ...company,
+    enabledModules: parseModules(rows[0]?.enabledModules),
+    plan: rows[0]?.plan ?? 'PRO',
+    grossIncome: rows[0]?.grossIncome ?? null,
+  };
 }
 
 async function withModulesMany(companies: any[]): Promise<Company[]> {
   if (companies.length === 0) return [];
   const ids = companies.map(c => c.id);
-  const rows = await prisma.$queryRaw<{ id: string; enabledModules: string; plan: string }[]>`
-    SELECT id, "enabledModules", "plan" FROM companies WHERE id = ANY(${ids}::text[])
+  const rows = await prisma.$queryRaw<{ id: string; enabledModules: string; plan: string; grossIncome: string | null }[]>`
+    SELECT id, "enabledModules", "plan", "grossIncome" FROM companies WHERE id = ANY(${ids}::text[])
   `;
-  const map = new Map(rows.map(r => [r.id, { modules: parseModules(r.enabledModules), plan: r.plan ?? 'PRO' }]));
+  const map = new Map(rows.map(r => [r.id, {
+    modules: parseModules(r.enabledModules), plan: r.plan ?? 'PRO', grossIncome: r.grossIncome ?? null,
+  }]));
   return companies.map(c => ({
     ...c,
     enabledModules: map.get(c.id)?.modules ?? ['ALL'],
     plan: map.get(c.id)?.plan ?? 'PRO',
+    grossIncome: map.get(c.id)?.grossIncome ?? null,
   }));
+}
+
+/** `grossIncome` puede no estar en el client generado — se escribe por SQL crudo. */
+async function writeGrossIncome(id: string, grossIncome: string | null | undefined): Promise<void> {
+  if (grossIncome === undefined) return;
+  await prisma.$executeRaw`UPDATE companies SET "grossIncome" = ${grossIncome || null} WHERE id = ${id}`;
 }
 
 @injectable()
@@ -45,12 +59,16 @@ export class PrismaCompanyRepository implements ICompanyRepository {
   }
 
   async create(data: CreateCompanyInput): Promise<Company> {
-    const company = await db.company.create({ data });
+    const { grossIncome, ...rest } = data as any;
+    const company = await db.company.create({ data: rest });
+    await writeGrossIncome(company.id, grossIncome);
     return withModules(company);
   }
 
   async update(id: string, data: UpdateCompanyInput): Promise<Company> {
-    const company = await db.company.update({ where: { id }, data });
+    const { grossIncome, ...rest } = data as any;
+    const company = await db.company.update({ where: { id }, data: rest });
+    await writeGrossIncome(id, grossIncome);
     return withModules(company);
   }
 

@@ -2,58 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../../database/prisma';
+import { AgingRow, bucketizeAging, customerAgingRows } from '../../../shared/helpers/aging';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
-
-type AgingRow = {
-  entityId: string;
-  name: string;
-  date: Date;
-  dueDate: Date | null;
-  total: number;
-  paid: number;
-};
-
-type AgingEntity = {
-  entityId: string;
-  name: string;
-  notDue: number;
-  d0_30: number;
-  d31_60: number;
-  d61_90: number;
-  d90plus: number;
-  total: number;
-  docCount: number;
-};
-
-// Agrupa comprobantes impagos por entidad y balde de antigüedad. La edad se
-// mide desde el vencimiento (o la fecha del comprobante si no tiene); lo que
-// aún no venció va a "notDue".
-function bucketizeAging(rows: AgingRow[]): AgingEntity[] {
-  const byEntity = new Map<string, AgingEntity>();
-  const now = Date.now();
-  for (const r of rows) {
-    const pending = round2(Number(r.total) - Number(r.paid));
-    if (pending <= 0.01) continue;
-    const base = r.dueDate ?? r.date;
-    const days = Math.floor((now - new Date(base).getTime()) / 86400000);
-    const bucket: keyof Pick<AgingEntity, 'notDue' | 'd0_30' | 'd31_60' | 'd61_90' | 'd90plus'> =
-      r.dueDate && days <= 0 ? 'notDue'
-      : days <= 30 ? 'd0_30'
-      : days <= 60 ? 'd31_60'
-      : days <= 90 ? 'd61_90'
-      : 'd90plus';
-    const e = byEntity.get(r.entityId) ?? {
-      entityId: r.entityId, name: r.name,
-      notDue: 0, d0_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0, docCount: 0,
-    };
-    e[bucket] = round2(e[bucket] + pending);
-    e.total = round2(e.total + pending);
-    e.docCount += 1;
-    byEntity.set(r.entityId, e);
-  }
-  return Array.from(byEntity.values()).sort((a, b) => b.total - a.total);
-}
 
 export class ReportsController {
 
@@ -67,21 +18,7 @@ export class ReportsController {
       const fiscalMode = req.fiscalMode ?? 'FORMAL';
 
       // Clientes: facturas y ND de cuenta corriente con saldo pendiente.
-      const customerRows = await prisma.$queryRaw<AgingRow[]>`
-        SELECT i."customerId" AS "entityId", c.name, i.date, i."dueDate",
-               i.total::float8 AS total, COALESCE(p.paid, 0)::float8 AS paid
-        FROM "invoices" i
-        JOIN "customers" c ON c.id = i."customerId"
-        LEFT JOIN (
-          SELECT "invoiceId", SUM(amount) AS paid
-          FROM "recibos" WHERE status = 'EMITTED' GROUP BY "invoiceId"
-        ) p ON p."invoiceId" = i.id
-        WHERE i."companyId" = ${companyId}
-          AND i."fiscalMode" = ${fiscalMode}
-          AND i."saleCondition" = 'CUENTA_CORRIENTE'
-          AND i.status::text IN ('ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID')
-          AND (i.type::text LIKE 'FACTURA%' OR i.type::text LIKE 'NOTA_DEBITO%')
-      `;
+      const customerRows = await customerAgingRows(companyId, fiscalMode);
 
       // Proveedores: facturas de compra pendientes (imputación por OP pagadas).
       const supplierRows = await prisma.$queryRaw<AgingRow[]>`

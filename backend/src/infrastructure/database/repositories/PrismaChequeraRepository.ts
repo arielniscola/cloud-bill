@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import prisma from '../prisma';
 import { IChequeraRepository } from '../../../domain/repositories/IChequeraRepository';
@@ -88,9 +89,13 @@ export class PrismaChequeraRepository implements IChequeraRepository {
     `;
   }
 
-  async consumeNextNumber(id: string, companyId: string): Promise<number | null> {
+  async consumeNextNumber(
+    id: string,
+    companyId: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<number | null> {
     // Advance the counter and return the value that was just used.
-    const rows = await prisma.$queryRaw<{ used: number | null }[]>`
+    const rows = await (tx ?? prisma).$queryRaw<{ used: number | null }[]>`
       UPDATE "chequeras"
       SET "nextNumber" = "nextNumber" + 1, "updatedAt" = NOW()
       WHERE id = ${id} AND "companyId" = ${companyId} AND "nextNumber" IS NOT NULL

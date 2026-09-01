@@ -5,6 +5,7 @@ import {
   JournalEntryFilters,
 } from '../../../domain/repositories/IJournalEntryRepository';
 import { JournalEntry, JournalEntryLine, CreateJournalEntryInput } from '../../../domain/entities/Accounting';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 type RawEntry = {
   id: string;
@@ -64,14 +65,7 @@ function mapEntry(r: RawEntry, lines?: JournalEntryLine[]): JournalEntry {
 
 export class PrismaJournalEntryRepository implements IJournalEntryRepository {
   async create(data: CreateJournalEntryInput): Promise<JournalEntry> {
-    const year = new Date().getFullYear();
-    const prefix = `ASI-${year}-`;
-    const countRows = await prisma.$queryRaw<{ c: bigint }[]>`
-      SELECT COUNT(*) AS c FROM "journal_entries"
-      WHERE "companyId" = ${data.companyId} AND number LIKE ${prefix + '%'}
-    `;
-    const n = Number(countRows[0]?.c ?? 0n) + 1;
-    const number = `${prefix}${String(n).padStart(6, '0')}`;
+    const number = await allocateDocumentNumber('JOURNAL_ENTRY', data.companyId);
     const entryId = randomUUID();
     const date = data.date ?? new Date();
 

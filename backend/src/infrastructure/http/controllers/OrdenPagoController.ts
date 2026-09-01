@@ -14,20 +14,34 @@ export class OrdenPagoController {
       const repo = container.resolve<IOrdenPagoRepository>('OrdenPagoRepository');
       const query = ordenPagoQuerySchema.parse(req.query);
 
-      const result = await repo.findAll(
-        { page: query.page, limit: query.limit },
-        {
-          supplierId:    query.supplierId,
-          status:        query.status,
-          paymentMethod: query.paymentMethod,
-          companyId:     req.companyId,
-          fiscalMode:    req.fiscalMode,
-          dateFrom:      query.dateFrom ? new Date(query.dateFrom) : undefined,
-          dateTo:        query.dateTo   ? new Date(query.dateTo)   : undefined,
-        }
-      );
+      // `dateTo` llega como día suelto (YYYY-MM-DD) y `op.date` es un timestamp:
+      // sin llevarlo al final del día, filtrar "hasta hoy" dejaba afuera todo lo
+      // cargado hoy después de medianoche. El corte va en UTC, igual que
+      // `dateFrom` (que se parsea como medianoche UTC).
+      const dateTo = query.dateTo
+        ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo) ? `${query.dateTo}T23:59:59.999Z` : query.dateTo)
+        : undefined;
 
-      res.json({ status: 'success', ...result });
+      const filters = {
+        supplierId:     query.supplierId,
+        status:         query.status,
+        paymentMethod:  query.paymentMethod,
+        currency:       query.currency,
+        search:         query.search,
+        onlyRetentions: query.onlyRetentions,
+        onlyOnAccount:  query.onlyOnAccount,
+        companyId:      req.companyId,
+        fiscalMode:     req.fiscalMode,
+        dateFrom:       query.dateFrom ? new Date(query.dateFrom) : undefined,
+        dateTo,
+      };
+
+      const [result, summary] = await Promise.all([
+        repo.findAll({ page: query.page, limit: query.limit }, filters),
+        repo.getSummary(filters),
+      ]);
+
+      res.json({ status: 'success', ...result, summary });
     } catch (error) {
       next(error);
     }

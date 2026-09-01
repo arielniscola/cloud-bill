@@ -27,6 +27,10 @@ export const createOrdenPedidoSchema = z.object({
   warehouseId: z.string().uuid().optional().nullable(),
   // Presupuesto de origen cuando la OP nace de "Generar orden de pedido"
   budgetId: z.string().uuid().optional().nullable(),
+  // UUID que genera el navegador para una venta cargada sin conexión. Tiene
+  // que estar declarado acá: Zod descarta en silencio lo que no figura en el
+  // schema, y sin él la idempotencia no llegaría nunca al controller.
+  clientUuid: z.string().uuid().optional().nullable(),
   items: z.array(ordenPedidoItemSchema).min(1, 'Agrega al menos un item'),
 });
 

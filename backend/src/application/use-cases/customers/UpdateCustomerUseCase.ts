@@ -19,9 +19,12 @@ export class UpdateCustomerUseCase {
     }
 
     if (data.taxId && data.taxId !== existingCustomer.taxId) {
-      const customerWithTaxId = await this.customerRepository.findByTaxId(data.taxId);
+      const customerWithTaxId = await this.customerRepository.findByTaxId(
+        data.taxId,
+        companyId ?? (existingCustomer as any).companyId
+      );
       if (customerWithTaxId && customerWithTaxId.id !== id) {
-        throw new ConflictError('Customer with this tax ID already exists');
+        throw new ConflictError('Ya existe un cliente con este CUIT en tu empresa');
       }
     }
 

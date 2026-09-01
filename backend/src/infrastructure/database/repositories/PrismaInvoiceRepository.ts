@@ -2,7 +2,12 @@ import { randomUUID } from 'crypto';
 import { injectable } from 'tsyringe';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { IInvoiceRepository, InvoiceFilters } from '../../../domain/repositories/IInvoiceRepository';
+import {
+  IInvoiceRepository,
+  InvoiceFilters,
+  InvoiceStats,
+  InvoiceCurrencyStats,
+} from '../../../domain/repositories/IInvoiceRepository';
 import {
   Invoice,
   InvoiceWithItems,
@@ -11,6 +16,7 @@ import {
 } from '../../../domain/entities/Invoice';
 import { PaginationParams, PaginatedResult, InvoiceType } from '../../../shared/types';
 import prisma from '../prisma';
+import { allocateDocumentNumber, INVOICE_DOC_TYPE } from '../DocumentSequence';
 
 @injectable()
 export class PrismaInvoiceRepository implements IInvoiceRepository {
@@ -40,17 +46,19 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     return { ...invoice, items, warehouseId } as unknown as InvoiceWithItems;
   }
 
-  async findByNumber(number: string): Promise<Invoice | null> {
-    return this.prisma.invoice.findUnique({ where: { number } });
+  async findByNumber(number: string, companyId: string): Promise<Invoice | null> {
+    // El número es único POR EMPRESA, no globalmente: sin companyId esta
+    // búsqueda podría devolver el comprobante de otro inquilino.
+    return this.prisma.invoice.findUnique({
+      where: { companyId_number: { companyId, number } },
+    });
   }
 
-  async findAll(
-    pagination: PaginationParams = { page: 1, limit: 10 },
-    filters: InvoiceFilters = {}
-  ): Promise<PaginatedResult<Invoice>> {
-    const { page = 1, limit = 10 } = pagination;
-    const skip = (page - 1) * limit;
-
+  /**
+   * Filtros del listado, compartidos por `findAll` y `getStats`: los totales
+   * de la tira de stats tienen que salir del MISMO conjunto que la tabla.
+   */
+  private buildWhere(filters: InvoiceFilters = {}): Prisma.InvoiceWhereInput {
     const where: Prisma.InvoiceWhereInput = {};
 
     if (filters.customerId) {
@@ -96,6 +104,28 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       }
     }
 
+    // Búsqueda libre: número de comprobante, o razón social / CUIT del cliente.
+    const search = filters.search?.trim();
+    if (search) {
+      where.OR = [
+        { number: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { customer: { taxId: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    return where;
+  }
+
+  async findAll(
+    pagination: PaginationParams = { page: 1, limit: 10 },
+    filters: InvoiceFilters = {}
+  ): Promise<PaginatedResult<Invoice>> {
+    const { page = 1, limit = 10 } = pagination;
+    const skip = (page - 1) * limit;
+
+    const where = this.buildWhere(filters);
+
     const [data, total] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
@@ -120,8 +150,130 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     };
   }
 
+  /**
+   * Totales del conjunto FILTRADO COMPLETO, no de la página.
+   *
+   * La tira de stats sumaba en el front el array de la página (25 filas) y lo
+   * rotulaba "Total", al lado de un contador que sí venía del backend con las
+   * N del filtro: dos escalas distintas en la misma tira.
+   *
+   * Los importes salen desglosados POR MONEDA y no se suman entre sí: la cuenta
+   * corriente del cliente es por moneda, así que el dominio nunca convierte
+   * (y las facturas en USD pueden llevar cotización 1, con lo cual convertir
+   * daría un número falso sin avisar).
+   *
+   * `pending` y `overdue` se calculan sobre las facturas abiertas del filtro
+   * (conjunto acotado), restando los recibos EMITTED de cada una. Las NC no
+   * suman deuda: restan, así que quedan fuera del pendiente.
+   */
+  async getStats(filters: InvoiceFilters = {}): Promise<InvoiceStats> {
+    const where = this.buildWhere(filters);
+
+    const FACTURA_TYPES = ['FACTURA_A', 'FACTURA_B', 'FACTURA_C'];
+    // Si el usuario filtró por un tipo, se respeta; si ese tipo es una NC/ND
+    // no hay deuda que contar y la consulta se saltea.
+    const openTypes = filters.type
+      ? (FACTURA_TYPES.includes(filters.type) ? [filters.type] : [])
+      : FACTURA_TYPES;
+
+    const openWhere: Prisma.InvoiceWhereInput = {
+      ...where,
+      status: { in: ['ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID'] as any },
+      type: { in: openTypes as any },
+    };
+
+    const [grouped, open] = await Promise.all([
+      (this.prisma as any).invoice.groupBy({
+        by: ['currency'],
+        where,
+        _count: { _all: true },
+        _sum: { total: true, taxAmount: true },
+      }),
+      openTypes.length === 0
+        ? Promise.resolve([] as Array<{ id: string; total: Decimal; dueDate: Date | null; currency: string }>)
+        : this.prisma.invoice.findMany({
+            where: openWhere,
+            select: { id: true, total: true, dueDate: true, currency: true },
+          }),
+    ]);
+
+    const paidByInvoice = new Map<string, Decimal>();
+    if (open.length > 0) {
+      const paidRows = await (this.prisma as any).recibo.groupBy({
+        by: ['invoiceId'],
+        where: { status: 'EMITTED', invoiceId: { in: open.map((i: { id: string }) => i.id) } },
+        _sum: { amount: true },
+      });
+      for (const row of paidRows as Array<{ invoiceId: string; _sum: { amount: Decimal | null } }>) {
+        paidByInvoice.set(row.invoiceId, row._sum.amount ?? new Decimal(0));
+      }
+    }
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const byCurrency = new Map<string, InvoiceCurrencyStats>();
+    const tramo = (currency: string): InvoiceCurrencyStats => {
+      let t = byCurrency.get(currency);
+      if (!t) {
+        t = {
+          currency,
+          count: 0, total: 0, taxAmount: 0,
+          pendingCount: 0, pendingAmount: 0,
+          overdueCount: 0, overdueAmount: 0,
+        };
+        byCurrency.set(currency, t);
+      }
+      return t;
+    };
+
+    for (const row of grouped as Array<{
+      currency: string;
+      _count: { _all: number };
+      _sum: { total: Decimal | null; taxAmount: Decimal | null };
+    }>) {
+      const t = tramo(row.currency);
+      t.count = row._count._all;
+      t.total = Number(row._sum.total ?? 0);
+      t.taxAmount = Number(row._sum.taxAmount ?? 0);
+    }
+
+    // Pendiente y vencido se acumulan en Decimal y recién al final pasan a
+    // number: sumar floats factura por factura arrastra centavos.
+    const pending = new Map<string, Decimal>();
+    const overdue = new Map<string, Decimal>();
+
+    for (const invoice of open) {
+      const paid = paidByInvoice.get(invoice.id) ?? new Decimal(0);
+      const outstanding = new Decimal(invoice.total).minus(paid);
+      // Un redondeo puede dejar centavos: por debajo de $1 se considera saldada.
+      if (outstanding.lessThan(1)) continue;
+
+      const t = tramo(invoice.currency);
+      pending.set(invoice.currency, (pending.get(invoice.currency) ?? new Decimal(0)).plus(outstanding));
+      t.pendingCount += 1;
+
+      if (invoice.dueDate && invoice.dueDate < startOfToday) {
+        overdue.set(invoice.currency, (overdue.get(invoice.currency) ?? new Decimal(0)).plus(outstanding));
+        t.overdueCount += 1;
+      }
+    }
+
+    for (const [currency, amount] of pending) tramo(currency).pendingAmount = Number(amount);
+    for (const [currency, amount] of overdue) tramo(currency).overdueAmount = Number(amount);
+
+    const tramos = [...byCurrency.values()].sort((a, b) => b.total - a.total);
+
+    return {
+      count: tramos.reduce((acc, t) => acc + t.count, 0),
+      byCurrency: tramos,
+    };
+  }
+
   async create(data: CreateInvoiceInput): Promise<InvoiceWithItems> {
-    const invoiceNumber = await this.getNextInvoiceNumber(data.type);
+    const companyId =
+      (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const invoiceNumber = await this.getNextInvoiceNumber(data.type, companyId);
 
     // Factura C does not carry IVA (no discrimination, no tax)
     const isTypeC = data.type.endsWith('_C');
@@ -324,47 +476,23 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     await this.prisma.invoice.delete({ where: { id } });
   }
 
-  async getNextInvoiceNumber(type: InvoiceType): Promise<string> {
-    const prefix = this.getTypePrefix(type);
-    const year = new Date().getFullYear();
-    const paddedNumber = await this.getNextSequence(type, year);
-
-    return `${prefix}-${year}-${paddedNumber}`;
+  /**
+   * Numeración interna del comprobante (FA-2026-00000042).
+   *
+   * Antes esto era un `MAX(number)+1` sin lock y sin filtrar por empresa: dos
+   * ventas simultáneas sacaban el mismo número, y la numeración se mezclaba
+   * entre inquilinos dejando huecos en la correlatividad. Ahora sale de la
+   * secuencia atómica por (empresa, tipo, año).
+   *
+   * No confundir con la numeración fiscal de ARCA (punto de venta + CAE), que
+   * la resuelve PdvService contra FECompUltimoAutorizado.
+   */
+  async getNextInvoiceNumber(
+    type: InvoiceType,
+    companyId: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<string> {
+    return allocateDocumentNumber(INVOICE_DOC_TYPE[type], companyId, { tx });
   }
 
-  private getTypePrefix(type: InvoiceType): string {
-    const prefixes: Record<InvoiceType, string> = {
-      FACTURA_A: 'FA',
-      FACTURA_B: 'FB',
-      FACTURA_C: 'FC',
-      NOTA_CREDITO_A: 'NCA',
-      NOTA_CREDITO_B: 'NCB',
-      NOTA_CREDITO_C: 'NCC',
-      NOTA_DEBITO_A: 'NDA',
-      NOTA_DEBITO_B: 'NDB',
-      NOTA_DEBITO_C: 'NDC',
-    };
-    return prefixes[type];
-  }
-
-  private async getNextSequence(type: InvoiceType, year: number): Promise<string> {
-    const prefix = this.getTypePrefix(type);
-    const pattern = `${prefix}-${year}-%`;
-
-    const lastInvoice = await this.prisma.invoice.findFirst({
-      where: {
-        number: { startsWith: `${prefix}-${year}-` },
-      },
-      orderBy: { number: 'desc' },
-    });
-
-    let nextNumber = 1;
-    if (lastInvoice) {
-      const parts = lastInvoice.number.split('-');
-      const lastNumber = parseInt(parts[parts.length - 1], 10);
-      nextNumber = lastNumber + 1;
-    }
-
-    return nextNumber.toString().padStart(8, '0');
-  }
 }

@@ -1,5 +1,6 @@
 import { OrdenCompra, OrdenCompraWithItems, CreateOrdenCompraInput, UpdateOrdenCompraInput } from '../entities/OrdenCompra';
 import { PaginatedResult } from '../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface OrdenCompraFilters {
   supplierId?: string;
@@ -16,5 +17,5 @@ export interface IOrdenCompraRepository {
   create(data: CreateOrdenCompraInput): Promise<OrdenCompraWithItems>;
   update(id: string, data: UpdateOrdenCompraInput): Promise<OrdenCompraWithItems>;
   delete(id: string): Promise<void>;
-  getNextNumber(): Promise<string>;
+  getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 }

@@ -7,6 +7,7 @@ export interface Company {
   phone: string | null;
   email: string | null;
   taxCondition: string;
+  grossIncome: string | null;
   isActive: boolean;
   logoUrl: string | null;
   enabledModules: string[]; // ['ALL'] or ['ventas','catalogo','compras','finanzas']
@@ -23,6 +24,7 @@ export interface CreateCompanyInput {
   phone?: string | null;
   email?: string | null;
   taxCondition?: string;
+  grossIncome?: string | null;
   logoUrl?: string | null;
 }
 
@@ -34,6 +36,7 @@ export interface UpdateCompanyInput {
   phone?: string | null;
   email?: string | null;
   taxCondition?: string;
+  grossIncome?: string | null;
   isActive?: boolean;
   logoUrl?: string | null;
 }

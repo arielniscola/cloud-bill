@@ -13,6 +13,8 @@ export interface SupplierFilters {
 export interface ISupplierRepository {
   findAll(pagination?: PaginationParams, filters?: SupplierFilters): Promise<PaginatedResult<Supplier>>;
   findById(id: string, companyId?: string): Promise<Supplier | null>;
+  /** El CUIT es único por empresa: sin `companyId` la búsqueda cruzaría cuentas. */
+  findByCuit(cuit: string, companyId?: string): Promise<Supplier | null>;
   create(data: CreateSupplierInput): Promise<Supplier>;
   update(id: string, data: UpdateSupplierInput): Promise<Supplier>;
   delete(id: string): Promise<void>;

@@ -5,6 +5,7 @@ import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { createCompanySchema, updateCompanySchema, updateModulesSchema } from '../../../application/dtos/company.dto';
 import { PLAN_NAMES } from '../../../shared/constants/planFeatures';
 import { invalidatePlanCache } from '../middlewares/featureMiddleware';
+import { invalidateModuleCache } from '../middlewares/moduleMiddleware';
 import prisma from '../../database/prisma';
 
 export class CompanyController {
@@ -18,8 +19,44 @@ export class CompanyController {
         return;
       }
       const companies = await repo.findAll();
-      res.json({ status: 'success', data: companies });
+      res.json({ status: 'success', data: await this.withCounts(companies) });
     } catch (error) { next(error); }
+  }
+
+  // Conteos por empresa para el listado de SUPER_ADMIN: usuarios activos y
+  // facturas emitidas en el mes en curso (sin borradores ni anuladas).
+  private async withCounts<T extends { id: string }>(companies: T[]): Promise<T[]> {
+    if (companies.length === 0) return companies;
+
+    const ids = companies.map((c) => c.id);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [userGroups, invoiceGroups] = await Promise.all([
+      prisma.user.groupBy({
+        by: ['companyId'],
+        where: { companyId: { in: ids }, isActive: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.groupBy({
+        by: ['companyId'],
+        where: {
+          companyId: { in: ids },
+          date: { gte: monthStart },
+          status: { notIn: ['DRAFT', 'CANCELLED'] },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const users = new Map(userGroups.map((g) => [g.companyId, g._count._all]));
+    const invoices = new Map(invoiceGroups.map((g) => [g.companyId, g._count._all]));
+
+    return companies.map((c) => ({
+      ...c,
+      usersCount: users.get(c.id) ?? 0,
+      invoicesThisMonth: invoices.get(c.id) ?? 0,
+    }));
   }
 
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -74,6 +111,7 @@ export class CompanyController {
       if (!company) throw new NotFoundError('Empresa');
       const { enabledModules } = updateModulesSchema.parse(req.body);
       const updated = await repo.updateModules(req.params.id, enabledModules);
+      invalidateModuleCache(req.params.id);
       res.json({ status: 'success', data: updated });
     } catch (error) { next(error); }
   }

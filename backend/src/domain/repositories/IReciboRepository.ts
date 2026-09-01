@@ -23,7 +23,7 @@ export interface IReciboRepository {
   create(data: CreateReciboInput, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations>;
   cancel(id: string, tx?: Prisma.TransactionClient): Promise<ReciboWithRelations>;
   updateCheckStatus(id: string, checkStatus: string): Promise<ReciboWithRelations>;
-  getNextNumber(): Promise<string>;
+  getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 }
 
 export interface CheckFilters {

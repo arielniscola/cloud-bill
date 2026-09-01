@@ -6,6 +6,18 @@ import {
 } from '../entities/CurrentAccount';
 import { PaginationParams, PaginatedResult, Currency } from '../../shared/types';
 
+/** Origen del movimiento, para los filtros del extracto. */
+export type MovementOrigin = 'INVOICE' | 'CREDIT_DEBIT_NOTE' | 'RECIBO' | 'INTERNAL_NOTE';
+
+export interface MovementFilters {
+  type?: 'DEBIT' | 'CREDIT';
+  origin?: MovementOrigin;
+  /** Busca en la descripción y en el número del comprobante asociado. */
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export interface ICurrentAccountRepository {
   findById(id: string): Promise<CurrentAccount | null>;
   findByCustomerId(customerId: string, currency?: Currency, fiscalMode?: string): Promise<CurrentAccount | null>;
@@ -17,8 +29,10 @@ export interface ICurrentAccountRepository {
   /** `currentAccountId` acepta varios ids (modo "Todos": una cuenta por fiscalMode) para traer los movimientos combinados. */
   getMovements(
     currentAccountId: string | string[],
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
+    filters?: MovementFilters
   ): Promise<PaginatedResult<AccountMovement>>;
   getBalance(customerId: string, currency: Currency): Promise<number>;
-  findAllWithDebt(companyId?: string, fiscalMode?: string): Promise<CurrentAccount[]>;
+  /** `includeCredit`: además de los deudores, trae los saldos a favor (balance < 0). */
+  findAllWithDebt(companyId?: string, fiscalMode?: string, includeCredit?: boolean): Promise<CurrentAccount[]>;
 }

@@ -34,8 +34,12 @@ export class PrismaCustomerRepository implements ICustomerRepository {
     return { ...(customer as any), saleCondition } as Customer;
   }
 
-  async findByTaxId(taxId: string): Promise<Customer | null> {
-    const customer = await this.prisma.customer.findUnique({ where: { taxId } });
+  async findByTaxId(taxId: string, companyId?: string): Promise<Customer | null> {
+    // findFirst + companyId: el CUIT dejó de ser único a nivel global, así que
+    // un findUnique por taxId ya no aplica y además cruzaría empresas.
+    const customer = await this.prisma.customer.findFirst({
+      where: { taxId, ...(companyId ? { companyId } : {}) },
+    });
     if (!customer) return null;
     const saleCondition = await this.getSaleCondition(customer.id);
     return { ...(customer as any), saleCondition } as Customer;

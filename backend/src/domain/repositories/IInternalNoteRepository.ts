@@ -1,5 +1,6 @@
 import { InternalNote, CreateInternalNoteInput } from '../entities/InternalNote';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface InternalNoteFilters {
   customerId?: string;
@@ -21,5 +22,5 @@ export interface IInternalNoteRepository {
   ): Promise<PaginatedResult<InternalNote>>;
   create(data: CreateInternalNoteInput): Promise<InternalNote>;
   cancel(id: string): Promise<InternalNote>;
-  getNextNumber(): Promise<string>;
+  getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 }

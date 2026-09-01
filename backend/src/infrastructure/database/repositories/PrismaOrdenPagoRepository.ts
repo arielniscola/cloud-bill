@@ -1,12 +1,13 @@
 import { injectable, container } from 'tsyringe';
 import { Prisma } from '@prisma/client';
-import { IOrdenPagoRepository, OrdenPagoFilters } from '../../../domain/repositories/IOrdenPagoRepository';
+import { IOrdenPagoRepository, OrdenPagoFilters, OrdenPagoSummary } from '../../../domain/repositories/IOrdenPagoRepository';
 import { IChequeRepository } from '../../../domain/repositories/IChequeRepository';
 import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput, OrdenPagoCheque, OrdenPagoAjuste, OrdenPagoRetencion, CreateOrdenPagoRetencionInput } from '../../../domain/entities/OrdenPago';
 import { SupplierAccountMovement, CreateSupplierMovementInput, SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
 import { OpenDebitItem, OpenCreditItem, CreateSupplierCcAdjustmentInput, SupplierCcAdjustment } from '../../../domain/entities/SupplierCcAdjustment';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 // Código de impuesto de SICORE por tipo de retención. IIBB es provincial
 // (SIRCAR/ARBA/AGIP) y no se declara en SICORE, por eso no tiene código.
@@ -85,6 +86,32 @@ function mapOrdenPago(row: RawOrdenPago, items: RawItem[]): OrdenPagoWithRelatio
   };
 }
 
+/**
+ * Condiciones comunes al listado y a los totales. `skipStatus` deja afuera el
+ * filtro de estado: los totales y los contadores de las pestañas describen el
+ * período completo, así que elegir una pestaña no debe vaciarlos.
+ */
+function buildOrdenPagoWhere(filters: OrdenPagoFilters, skipStatus = false): Prisma.Sql {
+  const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
+  if (filters.companyId)     conditions.push(Prisma.sql`op."companyId" = ${filters.companyId}`);
+  if (filters.fiscalMode)    conditions.push(Prisma.sql`op."fiscalMode" = ${filters.fiscalMode}`);
+  if (filters.supplierId)    conditions.push(Prisma.sql`op."supplierId" = ${filters.supplierId}`);
+  if (filters.status && !skipStatus) conditions.push(Prisma.sql`op.status = ${filters.status}`);
+  if (filters.paymentMethod) conditions.push(Prisma.sql`op."paymentMethod" = ${filters.paymentMethod}`);
+  if (filters.currency)      conditions.push(Prisma.sql`op.currency = ${filters.currency}`);
+  if (filters.dateFrom)      conditions.push(Prisma.sql`op.date >= ${filters.dateFrom}`);
+  if (filters.dateTo)        conditions.push(Prisma.sql`op.date <= ${filters.dateTo}`);
+  if (filters.onlyRetentions) conditions.push(Prisma.sql`COALESCE(op."retentionAmount", 0) > 0`);
+  if (filters.onlyOnAccount) {
+    conditions.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "orden_pago_items" opi WHERE opi."ordenPagoId" = op.id)`);
+  }
+  if (filters.search) {
+    const like = `%${filters.search}%`;
+    conditions.push(Prisma.sql`(op.number ILIKE ${like} OR s.name ILIKE ${like})`);
+  }
+  return Prisma.join(conditions, ' AND ');
+}
+
 const ITEMS_SELECT = Prisma.sql`
   SELECT opi.*,
     p.number AS "purchaseNumber", p.total AS "purchaseTotal",
@@ -99,14 +126,8 @@ const ITEMS_SELECT = Prisma.sql`
 @injectable()
 export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
 
-  async getNextNumber(): Promise<string> {
-    const year = new Date().getFullYear();
-    const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count FROM "orden_pagos"
-      WHERE "number" LIKE ${'OP-' + year + '-%'}
-    `;
-    const seq = Number(rows[0]?.count ?? 0) + 1;
-    return `OP-${year}-${String(seq).padStart(8, '0')}`;
+  async getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('ORDEN_PAGO', companyId, { tx });
   }
 
   async findById(id: string, companyId?: string): Promise<OrdenPagoWithRelations | null> {
@@ -185,20 +206,14 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const { page = 1, limit = 20 } = pagination;
     const offset = (page - 1) * limit;
 
-    const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
-    if (filters.companyId)    conditions.push(Prisma.sql`op."companyId" = ${filters.companyId}`);
-    if (filters.fiscalMode)   conditions.push(Prisma.sql`op."fiscalMode" = ${filters.fiscalMode}`);
-    if (filters.supplierId)   conditions.push(Prisma.sql`op."supplierId" = ${filters.supplierId}`);
-    if (filters.status)       conditions.push(Prisma.sql`op.status = ${filters.status}`);
-    if (filters.paymentMethod) conditions.push(Prisma.sql`op."paymentMethod" = ${filters.paymentMethod}`);
-    if (filters.dateFrom)     conditions.push(Prisma.sql`op.date >= ${filters.dateFrom}`);
-    if (filters.dateTo)       conditions.push(Prisma.sql`op.date <= ${filters.dateTo}`);
-
-    const where = Prisma.join(conditions, ' AND ');
+    const where = buildOrdenPagoWhere(filters);
 
     const [countRows, rows] = await Promise.all([
       prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) as count FROM "orden_pagos" op WHERE ${where}
+        SELECT COUNT(*) as count
+        FROM "orden_pagos" op
+        LEFT JOIN "suppliers" s ON s.id = op."supplierId"
+        WHERE ${where}
       `,
       prisma.$queryRaw<RawOrdenPago[]>`
         SELECT op.*,
@@ -233,8 +248,61 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  async getSummary(filters: OrdenPagoFilters = {}): Promise<OrdenPagoSummary> {
+    const where = buildOrdenPagoWhere(filters, true);
+
+    // A ARS con la cotización de la propia orden, PERO solo si la orden no está
+    // ya en pesos: una OP que paga facturas en USD se liquida en ARS y aun así
+    // lleva `exchangeRate` cargado (lo usa para convertir los ítems). Aplicarlo
+    // ahí multiplicaba el total por la cotización.
+    const toArs = Prisma.sql`CASE WHEN op.currency = 'ARS' THEN 1 ELSE COALESCE(NULLIF(op."exchangeRate", 0), 1) END`;
+
+    const rows = await prisma.$queryRaw<any[]>`
+      WITH base AS (
+        SELECT op.status,
+               op.amount * ${toArs}                            AS "amountArs",
+               COALESCE(op."retentionAmount", 0) * ${toArs}    AS "retentionArs",
+               NOT EXISTS (
+                 SELECT 1 FROM "orden_pago_items" opi WHERE opi."ordenPagoId" = op.id
+               )                                               AS "onAccount"
+        FROM "orden_pagos" op
+        LEFT JOIN "suppliers" s ON s.id = op."supplierId"
+        WHERE ${where}
+      )
+      SELECT
+        COALESCE(SUM("amountArs") FILTER (WHERE status = 'PAID'), 0)        AS "paidArs",
+        COUNT(*) FILTER (WHERE status = 'PAID')::int                        AS "paidCount",
+        COALESCE(SUM("amountArs") FILTER (WHERE status = 'EMITTED'), 0)     AS "pendingArs",
+        COUNT(*) FILTER (WHERE status = 'EMITTED')::int                     AS "pendingCount",
+        COALESCE(SUM("retentionArs") FILTER (WHERE status <> 'CANCELLED'), 0) AS "retentionArs",
+        COUNT(*) FILTER (WHERE status <> 'CANCELLED' AND "retentionArs" > 0)::int AS "retentionCount",
+        COALESCE(SUM("amountArs") FILTER (WHERE status <> 'CANCELLED' AND "onAccount"), 0) AS "onAccountArs",
+        COUNT(*) FILTER (WHERE status <> 'CANCELLED' AND "onAccount")::int  AS "onAccountCount",
+        COUNT(*)::int                                                       AS "allCount",
+        COUNT(*) FILTER (WHERE status = 'CANCELLED')::int                   AS "cancelledCount"
+      FROM base
+    `;
+
+    const s = rows[0] ?? {};
+    return {
+      paidArs:        Number(s.paidArs ?? 0),
+      paidCount:      Number(s.paidCount ?? 0),
+      pendingArs:     Number(s.pendingArs ?? 0),
+      pendingCount:   Number(s.pendingCount ?? 0),
+      retentionArs:   Number(s.retentionArs ?? 0),
+      retentionCount: Number(s.retentionCount ?? 0),
+      onAccountArs:   Number(s.onAccountArs ?? 0),
+      onAccountCount: Number(s.onAccountCount ?? 0),
+      statusCounts: {
+        all:       Number(s.allCount ?? 0),
+        EMITTED:   Number(s.pendingCount ?? 0),
+        PAID:      Number(s.paidCount ?? 0),
+        CANCELLED: Number(s.cancelledCount ?? 0),
+      },
+    };
+  }
+
   async create(data: CreateOrdenPagoInput): Promise<OrdenPagoWithRelations> {
-    const number = await this.getNextNumber();
     const id = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
     const opId = id[0].id;
     const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
@@ -267,72 +335,82 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     if (retentionAmount > totalAmount + 0.005) {
       throw new Error('Las retenciones no pueden superar el total a pagar');
     }
-    await prisma.$executeRaw`
-      INSERT INTO "orden_pagos" (
-        "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
-        "date", "amount", "currency", "exchangeRate", "paymentMethod",
-        "reference", "bank", "checkDueDate", "notes", "status", "retentionAmount",
-        "createdAt", "updatedAt", "fiscalMode"
-      ) VALUES (
-        ${opId}, ${number}, ${data.supplierId}, ${data.userId},
-        ${effectiveCashRegisterId}, ${companyId}, ${date},
-        ${totalAmount},
-        ${currency}, ${exchangeRate}, ${data.paymentMethod},
-        ${data.reference ?? null}, ${data.bank ?? null},
-        ${data.checkDueDate ?? null}, ${data.notes ?? null},
-        'EMITTED', ${retentionAmount}, NOW(), NOW(), ${fiscalMode}
-      )
-    `;
+    // La orden, sus ítems, ajustes, retenciones y cheques se confirman o se
+    // revierten juntos. Antes eran trece queries sueltas: un fallo a mitad
+    // dejaba una OP sin sus retenciones, o con los cheques a medio endosar y
+    // el talonario ya avanzado.
+    await prisma.$transaction(async (tx) => {
+      // Numerar acá adentro y no antes: si la transacción se revierte, el
+      // número vuelve al pool en vez de dejar un hueco en la correlatividad.
+      const number = await this.getNextNumber(companyId, tx);
 
-    // Insert items (no financial movements yet — those happen on pay())
-    for (const item of data.items) {
-      const invRows = await prisma.$queryRaw<{ id: string; purchaseId: string }[]>`
-        SELECT id, "purchaseId" FROM "purchase_invoices" WHERE id = ${item.purchaseInvoiceId}
-      `;
-      if (!invRows[0]) throw new Error(`Purchase invoice ${item.purchaseInvoiceId} not found`);
-      const invoice = invRows[0];
-
-      const itemId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
-      await prisma.$executeRaw`
-        INSERT INTO "orden_pago_items" ("id", "ordenPagoId", "purchaseInvoiceId", "purchaseId", "amount")
-        VALUES (${itemId[0].id}, ${opId}, ${item.purchaseInvoiceId}, ${invoice.purchaseId}, ${item.amount})
-      `;
-    }
-
-    // Ajustes (descuentos / intereses)
-    for (const aj of ajustes) {
-      const ajId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
-      await prisma.$executeRaw`
-        INSERT INTO "orden_pago_ajustes" ("id", "ordenPagoId", "accountId", "accountCode", "description", "type", "amount")
-        VALUES (${ajId[0].id}, ${opId}, ${aj.accountId ?? null}, ${aj.accountCode ?? null}, ${aj.description}, ${aj.type}, ${aj.amount})
-      `;
-    }
-
-    // Retenciones practicadas — cada una recibe su certificado RET-YYYY-NNNN
-    for (const ret of retenciones) {
-      const retId = await prisma.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
-      const certificate = await this._getNextRetentionCertificate(companyId);
-      // Códigos ARCA (SICORE): se congelan acá. Si el pago no los trajo, salen de
-      // la config del proveedor, para que la retención quede exportable igual.
-      const arca = await this._resolveArcaCodes(ret);
-      await prisma.$executeRaw`
-        INSERT INTO "orden_pago_retenciones" (
-          "id", "ordenPagoId", "supplierRetentionId", "type", "jurisdiction",
-          "base", "baseAmount", "percentage", "amount", "arcaImpuesto", "arcaRegimen",
-          "certificate", "notes"
+      await tx.$executeRaw`
+        INSERT INTO "orden_pagos" (
+          "id", "number", "supplierId", "userId", "cashRegisterId", "companyId",
+          "date", "amount", "currency", "exchangeRate", "paymentMethod",
+          "reference", "bank", "checkDueDate", "notes", "status", "retentionAmount",
+          "createdAt", "updatedAt", "fiscalMode"
         ) VALUES (
-          ${retId[0].id}, ${opId}, ${ret.supplierRetentionId ?? null}, ${ret.type},
-          ${ret.jurisdiction ?? null}, ${ret.base}, ${ret.baseAmount},
-          ${ret.percentage}, ${ret.amount}, ${arca.impuesto}, ${arca.regimen},
-          ${certificate}, ${ret.notes ?? null}
+          ${opId}, ${number}, ${data.supplierId}, ${data.userId},
+          ${effectiveCashRegisterId}, ${companyId}, ${date},
+          ${totalAmount},
+          ${currency}, ${exchangeRate}, ${data.paymentMethod},
+          ${data.reference ?? null}, ${data.bank ?? null},
+          ${data.checkDueDate ?? null}, ${data.notes ?? null},
+          'EMITTED', ${retentionAmount}, NOW(), NOW(), ${fiscalMode}
         )
       `;
-    }
 
-    // Pago con cheques — solo cuando el método es CHECK
-    if (data.paymentMethod === 'CHECK') {
-      await this._attachCheques(opId, companyId, fiscalMode, data, currency);
-    }
+      // Insert items (no financial movements yet — those happen on pay())
+      for (const item of data.items) {
+        const invRows = await tx.$queryRaw<{ id: string; purchaseId: string }[]>`
+          SELECT id, "purchaseId" FROM "purchase_invoices" WHERE id = ${item.purchaseInvoiceId}
+        `;
+        if (!invRows[0]) throw new Error(`Purchase invoice ${item.purchaseInvoiceId} not found`);
+        const invoice = invRows[0];
+
+        const itemId = await tx.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
+        await tx.$executeRaw`
+          INSERT INTO "orden_pago_items" ("id", "ordenPagoId", "purchaseInvoiceId", "purchaseId", "amount")
+          VALUES (${itemId[0].id}, ${opId}, ${item.purchaseInvoiceId}, ${invoice.purchaseId}, ${item.amount})
+        `;
+      }
+
+      // Ajustes (descuentos / intereses)
+      for (const aj of ajustes) {
+        const ajId = await tx.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
+        await tx.$executeRaw`
+          INSERT INTO "orden_pago_ajustes" ("id", "ordenPagoId", "accountId", "accountCode", "description", "type", "amount")
+          VALUES (${ajId[0].id}, ${opId}, ${aj.accountId ?? null}, ${aj.accountCode ?? null}, ${aj.description}, ${aj.type}, ${aj.amount})
+        `;
+      }
+
+      // Retenciones practicadas — cada una recibe su certificado RET-YYYY-NNNN
+      for (const ret of retenciones) {
+        const retId = await tx.$queryRaw<{ id: string }[]>`SELECT gen_random_uuid()::text AS id`;
+        const certificate = await this._getNextRetentionCertificate(companyId, tx);
+        // Códigos ARCA (SICORE): se congelan acá. Si el pago no los trajo, salen de
+        // la config del proveedor, para que la retención quede exportable igual.
+        const arca = await this._resolveArcaCodes(ret, tx);
+        await tx.$executeRaw`
+          INSERT INTO "orden_pago_retenciones" (
+            "id", "ordenPagoId", "supplierRetentionId", "type", "jurisdiction",
+            "base", "baseAmount", "percentage", "amount", "arcaImpuesto", "arcaRegimen",
+            "certificate", "notes"
+          ) VALUES (
+            ${retId[0].id}, ${opId}, ${ret.supplierRetentionId ?? null}, ${ret.type},
+            ${ret.jurisdiction ?? null}, ${ret.base}, ${ret.baseAmount},
+            ${ret.percentage}, ${ret.amount}, ${arca.impuesto}, ${arca.regimen},
+            ${certificate}, ${ret.notes ?? null}
+          )
+        `;
+      }
+
+      // Pago con cheques — solo cuando el método es CHECK
+      if (data.paymentMethod === 'CHECK') {
+        await this._attachCheques(opId, companyId, fiscalMode, data, currency, tx);
+      }
+    });
 
     return this.findById(opId) as Promise<OrdenPagoWithRelations>;
   }
@@ -344,13 +422,14 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
    * actividad y lo carga el usuario en la ficha del proveedor.
    */
   private async _resolveArcaCodes(
-    ret: CreateOrdenPagoRetencionInput
+    ret: CreateOrdenPagoRetencionInput,
+    tx?: Prisma.TransactionClient
   ): Promise<{ impuesto: string | null; regimen: string | null }> {
     let impuesto = ret.arcaImpuesto || null;
     let regimen  = ret.arcaRegimen  || null;
 
     if ((!impuesto || !regimen) && ret.supplierRetentionId) {
-      const [cfg] = await prisma.$queryRaw<{ arcaImpuesto: string | null; arcaRegimen: string | null }[]>`
+      const [cfg] = await (tx ?? prisma).$queryRaw<{ arcaImpuesto: string | null; arcaRegimen: string | null }[]>`
         SELECT "arcaImpuesto", "arcaRegimen" FROM "supplier_retentions" WHERE id = ${ret.supplierRetentionId}
       `;
       impuesto = impuesto || cfg?.arcaImpuesto || null;
@@ -365,16 +444,11 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
    * Siguiente certificado RET-YYYY-NNNN. Las retenciones solo se practican al
    * pagar, así que la numeración sale de `orden_pago_retenciones`.
    */
-  private async _getNextRetentionCertificate(companyId: string): Promise<string> {
-    const year = new Date().getFullYear();
-    const prefix = `RET-${year}-%`;
-    const [row] = await prisma.$queryRaw<{ c: bigint }[]>`
-      SELECT COUNT(*) AS c
-      FROM "orden_pago_retenciones" ret
-      JOIN "orden_pagos" op ON op.id = ret."ordenPagoId"
-      WHERE op."companyId" = ${companyId} AND ret.certificate LIKE ${prefix}
-    `;
-    return `RET-${year}-${String(Number(row?.c ?? 0n) + 1).padStart(4, '0')}`;
+  private async _getNextRetentionCertificate(
+    companyId: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<string> {
+    return allocateDocumentNumber('RETENTION', companyId, { tx });
   }
 
   /**
@@ -389,11 +463,13 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     companyId: string,
     fiscalMode: string,
     data: CreateOrdenPagoInput,
-    currency: string
+    currency: string,
+    tx?: Prisma.TransactionClient
   ): Promise<void> {
+    const client = tx ?? prisma;
     // 1. Endosar cheques de tercero en cartera
     for (const chequeId of data.chequesEnCartera ?? []) {
-      const rows = await prisma.$queryRaw<{ id: string }[]>`
+      const rows = await client.$queryRaw<{ id: string }[]>`
         SELECT id FROM "cheques"
         WHERE id = ${chequeId} AND "companyId" = ${companyId}
           AND "type" = 'INGRESO' AND "status" = 'PENDING' AND "ordenPagoId" IS NULL
@@ -401,7 +477,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       if (!rows[0]) {
         throw new Error(`El cheque seleccionado no está disponible en cartera para endosar`);
       }
-      await prisma.$executeRaw`
+      await client.$executeRaw`
         UPDATE "cheques"
         SET "status" = 'ENDOSADO',
             "ordenPagoId" = ${opId},
@@ -414,7 +490,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     // 2. Emitir cheques propios desde la chequera (numeración automática)
     const propios = data.chequesPropios ?? [];
     if (propios.length > 0) {
-      const supRows = await prisma.$queryRaw<{ name: string }[]>`
+      const supRows = await client.$queryRaw<{ name: string }[]>`
         SELECT name FROM "suppliers" WHERE id = ${data.supplierId} LIMIT 1
       `;
       const supplierName = supRows[0]?.name;
@@ -434,7 +510,7 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           userId:      data.userId,
           companyId,
           fiscalMode,
-        });
+        }, tx);
       }
     }
   }
@@ -811,12 +887,36 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   }
 
   async createSupplierMovement(data: CreateSupplierMovementInput, tx?: Prisma.TransactionClient): Promise<SupplierAccountMovement> {
-    const client = tx ?? prisma;
+    // El saldo del proveedor sale de un SUM sobre los movimientos y se guarda
+    // como foto en la columna `balance`. Eso es un read-modify-write, así que
+    // necesita transacción propia si el llamador no trajo una: un advisory lock
+    // fuera de transacción se libera de inmediato y no serializa nada.
+    if (!tx) {
+      return prisma.$transaction((t) => this._createSupplierMovementWithTx(t, data));
+    }
+    return this._createSupplierMovementWithTx(tx, data);
+  }
+
+  private async _createSupplierMovementWithTx(
+    client: Prisma.TransactionClient,
+    data: CreateSupplierMovementInput
+  ): Promise<SupplierAccountMovement> {
     const companyId = data.companyId ?? (() => { throw new Error('companyId is required'); })();
     const currency = data.currency ?? 'ARS';
     const fiscalMode = data.fiscalMode ?? 'FORMAL';
 
-    const currentBalance = await this._getSupplierCurrencyBalance(data.supplierId, currency, companyId, tx);
+    // Serializa la cuenta corriente de este (proveedor, moneda, empresa).
+    // No hay una fila de cuenta que bloquear con FOR UPDATE —el saldo es
+    // derivado—, así que el lock va sobre la clave lógica. Sin él, dos pagos
+    // simultáneos al mismo proveedor suman sobre el mismo saldo viejo y la
+    // columna `balance` del extracto queda inconsistente.
+    await client.$executeRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtext(${`supplier_cc:${companyId}:${data.supplierId}:${currency}`})::bigint
+      )
+    `;
+
+    const currentBalance = await this._getSupplierCurrencyBalance(data.supplierId, currency, companyId, client);
     const newBalance = data.type === 'DEBIT'
       ? currentBalance + data.amount
       : currentBalance - data.amount;

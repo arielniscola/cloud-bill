@@ -12,6 +12,7 @@ import {
   ordenCompraQuerySchema,
 } from '../../../application/dtos/ordenCompra.dto';
 import prisma from '../../database/prisma';
+import { allocateDocumentNumber } from '../../database/DocumentSequence';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = (prisma as any);
@@ -203,10 +204,7 @@ export class OrdenCompraController {
         { subtotal: 0, taxAmount: 0, total: 0 }
       );
 
-      // Get next purchase number
-      const year   = new Date().getFullYear();
-      const count  = await db.purchase.count({ where: { number: { startsWith: `OC-CONV-${year}-` } } });
-      const number = `OC-CONV-${year}-${String(count + 1).padStart(4, '0')}`;
+      const number = await allocateDocumentNumber('ORDEN_COMPRA_CONV', req.companyId!);
 
       // Build notes with discrepancies if any
       const discrepancies = resolvedItems

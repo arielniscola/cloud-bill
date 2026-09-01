@@ -29,8 +29,10 @@ export class SyncController {
       const afterDate = since ? { gte: since } : undefined;
 
       const [
+        companies,
         customers,
         products,
+        productVariants,
         invoices,
         invoiceItems,
         budgets,
@@ -58,15 +60,25 @@ export class SyncController {
         bankMovements,
         users,
         rubros,
+        categories,
         brands,
+        cards,
+        cardSurcharges,
         afipConfig,
         appSettings,
         activityLogs,
       ] = await Promise.all([
+        // La empresa misma: sin esta fila el login local cae a plan 'PRO' y los
+        // comprobantes quedan sin datos de cabecera.
+        prisma.company.findMany({ where: { id: companyId } }),
         prisma.customer.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
         prisma.product.findMany({
+          where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
+        }),
+        // Variantes: FK desde stocks, invoice_items, remito_items y stock_movements.
+        prisma.productVariant.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
         prisma.invoice.findMany({
@@ -148,27 +160,42 @@ export class SyncController {
         prisma.bankMovement.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
-        // users — omit password
+        // users — incluye el hash de la contraseña a propósito: sin él el INSERT
+        // local viola el NOT NULL de users.password y, aun salvando eso, nadie
+        // podría iniciar sesión en la instalación local. El endpoint ya exige un
+        // ADMIN de la propia empresa y el hash es bcrypt, no la contraseña.
         prisma.user.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
           select: {
             id: true,
             username: true,
             email: true,
+            password: true,
             name: true,
             role: true,
             isActive: true,
             companyId: true,
+            dashboardShortcuts: true,
             createdAt: true,
             updatedAt: true,
           },
         }),
-        // rubros/brands — scoped to the company (have companyId)
+        // rubros (jerárquicos) / categories (planas) / brands — FK desde products
         prisma.rubro.findMany({
+          where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
+        }),
+        prisma.category.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
         }),
         prisma.brand.findMany({
           where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
+        }),
+        // cards + recargos — FK desde recibos
+        prisma.card.findMany({
+          where: { companyId, ...(afterDate && { updatedAt: afterDate }) },
+        }),
+        prisma.cardSurcharge.findMany({
+          where: { card: { companyId }, ...(afterDate && { updatedAt: afterDate }) },
         }),
         // afip_config — scoped to the company (has companyId)
         prisma.afipConfig.findMany({
@@ -192,8 +219,10 @@ export class SyncController {
         since: since?.toISOString() ?? null,
         companyId,
         data: {
+          companies,
           customers,
           products,
+          productVariants,
           invoices,
           invoiceItems,
           budgets,
@@ -221,7 +250,10 @@ export class SyncController {
           bankMovements,
           users,
           rubros,
+          categories,
           brands,
+          cards,
+          cardSurcharges,
           afipConfig,
           appSettings,
           activityLogs,

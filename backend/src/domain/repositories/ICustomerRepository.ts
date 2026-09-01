@@ -12,7 +12,8 @@ export interface CustomerFilters {
 
 export interface ICustomerRepository {
   findById(id: string, companyId?: string): Promise<Customer | null>;
-  findByTaxId(taxId: string): Promise<Customer | null>;
+  /** El CUIT es único por empresa: sin `companyId` la búsqueda cruzaría cuentas. */
+  findByTaxId(taxId: string, companyId?: string): Promise<Customer | null>;
   findAll(
     pagination?: PaginationParams,
     filters?: CustomerFilters

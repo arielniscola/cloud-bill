@@ -168,6 +168,32 @@ async function upsertTributos(invoiceId: string, tributos: z.infer<typeof tribSc
 
 // Valida que los remitos vinculados no reciban, por descripción, más cantidad
 // que la que tiene la factura (evita ingresar más mercadería de la facturada).
+// El companyId de la factura no alcanza: las FKs que llegan por el body apuntan
+// a filas que pueden ser de otro tenant. Cada referencia se valida contra la
+// empresa del token ANTES de escribirla, tanto al crear como al editar.
+async function assertSupplierInCompany(supplierId: string, companyId?: string) {
+  const [row] = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "suppliers" WHERE id = ${supplierId} AND "companyId" = ${companyId}
+  `;
+  if (!row) throw new NotFoundError('Proveedor');
+}
+
+async function assertOriginInvoiceInCompany(originInvoiceId: string, companyId?: string) {
+  const [row] = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "purchase_invoices" WHERE id = ${originInvoiceId} AND "companyId" = ${companyId}
+  `;
+  if (!row) throw new NotFoundError('Factura de origen');
+}
+
+async function assertRemitosInCompany(remitoIds: string[], companyId?: string) {
+  if (remitoIds.length === 0) return;
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "purchase_remitos"
+    WHERE id IN (${Prisma.join(remitoIds)}) AND "companyId" = ${companyId}
+  `;
+  if (rows.length !== remitoIds.length) throw new NotFoundError('Remito de compra');
+}
+
 async function assertRemitosWithinInvoice(invoiceId: string, remitoIds: string[]) {
   if (remitoIds.length === 0) return;
 
@@ -213,7 +239,11 @@ async function assertRemitosWithinInvoice(invoiceId: string, remitoIds: string[]
 
 // Vincula la factura a remitos de compra (solo trazabilidad; el stock ya lo movió
 // el remito). Marca los remitos como INVOICED. Idempotente: limpia los previos.
-async function linkRemitos(invoiceId: string, remitoIds: string[]) {
+async function linkRemitos(invoiceId: string, remitoIds: string[], companyId?: string) {
+  // Antes de nada: los remitos tienen que ser de la misma empresa. linkRemitos
+  // no solo lee — marca los remitos como INVOICED, así que sin este chequeo era
+  // una escritura cruzada entre tenants.
+  await assertRemitosInCompany(remitoIds, companyId);
   await assertRemitosWithinInvoice(invoiceId, remitoIds);
   await prisma.$executeRaw`DELETE FROM "purchase_invoice_remitos" WHERE "purchaseInvoiceId" = ${invoiceId}`;
   for (const remitoId of remitoIds) {
@@ -256,25 +286,76 @@ export class PurchaseInvoiceController {
       }
       const where = Prisma.join(conditions, ' AND ');
 
-      const [countRows, rows] = await Promise.all([
+      // Lo ya imputado por órdenes de pago pagadas, en la moneda de la factura.
+      const paidExpr = Prisma.sql`
+        COALESCE((
+          SELECT SUM(
+            CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
+          )
+          FROM "orden_pago_items" opi
+          JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+          WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
+        ), 0)`;
+
+      // Los totales de la consulta se expresan en ARS: las facturas en moneda
+      // extranjera se convierten con SU cotización (el valor al emitir), que es
+      // el criterio con el que se generó el movimiento de cuenta corriente.
+      const toArs = Prisma.sql`COALESCE(NULLIF(pi."exchangeRate", 0), 1)`;
+
+      // Una Nota de Crédito NO es deuda: resta. Es el mismo criterio con el que
+      // syncPurchaseInvoiceMovements la registra como CREDIT en la cuenta
+      // corriente del proveedor. Sumarla en positivo inflaba el total y el saldo.
+      const isNC = Prisma.sql`pi.type LIKE 'NOTA_CREDITO%'`;
+      const signo = Prisma.sql`CASE WHEN ${isNC} THEN -1 ELSE 1 END`;
+
+      const [countRows, rows, summaryRows] = await Promise.all([
         prisma.$queryRaw<{ c: bigint }[]>`SELECT COUNT(*) AS c FROM "purchase_invoices" pi WHERE ${where}`,
         prisma.$queryRaw<any[]>`
-          SELECT pi.id, pi."supplierId", pi.number, pi.type, pi.amount, pi.currency,
+          SELECT pi.id, pi."supplierId", pi.number, pi.type, pi.subtotal, pi."taxAmount", pi.amount, pi.currency,
                  pi."exchangeRate", pi."saleCondition", pi.date, pi."dueDate", pi.status, pi."paymentMethod",
                  s.name AS "supplierName",
                  COALESCE((
-                   SELECT SUM(
-                     CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
-                   )
-                   FROM "orden_pago_items" opi
-                   JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
-                   WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
-                 ), 0) AS "paidAmount"
+                   SELECT SUM(t.amount) FROM "purchase_invoice_tributos" t
+                   WHERE t."purchaseInvoiceId" = pi.id
+                 ), 0) AS "tributosAmount",
+                 ${paidExpr} AS "paidAmount"
           FROM "purchase_invoices" pi
           LEFT JOIN "suppliers" s ON s.id = pi."supplierId"
           WHERE ${where}
           ORDER BY pi.date DESC, pi."createdAt" DESC
           LIMIT ${q.limit} OFFSET ${offset}
+        `,
+        // Totales sobre TODO el filtro (no solo la página): lo que se está mirando.
+        prisma.$queryRaw<any[]>`
+          WITH base AS (
+            SELECT pi.id, pi.status, pi."supplierId",
+                   -- Una NC no vence: no tiene un saldo exigible que se atrase,
+                   -- así que queda fuera de vencido y de "por vencer".
+                   CASE WHEN ${isNC} THEN NULL ELSE pi."dueDate" END AS "dueDate",
+                   pi.amount * ${toArs} * ${signo}    AS "totalArs",
+                   ${paidExpr} * ${toArs} * ${signo}  AS "paidArs"
+            FROM "purchase_invoices" pi
+            WHERE ${where}
+          )
+          SELECT
+            COUNT(*)::int                                     AS "count",
+            COUNT(DISTINCT "supplierId")::int                 AS "supplierCount",
+            COALESCE(SUM("totalArs"), 0)                      AS "totalArs",
+            COALESCE(SUM("paidArs"), 0)                       AS "paidArs",
+            COALESCE(SUM(CASE WHEN status <> 'PAID' THEN "totalArs" - "paidArs" ELSE 0 END), 0) AS "balanceArs",
+            COALESCE(SUM(CASE WHEN status <> 'PAID' AND "dueDate" IS NOT NULL AND "dueDate" < CURRENT_DATE
+                              THEN "totalArs" - "paidArs" ELSE 0 END), 0)                       AS "overdueArs",
+            COUNT(*) FILTER (WHERE status <> 'PAID' AND "dueDate" IS NOT NULL AND "dueDate" < CURRENT_DATE)::int
+                                                              AS "overdueCount",
+            COALESCE(SUM(CASE WHEN status <> 'PAID' AND "dueDate" >= CURRENT_DATE
+                                                   AND "dueDate" < CURRENT_DATE + INTERVAL '7 days'
+                              THEN "totalArs" - "paidArs" ELSE 0 END), 0)                       AS "dueSoonArs",
+            COUNT(*) FILTER (WHERE status <> 'PAID' AND "dueDate" >= CURRENT_DATE
+                                                    AND "dueDate" < CURRENT_DATE + INTERVAL '7 days')::int
+                                                              AS "dueSoonCount",
+            MIN("dueDate") FILTER (WHERE status <> 'PAID' AND "dueDate" IS NOT NULL AND "dueDate" < CURRENT_DATE)
+                                                              AS "oldestOverdueDate"
+          FROM base
         `,
       ]);
 
@@ -284,7 +365,21 @@ export class PurchaseInvoiceController {
         supplier: r.supplierName ? { id: r.supplierId, name: r.supplierName } : undefined,
       }));
 
-      res.json({ status: 'success', data, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) });
+      const s = summaryRows[0] ?? {};
+      const summary = {
+        count:             Number(s.count ?? 0),
+        supplierCount:     Number(s.supplierCount ?? 0),
+        totalArs:          Number(s.totalArs ?? 0),
+        paidArs:           Number(s.paidArs ?? 0),
+        balanceArs:        Number(s.balanceArs ?? 0),
+        overdueArs:        Number(s.overdueArs ?? 0),
+        overdueCount:      Number(s.overdueCount ?? 0),
+        dueSoonArs:        Number(s.dueSoonArs ?? 0),
+        dueSoonCount:      Number(s.dueSoonCount ?? 0),
+        oldestOverdueDate: s.oldestOverdueDate ?? null,
+      };
+
+      res.json({ status: 'success', data, summary, total, page: q.page, limit: q.limit, totalPages: Math.ceil(total / q.limit) });
     } catch (error) { next(error); }
   }
 
@@ -300,11 +395,8 @@ export class PurchaseInvoiceController {
     try {
       const data = standaloneSchema.parse(req.body);
 
-      // Validate supplier belongs to the company
-      const [supplier] = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "suppliers" WHERE id = ${data.supplierId} AND "companyId" = ${req.companyId}
-      `;
-      if (!supplier) throw new NotFoundError('Proveedor');
+      await assertSupplierInCompany(data.supplierId, req.companyId);
+      if (data.originInvoiceId) await assertOriginInvoiceInCompany(data.originInvoiceId, req.companyId);
 
       const id             = randomUUID();
       const date           = data.date           ? new Date(data.date)           : new Date();
@@ -326,7 +418,7 @@ export class PurchaseInvoiceController {
 
       if (data.items?.length)     await upsertItems(id, data.items);
       if (data.tributos?.length)  await upsertTributos(id, data.tributos);
-      if (data.remitoIds?.length) await linkRemitos(id, data.remitoIds);
+      if (data.remitoIds?.length) await linkRemitos(id, data.remitoIds, req.companyId);
 
       // Generate the supplier current-account movement for the invoice debt
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
@@ -345,6 +437,9 @@ export class PurchaseInvoiceController {
 
       const data = updateSchema.parse(req.body);
       const id = req.params.id;
+
+      if (data.supplierId)      await assertSupplierInCompany(data.supplierId, req.companyId);
+      if (data.originInvoiceId) await assertOriginInvoiceInCompany(data.originInvoiceId, req.companyId);
 
       // Una factura con pagos imputados no se edita, PERO sí se le puede vincular
       // mercadería (remitoIds) — recepción posterior a un pago anticipado.
@@ -381,7 +476,7 @@ export class PurchaseInvoiceController {
       }
       if (data.items     !== undefined) await upsertItems(id, data.items);
       if (data.tributos  !== undefined) await upsertTributos(id, data.tributos);
-      if (data.remitoIds !== undefined) await linkRemitos(id, data.remitoIds);
+      if (data.remitoIds !== undefined) await linkRemitos(id, data.remitoIds, req.companyId);
 
       // Re-sync supplier current account (invoice debt)
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);

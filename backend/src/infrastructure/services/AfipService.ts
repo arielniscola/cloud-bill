@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { AfipConfig } from '../../domain/entities/AfipConfig';
+import { Decimal } from '@prisma/client/runtime/library';
 import { InvoiceWithItems } from '../../domain/entities/Invoice';
 
 const INVOICE_TYPE_MAP: Record<string, number> = {
@@ -33,6 +34,78 @@ const COND_IVA_RECEPTOR_MAP: Record<string, number> = {
   CONSUMIDOR_FINAL: 5,
   MONOTRIBUTISTA: 6,
 };
+
+// AFIP — Tabla "Tipos de IVA" (método FEParamGetTiposIva). La alícuota de cada
+// ítem se guarda como un porcentaje (`invoice_items.taxRate`), así que hay que
+// traducirla al Id que espera WSFE. Una alícuota fuera de esta tabla NO se
+// aproxima: se corta la emisión, porque declarar 21% sobre una base al 10,5%
+// deja un comprobante mal declarado ante ARCA.
+const IVA_ALICUOTA_IDS: Record<string, number> = {
+  '0': 3,
+  '2.5': 9,
+  '5': 8,
+  '10.5': 4,
+  '21': 5,
+  '27': 6,
+};
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+interface AlicIva {
+  Id: number;
+  BaseImp: number;
+  Importe: number;
+}
+
+/**
+ * Arma el array `Iva` de WSFE: un tramo por alícuota presente en la factura.
+ *
+ * ARCA valida tres identidades y rechaza el comprobante si alguna falla:
+ * `sum(BaseImp) === ImpNeto`, `sum(Importe) === ImpIVA`, y por tramo
+ * `Importe ≈ BaseImp × alícuota`.
+ *
+ * Los importes por ítem están redondeados a centavos en la base, así que su
+ * suma puede diferir en algún centavo del total de la factura (que se redondeó
+ * por separado). Ese residuo se imputa al tramo de mayor base: es el único que
+ * puede absorberlo sin que se note en su propia relación base × alícuota.
+ */
+export function buildIvaAlicuotas(
+  items: Array<{ taxRate: Decimal; subtotal: Decimal; taxAmount: Decimal }>,
+  impNeto: number,
+  impIva: number
+): AlicIva[] {
+  const byRate = new Map<string, { id: number; base: number; importe: number }>();
+
+  for (const item of items) {
+    const rate = item.taxRate.toNumber();
+    // Clave normalizada: 21, 21.0 y 21.00 son la misma alícuota.
+    const key = String(Number(rate.toFixed(2)));
+    const id = IVA_ALICUOTA_IDS[key];
+    if (id === undefined) {
+      throw new Error(
+        `Alícuota de IVA no admitida por ARCA: ${rate}%. Las válidas son 0, 2.5, 5, 10.5, 21 y 27.`
+      );
+    }
+    const acc = byRate.get(key) ?? { id, base: 0, importe: 0 };
+    acc.base += item.subtotal.toNumber();
+    acc.importe += item.taxAmount.toNumber();
+    byRate.set(key, acc);
+  }
+
+  const alicuotas = [...byRate.values()]
+    .map((a) => ({ Id: a.id, BaseImp: round2(a.base), Importe: round2(a.importe) }))
+    .sort((a, b) => b.BaseImp - a.BaseImp);
+
+  if (alicuotas.length === 0) return alicuotas;
+
+  // Residuos de redondeo → al tramo de mayor base (el primero, ya ordenado).
+  const baseDiff = round2(impNeto - alicuotas.reduce((s, a) => s + a.BaseImp, 0));
+  const ivaDiff = round2(impIva - alicuotas.reduce((s, a) => s + a.Importe, 0));
+  alicuotas[0].BaseImp = round2(alicuotas[0].BaseImp + baseDiff);
+  alicuotas[0].Importe = round2(alicuotas[0].Importe + ivaDiff);
+
+  return alicuotas;
+}
 
 const WSAA_WSDL = {
   prod: 'https://wsaa.afip.gov.ar/ws/services/LoginCms?WSDL',
@@ -344,8 +417,11 @@ export class AfipService {
     const impIva = invoice.taxAmount.toNumber();
     const impTotal = invoice.total.toNumber();
 
-    // Facturas C and zero-IVA invoices don't need the IVA array
-    const needsIvaArray = !invoice.type.endsWith('_C') && impIva > 0;
+    // La Factura C no discrimina IVA: ImpNeto === ImpTotal y no lleva array de
+    // alícuotas. El resto SÍ lo lleva aunque el IVA dé cero (todo al 0%): ARCA
+    // espera igual el tramo con Id 3 e Importe 0.
+    const isTypeC = invoice.type.endsWith('_C');
+    const ivaAlicuotas = isTypeC ? [] : buildIvaAlicuotas(invoice.items, impNeto, impIva);
 
     const detRequest: Record<string, unknown> = {
       Concepto: 1, // Productos
@@ -365,10 +441,8 @@ export class AfipService {
       CondicionIVAReceptorId: COND_IVA_RECEPTOR_MAP[invoice.customer.taxCondition] ?? 5,
     };
 
-    if (needsIvaArray) {
-      detRequest.Iva = {
-        AlicIva: { Id: 5, BaseImp: impNeto, Importe: impIva }, // 21%
-      };
+    if (ivaAlicuotas.length > 0) {
+      detRequest.Iva = { AlicIva: ivaAlicuotas };
     }
 
     // Notas de Crédito/Débito: ARCA exige la estructura CbtesAsoc con el comprobante

@@ -234,6 +234,24 @@ export class PrismaStockRepository implements IStockRepository {
       } as unknown as StockMovement;
     }
 
+    // Serializa los movimientos de esta (producto, variante, depósito).
+    //
+    // Va un advisory lock y no un `SELECT ... FOR UPDATE` porque la fila de
+    // stock puede no existir todavía: FOR UPDATE no bloquea nada cuando no hay
+    // fila, y dos altas simultáneas del mismo producto chocarían contra el
+    // unique parcial de `stocks`. El advisory lock cubre los dos casos.
+    //
+    // Sin esto, dos ventas concurrentes del mismo producto leen la misma
+    // cantidad, y tanto el descuento como la guarda de stock negativo de más
+    // abajo se calculan sobre un valor ya viejo: se puede vender por debajo de
+    // cero. Es el mismo patrón que PdvService usa para serializar contra ARCA.
+    // El lock se libera al cerrar la transacción.
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtext(${`stock:${data.productId}:${v ?? ''}:${data.warehouseId}`})::bigint
+      )
+    `;
+
     // Look up current stock row (variant-aware)
     const existing = v === null
       ? await tx.$queryRaw<RawStock[]>`

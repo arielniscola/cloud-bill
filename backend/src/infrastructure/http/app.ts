@@ -6,6 +6,7 @@ import { errorMiddleware } from './middlewares/errorMiddleware';
 import { authRoutes } from './routes/authRoutes';
 import { customerRoutes } from './routes/customerRoutes';
 import { productRoutes } from './routes/productRoutes';
+import { uploadRoutes } from './routes/uploadRoutes';
 import { rubroRoutes } from './routes/rubroRoutes';
 import { warehouseRoutes } from './routes/warehouseRoutes';
 import { stockRoutes } from './routes/stockRoutes';
@@ -35,6 +36,7 @@ import { bankRoutes } from './routes/bankRoutes';
 import { searchRoutes } from './routes/searchRoutes';
 import { remindersRoutes } from './routes/remindersRoutes';
 import { syncRoutes } from './routes/syncRoutes';
+import { catalogRoutes } from './routes/catalogRoutes';
 import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
 import { cardRoutes } from './routes/cardRoutes';
@@ -77,9 +79,14 @@ export function createApp(): Application {
   app.use(fiscalModeMiddleware);
 
   // Health check
-  app.get('/health', (_req, res) => {
+  // Se expone tambien bajo /api porque es el unico prefijo que nginx proxea
+  // (y el unico que cubre VITE_API_URL): el ping de conectividad de la PWA
+  // necesita una ruta que llegue al backend por los dos caminos.
+  const health = (_req: express.Request, res: express.Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  };
+  app.get('/health', health);
+  app.get('/api/health', health);
 
   // Routes
   app.use('/api/auth', authRoutes);
@@ -87,6 +94,7 @@ export function createApp(): Application {
   app.use('/api/products/:productId/variants', productVariantRoutes);
   app.use('/api/product-variants', productVariantStandaloneRoutes);
   app.use('/api/products', productRoutes);
+  app.use('/api/uploads', uploadRoutes);
   app.use('/api/rubros', rubroRoutes);
   app.use('/api/warehouses', warehouseRoutes);
   app.use('/api/stock', stockRoutes);
@@ -116,6 +124,7 @@ export function createApp(): Application {
   app.use('/api/search', searchRoutes);
   app.use('/api/reminders', remindersRoutes);
   app.use('/api/sync', syncRoutes);
+  app.use('/api/catalog', catalogRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/mercadopago', mpRoutes);
   app.use('/api/cards', cardRoutes);

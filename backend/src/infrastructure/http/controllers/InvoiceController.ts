@@ -12,6 +12,7 @@ import { IReciboRepository } from '../../../domain/repositories/IReciboRepositor
 import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
 import { effectiveSaleCondition } from '../../../shared/utils/paymentTerms';
+import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { afipService } from '../../services/AfipService';
 import { pdvService } from '../../services/PdvService';
 import { sendInvoiceEmail } from '../../services/EmailService';
@@ -24,14 +25,19 @@ import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '.
 
 type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 'INFORMAL' };
 
+/** `claimDraft: false` = el estado ya lo movió el llamador (emisión ARCA). */
+type IssuanceOpts = { claimDraft?: boolean };
+
 /**
  * Efectos de la emisión de una factura: movimiento en cuenta corriente (venta
  * CC o "a X días"), movimiento de stock (descuento o reserva), remito
  * auto-entregado para ventas con descuento inmediato y asiento contable.
  * Se ejecuta UNA sola vez, al salir del estado borrador.
  * `invoice` debe venir de findById (incluye items + customer).
+ *
+ * Devuelve `true` si esta llamada fue la que emitió la factura.
  */
-async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<void> {
+async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: IssuanceOpts = {}): Promise<boolean> {
   const currentAccountRepository = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
   const stockRepository = container.resolve<IStockRepository>('StockRepository');
 
@@ -51,10 +57,21 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
     ? await currentAccountRepository.findByCustomerId(invoice.customerId, currency, ctx.fiscalMode)
     : null;
 
-  // Todos los efectos se confirman o revierten juntos: sin esto, un fallo a
-  // mitad (p.ej. stock insuficiente en el 3er ítem) dejaba la cuenta corriente
-  // debitada con el stock a medio descontar.
-  await prisma.$transaction(async (tx) => {
+  // El cambio de estado va DENTRO de la misma transacción que los efectos: si
+  // algo falla (p.ej. stock insuficiente) la factura tiene que seguir siendo un
+  // borrador. Grabar el estado antes dejaba facturas ISSUED sin descuento de
+  // stock ni movimiento de cuenta corriente, contadas igual en el Libro IVA.
+  const applied = await prisma.$transaction(async (tx) => {
+    // El UPDATE condicional además actúa de cerrojo: si otra request ya emitió
+    // este borrador, no afecta filas y los efectos no se duplican.
+    if (opts.claimDraft !== false) {
+      const claimed = await tx.invoice.updateMany({
+        where: { id: invoice.id, status: 'DRAFT' },
+        data: { status: 'ISSUED' },
+      });
+      if (claimed.count === 0) return false;
+    }
+
     // Cuenta corriente (venta CC o pago a X días)
     if (usesCC) {
       const currentAccount = existingAccount
@@ -116,7 +133,12 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
         })),
       } as any, tx);
     }
+
+    return true;
   }, { timeout: 30000 });
+
+  // Otra request ganó la carrera y ya emitió la factura: no se repiten efectos.
+  if (!applied) return false;
 
   // Asiento contable — fuera de la transacción: es best-effort por diseño
   // (recordInvoiceCreated captura sus propios errores y no debe abortar la emisión).
@@ -130,6 +152,8 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx): Promise<voi
     companyId: ctx.companyId,
     userId: ctx.userId,
   });
+
+  return true;
 }
 
 // Guía al usuario hacia el caso de uso correcto cuando intenta asignar a mano
@@ -145,12 +169,14 @@ const MANUAL_STATUS_HINTS: Record<string, string> = {
 /**
  * Aplica los efectos de emisión solo si la factura todavía está en borrador.
  * Garantiza que los movimientos se generen una única vez al salir de DRAFT,
- * sin importar el camino (emitir, emitir a ARCA o cobrar).
+ * sin importar el camino (emitir, emitir a ARCA o cobrar), y que la factura
+ * pase a ISSUED en la misma transacción que sus efectos.
  */
-async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx): Promise<void> {
+async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx, opts: IssuanceOpts = {}): Promise<boolean> {
   if (invoice && invoice.status === 'DRAFT') {
-    await applyIssuanceEffects(invoice, ctx);
+    return applyIssuanceEffects(invoice, ctx, opts);
   }
+  return false;
 }
 
 export class InvoiceController {
@@ -268,6 +294,38 @@ export class InvoiceController {
     }
   }
 
+  /**
+   * Totales del conjunto filtrado completo. Va aparte del listado porque no
+   * depende de la paginación: la tira de stats no puede seguir sumando la
+   * página visible y llamarla "Total".
+   */
+  async stats(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
+      const filters = req.query;
+
+      const data = await invoiceRepository.getStats({
+        customerId: filters.customerId as string,
+        userId: filters.userId as string,
+        status: filters.status as any,
+        type: filters.type as any,
+        currency: filters.currency as Currency | undefined,
+        saleCondition: filters.saleCondition as string | undefined,
+        companyId: req.companyId,
+        fiscalMode: req.fiscalMode,
+        // Bordes del día en zona argentina: un `lte` contra la medianoche UTC
+        // del "hasta" descartaba el día entero que el usuario pidió.
+        dateFrom: startOfDay(filters.dateFrom as string),
+        dateTo: endOfDay(filters.dateTo as string),
+        search: filters.search as string | undefined,
+      });
+
+      res.json({ status: 'success', data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
@@ -284,8 +342,9 @@ export class InvoiceController {
           saleCondition: filters.saleCondition as string | undefined,
           companyId: req.companyId,
           fiscalMode: req.fiscalMode,
-          dateFrom: filters.dateFrom ? new Date(filters.dateFrom as string) : undefined,
-          dateTo: filters.dateTo ? new Date(filters.dateTo as string) : undefined,
+          dateFrom: startOfDay(filters.dateFrom as string),
+          dateTo: endOfDay(filters.dateTo as string),
+          search: filters.search as string | undefined,
         }
       );
 
@@ -319,7 +378,25 @@ export class InvoiceController {
         }
       }
 
-      const data = result.data.map((i: any) => ({ ...i, deliveryStatus: deliveryStatuses[i.id] }));
+      // Cobrado por factura, para que el listado pueda mostrar el saldo sin
+      // que el front tenga que abrir cada comprobante.
+      const paidByInvoice = new Map<string, number>();
+      if (ids.length > 0) {
+        const grouped = await (prisma as any).recibo.groupBy({
+          by: ['invoiceId'],
+          where: { status: 'EMITTED', invoiceId: { in: ids } },
+          _sum: { amount: true },
+        });
+        for (const row of grouped as Array<{ invoiceId: string; _sum: { amount: unknown } }>) {
+          paidByInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
+        }
+      }
+
+      const data = result.data.map((i: any) => ({
+        ...i,
+        deliveryStatus: deliveryStatuses[i.id],
+        paidAmount: paidByInvoice.get(i.id) ?? 0,
+      }));
 
       res.json({
         status: 'success',
@@ -399,17 +476,19 @@ export class InvoiceController {
         );
       }
 
-      const invoice = await invoiceRepository.update(req.params.id, {
-        status: req.body.status,
-      });
-
-      // Al salir del borrador ("Emitir" → ISSUED) se generan los movimientos
-      // asociados, una sola vez.
-      await leaveDraftIfNeeded(existingInvoice, {
+      // El paso a ISSUED lo hace applyIssuanceEffects dentro de su transacción,
+      // junto con los movimientos asociados: si los efectos fallan, la factura
+      // sigue siendo un borrador en vez de quedar emitida y vacía.
+      const emitted = await leaveDraftIfNeeded(existingInvoice, {
         userId: req.user!.userId,
         companyId: req.companyId!,
         fiscalMode: req.fiscalMode,
       });
+      if (!emitted) {
+        throw new AppError('La factura ya fue emitida por otra operación', 409);
+      }
+
+      const invoice = await invoiceRepository.findById(req.params.id, req.companyId);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
@@ -711,11 +790,14 @@ export class InvoiceController {
       } as any);
 
       // Emitir a ARCA desde borrador también genera los movimientos asociados.
+      // Acá el estado ya pasó a AUTHORIZED junto con el CAE —que no se puede
+      // perder una vez otorgado—, así que los efectos no vuelven a reclamar el
+      // borrador: `claimDraft: false`.
       await leaveDraftIfNeeded(invoice, {
         userId: req.user!.userId,
         companyId: req.companyId!,
         fiscalMode: req.fiscalMode,
-      });
+      }, { claimDraft: false });
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -774,8 +856,14 @@ export class InvoiceController {
         );
       }
 
+      // Una factura nacida de una orden de pedido tampoco generó movimientos
+      // propios: el stock y la cuenta corriente los aplicó el alta de la orden,
+      // y revertirlos acá acreditaría la cuenta sin devolver la mercadería.
+      // Esa reversa le corresponde a la orden de origen.
+      const fromOrdenPedido = !!(existingInvoice as any).ordenPedidoId;
+
       // Un borrador no generó movimientos, así que no hay nada que revertir.
-      if (existingInvoice.status !== 'DRAFT') {
+      if (existingInvoice.status !== 'DRAFT' && !fromOrdenPedido) {
         const stockRepository = container.resolve<IStockRepository>('StockRepository');
         const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
         const stockBehavior: string = (existingInvoice as any).stockBehavior ?? 'DISCOUNT';

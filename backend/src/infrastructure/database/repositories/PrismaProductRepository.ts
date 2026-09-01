@@ -5,7 +5,24 @@ import { Product, CreateProductInput, UpdateProductInput } from '../../../domain
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 
-type RawSupplierInfo = { id: string; supplierId: string | null; supplierName: string | null };
+type RawProductInfo = {
+  id: string;
+  supplierId: string | null;
+  supplierName: string | null;
+  imageUrl: string | null;
+  imageKey: string | null;
+};
+
+type RawStockInfo = {
+  productId: string;
+  quantity: number;
+  reserved: number;
+  minQuantity: number;
+  hasMin: boolean;
+};
+
+/** Columnas por las que se puede ordenar el listado. El stock queda afuera: es un agregado. */
+const SORTABLE = new Set(['name', 'sku', 'cost', 'price', 'priceUpdatedAt', 'createdAt']);
 
 @injectable()
 export class PrismaProductRepository implements IProductRepository {
@@ -15,13 +32,15 @@ export class PrismaProductRepository implements IProductRepository {
     this.prisma = prisma;
   }
 
-  // supplierId no está en el cliente Prisma generado todavía (bloqueado por el
-  // lock del engine en Windows con el server corriendo) — se lee/escribe/filtra
-  // vía raw SQL, mismo patrón que retentionType en PrismaSupplierRepository.
-  private async enrichSupplier<T extends { id: string }>(items: T[]): Promise<T[]> {
+  // supplierId, imageUrl e imageKey no están en el cliente Prisma generado
+  // todavía (bloqueado por el lock del engine en Windows con el server
+  // corriendo) — se leen/escriben/filtran vía raw SQL, mismo patrón que
+  // retentionType en PrismaSupplierRepository. Van todas en la misma query
+  // para no pagar un round-trip extra por columna rezagada.
+  private async enrichRawColumns<T extends { id: string }>(items: T[]): Promise<T[]> {
     if (items.length === 0) return items;
-    const rows = await this.prisma.$queryRaw<RawSupplierInfo[]>`
-      SELECT p.id, p."supplierId", s.name AS "supplierName"
+    const rows = await this.prisma.$queryRaw<RawProductInfo[]>`
+      SELECT p.id, p."supplierId", p."imageUrl", p."imageKey", s.name AS "supplierName"
       FROM products p
       LEFT JOIN suppliers s ON s.id = p."supplierId"
       WHERE p.id IN (${Prisma.join(items.map((i) => i.id))})
@@ -33,8 +52,65 @@ export class PrismaProductRepository implements IProductRepository {
         ...item,
         supplierId: info?.supplierId ?? null,
         supplier: info?.supplierId ? { id: info.supplierId, name: info.supplierName ?? '' } : undefined,
+        imageUrl: info?.imageUrl ?? null,
+        imageKey: info?.imageKey ?? null,
       };
     });
+  }
+
+  /**
+   * Suma el stock de todos los depósitos en cada producto. Un producto sin filas
+   * en `stocks` queda en 0, que es lo correcto: nunca entró mercadería.
+   */
+  private async enrichStock<T extends { id: string }>(items: T[]): Promise<T[]> {
+    if (items.length === 0) return items;
+    const rows = await this.prisma.$queryRaw<RawStockInfo[]>`
+      SELECT "productId",
+             SUM(quantity)::float8            AS "quantity",
+             SUM("reservedQuantity")::float8  AS "reserved",
+             SUM(COALESCE("minQuantity", 0))::float8 AS "minQuantity",
+             BOOL_OR("minQuantity" IS NOT NULL)      AS "hasMin"
+      FROM stocks
+      WHERE "productId" IN (${Prisma.join(items.map((i) => i.id))})
+      GROUP BY "productId"
+    `;
+    const map = new Map(rows.map((r) => [r.productId, r]));
+    return items.map((item) => {
+      const s = map.get(item.id);
+      return {
+        ...item,
+        stockQuantity: s?.quantity ?? 0,
+        stockReserved: s?.reserved ?? 0,
+        stockMinQuantity: s?.hasMin ? s.minQuantity : null,
+      };
+    });
+  }
+
+  /** IDs de la empresa que cumplen el estado de stock pedido. Solo productos inventariados. */
+  private async idsByStockState(state: 'with' | 'low' | 'out', companyId?: string): Promise<string[]> {
+    const condition =
+      state === 'out'
+        ? Prisma.sql`COALESCE(s.avail, 0) <= 0`
+        : state === 'low'
+          ? Prisma.sql`s.hasmin AND COALESCE(s.avail, 0) > 0 AND COALESCE(s.avail, 0) <= s.minq`
+          : Prisma.sql`COALESCE(s.avail, 0) > 0`;
+
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT p.id
+      FROM products p
+      LEFT JOIN (
+        SELECT "productId",
+               SUM(quantity - "reservedQuantity")     AS avail,
+               SUM(COALESCE("minQuantity", 0))        AS minq,
+               BOOL_OR("minQuantity" IS NOT NULL)     AS hasmin
+        FROM stocks
+        GROUP BY "productId"
+      ) s ON s."productId" = p.id
+      WHERE p."trackStock" = true
+        AND (${companyId ?? null}::text IS NULL OR p."companyId" = ${companyId ?? null})
+        AND ${condition}
+    `;
+    return rows.map((r) => r.id);
   }
 
   async findById(id: string, companyId?: string): Promise<Product | null> {
@@ -43,7 +119,7 @@ export class PrismaProductRepository implements IProductRepository {
       include: { rubro: true, brand: true, category: true },
     } as any);
     if (!product) return null;
-    const [enriched] = await this.enrichSupplier([product]);
+    const [enriched] = await this.enrichRawColumns([product]);
     return enriched as Product;
   }
 
@@ -82,11 +158,27 @@ export class PrismaProductRepository implements IProductRepository {
       where.brandId = filters.brandId;
     }
 
+    // Los filtros que se resuelven por fuera de Prisma devuelven listas de IDs;
+    // si hay más de uno hay que intersecarlas, no pisar la anterior.
+    const idSets: string[][] = [];
+
     if (filters.supplierId) {
       const rows = await this.prisma.$queryRaw<{ id: string }[]>`
         SELECT id FROM products WHERE "supplierId" = ${filters.supplierId}
       `;
-      (where as any).id = { in: rows.map((r) => r.id) };
+      idSets.push(rows.map((r) => r.id));
+    }
+
+    if (filters.stockState) {
+      idSets.push(await this.idsByStockState(filters.stockState, filters.companyId));
+    }
+
+    if (idSets.length > 0) {
+      const intersection = idSets.reduce((acc, ids) => {
+        const set = new Set(ids);
+        return acc.filter((id) => set.has(id));
+      });
+      (where as any).id = { in: intersection };
     }
 
     if (filters.isActive !== undefined) {
@@ -107,17 +199,20 @@ export class PrismaProductRepository implements IProductRepository {
       (where as any).companyId = filters.companyId;
     }
 
+    const sortBy = filters.sortBy && SORTABLE.has(filters.sortBy) ? filters.sortBy : 'name';
+    const sortOrder = filters.sortOrder === 'desc' ? 'desc' : 'asc';
+
     const [rawData, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { name: 'asc' },
+        orderBy: { [sortBy]: sortOrder } as any,
         include: { rubro: true, brand: true, category: true } as any,
       }),
       this.prisma.product.count({ where }),
     ]);
-    const data = await this.enrichSupplier(rawData);
+    const data = await this.enrichStock(await this.enrichRawColumns(rawData));
 
     return {
       data,
@@ -223,5 +318,26 @@ export class PrismaProductRepository implements IProductRepository {
 
   async delete(id: string): Promise<void> {
     await this.prisma.product.delete({ where: { id } });
+  }
+
+  async setImage(
+    id: string,
+    companyId: string,
+    image: { url: string; key: string } | null
+  ): Promise<{ previousKey: string | null }> {
+    // UPDATE ... RETURNING con la key vieja: en un solo viaje se escribe la
+    // nueva imagen y se recupera la anterior para borrarla del bucket, sin
+    // ventana entre el SELECT y el UPDATE en la que otro request la pise.
+    const rows = await this.prisma.$queryRaw<{ previousKey: string | null }[]>`
+      UPDATE products AS p
+      SET "imageUrl" = ${image?.url ?? null},
+          "imageKey" = ${image?.key ?? null},
+          "updatedAt" = NOW()
+      FROM products AS old
+      WHERE p.id = old.id AND p.id = ${id} AND p."companyId" = ${companyId}
+      RETURNING old."imageKey" AS "previousKey"
+    `;
+    if (rows.length === 0) throw new Error('Producto no encontrado');
+    return { previousKey: rows[0].previousKey };
   }
 }

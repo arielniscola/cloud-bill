@@ -37,6 +37,28 @@ export function errorMiddleware(
     return;
   }
 
+  // Violación de un índice único de Postgres que no atajó el caso de uso. Sin
+  // esto, Prisma respondía 500 con su mensaje crudo: la consulta, la ruta
+  // absoluta del repositorio en el servidor y el fragmento de código.
+  const code = (error as { code?: string }).code;
+  if (code === 'P2002') {
+    const campos = (error as { meta?: { target?: string[] | string } }).meta?.target;
+    const lista = Array.isArray(campos) ? campos.join(', ') : campos;
+    res.status(409).json({
+      status: 'error',
+      message: lista
+        ? `Ya existe un registro con ese valor (${lista})`
+        : 'Ya existe un registro con esos datos',
+    });
+    return;
+  }
+
+  // Registro no encontrado al actualizar o borrar.
+  if (code === 'P2025') {
+    res.status(404).json({ status: 'error', message: 'El registro no existe o ya fue eliminado' });
+    return;
+  }
+
   // Log unexpected errors
   console.error('Unexpected error:', error);
 

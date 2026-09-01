@@ -1,7 +1,7 @@
 import { injectable } from 'tsyringe';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
+import { ICurrentAccountRepository, MovementFilters } from '../../../domain/repositories/ICurrentAccountRepository';
 import {
   CurrentAccount,
   AccountMovement,
@@ -81,22 +81,26 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     tx: Prisma.TransactionClient,
     data: CreateAccountMovementInput
   ): Promise<AccountMovement> {
-    const currentAccount = await tx.currentAccount.findUnique({
-      where: { id: data.currentAccountId },
-    });
+    // FOR UPDATE, no un findUnique suelto: el saldo es un read-modify-write y
+    // Postgres corre en Read Committed. Sin el lock, dos movimientos simultáneos
+    // sobre la misma cuenta leen el mismo saldo y el segundo pisa al primero:
+    // se pierde un movimiento del saldo y la columna `balance` del movimiento
+    // (la foto histórica que muestra el extracto) queda mal.
+    // El lock se libera al cerrar la transacción del llamador.
+    const locked = await tx.$queryRaw<{ balance: Prisma.Decimal }[]>`
+      SELECT balance FROM "current_accounts"
+      WHERE id = ${data.currentAccountId}
+      FOR UPDATE
+    `;
 
-    if (!currentAccount) {
+    if (!locked[0]) {
       throw new Error('Current account not found');
     }
 
     const amount = new Decimal(data.amount);
-    let newBalance: Decimal;
-
-    if (data.type === 'DEBIT') {
-      newBalance = currentAccount.balance.plus(amount);
-    } else {
-      newBalance = currentAccount.balance.minus(amount);
-    }
+    const previousBalance = new Decimal(locked[0].balance);
+    const newBalance =
+      data.type === 'DEBIT' ? previousBalance.plus(amount) : previousBalance.minus(amount);
 
     await tx.currentAccount.update({
       where: { id: data.currentAccountId },
@@ -126,7 +130,8 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
 
   async getMovements(
     currentAccountId: string | string[],
-    pagination: PaginationParams = { page: 1, limit: 10 }
+    pagination: PaginationParams = { page: 1, limit: 10 },
+    filters: MovementFilters = {}
   ): Promise<PaginatedResult<AccountMovement>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
@@ -135,22 +140,53 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     const ids = Array.isArray(currentAccountId) ? currentAccountId : [currentAccountId];
     const idsWhere = ids.length === 1 ? Prisma.sql`= ${ids[0]}` : Prisma.sql`IN (${Prisma.join(ids)})`;
 
+    // Los filtros se arman una vez y se reutilizan para la página y el total,
+    // así el paginador no cuenta filas que la lista no muestra.
+    const conds: Prisma.Sql[] = [Prisma.sql`m."currentAccountId" ${idsWhere}`];
+    if (filters.type) conds.push(Prisma.sql`m.type::text = ${filters.type}`);
+    if (filters.startDate) conds.push(Prisma.sql`m."createdAt" >= ${new Date(filters.startDate)}`);
+    if (filters.endDate) {
+      const end = new Date(filters.endDate);
+      end.setHours(23, 59, 59, 999);
+      conds.push(Prisma.sql`m."createdAt" <= ${end}`);
+    }
+    if (filters.search) {
+      const like = `%${filters.search}%`;
+      conds.push(Prisma.sql`(m.description ILIKE ${like} OR i.number ILIKE ${like} OR b.number ILIKE ${like})`);
+    }
+    if (filters.origin === 'INVOICE') {
+      conds.push(Prisma.sql`(m."invoiceId" IS NOT NULL AND i.type::text LIKE 'FACTURA%')`);
+    } else if (filters.origin === 'CREDIT_DEBIT_NOTE') {
+      conds.push(Prisma.sql`(m."invoiceId" IS NOT NULL AND i.type::text LIKE 'NOTA_%')`);
+    } else if (filters.origin === 'RECIBO') {
+      conds.push(Prisma.sql`m."reciboId" IS NOT NULL`);
+    } else if (filters.origin === 'INTERNAL_NOTE') {
+      conds.push(Prisma.sql`m."internalNoteId" IS NOT NULL`);
+    }
+    const where = Prisma.join(conds, ' AND ');
+
     const [rows, countRows] = await Promise.all([
       this.prisma.$queryRaw<any[]>`
         SELECT
           m.id, m."currentAccountId", m.type, m.amount, m.balance,
           m.description, m."invoiceId", m."budgetId", m."internalNoteId",
           m."cashRegisterId", m."reciboId", m."createdAt",
-          i.number  AS "invoiceNumber",  i.type AS "invoiceType",
+          i.number  AS "invoiceNumber",  i.type AS "invoiceType", i."dueDate" AS "invoiceDueDate",
           b.number  AS "budgetNumber"
         FROM "account_movements" m
         LEFT JOIN invoices i ON i.id = m."invoiceId"
         LEFT JOIN budgets  b ON b.id = m."budgetId"
-        WHERE m."currentAccountId" ${idsWhere}
+        WHERE ${where}
         ORDER BY m."createdAt" DESC
         LIMIT ${limit} OFFSET ${skip}
       `,
-      this.prisma.accountMovement.count({ where: { currentAccountId: { in: ids } } }),
+      this.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*) AS count
+        FROM "account_movements" m
+        LEFT JOIN invoices i ON i.id = m."invoiceId"
+        LEFT JOIN budgets  b ON b.id = m."budgetId"
+        WHERE ${where}
+      `.then((r) => Number(r[0]?.count ?? 0)),
     ]);
 
     const data = rows.map((r) => ({
@@ -166,7 +202,7 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
       cashRegisterId:   r.cashRegisterId ?? null,
       reciboId:         r.reciboId    ?? null,
       createdAt:        r.createdAt,
-      invoice:  r.invoiceId ? { id: r.invoiceId, number: r.invoiceNumber, type: r.invoiceType } : null,
+      invoice:  r.invoiceId ? { id: r.invoiceId, number: r.invoiceNumber, type: r.invoiceType, dueDate: r.invoiceDueDate ?? null } : null,
       budget:   r.budgetId  ? { id: r.budgetId,  number: r.budgetNumber  }                     : null,
     }));
 
@@ -187,10 +223,10 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     return account ? account.balance.toNumber() : 0;
   }
 
-  async findAllWithDebt(companyId?: string, fiscalMode?: string): Promise<CurrentAccount[]> {
+  async findAllWithDebt(companyId?: string, fiscalMode?: string, includeCredit = false): Promise<CurrentAccount[]> {
     return this.prisma.currentAccount.findMany({
       where: {
-        balance: { gt: 0 },
+        ...(includeCredit ? { NOT: { balance: 0 } } : { balance: { gt: 0 } }),
         ...(companyId ? { customer: { companyId } } : {}),
         ...(fiscalMode ? { fiscalMode } : {}),
       },

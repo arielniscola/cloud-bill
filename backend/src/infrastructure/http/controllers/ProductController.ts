@@ -11,6 +11,7 @@ import {
 } from '../../database/repositories/productCustomFieldValuesHelper';
 import { ProductCustomFieldValueInput } from '../../../domain/entities/ProductCustomField';
 import prisma from '../../database/prisma';
+import { getStorageService } from '../../storage';
 
 /** Filtra los IDs recibidos dejando solo los que pertenecen a la empresa activa. */
 async function filterOwnedProductIds(ids: string[], companyId: string): Promise<Set<string>> {
@@ -323,6 +324,17 @@ export class ProductController {
       }
 
       await productRepository.delete(req.params.id);
+
+      // El producto ya no existe: su imagen quedaría ocupando (y facturando)
+      // lugar en el bucket para siempre. Si el borrado del objeto falla no se
+      // propaga — el producto sí se eliminó y el usuario no puede reintentarlo.
+      if (existingProduct.imageKey) {
+        try {
+          await getStorageService().delete(existingProduct.imageKey);
+        } catch (err) {
+          console.error(`[storage] no se pudo borrar el objeto ${existingProduct.imageKey}:`, err);
+        }
+      }
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({

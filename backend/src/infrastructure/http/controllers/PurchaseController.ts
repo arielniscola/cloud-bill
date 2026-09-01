@@ -7,6 +7,7 @@ import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRep
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
 import { recordPurchaseCreated } from '../../services/AccountingService';
+import { allocateDocumentNumber } from '../../database/DocumentSequence';
 
 export class PurchaseController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -62,14 +63,9 @@ export class PurchaseController {
       const isND = type.startsWith('NOTA_DEBITO');
       const docLabel = isNC ? 'Nota de Crédito' : isND ? 'Nota de Débito' : 'Compra';
 
-      // Auto-generate number with a prefix per document kind
-      const year = new Date().getFullYear();
-      const prefix = isNC ? 'NCC' : isND ? 'NDC' : 'COMP';
-      const count = await prisma.$queryRaw<{ c: bigint }[]>`
-        SELECT COUNT(*) AS c FROM "purchases"
-        WHERE "companyId" = ${req.companyId} AND number LIKE ${prefix + '-' + year + '-%'}
-      `;
-      const autoNumber = `${prefix}-${year}-${String(Number((count[0]?.c ?? 0n)) + 1).padStart(4, '0')}`;
+      // Un prefijo (y una correlatividad) por tipo de documento.
+      const docType = isNC ? 'PURCHASE_NCC' : isND ? 'PURCHASE_NDC' : 'PURCHASE_COMP';
+      const autoNumber = await allocateDocumentNumber(docType, req.companyId!);
 
       const purchase = await repo.create({
         type: type as any,

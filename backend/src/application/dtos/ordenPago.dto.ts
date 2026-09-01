@@ -75,6 +75,11 @@ export const ordenPagoQuerySchema = z.object({
   supplierId:    z.string().optional(),
   status:        z.string().optional(),
   paymentMethod: z.string().optional(),
+  currency:      z.string().optional(),
+  search:        z.string().optional(),
+  // Vienen como texto en la query: `z.coerce.boolean()` daría true también para "false".
+  onlyRetentions: z.string().optional().transform((v) => v === 'true'),
+  onlyOnAccount:  z.string().optional().transform((v) => v === 'true'),
   dateFrom:      z.string().optional(),
   dateTo:        z.string().optional(),
 });

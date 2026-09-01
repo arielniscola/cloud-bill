@@ -3,9 +3,10 @@ import { container } from 'tsyringe';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import prisma from '../../database/prisma';
-import { NotFoundError, AppError } from '../../../shared/errors/AppError';
+import { NotFoundError, AppError, InsufficientStockError } from '../../../shared/errors/AppError';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
+import { allocateDocumentNumber } from '../../database/DocumentSequence';
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -43,12 +44,7 @@ const querySchema = z.object({
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function getNextNumber(companyId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const [row] = await prisma.$queryRaw<{ c: bigint }[]>`
-    SELECT COUNT(*) AS c FROM "purchase_remitos"
-    WHERE "companyId" = ${companyId} AND number LIKE ${'RC-' + year + '-%'}
-  `;
-  return `RC-${year}-${String(Number(row?.c ?? 0n) + 1).padStart(4, '0')}`;
+  return allocateDocumentNumber('PURCHASE_REMITO', companyId);
 }
 
 async function fetchFull(id: string) {
@@ -154,31 +150,42 @@ export class PurchaseRemitoController {
       const activityRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
       const id = randomUUID();
-      const number = await getNextNumber(req.companyId!);
       const date = data.date ? new Date(data.date) : new Date();
       const fiscalMode = req.fiscalMode ?? 'FORMAL';
 
-      await prisma.$executeRaw`
-        INSERT INTO "purchase_remitos"
-          (id, number, "supplierId", "userId", "warehouseId", date, status, notes, "companyId", "fiscalMode", "updatedAt")
-        VALUES
-          (${id}, ${number}, ${data.supplierId}, ${req.user!.userId}, ${data.warehouseId}, ${date},
-           'RECEIVED', ${data.notes ?? null}, ${req.companyId}, ${fiscalMode}, NOW())
-      `;
+      // El remito, sus ítems y el ingreso de stock se confirman o se revierten
+      // juntos. Antes eran queries sueltas: si fallaba a mitad quedaba un remito
+      // con la mercadería sin ingresar, o ingresada a medias.
+      let number!: string;
+      await prisma.$transaction(async (tx) => {
+        // Numerar acá adentro: si la transacción se revierte, el número vuelve
+        // al pool en vez de dejar un hueco en la correlatividad.
+        number = await allocateDocumentNumber('PURCHASE_REMITO', req.companyId!, { tx });
 
-      for (const item of data.items) {
-        await prisma.$executeRaw`
-          INSERT INTO "purchase_remito_items"
-            (id, "remitoId", "productId", "variantId", description, quantity, "unitPrice")
+        await tx.$executeRaw`
+          INSERT INTO "purchase_remitos"
+            (id, number, "supplierId", "userId", "warehouseId", date, status, notes, "companyId", "fiscalMode", "updatedAt")
           VALUES
-            (${randomUUID()}, ${id}, ${item.productId ?? null}, ${item.variantId ?? null},
-             ${item.description}, ${item.quantity}, ${item.unitPrice})
+            (${id}, ${number}, ${data.supplierId}, ${req.user!.userId}, ${data.warehouseId}, ${date},
+             'RECEIVED', ${data.notes ?? null}, ${req.companyId}, ${fiscalMode}, NOW())
         `;
-      }
 
-      // Mercadería entra al stock (recepción)
-      for (const item of data.items.filter((i) => i.productId)) {
-        try {
+        for (const item of data.items) {
+          await tx.$executeRaw`
+            INSERT INTO "purchase_remito_items"
+              (id, "remitoId", "productId", "variantId", description, quantity, "unitPrice")
+            VALUES
+              (${randomUUID()}, ${id}, ${item.productId ?? null}, ${item.variantId ?? null},
+               ${item.description}, ${item.quantity}, ${item.unitPrice})
+          `;
+        }
+
+        // Mercadería entra al stock (recepción).
+        //
+        // Un fallo acá tiene que voltear el remito entero. Antes se atrapaba y
+        // se mandaba a console.error: el remito quedaba creado y la mercadería
+        // nunca entraba al depósito, en silencio y sin forma de enterarse.
+        for (const item of data.items.filter((i) => i.productId)) {
           await stockRepo.addMovement({
             productId:   item.productId!,
             variantId:   item.variantId ?? null,
@@ -188,11 +195,9 @@ export class PurchaseRemitoController {
             reason:      `Remito de compra ${number}`,
             referenceId: id,
             userId:      req.user!.userId,
-          });
-        } catch (stockError) {
-          console.error(`Stock movement failed for product ${item.productId}:`, stockError);
+          }, tx);
         }
-      }
+      });
 
       await activityRepo.create({
         userId: req.user!.userId,
@@ -249,27 +254,43 @@ export class PurchaseRemitoController {
       const stockRepo = container.resolve<IStockRepository>('StockRepository');
       const activityRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
 
-      // Revertir stock recibido
-      for (const item of (remito.items as any[]).filter((i) => i.productId)) {
-        try {
-          await stockRepo.addMovement({
-            productId:   item.productId,
-            variantId:   item.variantId ?? null,
-            warehouseId: remito.warehouseId,
-            type:        'ADJUSTMENT_OUT',
-            quantity:    Number(item.quantity),
-            reason:      `Cancelación remito ${remito.number}`,
-            referenceId: remito.id,
-            userId:      req.user!.userId,
-          });
-        } catch (stockError) {
-          console.error(`Stock reversal failed for product ${item.productId}:`, stockError);
+      // La reversión de stock y el cambio de estado van juntos: antes el error
+      // de stock se atrapaba y el remito quedaba CANCELLED igual, con la
+      // mercadería todavía sumada en el depósito.
+      //
+      // Si la mercadería ya se vendió, la salida no entra y la cancelación
+      // falla. Es lo correcto: hay que resolver el stock antes de cancelar, no
+      // dejar el depósito mintiendo.
+      await prisma.$transaction(async (tx) => {
+        for (const item of (remito.items as any[]).filter((i) => i.productId)) {
+          try {
+            await stockRepo.addMovement({
+              productId:   item.productId,
+              variantId:   item.variantId ?? null,
+              warehouseId: remito.warehouseId,
+              type:        'ADJUSTMENT_OUT',
+              quantity:    Number(item.quantity),
+              reason:      `Cancelación remito ${remito.number}`,
+              referenceId: remito.id,
+              userId:      req.user!.userId,
+            }, tx);
+          } catch (stockError) {
+            if (stockError instanceof InsufficientStockError) {
+              throw new AppError(
+                `No se puede cancelar el remito ${remito.number}: no hay stock suficiente de ` +
+                `"${item.description}" para revertir la recepción. Puede que ya se haya vendido o ` +
+                `transferido. Ajustá el stock y volvé a intentar.`,
+                400
+              );
+            }
+            throw stockError;
+          }
         }
-      }
 
-      await prisma.$executeRaw`
-        UPDATE "purchase_remitos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${remito.id}
-      `;
+        await tx.$executeRaw`
+          UPDATE "purchase_remitos" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = ${remito.id}
+        `;
+      });
 
       await activityRepo.create({
         userId: req.user!.userId,

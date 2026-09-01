@@ -9,6 +9,8 @@ import {
 } from '../../../domain/entities/OrdenCompra';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { Prisma } from '@prisma/client';
+import { allocateDocumentNumber } from '../DocumentSequence';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = (prisma as any);
@@ -71,7 +73,8 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
   }
 
   async create(data: CreateOrdenCompraInput): Promise<OrdenCompraWithItems> {
-    const number = await this.getNextNumber();
+    const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
+    const number = await this.getNextNumber(companyId);
 
     const items = data.items.map((item) => ({
       productId:   item.productId ?? null,
@@ -95,7 +98,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
         exchangeRate: new Decimal(data.exchangeRate ?? 1),
         warehouseId:  data.warehouseId ?? null,
         notes:        data.notes ?? null,
-        companyId:    (data as any).companyId ?? (() => { throw new Error('companyId is required'); })(),
+        companyId,
         fiscalMode:   (data as any).fiscalMode ?? 'FORMAL',
         subtotal:     new Decimal(data.subtotal),
         taxAmount:    new Decimal(data.taxAmount),
@@ -140,12 +143,7 @@ export class PrismaOrdenCompraRepository implements IOrdenCompraRepository {
     await db.ordenCompra.delete({ where: { id } });
   }
 
-  async getNextNumber(): Promise<string> {
-    const year  = new Date().getFullYear();
-    const count = await db.ordenCompra.count({
-      where: { number: { startsWith: `OC-${year}-` } },
-    });
-    const seq = String(count + 1).padStart(4, '0');
-    return `OC-${year}-${seq}`;
+  async getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    return allocateDocumentNumber('ORDEN_COMPRA', companyId, { tx });
   }
 }

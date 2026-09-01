@@ -77,6 +77,11 @@ export const invoiceQuerySchema = z.object({
   dateFrom: z.preprocess(emptyToUndefined, z.string().optional()),
   dateTo: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD']).optional()),
+  // `validate()` reemplaza req.query con el parseado, y Zod descarta las claves
+  // que no estén acá. saleCondition faltaba: el controller lo leía pero nunca
+  // llegaba, así que el filtro de condición de venta no hacía nada.
+  saleCondition: z.preprocess(emptyToUndefined, z.enum(['CONTADO', 'CUENTA_CORRIENTE']).optional()),
+  search: z.preprocess(emptyToUndefined, z.string().max(120).optional()),
 });
 
 export type CreateInvoiceDTO = z.infer<typeof createInvoiceSchema>;

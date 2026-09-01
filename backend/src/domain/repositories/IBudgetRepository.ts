@@ -1,5 +1,6 @@
 import { Budget, BudgetWithItems, CreateBudgetInput, UpdateBudgetInput } from '../entities/Budget';
 import { PaginatedResult } from '../../shared/types';
+import { Prisma } from '@prisma/client';
 
 export interface BudgetFilters {
   customerId?: string;
@@ -18,5 +19,5 @@ export interface IBudgetRepository {
   create(data: CreateBudgetInput): Promise<BudgetWithItems>;
   update(id: string, data: UpdateBudgetInput): Promise<BudgetWithItems>;
   delete(id: string): Promise<void>;
-  getNextBudgetNumber(): Promise<string>;
+  getNextBudgetNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 }

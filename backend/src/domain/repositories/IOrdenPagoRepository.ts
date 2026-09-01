@@ -10,17 +10,44 @@ export interface OrdenPagoFilters {
   paymentMethod?: string;
   companyId?: string;
   fiscalMode?: string;
+  currency?: string;
+  /** Número de orden o nombre del proveedor. */
+  search?: string;
+  /** Solo órdenes con retención practicada. */
+  onlyRetentions?: boolean;
+  /** Solo pagos a cuenta: órdenes sin facturas imputadas. */
+  onlyOnAccount?: boolean;
   dateFrom?: Date;
   dateTo?: Date;
+}
+
+/**
+ * Totales del período que se está mirando (todo el filtro, no solo la página).
+ * Los importes están en ARS: las órdenes en moneda extranjera se convierten con
+ * SU cotización, la del momento del pago.
+ */
+export interface OrdenPagoSummary {
+  paidArs: number;
+  paidCount: number;
+  pendingArs: number;
+  pendingCount: number;
+  retentionArs: number;
+  retentionCount: number;
+  onAccountArs: number;
+  onAccountCount: number;
+  /** Cantidad por estado, para los contadores de las pestañas. */
+  statusCounts: { all: number; EMITTED: number; PAID: number; CANCELLED: number };
 }
 
 export interface IOrdenPagoRepository {
   findById(id: string, companyId?: string): Promise<OrdenPagoWithRelations | null>;
   findAll(pagination: PaginationParams, filters?: OrdenPagoFilters): Promise<PaginatedResult<OrdenPagoWithRelations>>;
+  /** Ignora `status` a propósito: la pestaña de estado no debe vaciar los totales ni los contadores. */
+  getSummary(filters?: OrdenPagoFilters): Promise<OrdenPagoSummary>;
   create(data: CreateOrdenPagoInput): Promise<OrdenPagoWithRelations>;
   pay(id: string): Promise<OrdenPagoWithRelations>;
   cancel(id: string): Promise<OrdenPago>;
-  getNextNumber(): Promise<string>;
+  getNextNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
 
   // Supplier current account — balances are always keyed by currency (e.g. { ARS: 1000, USD: 50 }):
   // a supplier's debt in USD and in ARS are never netted together.

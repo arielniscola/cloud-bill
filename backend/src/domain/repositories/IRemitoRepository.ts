@@ -29,6 +29,6 @@ export interface IRemitoRepository {
   create(data: CreateRemitoInput, tx?: Prisma.TransactionClient): Promise<RemitoWithItems>;
   updateStatus(id: string, status: RemitoStatus, tx?: Prisma.TransactionClient): Promise<Remito>;
   updateItemDeliveredQuantity(itemId: string, deliveredQuantity: number): Promise<RemitoItem>;
-  getNextRemitoNumber(): Promise<string>;
+  getNextRemitoNumber(companyId: string, tx?: Prisma.TransactionClient): Promise<string>;
   delete(id: string): Promise<void>;
 }

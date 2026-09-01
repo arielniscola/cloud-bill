@@ -16,9 +16,9 @@ export class CreateCustomerUseCase {
 
   async execute(data: CreateCustomerDTO & { companyId?: string }): Promise<Customer> {
     if (data.taxId) {
-      const existingCustomer = await this.customerRepository.findByTaxId(data.taxId);
+      const existingCustomer = await this.customerRepository.findByTaxId(data.taxId, data.companyId);
       if (existingCustomer) {
-        throw new ConflictError('Customer with this tax ID already exists');
+        throw new ConflictError('Ya existe un cliente con este CUIT en tu empresa');
       }
     }
 
