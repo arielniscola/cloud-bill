@@ -696,6 +696,10 @@ model AfipConfig {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  // Índice único PARCIAL "afip_config_companyId_active_key" ON ("companyId") WHERE "isActive"
+  // (migración 20260903120000): una sola configuración de ARCA activa por empresa.
+  // Prisma no modela índices parciales, por eso vive solo en la migración.
+  @@index([companyId])
   @@map("afip_config")
 }
 

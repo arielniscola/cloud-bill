@@ -4,32 +4,55 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
+import { clsx } from 'clsx';
+import { Building2, MapPin, FileText, AlertCircle, AlertTriangle, Receipt } from 'lucide-react';
+import { Button, Card } from '../../components/ui';
 import {
-  Building2, Phone, Mail,
-  MapPin, FileText, Power, Check, CloudDownload,
-} from 'lucide-react';
-import { Button, Card, Textarea } from '../../components/ui';
-import { PageHeader, CuitInput } from '../../components/shared';
-import { suppliersService, afipService } from '../../services';
-import type { TaxCondition } from '../../types';
+  PageHeader,
+  PadronLookup,
+  OptionCards,
+  ActiveToggle,
+  SectionHeader,
+  FieldLabel,
+  FieldError,
+  fieldClass,
+  requiresCuit,
+  cuitIssueMessage,
+  TAX_OPTIONS,
+  COMPROBANTE_BY_TAX,
+} from '../../components/shared';
+import type { PadronState } from '../../components/shared';
+import { suppliersService } from '../../services';
+
+const FORM_ID = 'supplier-form';
 
 // ── Schema ───────────────────────────────────────────────────────
-const supplierSchema = z.object({
-  name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  cuit: z.string().optional().nullable(),
-  taxCondition: z.enum([
-    'RESPONSABLE_INSCRIPTO',
-    'MONOTRIBUTISTA',
-    'EXENTO',
-    'CONSUMIDOR_FINAL',
-  ]),
-  address: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  email: z.string().email('Email inválido').optional().or(z.literal('')).nullable(),
-  notes: z.string().optional().nullable(),
-  isActive: z.boolean(),
-});
+const supplierSchema = z
+  .object({
+    name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
+    cuit: z.string().optional().nullable(),
+    taxCondition: z.enum([
+      'RESPONSABLE_INSCRIPTO',
+      'MONOTRIBUTISTA',
+      'EXENTO',
+      'CONSUMIDOR_FINAL',
+    ]),
+    address: z.string().optional().nullable(),
+    city: z.string().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    email: z.string().email('Email inválido').optional().or(z.literal('')).nullable(),
+    notes: z.string().optional().nullable(),
+    isActive: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (!requiresCuit(data.taxCondition)) return;
+    if ((data.cuit ?? '').replace(/\D/g, '').length === 11) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['cuit'],
+      message: cuitIssueMessage(data.taxCondition),
+    });
+  });
 
 // El tipo de ENTRADA del formulario (lo que escribe el usuario) y el de SALIDA
 // (lo ya parseado) se declaran por separado para que useForm y handleSubmit usen
@@ -37,159 +60,32 @@ const supplierSchema = z.object({
 type SupplierFormInput = z.input<typeof supplierSchema>;
 type SupplierFormData = z.output<typeof supplierSchema>;
 
-// ── Tax condition cards ──────────────────────────────────────────
-const TAX_OPTIONS: {
-  value: TaxCondition;
-  label: string;
-  desc: string;
-  activeColor: string;
-  hoverColor: string;
-}[] = [
-  {
-    value: 'RESPONSABLE_INSCRIPTO',
-    label: 'Resp. Inscripto',
-    desc: 'IVA discriminado (Factura A)',
-    activeColor: 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300',
-    hoverColor: 'border-gray-200 hover:border-indigo-300 bg-white',
-  },
-  {
-    value: 'MONOTRIBUTISTA',
-    label: 'Monotributista',
-    desc: 'Sin IVA discriminado (Factura B/C)',
-    activeColor: 'border-violet-400 bg-violet-50 ring-1 ring-violet-300',
-    hoverColor: 'border-gray-200 hover:border-violet-300 bg-white',
-  },
-  {
-    value: 'EXENTO',
-    label: 'Exento',
-    desc: 'Exento de IVA (Factura B)',
-    activeColor: 'border-amber-400 bg-amber-50 ring-1 ring-amber-300',
-    hoverColor: 'border-gray-200 hover:border-amber-300 bg-white',
-  },
-  {
-    value: 'CONSUMIDOR_FINAL',
-    label: 'Cons. Final',
-    desc: 'Sin CUIT requerido (Factura B/C)',
-    activeColor: 'border-gray-400 bg-gray-50 ring-1 ring-gray-300',
-    hoverColor: 'border-gray-200 hover:border-gray-400 bg-white',
-  },
-];
-
-function TaxConditionSelector({
-  value,
-  onChange,
-  error,
-}: {
-  value: TaxCondition;
-  onChange: (v: TaxCondition) => void;
-  error?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-        Condición IVA *
-      </label>
-      <div className="grid grid-cols-2 gap-2">
-        {TAX_OPTIONS.map((opt) => {
-          const isSelected = value === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onChange(opt.value)}
-              className={`flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all duration-150 ${
-                isSelected ? opt.activeColor : opt.hoverColor + ' dark:bg-slate-700 dark:border-slate-600'
-              }`}
-            >
-              <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-                isSelected ? 'border-current bg-current' : 'border-gray-300 dark:border-slate-500'
-              }`}>
-                {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
-              </div>
-              <div className="min-w-0">
-                <p className={`text-xs font-semibold leading-tight ${isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-slate-300'}`}>
-                  {opt.label}
-                </p>
-                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5 leading-snug">{opt.desc}</p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
-    </div>
-  );
-}
-
-// ── Section header ───────────────────────────────────────────────
-function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider pt-1">
-      {icon}
-      {label}
-    </div>
-  );
-}
-
-// ── Toggle ───────────────────────────────────────────────────────
-function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
-      checked ? 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
-    }`}>
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
-        checked ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : 'bg-white dark:bg-slate-600 border border-gray-200 dark:border-slate-500 text-gray-400 dark:text-slate-400'
-      }`}>
-        <Power className="w-4 h-4" />
-      </div>
-      <div className="flex-1">
-        <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800 dark:text-emerald-400' : 'text-gray-600 dark:text-slate-400'}`}>
-          Proveedor activo
-        </p>
-        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
-          Solo los proveedores activos aparecen al registrar compras.
-        </p>
-      </div>
-      <div
-        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-emerald-500' : 'bg-gray-200'}`}
-        style={{ width: 40, height: 22 }}
-      >
-        <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
-          checked ? 'translate-x-[19px]' : 'translate-x-[3px]'
-        }`} />
-      </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
-    </label>
-  );
-}
-
 // ── Skeleton ─────────────────────────────────────────────────────
 function FormSkeleton() {
   return (
-    <Card className="max-w-2xl animate-pulse">
-      <div className="space-y-6">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="space-y-3">
-            <div className="h-3 w-28 bg-gray-100 dark:bg-slate-700 rounded" />
-            <div className="grid grid-cols-2 gap-4">
-              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
-              <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start animate-pulse">
+      <div className="space-y-5">
+        {[1, 2].map((s) => (
+          <Card key={s}>
+            <div className="space-y-4">
+              <div className="h-3 w-32 bg-gray-100 dark:bg-slate-700 rounded" />
+              <div className="h-24 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+                <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg" />
+              </div>
             </div>
-          </div>
+          </Card>
         ))}
-        <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-xl" />
-        <div className="flex gap-3 pt-2">
-          <div className="h-9 w-36 bg-gray-100 dark:bg-slate-700 rounded-lg" />
-          <div className="h-9 w-24 bg-gray-100 dark:bg-slate-700 rounded-lg" />
-        </div>
       </div>
-    </Card>
+      <div className="space-y-4">
+        <div className="h-32 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+        <div className="h-20 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+        <div className="h-40 bg-gray-100 dark:bg-slate-700 rounded-xl" />
+      </div>
+    </div>
   );
 }
-
-// ── Shared input style ───────────────────────────────────────────
-const inputCls =
-  'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150';
 
 // ── Main component ───────────────────────────────────────────────
 export default function SupplierFormPage() {
@@ -198,12 +94,14 @@ export default function SupplierFormPage() {
   const isEditing = !!id;
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
+  const [padronState, setPadronState] = useState<PadronState>('idle');
 
   const {
     register,
     handleSubmit,
     setValue,
     watch,
+    clearErrors,
     formState: { errors },
   } = useForm<SupplierFormInput, unknown, SupplierFormData>({
     resolver: zodResolver(supplierSchema),
@@ -215,34 +113,11 @@ export default function SupplierFormPage() {
 
   const taxCondition = watch('taxCondition');
   const cuitVal = watch('cuit');
-  const [isPadronLoading, setIsPadronLoading] = useState(false);
-
-  // Autocompletar desde el padrón de ARCA (constancia de inscripción)
-  const handlePadronLookup = async () => {
-    const digits = (cuitVal ?? '').replace(/\D/g, '');
-    if (digits.length !== 11) {
-      toast.error('Ingresá un CUIT completo (11 dígitos) para buscar en ARCA');
-      return;
-    }
-    setIsPadronLoading(true);
-    try {
-      const p = await afipService.getPadron(digits);
-      if (p.name) setValue('name', p.name);
-      setValue('taxCondition', p.taxCondition);
-      if (p.address) setValue('address', p.address);
-      if (p.city) setValue('city', p.city);
-      toast.success(`Datos de "${p.name}" cargados desde ARCA`);
-      if (p.estado && p.estado !== 'ACTIVO') {
-        toast(`Atención: el CUIT figura como ${p.estado} en ARCA`, { icon: '⚠️' });
-      }
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'No se pudo consultar el padrón de ARCA');
-    } finally {
-      setIsPadronLoading(false);
-    }
-  };
   const isActiveVal = watch('isActive');
+
+  const cuitRequired = requiresCuit(taxCondition);
+  const isPadronLoading = padronState === 'loading';
+  const errorCount = Object.keys(errors).length;
 
   useEffect(() => {
     if (!isEditing) return;
@@ -294,10 +169,33 @@ export default function SupplierFormPage() {
     }
   };
 
+  const actionButtons = (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => navigate('/suppliers')}
+        disabled={isLoading}
+      >
+        Cancelar
+      </Button>
+      <Button type="submit" form={FORM_ID} isLoading={isLoading}>
+        {isEditing ? 'Guardar cambios' : 'Crear proveedor'}
+      </Button>
+    </>
+  );
+
+  const errorBadge = errorCount > 0 && (
+    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400">
+      <AlertCircle className="w-4 h-4" />
+      {errorCount === 1 ? 'Falta 1 dato obligatorio' : `Faltan ${errorCount} datos obligatorios`}
+    </span>
+  );
+
   if (isFetching) {
     return (
       <div>
-        <PageHeader title={isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor'} backTo="/suppliers" />
+        <PageHeader title="Editar Proveedor" backTo="/suppliers" />
         <FormSkeleton />
       </div>
     );
@@ -307,145 +205,194 @@ export default function SupplierFormPage() {
     <div>
       <PageHeader
         title={isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor'}
+        subtitle="Los campos con * son obligatorios"
         backTo="/suppliers"
+        actions={
+          <div className="hidden sm:flex items-center gap-2.5">
+            {errorBadge}
+            {actionButtons}
+          </div>
+        }
       />
 
-      <Card className="max-w-2xl">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        id={FORM_ID}
+        onSubmit={handleSubmit(onSubmit)}
+        className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start"
+      >
+        {/* ══ Columna principal ══ */}
+        <div className="space-y-5">
 
-          {/* ── Identificación ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} label="Identificación" />
+          {/* ── Identificación fiscal ── */}
+          <Card>
+            <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} label="Identificación fiscal" />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
-                Nombre / Razón Social *
-              </label>
+            <div className="mt-3.5">
+              <PadronLookup
+                value={cuitVal}
+                onChange={(raw) => setValue('cuit', raw || null, { shouldValidate: !!errors.cuit })}
+                required={cuitRequired}
+                error={errors.cuit?.message}
+                onStateChange={setPadronState}
+                onResult={(p) => {
+                  if (p.name) setValue('name', p.name, { shouldValidate: true });
+                  setValue('taxCondition', p.taxCondition);
+                  if (p.address) setValue('address', p.address);
+                  if (p.city) setValue('city', p.city);
+                  clearErrors('cuit');
+                }}
+              />
+            </div>
+
+            {/* Nombre */}
+            <div className="mt-4">
+              <FieldLabel required>Nombre / Razón Social</FieldLabel>
               <input
                 type="text"
                 placeholder="Ej: Distribuidora García S.A."
-                {...register('name')}
                 autoFocus={!isEditing}
-                className={inputCls}
+                disabled={isPadronLoading}
+                {...register('name')}
+                className={fieldClass(!!errors.name)}
               />
-              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
+              <FieldError message={errors.name?.message} />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <CuitInput
-                  label="CUIT"
-                  value={watch('cuit')}
-                  onChange={(raw) => setValue('cuit', raw || null)}
-                  error={errors.cuit?.message}
-                />
-                <button
-                  type="button"
-                  onClick={handlePadronLookup}
-                  disabled={isPadronLoading || (cuitVal ?? '').replace(/\D/g, '').length !== 11}
-                  className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 disabled:text-gray-300 dark:disabled:text-slate-600 disabled:cursor-not-allowed transition-colors"
-                >
-                  <CloudDownload className={`w-3.5 h-3.5 ${isPadronLoading ? 'animate-pulse' : ''}`} />
-                  {isPadronLoading ? 'Consultando ARCA…' : 'Completar datos desde ARCA'}
-                </button>
+            {/* Condición IVA */}
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                <FieldLabel required>Condición frente al IVA</FieldLabel>
+                {cuitRequired && (
+                  <span className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Esta condición exige CUIT
+                  </span>
+                )}
               </div>
-              <div />
+              <OptionCards
+                options={TAX_OPTIONS}
+                value={taxCondition}
+                onChange={(v) => setValue('taxCondition', v, { shouldValidate: !!errors.cuit })}
+                columns={4}
+              />
             </div>
+          </Card>
 
-            <TaxConditionSelector
-              value={taxCondition}
-              onChange={(v) => setValue('taxCondition', v)}
-              error={errors.taxCondition?.message}
+          {/* ── Contacto y ubicación ── */}
+          <Card>
+            <SectionHeader
+              icon={<MapPin className="w-3.5 h-3.5" />}
+              label="Contacto y ubicación"
+              suffix="opcional"
             />
-          </div>
 
-          {/* ── Contacto ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<Phone className="w-3.5 h-3.5" />} label="Contacto" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                  Email
-                </label>
+            <div className="mt-3.5 grid grid-cols-1 md:grid-cols-6 gap-3.5">
+              <div className="md:col-span-3">
+                <FieldLabel>Email</FieldLabel>
                 <input
                   type="email"
                   placeholder="proveedor@ejemplo.com"
                   {...register('email')}
-                  className={inputCls}
+                  className={fieldClass(!!errors.email)}
                 />
-                {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
+                <FieldError message={errors.email?.message} />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                  Teléfono
-                </label>
+              <div className="md:col-span-3">
+                <FieldLabel>Teléfono</FieldLabel>
                 <input
                   type="text"
                   placeholder="11 1234-5678"
                   {...register('phone')}
-                  className={inputCls}
+                  className={fieldClass(!!errors.phone)}
                 />
-                {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone.message}</p>}
+                <FieldError message={errors.phone?.message} />
+              </div>
+              <div className="md:col-span-4">
+                <FieldLabel>Dirección</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="Av. San Martín 2500"
+                  disabled={isPadronLoading}
+                  {...register('address')}
+                  className={fieldClass()}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <FieldLabel>Ciudad</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="Buenos Aires"
+                  disabled={isPadronLoading}
+                  {...register('city')}
+                  className={fieldClass()}
+                />
               </div>
             </div>
-          </div>
+          </Card>
+        </div>
 
-          {/* ── Ubicación ── */}
-          <div className="space-y-4">
-            <SectionHeader icon={<MapPin className="w-3.5 h-3.5" />} label="Ubicación" />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Dirección</label>
-              <input
-                type="text"
-                placeholder="Av. San Martín 2500"
-                {...register('address')}
-                className={inputCls}
-              />
+        {/* ══ Rail derecho ══ */}
+        <div className="space-y-4">
+
+          {/* Consecuencias de lo elegido */}
+          <Card>
+            <SectionHeader icon={<Receipt className="w-3.5 h-3.5" />} label="Qué implica" />
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Vas a recibir</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white text-right">
+                  {COMPROBANTE_BY_TAX[taxCondition]}
+                </span>
+              </div>
+              <div className="h-px bg-gray-100 dark:bg-slate-700" />
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">IVA discriminado</span>
+                <span
+                  className={clsx(
+                    'text-sm font-semibold text-right',
+                    taxCondition === 'RESPONSABLE_INSCRIPTO'
+                      ? 'text-primary-700 dark:text-primary-300'
+                      : 'text-gray-900 dark:text-white'
+                  )}
+                >
+                  {taxCondition === 'RESPONSABLE_INSCRIPTO' ? 'Sí' : 'No'}
+                </span>
+              </div>
             </div>
-            <div className="max-w-xs">
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
-                Ciudad
-              </label>
-              <input
-                type="text"
-                placeholder="Buenos Aires"
-                {...register('city')}
-                className={inputCls}
-              />
-            </div>
-          </div>
+            <p className="mt-3 pt-2.5 border-t border-gray-100 dark:border-slate-700 text-xs leading-[17px] text-gray-500 dark:text-slate-400">
+              {taxCondition === 'RESPONSABLE_INSCRIPTO'
+                ? 'El crédito fiscal de sus facturas entra al Libro IVA Compras.'
+                : 'Sus comprobantes no generan crédito fiscal computable.'}
+            </p>
+          </Card>
 
-          {/* ── Notas ── */}
-          <div className="space-y-3">
-            <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Notas" />
-            <Textarea
-              placeholder="Condiciones de pago, contacto comercial, plazos de entrega…"
-              rows={3}
-              {...register('notes')}
-              error={errors.notes?.message}
-            />
-          </div>
-
-          {/* ── Estado ── */}
+          {/* Estado */}
           <ActiveToggle
             checked={isActiveVal}
             onChange={(v) => setValue('isActive', v)}
+            label="Proveedor activo"
+            hint="Solo los activos aparecen al registrar compras."
           />
 
-          {/* ── Actions ── */}
-          <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
-            <Button type="submit" isLoading={isLoading}>
-              {isEditing ? 'Guardar cambios' : 'Crear proveedor'}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => navigate('/suppliers')} disabled={isLoading}>
-              Cancelar
-            </Button>
-          </div>
-        </form>
-      </Card>
+          {/* Notas */}
+          <Card>
+            <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Notas internas" />
+            <textarea
+              rows={4}
+              placeholder="Condiciones de pago, contacto comercial, plazos de entrega…"
+              {...register('notes')}
+              className={fieldClass(!!errors.notes, 'mt-3 resize-none leading-5')}
+            />
+            <FieldError message={errors.notes?.message} />
+          </Card>
+        </div>
+      </form>
+
+      {/* Acciones al pie para pantallas angostas, donde el header no las muestra */}
+      <div className="sm:hidden mt-5 space-y-3">
+        {errorBadge}
+        <div className="flex gap-3">{actionButtons}</div>
+      </div>
     </div>
   );
 }

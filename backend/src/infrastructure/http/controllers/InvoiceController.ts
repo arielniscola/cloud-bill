@@ -734,7 +734,7 @@ export class InvoiceController {
         throw new AppError('Esta factura ya está autorizada por ARCA', 400);
       }
 
-      const config = await afipRepo.getActive();
+      const config = await afipRepo.getActive(req.companyId!);
       if (!config) {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }

@@ -28,20 +28,33 @@ async function withExtraColumns(config: any): Promise<AfipConfig> {
   };
 }
 
+/**
+ * El certificado y la clave privada de ARCA son datos fiscales de UNA empresa.
+ * Sin `companyId` la consulta devolvía la primera config activa de la tabla, es
+ * decir la de otra empresa. Fallamos fuerte en vez de caer a un default.
+ */
+function assertCompanyId(companyId: string | undefined | null): asserts companyId is string {
+  if (!companyId) {
+    throw new Error('companyId es obligatorio para acceder a la configuración de ARCA');
+  }
+}
+
 @injectable()
 export class PrismaAfipConfigRepository implements IAfipConfigRepository {
-  async getActive(companyId?: string): Promise<AfipConfig | null> {
-    const where: any = { isActive: true };
-    if (companyId) where.companyId = companyId;
-    const config = await prisma.afipConfig.findFirst({ where });
+  async getActive(companyId: string): Promise<AfipConfig | null> {
+    assertCompanyId(companyId);
+    const config = await prisma.afipConfig.findFirst({
+      where: { isActive: true, companyId },
+    });
     if (!config) return null;
     return withExtraColumns(config);
   }
 
-  async upsert(data: CreateAfipConfigInput, companyId?: string): Promise<AfipConfig> {
-    const where: any = { isActive: true };
-    if (companyId) where.companyId = companyId;
-    const existing = await prisma.afipConfig.findFirst({ where });
+  async upsert(data: CreateAfipConfigInput, companyId: string): Promise<AfipConfig> {
+    assertCompanyId(companyId);
+    const existing = await prisma.afipConfig.findFirst({
+      where: { isActive: true, companyId },
+    });
 
     let config: any;
     if (existing) {
@@ -63,7 +76,7 @@ export class PrismaAfipConfigRepository implements IAfipConfigRepository {
         consumerDefensePhone: _cdp,
         ...rest
       } = data as any;
-      config = await prisma.afipConfig.create({ data: { ...rest, ...(companyId ? { companyId } : {}) } });
+      config = await prisma.afipConfig.create({ data: { ...rest, companyId } });
     }
 
     // Columnas fuera del client generado — se escriben por SQL crudo.

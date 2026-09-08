@@ -48,3 +48,23 @@ export { AddPurchaseInvoiceModal } from './AddPurchaseInvoiceModal';
 export { default as BancoSelect } from './BancoSelect';
 export { default as CreateCustomerModal } from './CreateCustomerModal';
 export { default as FeatureGuard } from './FeatureGuard';
+
+export {
+  FieldLabel,
+  FieldError,
+  SectionHeader,
+  OptionCards,
+  ActiveToggle,
+  PadronLookup,
+} from './EntityFormKit';
+
+export {
+  fieldClass,
+  TAX_CONDITIONS_REQUIRING_CUIT,
+  TAX_LABELS,
+  TAX_OPTIONS,
+  COMPROBANTE_BY_TAX,
+  requiresCuit,
+  cuitIssueMessage,
+} from './entityForm';
+export type { OptionCard, PadronState } from './entityForm';

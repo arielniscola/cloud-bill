@@ -12,7 +12,7 @@ export class AfipController {
   async getConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const config = await (repo as any).getActive(req.companyId);
+      const config = await repo.getActive(req.companyId!);
 
       if (!config) {
         res.json({ status: 'success', data: null });
@@ -53,12 +53,12 @@ export class AfipController {
       // salePoint is now derived per-user from the assigned PdV (managed in PdvSettingsCard).
       // We keep the legacy column for back-compat: preserve existing value if not in payload,
       // default to 1 on first save.
-      const existing = await (repo as any).getActive(req.companyId);
+      const existing = await repo.getActive(req.companyId!);
       const resolvedSalePoint = salePoint != null && !Number.isNaN(Number(salePoint))
         ? Number(salePoint)
         : (existing?.salePoint ?? 1);
 
-      const config = await (repo as any).upsert({
+      const config = await repo.upsert({
         cuit,
         salePoint: resolvedSalePoint,
         cert,
@@ -70,7 +70,7 @@ export class AfipController {
         activityStartDate: activityStartDate ? new Date(activityStartDate) : null,
         grossIncome: grossIncome || null,
         consumerDefensePhone: consumerDefensePhone || null,
-      }, req.companyId);
+      }, req.companyId!);
 
       res.json({
         status: 'success',
@@ -100,7 +100,7 @@ export class AfipController {
   async testConnection(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const config = await (repo as any).getActive(req.companyId);
+      const config = await repo.getActive(req.companyId!);
 
       if (!config) {
         throw new AppError('No hay configuración AFIP activa', 400);
@@ -126,7 +126,7 @@ export class AfipController {
       }
 
       const repo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const config = await (repo as any).getActive(req.companyId);
+      const config = await repo.getActive(req.companyId!);
       if (!config) {
         throw new AppError('No hay configuración ARCA activa. Configurala en Configuración → AFIP.', 400);
       }
@@ -158,7 +158,7 @@ export class AfipController {
         throw new AppError('Esta factura ya tiene CAE asignado', 400);
       }
 
-      const config = await (afipRepo as any).getActive(req.companyId);
+      const config = await afipRepo.getActive(req.companyId!);
       if (!config) {
         throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
       }
