@@ -1,6 +1,44 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
+import { exchangeRateService } from '../../services/ExchangeRateService';
+
+/**
+ * Importe del comprobante llevado a PESOS.
+ *
+ * Los totales del panel se muestran en una sola cifra en ARS, así que un
+ * comprobante en dólares hay que convertirlo con la cotización que quedó
+ * guardada en él (la misma que usa la imputación de pagos). Antes las métricas
+ * de ventas y cobros filtraban `currency = 'ARS'` (dejaban afuera lo facturado
+ * en dólares) y las de compras y pagos no filtraban nada (sumaban dólares como
+ * si fueran pesos): ninguna de las dos daba el total real.
+ *
+ * Se interpolan con `Prisma.raw` sobre texto fijo del código — no entra nada
+ * del request.
+ */
+const ARS = (col: string) => Prisma.raw(
+  `(${col} * (CASE WHEN currency::text = 'ARS' THEN 1 ELSE COALESCE(NULLIF("exchangeRate", 0), 1) END))`
+);
+const ARS_TOTAL  = ARS('total');
+const ARS_AMOUNT = ARS('amount');
+
+/**
+ * Importe con SIGNO según el tipo de comprobante: una nota de crédito devuelve
+ * mercadería o plata, así que RESTA de lo vendido/comprado; factura y nota de
+ * débito suman. Antes las métricas del mes miraban solo `FACTURA_*` y una NC no
+ * bajaba nunca el total, que quedaba más alto que la venta real.
+ *
+ * La cantidad se cuenta aparte (solo los comprobantes positivos): emitir una NC
+ * no es "una venta más".
+ */
+const SIGN = `(CASE WHEN type::text LIKE 'NOTA_CREDITO%' THEN -1 ELSE 1 END)`;
+const SIGNED_ARS = (col: string) => Prisma.raw(
+  `(${SIGN} * (${col} * (CASE WHEN currency::text = 'ARS' THEN 1 ELSE COALESCE(NULLIF("exchangeRate", 0), 1) END)))`
+);
+const SIGNED_TOTAL  = SIGNED_ARS('total');
+const SIGNED_AMOUNT = SIGNED_ARS('amount');
+/** Tipos que representan una venta/compra propiamente dicha (para el contador). */
+const IS_POSITIVE = Prisma.raw(`(type::text NOT LIKE 'NOTA_CREDITO%')`);
 
 export class DashboardController {
   async getStats(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -15,6 +53,20 @@ export class DashboardController {
       const companyId = req.companyId;
       const fiscalMode = req.fiscalMode;
       const fmFilter = fiscalMode ? Prisma.sql`AND "fiscalMode" = ${fiscalMode}` : Prisma.empty;
+      // Igual que `fmFilter` pero para consultas con alias de tabla. En modo ALL
+      // (`fiscalMode` undefined) el filtro TIENE que desaparecer: interpolar el
+      // undefined genera `= NULL`, que no matchea nada — así se vaciaban las
+      // listas de detalle de abajo cuando se miraba FORMAL + INFORMAL juntos.
+      const fmOf = (alias: string) =>
+        fiscalMode ? Prisma.sql`AND ${Prisma.raw(alias)}."fiscalMode" = ${fiscalMode}` : Prisma.empty;
+
+      // Las cuentas corrientes son por moneda y no guardan cotización, así que
+      // para ordenar deudores de distintas monedas en una sola lista se usa la
+      // cotización del día (igual que el reporte de deudores). Si el servicio no
+      // responde, el orden cae en el importe nominal. El saldo se muestra en su
+      // moneda original: solo el ORDEN se convierte.
+      const usd = await exchangeRateService.getUsdRate().catch(() => null);
+      const usdRate = usd?.rate && usd.rate > 0 ? usd.rate : 1;
 
       const [
         ventasMesRows,
@@ -37,45 +89,56 @@ export class DashboardController {
         customersWithDebtRows,
         lowStockRaw,
       ] = await Promise.all([
-        // Ventas del mes — facturas emitidas + órdenes de pedido NO convertidas.
-        // Una OP convertida a factura ya se cuenta como su factura (invoiceId NOT NULL),
-        // por eso se excluye acá para no duplicar la venta.
+        // Ventas del mes — comprobantes emitidos (facturas y ND suman, NC resta)
+        // + órdenes de pedido NO convertidas. Una OP convertida a factura ya se
+        // cuenta como su factura (invoiceId NOT NULL), por eso se excluye acá
+        // para no duplicar la venta.
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count FROM (
-            SELECT total FROM "invoices"
-            WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
+          SELECT COALESCE(SUM(total), 0) AS total,
+                 COUNT(*) FILTER (WHERE "isSale") AS count
+          FROM (
+            SELECT ${SIGNED_TOTAL} AS total, ${IS_POSITIVE} AS "isSale" FROM "invoices"
+            WHERE (type::text LIKE 'FACTURA%' OR type::text LIKE 'NOTA_CREDITO%' OR type::text LIKE 'NOTA_DEBITO%')
               AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
-              AND currency = 'ARS'
               AND "companyId" = ${companyId}
               ${fmFilter}
               AND date >= ${monthStart} AND date <= ${monthEnd}
             UNION ALL
-            SELECT total FROM "orden_pedidos"
+            SELECT ${ARS_TOTAL} AS total, TRUE AS "isSale" FROM "orden_pedidos"
             WHERE status IN ('CONFIRMED', 'PARTIALLY_PAID', 'PAID')
               AND "invoiceId" IS NULL
-              AND currency = 'ARS'
               AND "companyId" = ${companyId}
               ${fmFilter}
               AND date >= ${monthStart} AND date <= ${monthEnd}
           ) AS ventas
         `,
 
-        // Cobros pendientes (facturas ISSUED/AUTHORIZED + PARTIALLY_PAID)
+        // Cobros pendientes: lo que FALTA cobrar de las facturas y ND abiertas
+        // (total − recibos emitidos). Antes sumaba el total completo, así que una
+        // factura cobrada a medias figuraba entera. Las NC no son un crédito a
+        // cobrar y quedan afuera.
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
-          FROM "invoices"
-          WHERE status IN ('ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID')
-            AND currency = 'ARS'
-            AND "companyId" = ${companyId}
-            ${fmFilter}
+          SELECT COALESCE(SUM(pending), 0) AS total, COUNT(*) AS count FROM (
+            SELECT (i.total - COALESCE(p.paid, 0))
+                   * (CASE WHEN i.currency::text = 'ARS' THEN 1 ELSE COALESCE(NULLIF(i."exchangeRate", 0), 1) END) AS pending
+            FROM "invoices" i
+            LEFT JOIN (
+              SELECT "invoiceId", SUM(amount) AS paid
+              FROM "recibos" WHERE status = 'EMITTED' GROUP BY "invoiceId"
+            ) p ON p."invoiceId" = i.id
+            WHERE i.status IN ('ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID')
+              AND (i.type::text LIKE 'FACTURA%' OR i.type::text LIKE 'NOTA_DEBITO%')
+              AND i."companyId" = ${companyId}
+              ${fmOf('i')}
+          ) AS abiertas
+          WHERE pending > 0.01
         `,
 
         // Cobros del mes — recibos EMITIDOS (dinero efectivamente cobrado)
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+          SELECT COALESCE(SUM(${ARS_AMOUNT}), 0) AS total, COUNT(*) AS count
           FROM "recibos"
           WHERE status = 'EMITTED'
-            AND currency = 'ARS'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
@@ -83,7 +146,7 @@ export class DashboardController {
 
         // Pagos del mes — Órdenes de Pago EMITIDAS este mes
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+          SELECT COALESCE(SUM(${ARS_AMOUNT}), 0) AS total, COUNT(*) AS count
           FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
@@ -91,13 +154,13 @@ export class DashboardController {
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
 
-        // Compras del mes — facturas de compra (documento de primer nivel del flujo
-        // actual). Solo FACTURA_* (excluye NC/ND), igual que la métrica de ventas.
+        // Compras del mes — facturas de compra (documento de primer nivel del
+        // flujo actual), netas de notas de crédito, igual que la métrica de ventas.
         prisma.$queryRaw<{ total: any; count: bigint }[]>`
-          SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+          SELECT COALESCE(SUM(${SIGNED_AMOUNT}), 0) AS total,
+                 COUNT(*) FILTER (WHERE ${IS_POSITIVE}) AS count
           FROM "purchase_invoices"
-          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
-            AND "companyId" = ${companyId}
+          WHERE "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
         `,
@@ -107,24 +170,25 @@ export class DashboardController {
         // Las NC (notas de crédito) no son un pasivo, se excluyen.
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
           SELECT COUNT(*) AS count,
-                 COALESCE(SUM(pi.amount - COALESCE((
+                 COALESCE(SUM((pi.amount - COALESCE((
                    SELECT SUM(
                      CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END
                    )
                    FROM "orden_pago_items" opi
                    JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
                    WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
-                 ), 0)), 0) AS total
+                 ), 0))
+                 * (CASE WHEN pi.currency = 'ARS' THEN 1 ELSE COALESCE(NULLIF(pi."exchangeRate", 0), 1) END)), 0) AS total
           FROM "purchase_invoices" pi
           WHERE pi.status != 'PAID'
             AND pi.type NOT IN ('NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C')
             AND pi."companyId" = ${companyId}
-            ${fmFilter}
+            ${fmOf('pi')}
         `,
 
         // OC pendientes (no recibidas ni canceladas)
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
-          SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+          SELECT COUNT(*) AS count, COALESCE(SUM(${ARS_TOTAL}), 0) AS total
           FROM "orden_compras"
           WHERE status NOT IN ('RECEIVED', 'CANCELLED')
             AND "companyId" = ${companyId}
@@ -133,7 +197,7 @@ export class DashboardController {
 
         // OP pendientes (CONFIRMED — no convertidas ni pagadas ni canceladas)
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
-          SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+          SELECT COUNT(*) AS count, COALESCE(SUM(${ARS_TOTAL}), 0) AS total
           FROM "orden_pedidos"
           WHERE status = 'CONFIRMED'
             AND "companyId" = ${companyId}
@@ -142,7 +206,7 @@ export class DashboardController {
 
         // OP convertidas a factura este mes
         prisma.$queryRaw<{ count: bigint; total: any }[]>`
-          SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+          SELECT COUNT(*) AS count, COALESCE(SUM(${ARS_TOTAL}), 0) AS total
           FROM "orden_pedidos"
           WHERE status = 'CONVERTED'
             AND "companyId" = ${companyId}
@@ -180,7 +244,7 @@ export class DashboardController {
           LEFT JOIN "invoices" inv ON inv.id = op."invoiceId"
           WHERE op.status != 'DRAFT'
             AND op."companyId" = ${companyId}
-            AND op."fiscalMode" = ${fiscalMode}
+            ${fmOf('op')}
           ORDER BY op."createdAt" DESC
           LIMIT 5
         `,
@@ -193,7 +257,7 @@ export class DashboardController {
           LEFT JOIN "suppliers" s ON s.id = op."supplierId"
           WHERE op.status = 'EMITTED'
             AND op."companyId" = ${companyId}
-            AND op."fiscalMode" = ${fiscalMode}
+            ${fmOf('op')}
           ORDER BY op."createdAt" DESC
           LIMIT 5
         `,
@@ -206,22 +270,21 @@ export class DashboardController {
           LEFT JOIN "customers" c ON c.id = r."customerId"
           WHERE r.status IN ('PENDING', 'PARTIALLY_DELIVERED')
             AND r."companyId" = ${companyId}
-            AND r."fiscalMode" = ${fiscalMode}
+            ${fmOf('r')}
           ORDER BY r.date ASC
           LIMIT 5
         `,
 
-        // Clientes con deuda (balance > 0, ARS, filtrado por fiscalMode)
+        // Clientes con deuda (saldo > 0, cualquier moneda, filtrado por fiscalMode)
         prisma.$queryRaw<{ id: string; balance: any; currency: string; customerId: string; customerName: string }[]>`
           SELECT ca.id, ca.balance, ca.currency,
                  ca."customerId", c.name AS "customerName"
           FROM "current_accounts" ca
           JOIN "customers" c ON c.id = ca."customerId"
           WHERE ca.balance > 0
-            AND ca.currency = 'ARS'
             AND c."companyId" = ${companyId}
-            AND ca."fiscalMode" = ${fiscalMode}
-          ORDER BY ca.balance DESC
+            ${fmOf('ca')}
+          ORDER BY ca.balance * (CASE WHEN ca.currency = 'ARS' THEN 1 ELSE ${usdRate} END) DESC
           LIMIT 5
         `,
 
@@ -333,22 +396,20 @@ export class DashboardController {
       }
 
       const [invoiceRows, ordenPedidoVentaRows, purchaseRows, reciboRows, ordenPagoRows] = await Promise.all([
-        // Ventas: facturas emitidas (no NC/ND)
+        // Ventas: facturas y ND emitidas, menos las NC (ver SIGNED_TOTAL)
         prisma.$queryRaw<{ date: Date; total: any }[]>`
-          SELECT date, total FROM "invoices"
-          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
+          SELECT date, ${SIGNED_TOTAL} AS total FROM "invoices"
+          WHERE (type::text LIKE 'FACTURA%' OR type::text LIKE 'NOTA_CREDITO%' OR type::text LIKE 'NOTA_DEBITO%')
             AND status IN ('ISSUED', 'AUTHORIZED', 'PAID', 'PARTIALLY_PAID')
-            AND currency = 'ARS'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
         // Ventas: órdenes de pedido NO convertidas (las convertidas cuentan como su factura)
         prisma.$queryRaw<{ date: Date; total: any }[]>`
-          SELECT date, total FROM "orden_pedidos"
+          SELECT date, ${ARS_TOTAL} AS total FROM "orden_pedidos"
           WHERE status IN ('CONFIRMED', 'PARTIALLY_PAID', 'PAID')
             AND "invoiceId" IS NULL
-            AND currency = 'ARS'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
@@ -356,17 +417,15 @@ export class DashboardController {
         // Compras — facturas de compra (documento de primer nivel del flujo actual).
         // Solo FACTURA_* (excluye NC/ND), consistente con la serie de ventas.
         prisma.$queryRaw<{ date: Date; total: any }[]>`
-          SELECT date, amount AS total FROM "purchase_invoices"
-          WHERE type IN ('FACTURA_A', 'FACTURA_B', 'FACTURA_C')
-            AND "companyId" = ${companyId}
+          SELECT date, ${SIGNED_AMOUNT} AS total FROM "purchase_invoices"
+          WHERE "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
         `,
         // Cobros (recibos)
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
-          SELECT date, amount FROM "recibos"
+          SELECT date, ${ARS_AMOUNT} AS amount FROM "recibos"
           WHERE status = 'EMITTED'
-            AND currency = 'ARS'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}
@@ -374,7 +433,7 @@ export class DashboardController {
         // Pagos a proveedores (Órdenes de Pago) — neto de retenciones: lo
         // retenido no sale de caja, queda como impuesto a depositar.
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
-          SELECT date, (amount - "retentionAmount") AS amount FROM "orden_pagos"
+          SELECT date, ${ARS('(amount - "retentionAmount")')} AS amount FROM "orden_pagos"
           WHERE status = 'EMITTED'
             AND "companyId" = ${companyId}
             ${fmFilter}

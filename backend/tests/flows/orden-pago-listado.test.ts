@@ -92,7 +92,19 @@ describe('Listado de órdenes de pago: filtros y totales', () => {
     // El pago a cuenta es la orden sin facturas imputadas; la anulada no cuenta.
     expect(summary.onAccountArs).toBe(50000);
     expect(summary.onAccountCount).toBe(1);
-    expect(summary.statusCounts).toEqual({ all: 3, EMITTED: 1, PAID: 1, CANCELLED: 1 });
+    // `all` es el contador de la pestaña "Todas", que ya no muestra anuladas.
+    expect(summary.statusCounts).toEqual({ all: 2, EMITTED: 1, PAID: 1, CANCELLED: 1 });
+  });
+
+  it('excludeCancelled deja las anuladas fuera del listado sin tocar los contadores', async () => {
+    const sinAnuladas = await list({ excludeCancelled: 'true' });
+    expect(sinAnuladas.total).toBe(2);
+    expect(sinAnuladas.data.map((o: { id: string }) => o.id)).not.toContain(opAnuladaId);
+    // Los contadores siguen describiendo el período: la pestaña "Anuladas" las ve.
+    expect(sinAnuladas.summary.statusCounts.CANCELLED).toBe(1);
+
+    // "false" es un valor presente en la query: no debe activar el filtro.
+    expect((await list({ excludeCancelled: 'false' })).total).toBe(3);
   });
 
   it('elegir una pestaña filtra las filas pero no vacía los totales ni los contadores', async () => {
@@ -100,7 +112,7 @@ describe('Listado de órdenes de pago: filtros y totales', () => {
     expect(paid.total).toBe(1);
     expect(paid.data[0].id).toBe(opRetencionId);
     // Los contadores siguen describiendo el período completo.
-    expect(paid.summary.statusCounts).toEqual({ all: 3, EMITTED: 1, PAID: 1, CANCELLED: 1 });
+    expect(paid.summary.statusCounts).toEqual({ all: 2, EMITTED: 1, PAID: 1, CANCELLED: 1 });
     expect(paid.summary.pendingArs).toBe(50000);
 
     const cancelled = await list({ status: 'CANCELLED' });

@@ -10,7 +10,9 @@ const importController   = new ImportController();
 router.use(authMiddleware);
 
 router.get('/',             requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findAll);
+router.get('/summary',      requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findSummaries);
 router.get('/:id/products', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findProducts);
+router.get('/:id/summary',  requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findSummary);
 
 // Retenciones configuradas del proveedor (se aplican al emitir la Orden de Pago)
 router.get('/:id/retentions',                  requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findRetentions);

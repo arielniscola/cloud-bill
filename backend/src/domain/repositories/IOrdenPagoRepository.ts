@@ -17,6 +17,12 @@ export interface OrdenPagoFilters {
   onlyRetentions?: boolean;
   /** Solo pagos a cuenta: órdenes sin facturas imputadas. */
   onlyOnAccount?: boolean;
+  /**
+   * Deja las órdenes anuladas fuera del listado. No afecta los totales ni los
+   * contadores de las pestañas: la pestaña "Anuladas" tiene que seguir
+   * mostrando cuántas hay y poder abrirlas.
+   */
+  excludeCancelled?: boolean;
   dateFrom?: Date;
   dateTo?: Date;
 }

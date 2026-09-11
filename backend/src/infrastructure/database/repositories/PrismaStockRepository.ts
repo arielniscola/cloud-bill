@@ -30,10 +30,13 @@ function mapStock(r: RawStock): Stock {
     variantId: r.variantId ?? null,
     warehouseId: r.warehouseId,
     quantity: new Decimal(r.quantity),
+    // Sin esto, `GET /stock/:productId/:warehouseId` y `/stock/product/:id`
+    // devolvían la fila sin lo reservado y el front, que calcula
+    // `quantity - reservedQuantity`, mostraba "NaN disponibles".
+    reservedQuantity: new Decimal(r.reservedQuantity ?? 0),
     minQuantity: r.minQuantity !== null ? new Decimal(r.minQuantity) : null,
     updatedAt: r.updatedAt,
-    // reservedQuantity is on the row but not in the entity — preserved at DB level only
-  } as Stock & { reservedQuantity?: Decimal };
+  };
 }
 
 @injectable()

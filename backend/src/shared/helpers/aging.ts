@@ -9,6 +9,8 @@ export type AgingRow = {
   dueDate: Date | null;
   total: number;
   paid: number;
+  /** Moneda del comprobante: lo que no es ARS se convierte antes de sumar. */
+  currency?: string;
 };
 
 export type AgingEntity = {
@@ -31,12 +33,25 @@ type AgingBucket = keyof Pick<AgingEntity, 'notDue' | 'd0_30' | 'd31_60' | 'd61_
  * Agrupa comprobantes impagos por entidad y balde de antigüedad. La edad se
  * mide desde el vencimiento (o la fecha del comprobante si no tiene); lo que
  * aún no venció va a "notDue".
+ *
+ * `usdRate` decide qué hacer con las monedas:
+ *  - omitido: no se convierte nada (el llamador ya acotó la consulta a UNA
+ *    moneda, así que los importes están todos en la misma escala);
+ *  - un número: es la cotización del día (la misma que usa el reporte de
+ *    deudores) y los importes salen en PESOS — sin esto, un comprobante en
+ *    dólares se sumaba por su valor nominal dentro de un total en pesos;
+ *  - `null`: hay mezcla de monedas pero no se pudo obtener la cotización, así
+ *    que lo que no está en pesos queda AFUERA en vez de ensuciar el total.
  */
-export function bucketizeAging(rows: AgingRow[]): AgingEntity[] {
+export function bucketizeAging(rows: AgingRow[], usdRate?: number | null): AgingEntity[] {
   const byEntity = new Map<string, AgingEntity>();
   const now = Date.now();
+  const convert = usdRate !== undefined;
   for (const r of rows) {
-    const pending = round2(Number(r.total) - Number(r.paid));
+    const currency = r.currency ?? 'ARS';
+    const rate = !convert || currency === 'ARS' ? 1 : (usdRate && usdRate > 0 ? usdRate : 0);
+    if (rate === 0) continue;
+    const pending = round2((Number(r.total) - Number(r.paid)) * rate);
     if (pending <= 0.01) continue;
     const base = r.dueDate ?? r.date;
     const days = Math.floor((now - new Date(base).getTime()) / 86400000);
@@ -71,6 +86,7 @@ export async function customerAgingRows(
 ): Promise<AgingRow[]> {
   return prisma.$queryRaw<AgingRow[]>`
     SELECT i."customerId" AS "entityId", c.name, i.date, i."dueDate",
+           i.currency::text AS currency,
            i.total::float8 AS total, COALESCE(p.paid, 0)::float8 AS paid
     FROM "invoices" i
     JOIN "customers" c ON c.id = i."customerId"

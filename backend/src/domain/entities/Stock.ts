@@ -17,6 +17,12 @@ export interface Stock {
   variantId: string | null;
   warehouseId: string;
   quantity: Decimal;
+  /**
+   * Comprometido por documentos que reservan (ver `stockBehavior`). Lo
+   * DISPONIBLE es siempre `quantity - reservedQuantity`, así que tiene que
+   * viajar junto a `quantity`: si falta, el cálculo del front da NaN.
+   */
+  reservedQuantity: Decimal;
   minQuantity: Decimal | null;
   updatedAt: Date;
 }

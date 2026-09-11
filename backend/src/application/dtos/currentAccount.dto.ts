@@ -16,7 +16,8 @@ export const setCreditLimitSchema = z.object({
 export const movementQuerySchema = z.object({
   page: z.string().transform(Number).optional(),
   limit: z.string().transform(Number).optional(),
-  currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD']).optional()),
+  // 'ALL' = extracto unificado en pesos (combina las cuentas de todas las monedas).
+  currency: z.preprocess(emptyToUndefined, z.enum(['ARS', 'USD', 'ALL']).optional()),
   type: z.preprocess(emptyToUndefined, z.enum(['DEBIT', 'CREDIT']).optional()),
   origin: z.preprocess(
     emptyToUndefined,

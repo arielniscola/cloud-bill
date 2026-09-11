@@ -281,6 +281,93 @@ describe('Flujo crítico: compras (factura proveedor → CC → orden de pago)',
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 
+  it('descuento por ítem: reduce la base imponible de la línea y el IVA sale del neto descontado', async () => {
+    // 2 x 1000 con 10% en la línea -> neto 1800, IVA 378, total 2178.
+    const created = await api
+      .post('/api/purchase-invoices')
+      .set(auth(A))
+      .send({
+        supplierId,
+        number: '0001-00009001',
+        type: 'FACTURA_A',
+        subtotal: 1800,
+        taxRate: 21,
+        taxAmount: 378,
+        discountPct: 0,
+        discountAmount: 0,
+        amount: 2178,
+        saleCondition: 'CUENTA_CORRIENTE',
+        items: [
+          { description: 'Item con descuento propio', quantity: 2, unitPrice: 1000, discountPct: 10, taxRate: 21 },
+        ],
+      });
+    expectStatus(created, 201);
+
+    const item = created.body.data.items[0];
+    expect(Number(item.discountPct)).toBe(10);
+    expect(Number(item.discountAmount)).toBe(200);
+    expect(Number(item.subtotal)).toBe(1800);   // la línea ya viene descontada
+    expect(Number(item.taxAmount)).toBe(378);   // IVA sobre 1800, no sobre 2000
+    expect(Number(item.total)).toBe(2178);
+    // El descuento es de la línea: la cabecera no descuenta nada.
+    expect(Number(created.body.data.discountAmount)).toBe(0);
+  });
+
+  it('descuento global: queda en la cabecera y las líneas van a precio de lista', async () => {
+    // 2 x 1000 a precio de lista + 10% global -> neto 1800, IVA 378, total 2178.
+    const created = await api
+      .post('/api/purchase-invoices')
+      .set(auth(A))
+      .send({
+        supplierId,
+        number: '0001-00009002',
+        type: 'FACTURA_A',
+        subtotal: 1800,
+        taxRate: 21,
+        taxAmount: 378,
+        discountPct: 10,
+        discountAmount: 200,
+        amount: 2178,
+        saleCondition: 'CUENTA_CORRIENTE',
+        imputationDate: '2026-03-10',
+        items: [
+          { description: 'Item a precio de lista', quantity: 2, unitPrice: 1000, discountPct: 0, taxRate: 21 },
+        ],
+      });
+    expectStatus(created, 201);
+    const invoiceId = created.body.data.id;
+
+    // La línea NO lleva el descuento subdividido.
+    const item = created.body.data.items[0];
+    expect(Number(item.discountPct)).toBe(0);
+    expect(Number(item.discountAmount)).toBe(0);
+    expect(Number(item.subtotal)).toBe(2000);
+    expect(Number(item.total)).toBe(2420);
+
+    // El descuento vive una sola vez, en la cabecera.
+    expect(Number(created.body.data.discountPct)).toBe(10);
+    expect(Number(created.body.data.discountAmount)).toBe(200);
+    // Invariante: suma(item.subtotal) − discountAmount = subtotal
+    expect(Number(item.subtotal) - Number(created.body.data.discountAmount))
+      .toBe(Number(created.body.data.subtotal));
+
+    // El detalle devuelve las dos cosas para poder mostrarlas.
+    const detail = await api.get(`/api/purchase-invoices/${invoiceId}`).set(auth(A));
+    expectStatus(detail, 200);
+    expect(Number(detail.body.data.discountAmount)).toBe(200);
+    expect(Number(detail.body.data.items[0].discountPct)).toBe(0);
+
+    // El Libro IVA prorratea el descuento de cabecera: informa el neto real
+    // (1800), no la suma de las líneas a precio de lista (2000).
+    const libro = await api.get('/api/iva/compras').set(auth(A)).query({ year: 2026, month: 3 });
+    expectStatus(libro, 200);
+    const row = libro.body.data.find((r: any) => r.numero === '0001-00009002');
+    expect(row).toBeDefined();
+    expect(Number(row.neto)).toBeCloseTo(1800, 2);
+    expect(Number(row.alicuotas[0].neto)).toBeCloseTo(1800, 2);
+    expect(Number(row.alicuotas[0].iva)).toBeCloseTo(378, 2);
+  });
+
   it('multi-tenant: la empresa B no ve la factura de proveedor de A', async () => {
     const { ADMIN_B } = await import('../fixtures');
     const list = await api.get('/api/purchase-invoices').set(auth(ADMIN_B));

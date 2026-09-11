@@ -30,6 +30,8 @@ export interface Cheque {
   // relations (optional, populated on findById)
   customer?:      { id: string; name: string } | null;
   supplier?:      { id: string; name: string } | null;
+  /** Orden de pago en la que se entregó/endosó el cheque. */
+  ordenPago?:     { id: string; number: string } | null;
 }
 
 export interface CreateChequeInput {

@@ -10,7 +10,10 @@ export class SupplierController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<ISupplierRepository>('SupplierRepository');
-      const { page, limit, search, isActive } = req.query;
+      const { page, limit, search, isActive, hasBalance, hasOverdue, sortBy, sortDir } = req.query;
+
+      const SORTS = ['name', 'balance', 'purchased12m', 'lastPurchase'] as const;
+      const sort = SORTS.find((s) => s === sortBy);
 
       const result = await repo.findAll(
         { page: Number(page) || 1, limit: Number(limit) || 20 },
@@ -18,10 +21,49 @@ export class SupplierController {
           search: search as string | undefined,
           isActive: isActive !== undefined ? isActive === 'true' : undefined,
           companyId: req.companyId,
+          fiscalMode: req.fiscalMode,
+          hasBalance: hasBalance === 'true',
+          hasOverdue: hasOverdue === 'true',
+          sortBy: sort,
+          sortDir: sortDir === 'desc' ? 'desc' : 'asc',
         }
       );
 
       res.json({ status: 'success', ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Agregados de cuenta corriente y compras de varios proveedores:
+   * `GET /suppliers/summary?ids=a,b,c`. El listado los pide para la página que
+   * está mostrando (máx. 200 ids por pedido).
+   */
+  async findSummaries(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const raw = typeof req.query.ids === 'string' ? req.query.ids : '';
+      const ids = raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 200);
+      if (ids.length === 0) {
+        res.json({ status: 'success', data: {} });
+        return;
+      }
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const data = await repo.getSummaries(ids, req.companyId, req.fiscalMode);
+      res.json({ status: 'success', data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Agregados de un proveedor (ficha): `GET /suppliers/:id/summary`. */
+  async findSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ISupplierRepository>('SupplierRepository');
+      const supplier = await repo.findById(req.params.id, req.companyId);
+      if (!supplier) throw new NotFoundError('Supplier');
+      const summaries = await repo.getSummaries([req.params.id], req.companyId, req.fiscalMode);
+      res.json({ status: 'success', data: summaries[req.params.id] });
     } catch (error) {
       next(error);
     }

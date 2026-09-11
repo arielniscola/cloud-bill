@@ -7,6 +7,8 @@ export interface ChequeFilters {
   status?:     string;
   customerId?: string;
   supplierId?: string;
+  /** Talonario del que salió el cheque (solo egresos propios). */
+  chequeraId?: string;
   fiscalMode?: string;
   page?:       number;
   limit?:      number;

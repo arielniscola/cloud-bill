@@ -19,6 +19,29 @@ function toCSVRow(values: unknown[]): string {
   return values.map(escapeCSV).join(',');
 }
 
+/**
+ * Un descuento GLOBAL del comprobante vive en la cabecera y NO se baja a los
+ * ítems: las líneas quedan a precio de lista. Para el libro de IVA hay que
+ * prorratearlo entre las alícuotas, si no el neto informado saldría sin
+ * descontar y no cerraría con el IVA ni con el total del comprobante.
+ * Devuelve el exento ya prorrateado y ajusta el mapa de alícuotas in place.
+ */
+function prorrateaDescuentoCabecera(
+  alicMap: Map<number, { neto: number; iva: number }>,
+  exento: number,
+  discountAmount: number,
+): number {
+  if (!(discountAmount > 0)) return exento;
+  const base = Array.from(alicMap.values()).reduce((acc, a) => acc + a.neto, 0) + exento;
+  if (base <= 0) return exento;
+  const factor = Math.max(1 - discountAmount / base, 0);
+  for (const a of alicMap.values()) {
+    a.neto *= factor;
+    a.iva  *= factor;
+  }
+  return exento * factor;
+}
+
 export class IvaController {
   async getVentas(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -185,6 +208,7 @@ export class IvaController {
       // fecha de imputación cuando existe, si no la fecha del comprobante.
       const invoices = await prisma.$queryRaw<any[]>`
         SELECT pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
+               pi."discountAmount",
                COALESCE(pi."imputationDate", pi.date) AS fecha,
                pi.status, pi."saleCondition",
                s.name AS "supplierName", s.cuit AS "supplierCuit"
@@ -237,7 +261,6 @@ export class IvaController {
             const rate = Number(it.taxRate ?? 0);
             const sub = Number(it.subtotal ?? 0);
             if (rate > 0) {
-              neto += sub;
               const a = alicMap.get(rate) ?? { neto: 0, iva: 0 };
               a.neto += sub;
               a.iva += Number(it.taxAmount ?? 0);
@@ -246,6 +269,10 @@ export class IvaController {
               exento += sub;
             }
           }
+          // Las líneas vienen a precio de lista: el descuento global de la
+          // cabecera se reparte acá entre las alícuotas.
+          exento = prorrateaDescuentoCabecera(alicMap, exento, Number(inv.discountAmount ?? 0));
+          neto = Array.from(alicMap.values()).reduce((acc, a) => acc + a.neto, 0);
         } else if (Number(inv.taxAmount) > 0) {
           neto = Number(inv.subtotal);
           const rate = Number(inv.taxRate) || 21;
@@ -355,7 +382,7 @@ export class IvaController {
 
       const invoices = await prisma.$queryRaw<any[]>`
         SELECT pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
-               pi.currency, pi."exchangeRate",
+               pi."discountAmount", pi.currency, pi."exchangeRate",
                COALESCE(pi."imputationDate", pi.date) AS fecha,
                s.name AS "supplierName", s.cuit AS "supplierCuit"
         FROM "purchase_invoices" pi
@@ -415,6 +442,8 @@ export class IvaController {
                 exento += sub;
               }
             }
+            // Idem: el descuento global de la cabecera se prorratea acá.
+            exento = prorrateaDescuentoCabecera(alicMap, exento, Number(inv.discountAmount ?? 0));
           } else if (Number(inv.taxAmount) > 0) {
             const rate = Number(inv.taxRate) || 21;
             alicMap.set(rate, { neto: Number(inv.subtotal), iva: Number(inv.taxAmount) });

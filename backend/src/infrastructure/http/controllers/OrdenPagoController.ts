@@ -30,6 +30,7 @@ export class OrdenPagoController {
         search:         query.search,
         onlyRetentions: query.onlyRetentions,
         onlyOnAccount:  query.onlyOnAccount,
+        excludeCancelled: query.excludeCancelled,
         companyId:      req.companyId,
         fiscalMode:     req.fiscalMode,
         dateFrom:       query.dateFrom ? new Date(query.dateFrom) : undefined,
@@ -81,6 +82,7 @@ export class OrdenPagoController {
         notes:          body.notes,
         items:          body.items,
         amount:         body.amount,
+        onAccountAmount: body.onAccountAmount,
         ajustes:        body.ajustes,
         retenciones:    body.retenciones,
         chequesEnCartera: body.chequesEnCartera,
@@ -245,6 +247,8 @@ export class OrdenPagoController {
         debits:      body.debits,
         credits:     body.credits,
         manualAmount: body.manualAmount,
+        amountCurrency: body.amountCurrency,
+        exchangeRate:   body.exchangeRate,
       });
 
       await activityLogRepo.create({

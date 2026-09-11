@@ -103,6 +103,12 @@ export interface OrdenPagoWithRelations extends OrdenPago {
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
   retenciones?: OrdenPagoRetencion[];
+  /**
+   * Excedente pagado por encima de lo imputado a las facturas (derivado de
+   * `amount`, no es una columna). Al pagar la orden se convierte en crédito
+   * interno a favor nuestro en la cuenta del proveedor.
+   */
+  onAccountAmount?: number;
 }
 
 export interface CreateOrdenPagoItemInput {
@@ -154,6 +160,14 @@ export interface CreateOrdenPagoInput {
   notes?: string;
   items: CreateOrdenPagoItemInput[];
   amount?: number;  // pago a cuenta (sin facturas): importe explícito
+  /**
+   * Excedente pagado por encima de lo imputado a las facturas seleccionadas.
+   * Al pagar la OP se registra como CRÉDITO INTERNO (nota interna CREDIT) en la
+   * cuenta del proveedor: es saldo a favor nuestro, imputable más adelante.
+   * Se guarda implícito dentro de `amount` de la orden y se recupera con
+   * `onAccountAmountOf()`.
+   */
+  onAccountAmount?: number;
   // Ajustes (descuentos / intereses) que modifican el total a pagar
   ajustes?: CreateOrdenPagoAjusteInput[];
   // Retenciones practicadas: NO modifican `amount` (la deuda se cancela por el

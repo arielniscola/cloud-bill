@@ -6,6 +6,10 @@ import { parseCsv, pick, parseNumber } from '../utils/csvImport';
 
 type ImportError = { row: number; message: string };
 
+// Clave de comparacion de SKU: sin espacios sobrantes y en mayusculas. Solo se
+// usa para decidir si la fila actualiza o crea; el SKU se guarda tal cual viene.
+const normalizeSku = (sku: string): string => sku.trim().replace(/\s+/g, ' ').toUpperCase();
+
 export class ImportController {
 
   // ── POST /products/import ─────────────────────────────────────
@@ -46,7 +50,24 @@ export class ImportController {
       const brandMap = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
       const supplierMap = new Map(supplierRows.map((s) => [s.name.toLowerCase(), s.id]));
 
-      let imported = 0;
+      // Indice de los SKU ya cargados en la empresa: el archivo se importa como
+      // upsert (SKU existente actualiza, SKU nuevo crea). Se compara normalizado
+      // (sin espacios sobrantes y en mayusculas) porque el mismo codigo suele
+      // venir escrito distinto entre el sistema y la planilla ("ab-01" vs
+      // "AB-01"); con una comparacion exacta esas filas creaban un producto
+      // duplicado en vez de actualizar el existente.
+      const existingProducts = await prisma.product.findMany({
+        where: { companyId },
+        select: { id: true, sku: true },
+      });
+      const productIdBySku = new Map<string, string>();
+      for (const p of existingProducts) {
+        const key = normalizeSku(p.sku);
+        if (key && !productIdBySku.has(key)) productIdBySku.set(key, p.id);
+      }
+
+      let created = 0;
+      let updated = 0;
       let skipped  = 0;
       const errors: ImportError[] = [];
 
@@ -96,12 +117,13 @@ export class ImportController {
         const internalNotes = pick(row, 'notasinternas', 'codprov', 'internalnotes', 'codigoproveedor') || null;
 
         try {
-          // Check if product exists in this company
-          const existing = await prisma.product.findFirst({ where: { sku, companyId }, select: { id: true } });
+          // Upsert por SKU dentro de la empresa (ver indice mas arriba)
+          const skuKey = normalizeSku(sku);
+          const existingId = productIdBySku.get(skuKey);
           let productId: string;
-          if (existing) {
+          if (existingId) {
             await prisma.product.update({
-              where: { id: existing.id },
+              where: { id: existingId },
               data: {
                 name,
                 description,
@@ -116,9 +138,10 @@ export class ImportController {
                 // internalNotes NO se pisa al actualizar (preserva notas cargadas en la app)
               },
             });
-            productId = existing.id;
+            productId = existingId;
+            updated++;
           } else {
-            const created = await prisma.product.create({
+            const createdProduct = await prisma.product.create({
               data: {
                 sku,
                 name,
@@ -135,7 +158,11 @@ export class ImportController {
                 companyId,
               },
             });
-            productId = created.id;
+            productId = createdProduct.id;
+            // Si el archivo repite el mismo SKU mas abajo, la segunda fila tiene
+            // que actualizar este producto y no chocar contra el unique.
+            productIdBySku.set(skuKey, createdProduct.id);
+            created++;
           }
           // supplierId no está en el cliente Prisma generado todavía — raw SQL
           // (ver PrismaProductRepository). Solo se pisa si el archivo trajo un
@@ -143,15 +170,17 @@ export class ImportController {
           if (supplierId) {
             await prisma.$executeRaw`UPDATE products SET "supplierId" = ${supplierId} WHERE id = ${productId}`;
           }
-          imported++;
         } catch (err: any) {
-          const msg = err?.code === 'P2002' ? 'SKU ya existe en otra empresa' : (err?.message ?? 'Error al procesar');
+          const msg = err?.code === 'P2002' ? 'Ya existe un producto con este SKU' : (err?.message ?? 'Error al procesar');
           errors.push({ row: rowNum, message: msg });
           skipped++;
         }
       }
 
-      res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
+      res.json({
+        status: 'success',
+        data: { imported: created + updated, created, updated, skipped, total: rows.length, errors },
+      });
     } catch (error) {
       next(error);
     }

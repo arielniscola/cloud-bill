@@ -49,6 +49,7 @@ import { internalNoteRoutes } from './routes/internalNoteRoutes';
 import { accountingRoutes } from './routes/accountingRoutes';
 import { pdvRoutes } from './routes/pdvRoutes';
 import { chequeRoutes } from './routes/chequeRoutes';
+import { exchangeRateRoutes } from './routes/exchangeRateRoutes';
 import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
 
 export function createApp(): Application {
@@ -136,6 +137,7 @@ export function createApp(): Application {
   app.use('/api/accounting', accountingRoutes);
   app.use('/api/pdv', pdvRoutes);
   app.use('/api/cheques', chequeRoutes);
+  app.use('/api/exchange-rate', exchangeRateRoutes);
 
   // 404 handler
   app.use((_req, res) => {

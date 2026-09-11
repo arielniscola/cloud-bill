@@ -34,6 +34,7 @@ type RawCheque = {
   updatedAt:      Date;
   customerName?:  string | null;
   supplierName?:  string | null;
+  ordenPagoNumber?: string | null;
 };
 
 function mapCheque(r: RawCheque): Cheque {
@@ -64,6 +65,7 @@ function mapCheque(r: RawCheque): Cheque {
     updatedAt:      r.updatedAt,
     customer:       r.customerId && r.customerName ? { id: r.customerId, name: r.customerName } : null,
     supplier:       r.supplierId && r.supplierName ? { id: r.supplierId, name: r.supplierName } : null,
+    ordenPago:      r.ordenPagoId && r.ordenPagoNumber ? { id: r.ordenPagoId, number: r.ordenPagoNumber } : null,
   };
 }
 
@@ -85,6 +87,7 @@ export class PrismaChequeRepository implements IChequeRepository {
     if (filters.status)     { conditions.push(`c."status" = $${i++}`);     params.push(filters.status); }
     if (filters.customerId) { conditions.push(`c."customerId" = $${i++}`); params.push(filters.customerId); }
     if (filters.supplierId) { conditions.push(`c."supplierId" = $${i++}`); params.push(filters.supplierId); }
+    if (filters.chequeraId) { conditions.push(`c."chequeraId" = $${i++}`); params.push(filters.chequeraId); }
     if (filters.fiscalMode) { conditions.push(`c."fiscalMode" = $${i++}`); params.push(filters.fiscalMode); }
 
     const where = conditions.join(' AND ');
@@ -93,11 +96,13 @@ export class PrismaChequeRepository implements IChequeRepository {
     const offsetParam = `$${i++}`;
     const rows = await prisma.$queryRawUnsafe<RawCheque[]>(
       `SELECT c.*,
-             cu.name AS "customerName",
-             su.name AS "supplierName"
+             cu.name   AS "customerName",
+             su.name   AS "supplierName",
+             op.number AS "ordenPagoNumber"
       FROM "cheques" c
       LEFT JOIN "customers" cu ON cu.id = c."customerId"
       LEFT JOIN "suppliers" su ON su.id = c."supplierId"
+      LEFT JOIN "orden_pagos" op ON op.id = c."ordenPagoId"
       WHERE ${where}
       ORDER BY c."createdAt" DESC
       LIMIT ${limitParam} OFFSET ${offsetParam}`,
@@ -118,11 +123,13 @@ export class PrismaChequeRepository implements IChequeRepository {
   async findById(id: string, companyId: string): Promise<Cheque | null> {
     const rows = await prisma.$queryRaw<RawCheque[]>`
       SELECT c.*,
-             cu.name AS "customerName",
-             su.name AS "supplierName"
+             cu.name   AS "customerName",
+             su.name   AS "supplierName",
+             op.number AS "ordenPagoNumber"
       FROM "cheques" c
       LEFT JOIN "customers" cu ON cu.id = c."customerId"
       LEFT JOIN "suppliers" su ON su.id = c."supplierId"
+      LEFT JOIN "orden_pagos" op ON op.id = c."ordenPagoId"
       WHERE c.id = ${id} AND c."companyId" = ${companyId}
     `;
     return rows.length > 0 ? mapCheque(rows[0]) : null;

@@ -60,12 +60,20 @@ export class CurrentAccountController {
         'CurrentAccountRepository'
       );
       await assertCustomerInCompany(req.params.customerId, req.companyId);
-      const currency = (req.query.currency as Currency) || 'ARS';
+      // 'ALL' = extracto unificado: la cuenta se lee en pesos y se combinan las
+      // cuentas de todas las monedas en una sola lista cronológica.
+      const rawCurrency = (req.query.currency as string) || 'ARS';
+      const allCurrencies = rawCurrency === 'ALL';
+      const currency = (allCurrencies ? 'ARS' : rawCurrency) as Currency;
 
       // "Todos": no hay una cuenta única (FORMAL e INFORMAL son filas separadas)
-      // — se combinan los movimientos de todas las cuentas de esa moneda.
+      // — se combinan los movimientos de todas las cuentas que correspondan.
       let accountIds: string[];
-      if (req.fiscalMode) {
+      if (allCurrencies) {
+        const accounts = await currentAccountRepository.findAllByCustomerId(req.params.customerId, req.fiscalMode);
+        accountIds = accounts.map((a) => a.id);
+        if (accountIds.length === 0) throw new NotFoundError('Current account');
+      } else if (req.fiscalMode) {
         const currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
         if (!currentAccount) throw new NotFoundError('Current account');
         accountIds = [currentAccount.id];

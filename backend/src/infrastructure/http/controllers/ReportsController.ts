@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../../database/prisma';
 import { AgingRow, bucketizeAging, customerAgingRows } from '../../../shared/helpers/aging';
+import {
+  aggregateDebtors, endOfDay, startOfDay,
+  customerDebtAsOf, customerCreditsAsOf, supplierDebtAsOf, supplierCreditsAsOf,
+} from '../../../shared/helpers/debtors';
+import { exchangeRateService } from '../../services/ExchangeRateService';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -15,7 +20,10 @@ export class ReportsController {
   async ccAging(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
-      const fiscalMode = req.fiscalMode ?? 'FORMAL';
+      // En modo ALL `req.fiscalMode` viene undefined y el reporte tiene que
+      // mostrar FORMAL + INFORMAL juntos; forzar 'FORMAL' escondía la mitad de
+      // la deuda sin avisar.
+      const fiscalMode = req.fiscalMode;
 
       // Clientes: facturas y ND de cuenta corriente con saldo pendiente.
       const customerRows = await customerAgingRows(companyId, fiscalMode);
@@ -23,6 +31,7 @@ export class ReportsController {
       // Proveedores: facturas de compra pendientes (imputación por OP pagadas).
       const supplierRows = await prisma.$queryRaw<AgingRow[]>`
         SELECT pi."supplierId" AS "entityId", s.name, pi.date, pi."dueDate",
+               pi.currency AS currency,
                pi.amount::float8 AS total, COALESCE(p.paid, 0)::float8 AS paid
         FROM "purchase_invoices" pi
         JOIN "suppliers" s ON s.id = pi."supplierId"
@@ -36,16 +45,22 @@ export class ReportsController {
           GROUP BY opi."purchaseInvoiceId"
         ) p ON p."purchaseInvoiceId" = pi.id
         WHERE pi."companyId" = ${companyId}
-          AND pi."fiscalMode" = ${fiscalMode}
+          AND (${fiscalMode ?? null}::text IS NULL OR pi."fiscalMode" = ${fiscalMode ?? null})
           AND pi."supplierId" IS NOT NULL
           AND pi.status IN ('PENDING', 'PARTIALLY_PAID')
           AND pi.type NOT LIKE 'NOTA_CREDITO%'
       `;
 
+      // Los importes se publican en pesos: lo que está en dólares se convierte
+      // con la cotización del día, igual que el reporte de deudores.
+      const rateInfo = await exchangeRateService.getUsdRate().catch(() => null);
+      const rate = rateInfo?.rate ?? null;
+
       res.json({
         status: 'success',
-        customers: bucketizeAging(customerRows),
-        suppliers: bucketizeAging(supplierRows),
+        exchangeRate: rateInfo,
+        customers: bucketizeAging(customerRows, rate),
+        suppliers: bucketizeAging(supplierRows, rate),
       });
     } catch (error) { next(error); }
   }
@@ -191,12 +206,22 @@ export class ReportsController {
       }
       const where = Prisma.join(conditions, ' AND ');
 
+      // Una NOTA DE CRÉDITO devuelve mercadería/plata: RESTA de lo comprado.
+      // Antes se sumaba como una factura más e inflaba el total del proveedor.
+      // Los importes van a pesos con la cotización guardada en cada comprobante
+      // (misma conversión que la ficha del proveedor): sumar dólares y pesos en
+      // una sola cifra daba un número que no existe.
+      const signedArs = (col: string) => Prisma.raw(
+        `SUM((CASE WHEN pi.type LIKE 'NOTA_CREDITO%' THEN -1 ELSE 1 END) * ${col}` +
+        ` * (CASE WHEN pi.currency = 'ARS' THEN 1 ELSE COALESCE(NULLIF(pi."exchangeRate", 0), 1) END))`
+      );
+
       const rows = await prisma.$queryRaw<any[]>`
         SELECT s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
                COUNT(pi.id)::int          AS "purchaseCount",
-               COALESCE(SUM(pi.subtotal), 0)      AS "subtotal",
-               COALESCE(SUM(pi."taxAmount"), 0)   AS "taxAmount",
-               COALESCE(SUM(pi.amount), 0)        AS "total"
+               COALESCE(${signedArs('pi.subtotal')}, 0)      AS "subtotal",
+               COALESCE(${signedArs('pi."taxAmount"')}, 0)   AS "taxAmount",
+               COALESCE(${signedArs('pi.amount')}, 0)        AS "total"
         FROM "purchase_invoices" pi
         JOIN "suppliers" s ON s.id = pi."supplierId"
         WHERE ${where}
@@ -307,9 +332,50 @@ export class ReportsController {
   async accountsReceivable(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.user!.companyId!;
-      const { currency, minBalance } = req.query as Record<string, string>;
+      const { currency, minBalance, asOf, from, side } = req.query as Record<string, string>;
       const min = parseFloat(minBalance || '0.01');
       const fiscalMode = req.fiscalMode;
+
+      // Con `asOf` el reporte cambia de pregunta: en vez del saldo de hoy que
+      // vive en la cuenta corriente, reconstruye cuánto se debía a esa fecha a
+      // partir de los comprobantes. Sin `asOf` se mantiene el comportamiento
+      // original (saldos actuales de clientes) para no romper a quien ya lo usa.
+      if (asOf) {
+        const cutoff = endOfDay(asOf);
+        // `from` es opcional y acota el reporte a los comprobantes emitidos
+        // dentro del período: sirve para ver la deuda que generó un mes/ejercicio
+        // sin arrastrar el saldo viejo. Sin `from` entra todo el historial.
+        const since = startOfDay(from);
+        const wantSuppliers = side === 'suppliers';
+
+        const [debts, credits, rateInfo] = await Promise.all([
+          wantSuppliers ? supplierDebtAsOf(companyId, cutoff, fiscalMode, since)    : customerDebtAsOf(companyId, cutoff, fiscalMode, since),
+          wantSuppliers ? supplierCreditsAsOf(companyId, cutoff, fiscalMode, since) : customerCreditsAsOf(companyId, cutoff, fiscalMode, since),
+          exchangeRateService.getUsdRate().catch(() => null),
+        ]);
+
+        const rate = rateInfo?.rate ?? null;
+        const debtors = aggregateDebtors(debts, credits, cutoff, rate)
+          .filter((d) => d.balanceArs >= min);
+
+        res.json({
+          status: 'success',
+          asOf: cutoff.toISOString(),
+          from: since ? since.toISOString() : null,
+          side: wantSuppliers ? 'suppliers' : 'customers',
+          exchangeRate: rateInfo,
+          data: debtors,
+          totalBalance: round2(debtors.reduce((acc, d) => acc + d.balanceArs, 0)),
+          totals: {
+            notDue:  round2(debtors.reduce((a, d) => a + d.notDue, 0)),
+            d0_30:   round2(debtors.reduce((a, d) => a + d.d0_30, 0)),
+            d31_60:  round2(debtors.reduce((a, d) => a + d.d31_60, 0)),
+            d61_90:  round2(debtors.reduce((a, d) => a + d.d61_90, 0)),
+            d90plus: round2(debtors.reduce((a, d) => a + d.d90plus, 0)),
+          },
+        });
+        return;
+      }
 
       const accounts = await (prisma as any).currentAccount.findMany({
         where: {

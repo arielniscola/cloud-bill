@@ -171,9 +171,14 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
           m.id, m."currentAccountId", m.type, m.amount, m.balance,
           m.description, m."invoiceId", m."budgetId", m."internalNoteId",
           m."cashRegisterId", m."reciboId", m."createdAt",
+          -- La moneda vive en la cuenta, no en el movimiento. Se expone en cada
+          -- fila para que la vista pueda expresar la deuda en pesos cuando se
+          -- combinan cuentas de distinta moneda.
+          ca.currency::text AS currency,
           i.number  AS "invoiceNumber",  i.type AS "invoiceType", i."dueDate" AS "invoiceDueDate",
           b.number  AS "budgetNumber"
         FROM "account_movements" m
+        JOIN "current_accounts" ca ON ca.id = m."currentAccountId"
         LEFT JOIN invoices i ON i.id = m."invoiceId"
         LEFT JOIN budgets  b ON b.id = m."budgetId"
         WHERE ${where}
@@ -202,6 +207,7 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
       cashRegisterId:   r.cashRegisterId ?? null,
       reciboId:         r.reciboId    ?? null,
       createdAt:        r.createdAt,
+      currency:         r.currency ?? 'ARS',
       invoice:  r.invoiceId ? { id: r.invoiceId, number: r.invoiceNumber, type: r.invoiceType, dueDate: r.invoiceDueDate ?? null } : null,
       budget:   r.budgetId  ? { id: r.budgetId,  number: r.budgetNumber  }                     : null,
     }));

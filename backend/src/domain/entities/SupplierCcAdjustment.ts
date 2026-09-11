@@ -63,4 +63,14 @@ export interface CreateSupplierCcAdjustmentInput {
   debits: { purchaseInvoiceId: string; amount: number }[];
   credits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   manualAmount?: number;
+  /**
+   * 'ARS' = los `amount` de arriba (y `manualAmount`) vienen en pesos y hay que
+   * convertirlos a la moneda de cada comprobante con `exchangeRate` antes de
+   * imputarlos. Es el modo que usa la pantalla de cuenta corriente, que trabaja
+   * siempre en pesos. Ausente o 'NATIVE' = importes ya en la moneda del
+   * comprobante (comportamiento original).
+   */
+  amountCurrency?: 'ARS' | 'NATIVE';
+  /** Cotización del día usada para la conversión (pesos por dólar). */
+  exchangeRate?: number;
 }

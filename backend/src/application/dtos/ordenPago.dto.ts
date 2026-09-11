@@ -57,6 +57,10 @@ export const createOrdenPagoSchema = z.object({
   // Si no se seleccionan facturas, la OP es un "pago a cuenta" y se usa `amount`.
   items: z.array(createOrdenPagoItemSchema).optional().default([]),
   amount: z.number().positive('El importe debe ser mayor a 0').optional(),
+  // Excedente: se le paga al proveedor MÁS que lo imputado a las facturas
+  // seleccionadas. Al pagar la OP genera un crédito interno (saldo a favor
+  // nuestro) en su cuenta corriente, imputable a facturas futuras.
+  onAccountAmount: z.number().min(0).optional(),
   // Ajustes (descuentos / intereses) que modifican el total a pagar
   ajustes: z.array(ordenPagoAjusteSchema).optional().default([]),
   // Retenciones practicadas: reducen el egreso de dinero, no la imputación
@@ -74,6 +78,7 @@ export const ordenPagoQuerySchema = z.object({
   limit:         z.coerce.number().default(20),
   supplierId:    z.string().optional(),
   status:        z.string().optional(),
+  excludeCancelled: z.string().optional().transform((v) => v === 'true'),
   paymentMethod: z.string().optional(),
   currency:      z.string().optional(),
   search:        z.string().optional(),
@@ -108,9 +113,19 @@ export const createSupplierCcAdjustmentSchema = z.object({
   debits:       z.array(supplierCcAdjustmentDebitSchema).optional().default([]),
   credits:      z.array(supplierCcAdjustmentCreditSchema).optional().default([]),
   manualAmount: z.number().min(0).optional(),
+  // Imputación en pesos: los `amount` de arriba vienen expresados en ARS y el
+  // repositorio los convierte a la moneda de cada comprobante con `exchangeRate`.
+  // Sin estos campos se mantiene el comportamiento viejo (importes ya en la
+  // moneda del comprobante), que es lo que sigue usando la Orden de Pago.
+  amountCurrency: z.enum(['ARS', 'NATIVE']).optional(),
+  exchangeRate:   z.number().positive().optional(),
 }).refine(
   (d) => d.debits.length > 0 || d.credits.length > 0 || (d.manualAmount ?? 0) > 0,
   { message: 'Seleccioná al menos un comprobante para imputar' },
+).refine(
+  // Imputar en pesos sin cotización daría importes convertidos por 1.
+  (d) => d.amountCurrency !== 'ARS' || (d.exchangeRate ?? 0) > 0,
+  { message: 'Falta la cotización para imputar en pesos', path: ['exchangeRate'] },
 );
 
 export type CreateSupplierCcAdjustmentDTO = z.infer<typeof createSupplierCcAdjustmentSchema>;

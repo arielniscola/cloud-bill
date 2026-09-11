@@ -60,19 +60,21 @@ const listQuerySchema = z.object({
   status:     z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'ENDOSADO']).optional(),
   customerId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
+  chequeraId: z.string().uuid().optional(),
 });
 
 export class ChequeController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IChequeRepository>('ChequeRepository');
-      const { page, limit, type, status, customerId, supplierId } = listQuerySchema.parse(req.query);
+      const { page, limit, type, status, customerId, supplierId, chequeraId } = listQuerySchema.parse(req.query);
       const result = await repo.findAll({
         companyId:   req.companyId!,
         type,
         status,
         customerId,
         supplierId,
+        chequeraId,
         fiscalMode:  req.fiscalMode,
         page:  page  ?? 1,
         limit: limit ?? 50,

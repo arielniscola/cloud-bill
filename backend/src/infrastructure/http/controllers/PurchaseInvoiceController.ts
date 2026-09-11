@@ -13,6 +13,9 @@ const itemSchema = z.object({
   description: z.string().min(1),
   quantity:    z.coerce.number().positive().default(1),
   unitPrice:   z.coerce.number().min(0),
+  // Descuento PROPIO de la línea, en %. Reduce su base imponible (ver
+  // upsertItems). Va en 0 cuando el descuento del comprobante es global.
+  discountPct: z.coerce.number().min(0).max(100).default(0),
   taxRate:     z.coerce.number().min(0).max(100).default(21),
 });
 
@@ -30,9 +33,13 @@ const tribSchema = z.object({
 const baseInvoiceSchema = z.object({
   number:         z.string().min(1, 'El número es requerido'),
   type:           z.string().default('FACTURA_A'),
-  subtotal:       z.coerce.number().min(0).default(0),
+  subtotal:       z.coerce.number().min(0).default(0),   // neto YA descontado
   taxRate:        z.coerce.number().min(0).max(100).default(21),
   taxAmount:      z.coerce.number().min(0).default(0),
+  // Descuento GLOBAL del comprobante. Excluyente del descuento por ítem:
+  // subtotal = SUM(items.subtotal) - discountAmount.
+  discountPct:    z.coerce.number().min(0).max(100).default(0),
+  discountAmount: z.coerce.number().min(0).default(0),
   amount:         z.coerce.number().positive('El total debe ser positivo'),
   dueDate:        z.string().optional().nullable(),
   imputationDate: z.string().optional().nullable(),
@@ -82,10 +89,53 @@ const retencionesQuerySchema = z.object({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Estado de recepción de la mercadería de una factura de compra.
+ *   NONE    → todavía no entró nada (o la factura no tiene detalle de ítems)
+ *   PARTIAL → entró parte
+ *   FULL    → ya se recibió todo: no queda nada por remitar
+ * La factura sin ítems no se puede medir, así que queda como NONE (habilitada).
+ */
+export type ReceptionStatus = 'NONE' | 'PARTIAL' | 'FULL';
+
+function buildReception(r: { invoicedQty?: unknown; receivedQty?: unknown; pendingQty?: unknown }) {
+  const invoicedQty = Number(r.invoicedQty ?? 0);
+  const receivedQty = Number(r.receivedQty ?? 0);
+  const pendingQty  = Number(r.pendingQty ?? 0);
+  const status: ReceptionStatus =
+    invoicedQty <= 0        ? 'NONE'
+    : pendingQty <= 0.0001  ? 'FULL'
+    : receivedQty <= 0.0001 ? 'NONE'
+    : 'PARTIAL';
+  return { invoicedQty, receivedQty, pendingQty, status };
+}
+
+/** Agrega por descripción normalizada: mismo criterio que la LATERAL del listado. */
+function receptionFromRows(
+  items: { description: string; quantity: number }[],
+  remitoItems: { description: string; quantity: number }[],
+) {
+  const norm = (d: string) => d.trim().toLowerCase();
+  const inv = new Map<string, number>();
+  for (const it of items) inv.set(norm(it.description), (inv.get(norm(it.description)) ?? 0) + Number(it.quantity));
+  const rec = new Map<string, number>();
+  for (const it of remitoItems) rec.set(norm(it.description), (rec.get(norm(it.description)) ?? 0) + Number(it.quantity));
+
+  let invoicedQty = 0, receivedQty = 0, pendingQty = 0;
+  for (const [k, q] of inv) {
+    const got = rec.get(k) ?? 0;
+    invoicedQty += q;
+    receivedQty += got;
+    pendingQty  += Math.max(q - got, 0);
+  }
+  return { invoicedQty, receivedQty, pendingQty };
+}
+
 async function fetchFull(invoiceId: string) {
   const [invoice] = await prisma.$queryRaw<any[]>`
     SELECT pi.id, pi."purchaseId", pi."supplierId", pi.number, pi.type, pi.subtotal,
-           pi."taxRate", pi."taxAmount", pi.amount, pi.currency, pi."exchangeRate",
+           pi."taxRate", pi."taxAmount", pi."discountPct", pi."discountAmount",
+           pi.amount, pi.currency, pi."exchangeRate",
            pi."saleCondition", pi.date, pi."dueDate", pi."imputationDate",
            pi."paymentMethod", pi.status, pi.notes, pi."companyId", pi."fiscalMode",
            pi."createdAt", pi."updatedAt", pi."originInvoiceId",
@@ -101,7 +151,8 @@ async function fetchFull(invoiceId: string) {
   if (!invoice) return null;
 
   const items = await prisma.$queryRaw<any[]>`
-    SELECT id, description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total
+    SELECT id, description, quantity, "unitPrice", "discountPct", "discountAmount",
+           "taxRate", subtotal, "taxAmount", total
     FROM "purchase_invoice_items"
     WHERE "purchaseInvoiceId" = ${invoiceId}
     ORDER BY "createdAt" ASC
@@ -122,6 +173,15 @@ async function fetchFull(invoiceId: string) {
     ORDER BY r."createdAt" ASC
   `;
 
+  // Lo efectivamente recibido por esos remitos (los cancelados no cuentan).
+  const remitoItems = await prisma.$queryRaw<{ description: string; quantity: number }[]>`
+    SELECT ri.description, ri.quantity
+    FROM "purchase_invoice_remitos" pir
+    JOIN "purchase_remitos" r       ON r.id = pir."remitoId" AND r.status <> 'CANCELLED'
+    JOIN "purchase_remito_items" ri ON ri."remitoId" = r.id
+    WHERE pir."purchaseInvoiceId" = ${invoiceId}
+  `;
+
   return {
     ...invoice,
     supplier: invoice.supplierName
@@ -132,21 +192,29 @@ async function fetchFull(invoiceId: string) {
       ? { id: invoice.originInvoiceId, number: invoice.originNumber, type: invoice.originType }
       : null,
     items, tributos, remitos,
+    reception: buildReception(receptionFromRows(items, remitoItems)),
   };
 }
 
 async function upsertItems(invoiceId: string, items: z.infer<typeof itemSchema>[]) {
   await prisma.$executeRaw`DELETE FROM "purchase_invoice_items" WHERE "purchaseInvoiceId" = ${invoiceId}`;
   for (const item of items) {
-    const id       = randomUUID();
-    const subtotal = item.quantity * item.unitPrice;
-    const taxAmount = subtotal * (item.taxRate / 100);
-    const total     = subtotal + taxAmount;
+    const id = randomUUID();
+    // El descuento reduce la BASE IMPONIBLE: `subtotal` queda neto de descuento
+    // y el IVA se calcula sobre ese neto (es lo que después lee el Libro IVA).
+    const base           = item.quantity * item.unitPrice;
+    const discountPct    = item.discountPct ?? 0;
+    const discountAmount = base * (discountPct / 100);
+    const subtotal       = base - discountAmount;
+    const taxAmount      = subtotal * (item.taxRate / 100);
+    const total          = subtotal + taxAmount;
     await prisma.$executeRaw`
       INSERT INTO "purchase_invoice_items"
-        (id, "purchaseInvoiceId", description, quantity, "unitPrice", "taxRate", subtotal, "taxAmount", total)
+        (id, "purchaseInvoiceId", description, quantity, "unitPrice", "discountPct", "discountAmount",
+         "taxRate", subtotal, "taxAmount", total)
       VALUES
         (${id}, ${invoiceId}, ${item.description}, ${item.quantity}, ${item.unitPrice},
+         ${discountPct}, ${discountAmount},
          ${item.taxRate}, ${subtotal}, ${taxAmount}, ${total})
     `;
   }
@@ -297,6 +365,30 @@ export class PurchaseInvoiceController {
           WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
         ), 0)`;
 
+      // Recepción de mercadería: cuánto de la factura ya entró por remitos de
+      // compra (no cancelados). Se compara por descripción normalizada, el mismo
+      // criterio que usa assertRemitosWithinInvoice / el form de remito.
+      const receptionExpr = Prisma.sql`
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(inv.q), 0)                                   AS "invoicedQty",
+                 COALESCE(SUM(COALESCE(rec.q, 0)), 0)                      AS "receivedQty",
+                 COALESCE(SUM(GREATEST(inv.q - COALESCE(rec.q, 0), 0)), 0) AS "pendingQty"
+          FROM (
+            SELECT lower(btrim(ii.description)) AS k, SUM(ii.quantity) AS q
+            FROM "purchase_invoice_items" ii
+            WHERE ii."purchaseInvoiceId" = pi.id
+            GROUP BY 1
+          ) inv
+          LEFT JOIN (
+            SELECT lower(btrim(ri.description)) AS k, SUM(ri.quantity) AS q
+            FROM "purchase_invoice_remitos" pir
+            JOIN "purchase_remitos" r       ON r.id = pir."remitoId" AND r.status <> 'CANCELLED'
+            JOIN "purchase_remito_items" ri ON ri."remitoId" = r.id
+            WHERE pir."purchaseInvoiceId" = pi.id
+            GROUP BY 1
+          ) rec ON rec.k = inv.k
+        ) rem ON TRUE`;
+
       // Los totales de la consulta se expresan en ARS: las facturas en moneda
       // extranjera se convierten con SU cotización (el valor al emitir), que es
       // el criterio con el que se generó el movimiento de cuenta corriente.
@@ -311,16 +403,19 @@ export class PurchaseInvoiceController {
       const [countRows, rows, summaryRows] = await Promise.all([
         prisma.$queryRaw<{ c: bigint }[]>`SELECT COUNT(*) AS c FROM "purchase_invoices" pi WHERE ${where}`,
         prisma.$queryRaw<any[]>`
-          SELECT pi.id, pi."supplierId", pi.number, pi.type, pi.subtotal, pi."taxAmount", pi.amount, pi.currency,
+          SELECT pi.id, pi."supplierId", pi.number, pi.type, pi.subtotal, pi."taxAmount",
+                 pi."discountPct", pi."discountAmount", pi.amount, pi.currency,
                  pi."exchangeRate", pi."saleCondition", pi.date, pi."dueDate", pi.status, pi."paymentMethod",
                  s.name AS "supplierName",
                  COALESCE((
                    SELECT SUM(t.amount) FROM "purchase_invoice_tributos" t
                    WHERE t."purchaseInvoiceId" = pi.id
                  ), 0) AS "tributosAmount",
-                 ${paidExpr} AS "paidAmount"
+                 ${paidExpr} AS "paidAmount",
+                 rem."invoicedQty", rem."receivedQty", rem."pendingQty"
           FROM "purchase_invoices" pi
           LEFT JOIN "suppliers" s ON s.id = pi."supplierId"
+          ${receptionExpr}
           WHERE ${where}
           ORDER BY pi.date DESC, pi."createdAt" DESC
           LIMIT ${q.limit} OFFSET ${offset}
@@ -363,6 +458,7 @@ export class PurchaseInvoiceController {
       const data = rows.map((r) => ({
         ...r,
         supplier: r.supplierName ? { id: r.supplierId, name: r.supplierName } : undefined,
+        reception: buildReception(r),
       }));
 
       const s = summaryRows[0] ?? {};
@@ -407,11 +503,13 @@ export class PurchaseInvoiceController {
       await prisma.$executeRaw`
         INSERT INTO "purchase_invoices"
           (id, "purchaseId", "supplierId", number, type, subtotal, "taxRate", "taxAmount",
+           "discountPct", "discountAmount",
            amount, currency, "exchangeRate", "saleCondition", date, "dueDate", "imputationDate",
            "paymentMethod", status, notes, "companyId", "updatedAt", "fiscalMode", "originInvoiceId")
         VALUES
           (${id}, ${null}, ${data.supplierId}, ${data.number}, ${data.type},
-           ${data.subtotal}, ${data.taxRate}, ${data.taxAmount}, ${data.amount},
+           ${data.subtotal}, ${data.taxRate}, ${data.taxAmount},
+           ${data.discountPct}, ${data.discountAmount}, ${data.amount},
            ${data.currency}, ${data.exchangeRate}, ${data.saleCondition}, ${date}, ${dueDate}, ${imputationDate},
            ${data.paymentMethod}, 'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode}, ${data.originInvoiceId ?? null})
       `;
@@ -454,6 +552,8 @@ export class PurchaseInvoiceController {
       if (data.subtotal      !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET subtotal        = ${data.subtotal},      "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.taxRate       !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "taxRate"       = ${data.taxRate},       "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.taxAmount     !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "taxAmount"     = ${data.taxAmount},     "updatedAt" = NOW() WHERE id = ${id}`;
+      if (data.discountPct    !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "discountPct"    = ${data.discountPct},    "updatedAt" = NOW() WHERE id = ${id}`;
+      if (data.discountAmount !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "discountAmount" = ${data.discountAmount}, "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.amount        !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET amount          = ${data.amount},        "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.currency      !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET currency        = ${data.currency},      "updatedAt" = NOW() WHERE id = ${id}`;
       if (data.exchangeRate  !== undefined) await prisma.$executeRaw`UPDATE "purchase_invoices" SET "exchangeRate"  = ${data.exchangeRate},  "updatedAt" = NOW() WHERE id = ${id}`;
@@ -535,11 +635,13 @@ export class PurchaseInvoiceController {
       await prisma.$executeRaw`
         INSERT INTO "purchase_invoices"
           (id, "purchaseId", "supplierId", number, type, subtotal, "taxRate", "taxAmount",
+           "discountPct", "discountAmount",
            amount, currency, "exchangeRate", "saleCondition", "dueDate", "imputationDate",
            "paymentMethod", status, notes, "companyId", "updatedAt", "fiscalMode")
         VALUES
           (${id}, ${req.params.purchaseId}, ${purchase.supplierId}, ${data.number}, ${data.type},
-           ${data.subtotal}, ${data.taxRate}, ${data.taxAmount}, ${data.amount},
+           ${data.subtotal}, ${data.taxRate}, ${data.taxAmount},
+           ${data.discountPct}, ${data.discountAmount}, ${data.amount},
            ${purchase.currency}, ${Number(purchase.exchangeRate) || 1}, ${purchase.saleCondition},
            ${dueDate}, ${imputationDate}, ${data.paymentMethod},
            'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode})
