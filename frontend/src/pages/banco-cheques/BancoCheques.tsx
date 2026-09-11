@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown,
   Landmark, ArrowUpDown, ArrowUp, ArrowDown, Plus, ArrowDownCircle, ArrowUpCircle,
-  Trash2, Pencil, BookText,
+  Trash2, Pencil, BookText, ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Select } from '../../components/ui';
-import { PageHeader, SearchInput, Pagination, BancoSelect } from '../../components/shared';
+import {
+  PageHeader, SearchInput, Pagination, BancoSelect, ChequeNumberInput,
+  useBancos, findBancoByName, joinChequeNumber, parseChequeNumber, formatChequeNumber,
+} from '../../components/shared';
 import { recibosService, customersService, cashRegistersService, bankService, suppliersService } from '../../services';
 import chequesService from '../../services/cheques.service';
 import chequerasService from '../../services/chequeras.service';
@@ -150,6 +153,8 @@ function ChequeFormModal({
     amount: 0,
   });
   const [saving, setSaving] = useState(false);
+  const bancos = useBancos();
+  const bancoCat = findBancoByName(bancos, form.bank);
 
   const set = (field: keyof CreateChequeDTO, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -157,12 +162,23 @@ function ChequeFormModal({
   // Al elegir una chequera (egresos): hereda banco y sugiere el próximo N° de cheque.
   const onChequera = (id: string) => {
     const ch = chequeras.find((c) => c.id === id);
-    setForm((prev) => ({
-      ...prev,
-      chequeraId:  id || null,
-      bank:        ch ? ch.bank : prev.bank,
-      checkNumber: ch && ch.nextNumber != null ? String(ch.nextNumber) : prev.checkNumber,
-    }));
+    setForm((prev) => {
+      const cat = ch ? findBancoByName(bancos, ch.bank) : null;
+      const prevParts = parseChequeNumber(prev.checkNumber);
+      const checkNumber = ch && ch.nextNumber != null
+        ? joinChequeNumber({
+            banco:    cat?.code ?? prevParts.banco,
+            sucursal: cat?.sucursal ?? prevParts.sucursal,
+            numero:   String(ch.nextNumber),
+          })
+        : prev.checkNumber;
+      return {
+        ...prev,
+        chequeraId:  id || null,
+        bank:        ch ? ch.bank : prev.bank,
+        checkNumber,
+      };
+    });
   };
   const activeChequeras = chequeras.filter((c) => c.isActive);
 
@@ -244,27 +260,22 @@ function ChequeFormModal({
             </div>
           )}
 
-          {/* N° cheque + Banco */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">N° de cheque</label>
-              <input
-                type="text"
-                value={form.checkNumber ?? ''}
-                onChange={(e) => set('checkNumber', e.target.value)}
-                placeholder="Ej: 00012345"
-                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
+          {/* Banco + N° cheque */}
+          <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Banco</label>
               <BancoSelect
                 value={form.bank}
                 onChange={(v) => set('bank', v)}
-                placeholder="Ej: Galicia, Santander…"
-                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Seleccionar banco…"
               />
             </div>
+            <ChequeNumberInput
+              value={form.checkNumber}
+              onChange={(v) => set('checkNumber', v)}
+              bancoCode={bancoCat?.code}
+              sucursal={bancoCat?.sucursal}
+            />
           </div>
 
           {/* Vencimiento */}
@@ -426,7 +437,7 @@ function ManualChequesTab({
 
                 <td className="px-5 py-3.5">
                   <p className="text-sm text-gray-700 dark:text-slate-300">{ch.bank ?? '—'}</p>
-                  {ch.checkNumber && <p className="text-xs font-mono text-gray-400 dark:text-slate-500">{ch.checkNumber}</p>}
+                  {ch.checkNumber && <p className="text-xs font-mono text-gray-400 dark:text-slate-500">{formatChequeNumber(ch.checkNumber)}</p>}
                 </td>
 
                 <td className="px-5 py-3.5">
@@ -591,7 +602,7 @@ function ChequeraFormModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>Banco *</label>
-              <BancoSelect value={form.bank} onChange={(v) => setForm((p) => ({ ...p, bank: v }))} className={inputCls} placeholder="Banco" />
+              <BancoSelect value={form.bank} onChange={(v) => setForm((p) => ({ ...p, bank: v }))} placeholder="Seleccionar banco…" />
             </div>
             <div>
               <label className={labelCls}>N° de cuenta *</label>
@@ -634,6 +645,84 @@ function ChequeraFormModal({
   );
 }
 
+/* ── Cheques emitidos desde una chequera ─────────────────────────── */
+/**
+ * Detalle que se despliega debajo de la chequera: los cheques que salieron de
+ * ese talonario y —lo que no se veía en ningún lado— a quién se le entregó cada
+ * uno y con qué orden de pago.
+ */
+function ChequeraChequesDetail({ chequeraId, colSpan }: { chequeraId: string; colSpan: number }) {
+  const [cheques, setCheques] = useState<Cheque[] | null>(null);
+  const [error,   setError]   = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    chequesService.getAll({ chequeraId, limit: 200 })
+      .then((r) => { if (alive) setCheques(r.data); })
+      .catch(() => { if (alive) setError(true); });
+    return () => { alive = false; };
+  }, [chequeraId]);
+
+  const body = () => {
+    if (error) return <p className="text-sm text-red-500">No se pudieron cargar los cheques de esta chequera.</p>;
+    if (cheques === null) return <div className="h-10 bg-gray-100 dark:bg-slate-700 rounded-lg animate-pulse" />;
+    if (cheques.length === 0) return <p className="text-sm text-gray-400 dark:text-slate-500">Todavía no se emitió ningún cheque de este talonario.</p>;
+
+    return (
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="text-[11px] font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">
+            <th className="px-3 py-2 text-left">N° cheque</th>
+            <th className="px-3 py-2 text-left">Fecha</th>
+            <th className="px-3 py-2 text-left">Entregado a</th>
+            <th className="px-3 py-2 text-left">Orden de pago</th>
+            <th className="px-3 py-2 text-center">Vencimiento</th>
+            <th className="px-3 py-2 text-right">Monto</th>
+            <th className="px-3 py-2 text-center">Estado</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+          {cheques.map((ch) => (
+            <tr key={ch.id}>
+              <td className="px-3 py-2 font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                {ch.checkNumber ? formatChequeNumber(ch.checkNumber) : ch.number}
+              </td>
+              <td className="px-3 py-2 text-gray-500 dark:text-slate-400 whitespace-nowrap">{formatDate(ch.createdAt)}</td>
+              <td className="px-3 py-2 text-gray-800 dark:text-slate-200">
+                {ch.supplier?.name ?? ch.beneficiary ?? <span className="text-gray-400 dark:text-slate-500">Sin destinatario</span>}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {ch.ordenPago
+                  ? <Link to={`/orden-pagos/${ch.ordenPago.id}`} className="text-indigo-600 dark:text-indigo-400 hover:underline">{ch.ordenPago.number}</Link>
+                  : <span className="text-gray-400 dark:text-slate-500">—</span>}
+              </td>
+              <td className="px-3 py-2 text-center text-gray-600 dark:text-slate-400 whitespace-nowrap">
+                {ch.dueDate ? formatDate(ch.dueDate) : '—'}
+              </td>
+              <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white whitespace-nowrap">
+                {formatCurrency(ch.amount, ch.currency as 'ARS' | 'USD')}
+              </td>
+              <td className="px-3 py-2 text-center">
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${CHEQUE_STATUS_COLORS[ch.status]}`}>
+                  {CHEQUE_STATUS_LABELS[ch.status]}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  return (
+    <tr className="bg-gray-50/60 dark:bg-slate-700/30">
+      <td colSpan={colSpan} className="px-5 py-4">
+        <div className="overflow-x-auto">{body()}</div>
+      </td>
+    </tr>
+  );
+}
+
 /* ── Chequeras tab ───────────────────────────────────────────────── */
 function ChequerasTab({
   chequeras, isLoading, onNew, onEdit, onDelete,
@@ -644,6 +733,9 @@ function ChequerasTab({
   onEdit:    (c: Chequera) => void;
   onDelete:  (c: Chequera) => void;
 }) {
+  // Chequera desplegada: muestra los cheques que salieron de ese talonario.
+  const [openId, setOpenId] = useState<string | null>(null);
+
   return (
     <>
       <div className="flex justify-between items-center mb-4">
@@ -661,6 +753,7 @@ function ChequerasTab({
               <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Chequera</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Cheques emitidos</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Banco / Cuenta</th>
                   <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Rango</th>
                   <th className="px-5 py-3 text-center text-xs font-semibold text-gray-400 dark:text-slate-400 uppercase tracking-wider">Próximo N°</th>
@@ -670,8 +763,19 @@ function ChequerasTab({
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                 {chequeras.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors">
+                  <Fragment key={c.id}>
+                  <tr className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors">
                     <td className="px-5 py-3.5 text-sm text-gray-800 dark:text-slate-200">{c.name || '—'}</td>
+                    <td className="px-5 py-3.5">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId((prev) => (prev === c.id ? null : c.id))}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                      >
+                        {openId === c.id ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        {openId === c.id ? 'Ocultar cheques' : 'Ver cheques'}
+                      </button>
+                    </td>
                     <td className="px-5 py-3.5">
                       <p className="text-sm text-gray-700 dark:text-slate-300">{c.bank}</p>
                       <p className="text-xs text-gray-400 dark:text-slate-500">Cta. {c.accountNumber}</p>
@@ -700,6 +804,8 @@ function ChequerasTab({
                       </div>
                     </td>
                   </tr>
+                  {openId === c.id && <ChequeraChequesDetail chequeraId={c.id} colSpan={7} />}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

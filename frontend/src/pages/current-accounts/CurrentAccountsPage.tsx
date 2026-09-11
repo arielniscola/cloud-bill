@@ -7,6 +7,9 @@ import { PageHeader, DataTable, SearchInput } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { customersService, currentAccountsService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign, round2 } from '../../utils/currencyConversion';
+import ExchangeRateBadge from '../../components/shared/ExchangeRateBadge';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type {
@@ -60,8 +63,11 @@ const SORTS: { key: Sort; label: string }[] = [
 /** Fila de la tabla: el cliente con su cuenta y su antigüedad, si las tiene. */
 type Row = {
   customer: Customer;
+  /** Cuenta sintética con el saldo YA consolidado en pesos. */
   account?: CurrentAccount;
   aging?: CurrentAccountAging;
+  /** Saldos en moneda extranjera que componen el consolidado (referencia). */
+  foreignParts?: { currency: string; balance: number }[];
 };
 
 // ── Barra de antigüedad (a vencer / 0-30 / 31-60 / +60) ──────────
@@ -134,6 +140,8 @@ export default function CurrentAccountsPage() {
   const [filter,     setFilter]     = useState<Filter>('debt');
   const [sort,       setSort]       = useState<Sort>('oldest');
   const [currency,   setCurrency]   = useState<Currency>('ARS');
+  // Cotización del día: la cartera se lee en pesos.
+  const er = useExchangeRate();
   const [page,       setPage]       = useState(1);
   const [limit,      setLimit]      = useState(DEFAULT_PAGE_SIZE);
   const [total,      setTotal]      = useState(0);
@@ -174,21 +182,45 @@ export default function CurrentAccountsPage() {
     return map;
   }, [stats]);
 
-  // Cuenta por cliente+moneda. En modo "Todos" puede haber una fila FORMAL y
-  // otra INFORMAL con saldo para la misma moneda — se suman.
-  const accountFor = useCallback((customerId: string, cur: Currency): CurrentAccount | undefined => {
-    const matches = accounts.filter((a) => a.customerId === customerId && a.currency === cur);
-    if (matches.length <= 1) return matches[0];
-    return { ...matches[0], balance: matches.reduce((s, a) => s + Number(a.balance), 0), creditLimit: null };
-  }, [accounts]);
+  // Saldo consolidado en pesos por cliente: se suman TODAS sus cuentas (las de
+  // cada moneda, y las filas FORMAL/INFORMAL de cada una), convirtiendo lo que
+  // esté en moneda extranjera con la cotización del día.
+  const accountFor = useCallback((customerId: string): { account?: CurrentAccount; foreignParts: { currency: string; balance: number }[] } => {
+    const matches = accounts.filter((a) => a.customerId === customerId);
+    if (matches.length === 0) return { foreignParts: [] };
+
+    const balance = round2(matches.reduce((s, a) => s + (toArs(Number(a.balance), a.currency, er.rate) ?? 0), 0));
+    // El límite de crédito solo se muestra si viene de una única cuenta en pesos.
+    const arsOnly = matches.filter((a) => a.currency === 'ARS');
+    const creditLimit = matches.length === 1 || arsOnly.length === 1 ? (arsOnly[0]?.creditLimit ?? null) : null;
+
+    const byForeign = new Map<string, number>();
+    for (const a of matches) {
+      if (!isForeign(a.currency)) continue;
+      byForeign.set(a.currency, round2((byForeign.get(a.currency) ?? 0) + Number(a.balance)));
+    }
+
+    return {
+      account: { ...matches[0], currency: 'ARS' as Currency, balance, creditLimit },
+      foreignParts: Array.from(byForeign.entries())
+        .filter(([, v]) => Math.abs(v) > 0.005)
+        .map(([currency, bal]) => ({ currency, balance: bal })),
+    };
+  }, [accounts, er.rate]);
 
   // ── Indicadores ───────────────────────────────────────────────
+  // Por cobrar, todo en pesos (lo que esté en USD se convierte con la cotización
+  // del día). Se conserva el detalle en moneda original como referencia.
   const receivable = useMemo(() => {
-    const sum = (cur: Currency) => accounts
-      .filter((a) => a.currency === cur && Number(a.balance) > 0)
-      .reduce((s, a) => s + Number(a.balance), 0);
-    return { ARS: sum('ARS'), USD: sum('USD') };
-  }, [accounts]);
+    const debtors = accounts.filter((a) => Number(a.balance) > 0);
+    const totalArs = round2(debtors.reduce((s, a) => s + (toArs(Number(a.balance), a.currency, er.rate) ?? 0), 0));
+    const foreign = new Map<string, number>();
+    for (const a of debtors) {
+      if (!isForeign(a.currency)) continue;
+      foreign.set(a.currency, round2((foreign.get(a.currency) ?? 0) + Number(a.balance)));
+    }
+    return { totalArs, foreign: Array.from(foreign.entries()) };
+  }, [accounts, er.rate]);
 
   const overdue = useMemo(() => {
     const rows = stats?.aging ?? [];
@@ -223,25 +255,16 @@ export default function CurrentAccountsPage() {
   // ── Filas ─────────────────────────────────────────────────────
   const localRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    let rows: Row[] = accounts
-      .filter((a) => a.currency === currency && a.customer)
-      .map((a) => ({
-        customer: a.customer as Customer,
-        account: a,
-        aging: agingByCustomer.get(a.customerId),
-      }));
-
-    // Una cuenta FORMAL y otra INFORMAL del mismo cliente se muestran juntas.
-    const merged = new Map<string, Row>();
-    for (const r of rows) {
-      const prev = merged.get(r.customer.id);
-      if (!prev) merged.set(r.customer.id, r);
-      else merged.set(r.customer.id, {
-        ...prev,
-        account: { ...prev.account!, balance: Number(prev.account!.balance) + Number(r.account!.balance), creditLimit: null },
-      });
+    // Una fila por cliente, con el saldo de todas sus cuentas ya consolidado en
+    // pesos (accountFor hace la suma y la conversión).
+    const seen = new Map<string, Customer>();
+    for (const a of accounts) {
+      if (a.customer && !seen.has(a.customerId)) seen.set(a.customerId, a.customer as Customer);
     }
-    rows = Array.from(merged.values());
+    let rows: Row[] = Array.from(seen.entries()).map(([customerId, customer]) => {
+      const { account, foreignParts } = accountFor(customerId);
+      return { customer, account, foreignParts, aging: agingByCustomer.get(customerId) };
+    });
 
     rows = rows.filter((r) => {
       const balance = Number(r.account?.balance ?? 0);
@@ -267,16 +290,15 @@ export default function CurrentAccountsPage() {
       return (b.aging?.oldestDays ?? 0) - (a.aging?.oldestDays ?? 0);
     });
     return rows;
-  }, [accounts, agingByCustomer, currency, filter, search, sort]);
+  }, [accounts, accountFor, agingByCustomer, filter, search, sort]);
 
   const isLocal = filter !== 'all';
   const rows: Row[] = isLocal
     ? localRows.slice((page - 1) * limit, page * limit)
-    : customers.map((c) => ({
-        customer: c,
-        account: accountFor(c.id, currency),
-        aging: agingByCustomer.get(c.id),
-      }));
+    : customers.map((c) => {
+        const { account, foreignParts } = accountFor(c.id);
+        return { customer: c, account, foreignParts, aging: agingByCustomer.get(c.id) };
+      });
   const rowsTotal = isLocal ? localRows.length : total;
 
   const screenTotal = rows.reduce((s, r) => s + Number(r.account?.balance ?? 0), 0);
@@ -330,16 +352,24 @@ export default function CurrentAccountsPage() {
     },
     {
       key: 'balance',
-      header: `Saldo ${currency}`,
+      header: 'Saldo ARS',
       className: 'text-right',
-      render: ({ account }) => {
+      render: ({ account, foreignParts }) => {
         const balance = Number(account?.balance ?? 0);
         if (!account || balance === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
         const owes = balance > 0;
         return (
-          <span className={`text-sm font-bold tabular-nums ${owes ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {owes ? '' : '+'}{formatCurrency(Math.abs(balance), currency)}
-          </span>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className={`text-sm font-bold tabular-nums ${owes ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {owes ? '' : '+'}{formatCurrency(Math.abs(balance), 'ARS')}
+            </span>
+            {/* Referencia: la parte del saldo que está en moneda extranjera */}
+            {foreignParts?.map((f) => (
+              <span key={f.currency} className="text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
+                {formatCurrency(f.balance, f.currency)}
+              </span>
+            ))}
+          </div>
         );
       },
     },
@@ -395,13 +425,13 @@ export default function CurrentAccountsPage() {
       {/* ── Indicadores de cartera ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
         <StatCard
-          label="Por cobrar"
-          value={formatCurrency(receivable[currency], currency)}
+          label="Por cobrar en pesos"
+          value={formatCurrency(receivable.totalArs, 'ARS')}
           valueClass="text-red-600 dark:text-red-400"
           hint={
-            currency === 'ARS'
-              ? (receivable.USD > 0 ? `+ ${formatCurrency(receivable.USD, 'USD')} en dólares` : undefined)
-              : (receivable.ARS > 0 ? `+ ${formatCurrency(receivable.ARS, 'ARS')} en pesos` : undefined)
+            receivable.foreign.length > 0
+              ? `incluye ${receivable.foreign.map(([c, v]) => formatCurrency(v, c)).join(' · ')} convertidos`
+              : undefined
           }
         >
           {stats && (
@@ -521,21 +551,28 @@ export default function CurrentAccountsPage() {
                 </select>
               </>
             )}
-            <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
-              {(['ARS', 'USD'] as Currency[]).map((cur) => (
-                <button
-                  key={cur}
-                  type="button"
-                  onClick={() => setCurrency(cur)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                    currency === cur
-                      ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-slate-200 shadow-sm'
-                      : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
-                  }`}
-                >
-                  {cur}
-                </button>
-              ))}
+            <ExchangeRateBadge er={er} />
+            {/* Los saldos son siempre consolidados en pesos. Esta solapa solo
+                elige la moneda de las métricas que el backend calcula por
+                moneda (antigüedad de la deuda y cobros del mes). */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-gray-400 dark:text-slate-500">Antigüedad y cobros en</span>
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
+                {(['ARS', 'USD'] as Currency[]).map((cur) => (
+                  <button
+                    key={cur}
+                    type="button"
+                    onClick={() => setCurrency(cur)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                      currency === cur
+                        ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-slate-200 shadow-sm'
+                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {cur}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -569,7 +606,7 @@ export default function CurrentAccountsPage() {
               Total en pantalla
             </span>
             <span className={`text-sm font-bold tabular-nums ${screenTotal >= 0 ? 'text-gray-900 dark:text-white' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {formatCurrency(Math.abs(screenTotal), currency)}
+              {formatCurrency(Math.abs(screenTotal), 'ARS')}
             </span>
           </div>
         )}

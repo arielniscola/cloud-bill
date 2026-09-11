@@ -3,7 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, ChevronLeft, Receipt, Wallet, Trash2, Percent } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Input } from '../../components/ui';
-import { PageHeader, BancoSelect, AccountSearchSelect } from '../../components/shared';
+import {
+  PageHeader, BancoSelect, AccountSearchSelect, ChequeNumberInput,
+  useBancos, findBancoByName, joinChequeNumber, parseChequeNumber, formatChequeNumber,
+} from '../../components/shared';
 import { ordenPagosService, suppliersService, purchasesService, cashRegistersService, accountingService } from '../../services';
 import chequesService from '../../services/cheques.service';
 import chequerasService from '../../services/chequeras.service';
@@ -32,6 +35,7 @@ interface ItemRow {
 interface PropioRow {
   chequeraId: string;
   bank: string;
+  checkNumber: string;
   amount: string;
   dueDate: string;
 }
@@ -58,6 +62,11 @@ interface RetencionRow {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Label unico para los campos del cheque propio: los componentes traen labels
+// con tipografias distintas (Input usa text-sm/mb-1.5, BancoSelect text-xs) y
+// eso desalineaba las filas de la grilla.
+const FIELD_LABEL = 'block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1';
+
 export default function OrdenPagoFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -77,6 +86,8 @@ export default function OrdenPagoFormPage() {
   const [date, setDate]                     = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference]           = useState('');
   const [bank, setBank]                     = useState('');
+  const bancos                              = useBancos();
+  const bancoCabecera                       = findBancoByName(bancos, bank);
   const [checkDueDate, setCheckDueDate]     = useState('');
   const [notes, setNotes]                   = useState('');
   const [items, setItems]                   = useState<ItemRow[]>([]);
@@ -174,6 +185,11 @@ export default function OrdenPagoFormPage() {
     setRetenciones((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
   const addAjuste = () => setAjustes((prev) => [...prev, { accountId: '', accountCode: '', description: '', type: 'RESTA', amount: '' }]);
+
+  // Excedente: se le paga al proveedor por encima de lo imputado a las facturas.
+  // Al pagar la orden queda como crédito interno (saldo a favor nuestro) en su
+  // cuenta corriente, imputable a facturas futuras.
+  const [excedente, setExcedente] = useState('');
   const removeAjuste = (idx: number) => setAjustes((prev) => prev.filter((_, i) => i !== idx));
   const updateAjuste = (idx: number, patch: Partial<AjusteRow>) =>
     setAjustes((prev) => prev.map((a, i) => (i === idx ? { ...a, ...patch } : a)));
@@ -238,7 +254,7 @@ export default function OrdenPagoFormPage() {
   };
 
   const addPropio = () => {
-    setPropios((prev) => [...prev, { chequeraId: '', bank: '', amount: '', dueDate: '' }]);
+    setPropios((prev) => [...prev, { chequeraId: '', bank: '', checkNumber: '', amount: '', dueDate: '' }]);
   };
   const updatePropio = (idx: number, patch: Partial<PropioRow>) => {
     setPropios((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
@@ -296,7 +312,15 @@ export default function OrdenPagoFormPage() {
   );
   const totalDescuentos = ajustes.filter((a) => a.type === 'RESTA').reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const totalIntereses  = ajustes.filter((a) => a.type === 'SUMA').reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  const totalAmount = baseAmount + ajustesNet;
+  const excedenteAmount = isPagoACuenta ? 0 : (Number(excedente) || 0);
+
+  // Imputar a una factura más de lo que se le debe deja la cuenta descuadrada:
+  // ese sobrante va por "Excedente a cuenta". Se avisa, no se bloquea.
+  const overImputed = items.filter((it) => {
+    const inv = invoices.find((p) => p.id === it.purchaseInvoiceId);
+    return inv ? (Number(it.amount) || 0) > invoiceBalance(inv) + 0.005 : false;
+  });
+  const totalAmount = baseAmount + ajustesNet + excedenteAmount;
 
   // ── Bases de retención ────────────────────────────────────────────────────
   // Se arman desde las facturas seleccionadas, prorrateadas por la porción que
@@ -427,6 +451,7 @@ export default function OrdenPagoFormPage() {
         ? validPropios.map((p) => ({
             chequeraId: p.chequeraId || undefined,
             bank: p.bank || undefined,
+            checkNumber: parseChequeNumber(p.checkNumber).numero ? p.checkNumber : undefined,
             amount: Number(p.amount),
             dueDate: p.dueDate || undefined,
           }))
@@ -448,6 +473,7 @@ export default function OrdenPagoFormPage() {
         notes: notes || undefined,
         items: parsedItems,
         amount: isPagoACuenta ? Number(accountAmount) : undefined,
+        onAccountAmount: excedenteAmount > 0 ? excedenteAmount : undefined,
         ajustes: parsedAjustes.length > 0 ? parsedAjustes : undefined,
         retenciones: parsedRetenciones.length > 0 ? parsedRetenciones : undefined,
         chequesEnCartera,
@@ -573,16 +599,24 @@ export default function OrdenPagoFormPage() {
               </div>
             )}
 
-            <Input
-              label="Referencia / N° operación"
-              placeholder="Nro transferencia, cheque…"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
+            {paymentMethod !== 'CHECK' && (
+              <Input
+                label="Referencia / N° operación"
+                placeholder="Nro transferencia, comprobante…"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+              />
+            )}
 
             {paymentMethod === 'CHECK' && (
               <>
                 <BancoSelect label="Banco" value={bank} onChange={setBank} />
+                <ChequeNumberInput
+                  value={reference}
+                  onChange={setReference}
+                  bancoCode={bancoCabecera?.code}
+                  sucursal={bancoCabecera?.sucursal}
+                />
                 <Input label="Vencimiento cheque" type="date" value={checkDueDate} onChange={(e) => setCheckDueDate(e.target.value)} />
               </>
             )}
@@ -633,7 +667,7 @@ export default function OrdenPagoFormPage() {
                           className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
                         />
                         <span className="font-mono text-xs font-semibold text-gray-800 dark:text-slate-200">
-                          {c.checkNumber ?? c.number}
+                          {c.checkNumber ? formatChequeNumber(c.checkNumber) : c.number}
                         </span>
                         <span className="text-xs text-gray-500 dark:text-slate-400">{c.bank ?? '—'}</span>
                         {c.issuer && <span className="text-xs text-gray-400 truncate">· {c.issuer}</span>}
@@ -665,14 +699,32 @@ export default function OrdenPagoFormPage() {
                   {propios.map((p, idx) => {
                     const chequera = chequeras.find((q) => q.id === p.chequeraId);
                     return (
-                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                        <div className="sm:col-span-4">
-                          <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Chequera</label>
+                      // Grilla de 12 columnas en dos filas de 4/4/4: los tres controles de
+                      // arriba y los de abajo comparten el mismo eje. Va `items-start` y
+                      // cada campo pone su propio label (los de los componentes tienen
+                      // tipografías distintas): así los textos de ayuda que cuelgan abajo
+                      // —el formato del N° de cheque, el próximo número de la chequera—
+                      // no desplazan verticalmente al resto de la fila.
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-x-2 gap-y-3 items-start border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+                        <div className="sm:col-span-4 min-w-0">
+                          <label className={FIELD_LABEL}>Chequera</label>
                           <select
                             value={p.chequeraId}
                             onChange={(e) => {
                               const q = chequeras.find((x) => x.id === e.target.value);
-                              updatePropio(idx, { chequeraId: e.target.value, bank: q?.bank ?? p.bank });
+                              const cat = q ? findBancoByName(bancos, q.bank) : null;
+                              const prevParts = parseChequeNumber(p.checkNumber);
+                              updatePropio(idx, {
+                                chequeraId: e.target.value,
+                                bank: q?.bank ?? p.bank,
+                                checkNumber: q && q.nextNumber != null
+                                  ? joinChequeNumber({
+                                      banco:    cat?.code ?? prevParts.banco,
+                                      sucursal: cat?.sucursal ?? prevParts.sucursal,
+                                      numero:   String(q.nextNumber),
+                                    })
+                                  : p.checkNumber,
+                              });
                             }}
                             className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           >
@@ -684,15 +736,25 @@ export default function OrdenPagoFormPage() {
                             ))}
                           </select>
                           {chequera?.nextNumber != null && (
-                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-1">N° de cheque: {chequera.nextNumber}</p>
+                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-1">Próximo N°: {chequera.nextNumber}</p>
                           )}
                         </div>
-                        <div className="sm:col-span-3">
-                          <BancoSelect label="Banco" value={p.bank} onChange={(v) => updatePropio(idx, { bank: v })} />
+                        <div className="sm:col-span-4 min-w-0">
+                          <label className={FIELD_LABEL}>Banco</label>
+                          <BancoSelect value={p.bank} onChange={(v) => updatePropio(idx, { bank: v })} />
                         </div>
-                        <div className="sm:col-span-2">
+                        <div className="sm:col-span-4 min-w-0">
+                          <ChequeNumberInput
+                            value={p.checkNumber}
+                            onChange={(v) => updatePropio(idx, { checkNumber: v })}
+                            bancoCode={findBancoByName(bancos, p.bank)?.code}
+                            sucursal={findBancoByName(bancos, p.bank)?.sucursal}
+                            labelClassName={FIELD_LABEL}
+                          />
+                        </div>
+                        <div className="sm:col-span-4 min-w-0">
+                          <label className={FIELD_LABEL}>Monto</label>
                           <Input
-                            label="Monto"
                             type="number"
                             min="0.01"
                             step="0.01"
@@ -700,18 +762,22 @@ export default function OrdenPagoFormPage() {
                             onChange={(e) => updatePropio(idx, { amount: e.target.value })}
                           />
                         </div>
-                        <div className="sm:col-span-2">
+                        <div className="sm:col-span-4 min-w-0">
+                          <label className={FIELD_LABEL}>Vencimiento</label>
                           <Input
-                            label="Vencimiento"
                             type="date"
                             value={p.dueDate}
                             onChange={(e) => updatePropio(idx, { dueDate: e.target.value })}
                           />
                         </div>
-                        <div className="sm:col-span-1 flex justify-end">
-                          <button type="button" onClick={() => removePropio(idx)} className="p-2 text-gray-400 hover:text-red-500" title="Quitar">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div className="sm:col-span-4 flex justify-end">
+                          <div>
+                            {/* Label invisible: alinea el botón con los inputs de al lado */}
+                            <span aria-hidden className={`${FIELD_LABEL} invisible`}>Quitar</span>
+                            <button type="button" onClick={() => removePropio(idx)} className="p-2 text-gray-400 hover:text-red-500" title="Quitar cheque">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1006,6 +1072,48 @@ export default function OrdenPagoFormPage() {
         )}
 
         {/* Summary + submit */}
+        {/* Excedente: pagarle al proveedor más que lo imputado a las facturas */}
+        {!isPagoACuenta && items.length > 0 && (
+          <Card>
+            {overImputed.length > 0 && (
+              <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  Estás imputando más de lo adeudado en{' '}
+                  {overImputed.length === 1 ? 'una factura' : `${overImputed.length} facturas`}
+                  {': '}
+                  {overImputed.map((it) => invoices.find((p) => p.id === it.purchaseInvoiceId)?.number).filter(Boolean).join(', ')}.
+                  {' '}Si la intención es pagarle de más, cargá la diferencia acá abajo como excedente:
+                  así queda como crédito a favor en vez de sobre-imputar la factura.
+                </p>
+              </div>
+            )}
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-700 dark:text-slate-300">Excedente a cuenta</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 max-w-lg">
+                  Importe que se le paga al proveedor <strong>por encima</strong> de las facturas seleccionadas.
+                  Al pagar la orden queda como <strong>crédito interno</strong> a favor nuestro en su cuenta
+                  corriente y se puede imputar a una factura futura.
+                </p>
+              </div>
+              <div className="text-right">
+                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
+                  Importe ({effectiveCurrency})
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={excedente}
+                  onChange={(e) => setExcedente(e.target.value)}
+                  className="w-40 text-right border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {(items.length > 0 || (isPagoACuenta && Number(accountAmount) > 0) || ajustes.length > 0 || totalRetenciones > 0) && (
           <Card>
             <div className="flex items-center justify-between">
@@ -1015,7 +1123,7 @@ export default function OrdenPagoFormPage() {
                   : `${items.length} factura${items.length !== 1 ? 's' : ''} seleccionada${items.length !== 1 ? 's' : ''}`}
               </p>
               <div className="text-right">
-                {(totalDescuentos > 0 || totalIntereses > 0 || totalRetenciones > 0) && (
+                {(totalDescuentos > 0 || totalIntereses > 0 || totalRetenciones > 0 || excedenteAmount > 0) && (
                   <div className="mb-1.5 space-y-0.5">
                     <p className="text-xs text-gray-400 dark:text-slate-500 tabular-nums">
                       Subtotal facturas: {formatCurrency(baseAmount, effectiveCurrency as any)}
@@ -1028,6 +1136,11 @@ export default function OrdenPagoFormPage() {
                     {totalDescuentos > 0 && (
                       <p className="text-xs text-emerald-600 dark:text-emerald-400 tabular-nums">
                         − Descuentos: {formatCurrency(totalDescuentos, effectiveCurrency as any)}
+                      </p>
+                    )}
+                    {excedenteAmount > 0 && (
+                      <p className="text-xs text-indigo-600 dark:text-indigo-400 tabular-nums">
+                        + Excedente a cuenta: {formatCurrency(excedenteAmount, effectiveCurrency)}
                       </p>
                     )}
                     {totalRetenciones > 0 && (

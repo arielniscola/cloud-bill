@@ -17,6 +17,8 @@ export interface AccountMovement {
   budget?: Budget;
   internalNoteId: string | null;
   createdAt: string;
+  /** Moneda de la cuenta a la que pertenece el movimiento. */
+  currency?: Currency;
 }
 
 export interface CurrentAccount {

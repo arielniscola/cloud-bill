@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { Button, Modal, Input } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, refreshBancos } from '../../components/shared';
 import CsvImportModal from '../../components/shared/CsvImportModal';
 import { bancosService } from '../../services';
 import type { Banco } from '../../types';
@@ -122,6 +122,7 @@ export default function BancosPage() {
     setIsLoading(true);
     try {
       setBancos(await bancosService.getAll());
+      refreshBancos();   // invalida el catálogo cacheado que usa BancoSelect
     } catch {
       toast.error('Error al cargar bancos');
     } finally {

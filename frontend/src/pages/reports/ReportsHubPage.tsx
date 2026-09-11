@@ -58,8 +58,8 @@ const REPORTS: ReportCard[] = [
     color:       'bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400',
   },
   {
-    title:       'Cuentas a cobrar',
-    description: 'Clientes con saldo pendiente en cuenta corriente. Controlá tu cartera de deudores.',
+    title:       'Deudores',
+    description: 'Deuda pendiente a una fecha de corte, por cliente o por proveedor, con antigüedad y detalle de comprobantes.',
     href:        '/reports/accounts-receivable',
     icon:        Users,
     color:       'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400',

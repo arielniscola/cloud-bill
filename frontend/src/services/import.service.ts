@@ -3,6 +3,10 @@ import type { ApiResponse } from '../types';
 
 export interface ImportResult {
   imported: number;
+  // Desglose de `imported` (solo lo devuelve la importacion de productos):
+  // filas que crearon un producto nuevo vs. filas que actualizaron uno existente.
+  created?: number;
+  updated?: number;
   skipped: number;
   total: number;
   errors: Array<{ row: number; message: string }>;

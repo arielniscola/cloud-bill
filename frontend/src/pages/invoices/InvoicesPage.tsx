@@ -10,6 +10,10 @@ import Pagination from '../../components/shared/Pagination';
 import { invoicesService, customersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate, formatInvoiceNumber } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign } from '../../utils/currencyConversion';
+import ArsAmount from '../../components/shared/ArsAmount';
+import ExchangeRateBadge from '../../components/shared/ExchangeRateBadge';
 import {
   INVOICE_TYPES,
   INVOICE_STATUS_OPTIONS,
@@ -103,33 +107,33 @@ function DateInput({ value, onChange }: { value: string; onChange: (v: string) =
 
 // ── Skeleton ─────────────────────────────────────────────────────
 /**
- * Un importe por moneda, apilados. Los tramos NO se suman entre sí: la cuenta
- * corriente del cliente es por moneda y una factura en USD lleva su propia
- * cotización, así que un único número rotulado "ARS" mezclaba dos escalas.
- * Con una sola moneda —el caso normal— se ve exactamente como un importe suelto.
+ * Importe consolidado en PESOS: los tramos en moneda extranjera se convierten
+ * con la cotización del día y se suman, y el detalle en moneda original queda
+ * como referencia debajo. Antes se apilaban sin sumar porque no había una
+ * cotización común con la cual expresarlos en una sola escala.
  */
 function MoneyByCurrency({
   tramos,
   pick,
   className,
+  rate,
 }: {
+  rate: number | null;
   tramos: InvoiceCurrencyStats[];
   pick: (t: InvoiceCurrencyStats) => number;
   className: string;
 }) {
   const conImporte = tramos.filter((t) => pick(t) !== 0);
-  // Sin nada que mostrar igual se ocupa el lugar: un cero en la moneda
-  // principal del filtro lee mejor que un hueco.
-  const visibles = conImporte.length > 0 ? conImporte : tramos.slice(0, 1);
-
-  if (visibles.length === 0) {
-    return <div className={`${className} leading-none truncate tabular-nums`}>{formatCurrency(0, 'ARS')}</div>;
-  }
+  const totalArs = conImporte.reduce((s, t) => s + (toArs(pick(t), t.currency, rate) ?? 0), 0);
+  const foreign = conImporte.filter((t) => isForeign(t.currency));
 
   return (
     <div className="space-y-0.5">
-      {visibles.map((t) => (
-        <div key={t.currency} className={`${className} leading-none truncate tabular-nums`}>
+      <div className={`${className} leading-none truncate tabular-nums`}>
+        {formatCurrency(totalArs, 'ARS')}
+      </div>
+      {foreign.map((t) => (
+        <div key={t.currency} className="text-[10px] text-gray-400 dark:text-slate-500 leading-none truncate tabular-nums">
           {formatCurrency(pick(t), t.currency)}
         </div>
       ))}
@@ -162,6 +166,8 @@ function SkeletonRows({ count }: { count: number }) {
 // ── Page ─────────────────────────────────────────────────────────
 export default function InvoicesPage() {
   const navigate = useNavigate();
+  // Cotización del día: los importes se leen en pesos.
+  const er = useExchangeRate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -277,31 +283,32 @@ export default function InvoicesPage() {
       />
 
       {/* ── Stats strip — todo el filtro, nunca la página ── */}
-      {/* Los importes van por moneda y no se suman: la cuenta corriente del
-          cliente es por moneda, así que pesos y dólares no son la misma escala.
-          Con una sola moneda (el caso normal) se ve igual que siempre. */}
+      {/* Los importes se consolidan en pesos con la cotización del día; lo que
+          está en moneda extranjera aparece debajo como referencia. */}
       {!isFirstLoad && stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3.5">
             <div className="text-2xl font-bold text-gray-900 dark:text-white leading-none tabular-nums">{stats.count}</div>
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">Comprobantes{hasFilters ? ' (filtrados)' : ''}</div>
+            {/* Con qué cotización se están expresando los importes en pesos */}
+            <div className="mt-1.5"><ExchangeRateBadge er={er} /></div>
           </div>
           <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3.5">
             <MoneyByCurrency
               tramos={stats.byCurrency}
+              rate={er.rate}
               pick={(t) => t.total}
               className="text-lg font-bold text-gray-900 dark:text-white"
             />
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-1 truncate">
               Facturado · IVA{' '}
-              {stats.byCurrency.length === 0
-                ? formatCurrency(0, 'ARS')
-                : stats.byCurrency.map((t) => formatCurrency(t.taxAmount, t.currency)).join(' · ')}
+              {formatCurrency(stats.byCurrency.reduce((s2, t) => s2 + (toArs(t.taxAmount, t.currency, er.rate) ?? 0), 0), 'ARS')}
             </div>
           </div>
           <div className="bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3.5 shadow-[inset_3px_0_0_theme(colors.amber.500)]">
             <MoneyByCurrency
               tramos={stats.byCurrency}
+              rate={er.rate}
               pick={(t) => t.pendingAmount}
               className="text-lg font-bold text-amber-600 dark:text-amber-400"
             />
@@ -312,6 +319,7 @@ export default function InvoicesPage() {
           <div className="bg-white dark:bg-slate-800 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3.5 shadow-[inset_3px_0_0_theme(colors.red.500)]">
             <MoneyByCurrency
               tramos={stats.byCurrency}
+              rate={er.rate}
               pick={(t) => t.overdueAmount}
               className="text-lg font-bold text-red-600 dark:text-red-400"
             />
@@ -471,8 +479,8 @@ export default function InvoicesPage() {
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Comprobante</th>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider w-full">Cliente</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Total</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Saldo</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Total ARS</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Saldo ARS</th>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Estado</th>
                     <th className="px-4 py-2.5 w-10"></th>
                   </tr>
@@ -566,28 +574,29 @@ export default function InvoicesPage() {
                           )}
                         </td>
 
-                        {/* Total */}
+                        {/* Total — en pesos, con el importe original de referencia */}
                         <td className="px-4 py-3.5 text-right whitespace-nowrap align-top">
-                          <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
-                            {formatCurrency(Number(inv.total), inv.currency)}
-                          </span>
-                          {inv.currency !== 'ARS' && (
-                            <span className="ml-1 text-[10px] font-semibold px-1 py-0.5 rounded-full border text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/20 dark:border-amber-800">
-                              {inv.currency}
-                            </span>
-                          )}
+                          <ArsAmount
+                            amount={Number(inv.total)}
+                            currency={inv.currency}
+                            rate={er.rate}
+                            className="text-sm font-bold tabular-nums text-gray-900 dark:text-white"
+                          />
                         </td>
 
-                        {/* Saldo — la pregunta que el listado no contestaba */}
+                        {/* Saldo — lo que resta cobrar, también en pesos */}
                         <td className="px-4 py-3.5 text-right whitespace-nowrap align-top">
                           {outstanding > 0 ? (
-                            <span className={`text-sm font-bold tabular-nums ${
-                              overdueDays !== null
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-amber-600 dark:text-amber-400'
-                            }`}>
-                              {formatCurrency(outstanding, inv.currency)}
-                            </span>
+                            <ArsAmount
+                              amount={outstanding}
+                              currency={inv.currency}
+                              rate={er.rate}
+                              className={`text-sm font-bold tabular-nums ${
+                                overdueDays !== null
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                            />
                           ) : (
                             <span className="text-gray-300 dark:text-slate-600">—</span>
                           )}

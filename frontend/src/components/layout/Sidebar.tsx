@@ -298,11 +298,16 @@ export default function Sidebar() {
         const hit =
           location.pathname === path ||
           (path !== "/" && location.pathname.startsWith(path + "/"));
-        if (hit && path.length > bestLen) { best = m; bestLen = path.length; }
+        if (!hit) continue;
+        // Dos items pueden compartir path y diferenciarse solo por la query
+        // (?entity=CUSTOMER vs SUPPLIER): el que coincide con la URL gana.
+        const hasQuery = target.includes("?");
+        const score = path.length * 2 + (hasQuery ? (childIsActive(target) ? 1 : -1) : 0);
+        if (score > bestLen) { best = m; bestLen = score; }
       }
     }
     return best;
-  }, [visibleModules, location.pathname]);
+  }, [visibleModules, location.pathname, location.search]);
 
   const searchableItems = useMemo(
     () =>

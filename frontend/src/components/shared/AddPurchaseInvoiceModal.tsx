@@ -74,6 +74,8 @@ const EMPTY_FORM: Omit<CreatePurchaseInvoiceDTO, 'items'> = {
   subtotal:       0,
   taxRate:        21,
   taxAmount:      0,
+  discountPct:    0,
+  discountAmount: 0,
   amount:         0,
   dueDate:        null,
   imputationDate: null,
@@ -85,6 +87,7 @@ const EMPTY_ITEM: CreatePurchaseInvoiceItemDTO = {
   description: '',
   quantity:    1,
   unitPrice:   0,
+  discountPct: 0,
   taxRate:     21,
 };
 
@@ -185,6 +188,19 @@ export function AddPurchaseInvoiceModal({
   const [showTribs,   setShowTribs]   = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | 'close' | 'discard'>(null);
 
+  // ── Descuentos ──────────────────────────────────────────────────────────
+  // Se cargan de dos formas y son excluyentes: uno global sobre el total
+  // (en % o en $) o uno propio por línea. Como el backend guarda el descuento
+  // como un porcentaje POR ÍTEM, el global se expresa como el % equivalente
+  // sobre el subtotal — así la columna "Total" de cada línea cierra con el
+  // total del comprobante. En ambos casos el descuento reduce la BASE
+  // IMPONIBLE: el IVA se calcula sobre el neto ya descontado.
+  const [discountType,  setDiscountType]  = useState<'%' | '$'>('%');
+  const [discountValue, setDiscountValue] = useState(0);
+  const [hasPerItemDiscount, setHasPerItemDiscount] = useState(false);
+  // Neto gravado ANTES de descuento, para la carga manual (sin ítems).
+  const [manualBase, setManualBase] = useState(0);
+
   // Borrador (solo factura nueva): se persiste en localStorage y se restaura al reabrir.
   const isDraftMode = !existing && !fromRemito;
   const draftKey = `pi-draft:${standalone ? 'standalone' : `purchase:${purchaseId ?? 'none'}`}`;
@@ -251,6 +267,7 @@ export function AddPurchaseInvoiceModal({
         description: i.description,
         quantity:    Number(i.quantity),
         unitPrice:   Number(i.unitPrice),
+        discountPct: Number(i.discountPct) || 0,
         taxRate:     Number(i.taxRate),
       }));
       const existingTribs = (existing.tributos ?? []).map((t) => ({
@@ -265,12 +282,18 @@ export function AddPurchaseInvoiceModal({
       setTributos(existingTribs);
       setShowItems(existingItems.length > 0);
       setShowTribs(existingTribs.length > 0);
+      // El comprobante puede traer un descuento distinto por línea. Si todas
+      // comparten el mismo, se muestra como descuento global en %.
+      syncDiscountFromItems(existingItems, Number(existing.discountPct) || 0);
+      setManualBase(Number(existing.subtotal) + (Number(existing.discountAmount) || 0));
     } else if (fromRemito) {
       setForm({ ...EMPTY_FORM, number: '' });
-      setItems(fromRemito.items.map((i) => ({ ...i })));
+      setItems(fromRemito.items.map((i) => ({ ...i, discountPct: Number(i.discountPct) || 0 })));
       setTributos([]);
       setShowItems(fromRemito.items.length > 0);
       setShowTribs(false);
+      setDiscountType('%'); setDiscountValue(0); setHasPerItemDiscount(false);
+      setManualBase(0);
     } else {
       const draft = readDraft();
       setForm(draft?.form ?? EMPTY_FORM);
@@ -278,6 +301,10 @@ export function AddPurchaseInvoiceModal({
       setTributos(draft?.tributos ?? []);
       setShowItems(draft?.showItems ?? false);
       setShowTribs(draft?.showTribs ?? false);
+      setDiscountType(draft?.discountType ?? '%');
+      setDiscountValue(draft?.discountValue ?? 0);
+      setHasPerItemDiscount(draft?.hasPerItemDiscount ?? false);
+      setManualBase(draft?.manualBase ?? 0);
     }
   }, [isOpen, existing, fromRemito]);
 
@@ -307,12 +334,13 @@ export function AddPurchaseInvoiceModal({
     const snapshot = {
       supplierId, currencyState, saleCondition, date, exchangeRate, remitoLink,
       originInvoiceId, form, items, tributos, showItems, showTribs,
+      discountType, discountValue, hasPerItemDiscount, manualBase,
     };
     try { localStorage.setItem(draftKey, JSON.stringify(snapshot)); } catch { /* quota */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isDraftMode, isDirty, supplierId, currencyState, saleCondition, date,
       exchangeRate, remitoLink, originInvoiceId, form, items, tributos,
-      showItems, showTribs]);
+      showItems, showTribs, discountType, discountValue, hasPerItemDiscount, manualBase]);
 
   // Cierre con Escape (respeta la confirmación de borrador)
   useEffect(() => {
@@ -372,14 +400,19 @@ export function AddPurchaseInvoiceModal({
     const first: PurchaseInvoiceItemRow = {
       description: rateLabel(form.taxRate),
       quantity:    1,
-      unitPrice:   form.subtotal,
+      unitPrice:   manualBase,
       taxRate:     form.taxRate,
     };
     const second: PurchaseInvoiceItemRow = { ...EMPTY_ITEM, description: '' };
     setItems([first, second]);
     setShowItems(true);
   };
-  const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const removeItem = (i: number) => setItems((prev) => {
+    const next = prev.filter((_, idx) => idx !== i);
+    // Sin líneas no hay descuento por ítem que sostener: vuelve al global.
+    if (next.length === 0) setHasPerItemDiscount(false);
+    return next;
+  });
   const setItem = (i: number, field: keyof CreatePurchaseInvoiceItemDTO, val: unknown) =>
     setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
 
@@ -418,78 +451,157 @@ export function AddPurchaseInvoiceModal({
     setShowItems(true);
   };
 
+  const hasItems = items.length > 0;
+
+  // "Otros tributos" suman al total del comprobante
+  const totalTributos = tributos.reduce((s, t) => s + Number(t.amount), 0);
+
+  // ── Descuentos ────────────────────────────────────────────────
+  // Dos formas EXCLUYENTES de cargarlo:
+  //   · global  → vive en la cabecera del comprobante. Las líneas quedan a
+  //               precio de lista y el descuento se muestra como un renglón
+  //               aparte, igual que en la factura de papel.
+  //   · por ítem → cada línea lleva su propio %, y la cabecera no descuenta.
+  // En los dos casos el descuento reduce la BASE IMPONIBLE: el IVA sale del
+  // neto ya descontado (prorrateado por alícuota cuando el descuento es global).
+  const itemBase = (item: CreatePurchaseInvoiceItemDTO) => item.quantity * item.unitPrice;
+
+  // Descuento PROPIO de la línea (0 mientras el descuento sea global).
+  const itemDiscountPct = (item: CreatePurchaseInvoiceItemDTO) =>
+    hasPerItemDiscount ? Math.min(Number(item.discountPct) || 0, 100) : 0;
+  const itemDiscount = (item: CreatePurchaseInvoiceItemDTO) =>
+    itemBase(item) * (itemDiscountPct(item) / 100);
+
+  // Importes de la línea, tal como se muestran en la grilla: sin el descuento
+  // global, que se resta una sola vez sobre el total.
   const itemSubtotal = (item: CreatePurchaseInvoiceItemDTO) =>
-    item.quantity * item.unitPrice;
+    itemBase(item) - itemDiscount(item);
   const itemTax = (item: CreatePurchaseInvoiceItemDTO) =>
     itemSubtotal(item) * (item.taxRate / 100);
   const itemTotal = (item: CreatePurchaseInvoiceItemDTO) =>
     itemSubtotal(item) + itemTax(item);
 
-  // ── Auto-calc totals from items ────────────────────────────────────────────
-  // When items exist, totals are derived; otherwise user fills them manually.
+  // Base sobre la que se aplica el descuento global: la suma de las líneas
+  // (ya netas de su descuento propio) o el neto cargado a mano.
+  const baseAmount = hasItems ? items.reduce((s, it) => s + itemSubtotal(it), 0) : manualBase;
 
-  const hasItems = items.length > 0;
+  // Un descuento global en $ se expresa como el % equivalente sobre esa base.
+  const globalDiscountPct = hasPerItemDiscount ? 0 : (discountType === '%'
+    ? Math.min(discountValue, 100)
+    : (baseAmount > 0 ? (Math.min(discountValue, baseAmount) / baseAmount) * 100 : 0));
+  const globalFactor = 1 - globalDiscountPct / 100;
 
-  const itemsSubtotal = useMemo(
-    () => items.reduce((s, it) => s + itemSubtotal(it), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items]
-  );
-  const itemsTaxAmount = useMemo(
-    () => items.reduce((s, it) => s + itemTax(it), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items]
-  );
-  const itemsTotal = itemsSubtotal + itemsTaxAmount;
+  /**
+   * Refleja en el control global el descuento que trae un comprobante cargado:
+   * si todas las líneas comparten el mismo porcentaje se muestra como global,
+   * y si difieren queda en modo "por línea".
+   */
+  const syncDiscountFromItems = (
+    loaded: Array<{ discountPct?: number | string | null }>,
+    headerPct = 0,
+  ) => {
+    setDiscountType('%');
+    if (loaded.length === 0) {
+      setHasPerItemDiscount(false);
+      setDiscountValue(headerPct);
+      return;
+    }
+    const pcts = loaded.map((item) => Number(item.discountPct) || 0);
+    const uniform = pcts.every((pct) => Math.abs(pct - pcts[0]) < 0.000001);
+    setHasPerItemDiscount(!uniform);
+    setDiscountValue(uniform ? pcts[0] : 0);
+  };
 
-  // "Otros tributos" suman al total del comprobante
-  const totalTributos = tributos.reduce((s, t) => s + Number(t.amount), 0);
+  const setGlobalDiscount = (nextType: '%' | '$', nextValue: number) => {
+    setHasPerItemDiscount(false);
+    setDiscountType(nextType);
+    setDiscountValue(Math.max(nextValue, 0));
+  };
 
-  // Tax breakdown by rate (for display)
+  /**
+   * Descuento tocado desde una línea: el comprobante deja de tener descuento
+   * global y pasa a descuentos por ítem. El global que había se baja a las
+   * demás filas para que el total no salte al cambiar de modo.
+   */
+  const handleItemDiscountChange = (index: number, pct: number) => {
+    const clamped = Math.min(Math.max(pct, 0), 100);
+    const heredado = hasPerItemDiscount ? null : globalDiscountPct;
+    setItems((prev) => prev.map((item, i) => ({
+      ...item,
+      discountPct: i === index
+        ? clamped
+        : (heredado ?? Math.min(Number(item.discountPct) || 0, 100)),
+    })));
+    if (!hasPerItemDiscount) {
+      setHasPerItemDiscount(true);
+      setDiscountValue(0);
+    }
+  };
+
+  // ── Auto-calc totals ────────────────────────────────────────
+  // Con ítems los totales se derivan; si no, salen del neto cargado a mano.
+
+  // Suma de las líneas a precio de lista (neta del descuento propio de cada una).
+  const itemsGross = items.reduce((s, it) => s + itemSubtotal(it), 0);
+  const itemsTotalGross = items.reduce((s, it) => s + itemTotal(it), 0);
+
+  // El descuento global se resta UNA sola vez, sobre el total.
+  const discountAmount = baseAmount * (globalDiscountPct / 100);
+
+  // Neto e IVA del comprobante: el descuento global se prorratea por alícuota
+  // (no por línea) para que el IVA salga de la base ya descontada.
+  const itemsSubtotal  = itemsGross * globalFactor;
+  const itemsTaxAmount = items.reduce((s, it) => s + itemTax(it) * globalFactor, 0);
+  const itemsTotal     = itemsSubtotal + itemsTaxAmount;
+
+  // Tax breakdown by rate (for display) — netos ya descontados
   const taxByRate = useMemo(() => {
     const map: Record<number, { subtotal: number; tax: number }> = {};
     for (const it of items) {
       const rate = Number(it.taxRate);
       if (!map[rate]) map[rate] = { subtotal: 0, tax: 0 };
-      map[rate].subtotal += itemSubtotal(it);
-      map[rate].tax      += itemTax(it);
+      map[rate].subtotal += itemSubtotal(it) * globalFactor;
+      map[rate].tax      += itemTax(it) * globalFactor;
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [items, hasPerItemDiscount, globalFactor]);
 
   // Sync form totals whenever items change (grand total includes otros tributos)
   useEffect(() => {
     if (!hasItems) return;
     setForm((prev) => ({
       ...prev,
-      subtotal:  itemsSubtotal,
-      taxAmount: itemsTaxAmount,
-      amount:    itemsTotal + totalTributos,
+      subtotal:       itemsSubtotal,
+      taxAmount:      itemsTaxAmount,
+      discountPct:    globalDiscountPct,
+      discountAmount: discountAmount,
+      amount:         itemsTotal + totalTributos,
     }));
-  }, [hasItems, itemsSubtotal, itemsTaxAmount, itemsTotal, totalTributos]);
+  }, [hasItems, itemsSubtotal, itemsTaxAmount, discountAmount, globalDiscountPct, itemsTotal, totalTributos]);
 
-  // In manual mode, fold otros tributos into the grand total
+  // Carga manual (sin ítems): del neto gravado sale todo lo demás.
   useEffect(() => {
     if (hasItems) return;
-    setForm((prev) => ({ ...prev, amount: prev.subtotal + prev.taxAmount + totalTributos }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasItems, totalTributos]);
+    const discount  = manualBase * (globalDiscountPct / 100);
+    const subtotal  = manualBase - discount;
+    const taxAmount = subtotal * (form.taxRate / 100);
+    setForm((prev) => ({
+      ...prev,
+      subtotal,
+      taxAmount,
+      discountPct:    globalDiscountPct,
+      discountAmount: discount,
+      amount:         subtotal + taxAmount + totalTributos,
+    }));
+  }, [hasItems, manualBase, globalDiscountPct, form.taxRate, totalTributos]);
 
   // Manual total handlers — only used when there are no items
-  const handleSubtotalChange = (val: number) => {
-    const taxAmount = val * (form.taxRate / 100);
-    setForm((prev) => ({ ...prev, subtotal: val, taxAmount, amount: val + taxAmount + totalTributos }));
-  };
-  const handleTaxRateChange = (val: number) => {
-    const taxAmount = form.subtotal * (val / 100);
-    setForm((prev) => ({ ...prev, taxRate: val, taxAmount, amount: prev.subtotal + taxAmount + totalTributos }));
-  };
-  const handleTotalChange = (val: number) => {
-    const subtotal  = val / (1 + form.taxRate / 100);
-    const taxAmount = val - subtotal;
-    setForm((prev) => ({ ...prev, amount: val, subtotal, taxAmount }));
-  };
+  const handleSubtotalChange = (val: number) => setManualBase(val);
+  const handleTaxRateChange  = (val: number) => set('taxRate', val);
+  // Escribir el total lo desarma hacia atrás. Solo se habilita sin descuento ni
+  // otros tributos, para no tener dos fuentes de verdad del mismo importe.
+  const handleTotalChange = (val: number) => setManualBase(val / (1 + form.taxRate / 100));
 
   // ── Otros tributos ──────────────────────────────────────────────────────────
 
@@ -522,7 +634,15 @@ export function AddPurchaseInvoiceModal({
 
   const buildPayload = (): CreatePurchaseInvoiceDTO => ({
     ...form,
-    items: items.map(({ productId: _productId, ...rest }) => rest),
+    // El descuento global viaja en la CABECERA: las líneas van a precio de
+    // lista y solo llevan su descuento propio (0 si el descuento es global).
+    // Invariante: suma(item.subtotal) − discountAmount = subtotal.
+    discountPct:    globalDiscountPct,
+    discountAmount: discountAmount,
+    items: items.map(({ productId: _productId, ...rest }) => ({
+      ...rest,
+      discountPct: itemDiscountPct(rest),
+    })),
     tributos,
     originInvoiceId: isNote ? (originInvoiceId || null) : null,
     ...(standalone ? {
@@ -540,6 +660,8 @@ export function AddPurchaseInvoiceModal({
     setSupplierId(''); setCurrencyState(currency); setSaleCondition('CONTADO');
     setDate(todayISO()); setExchangeRate(1); setRemitoLink(null); setOriginInvoiceId('');
     setShowItems(false); setShowTribs(false);
+    setDiscountType('%'); setDiscountValue(0); setHasPerItemDiscount(false);
+    setManualBase(0);
   };
 
   // El click afuera no cierra; cerrar con datos cargados pide confirmación.
@@ -772,8 +894,14 @@ export function AddPurchaseInvoiceModal({
                 <div>
                   <label className={labelCls}>Neto gravado</label>
                   <input type="number" min={0} step="0.01" className={inputCls + ' text-right'}
-                    value={form.subtotal || ''} placeholder="0.00"
+                    value={manualBase || ''} placeholder="0.00"
                     onChange={(e) => handleSubtotalChange(parseFloat(e.target.value) || 0)} />
+                  {discountAmount > 0 && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
+                      − {formatCurrency(discountAmount, currencyState)} de descuento ={' '}
+                      {formatCurrency(form.subtotal, currencyState)}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className={labelCls}>Alícuota IVA</label>
@@ -791,9 +919,9 @@ export function AddPurchaseInvoiceModal({
               <div>
                 <label className={labelCls + ' font-semibold text-gray-700 dark:text-slate-300'}>Total factura *</label>
                 <input type="number" min={0} step="0.01"
-                  className={inputCls + ' text-right text-base font-semibold' + (totalTributos > 0 ? ' bg-gray-50 dark:bg-slate-600' : '')}
-                  value={form.amount || ''} placeholder="0.00"
-                  readOnly={totalTributos > 0}
+                  className={inputCls + ' text-right text-base font-semibold' + (totalTributos > 0 || discountAmount > 0 ? ' bg-gray-50 dark:bg-slate-600' : '')}
+                  value={form.amount ? Number(form.amount).toFixed(2) : ''} placeholder="0.00"
+                  readOnly={totalTributos > 0 || discountAmount > 0}
                   onChange={(e) => handleTotalChange(parseFloat(e.target.value) || 0)} />
                 {form.subtotal > 0 && (
                   <p className="text-xs text-gray-400 mt-1">
@@ -858,18 +986,19 @@ export function AddPurchaseInvoiceModal({
             {showItems && items.length > 0 && (
               <div className="mt-2 space-y-2">
                 {/* Column headers */}
-                <div className="hidden sm:grid grid-cols-[2.2fr_1fr_64px_100px_84px_104px_28px] gap-1.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                <div className="hidden sm:grid grid-cols-[2.2fr_1fr_64px_100px_64px_84px_104px_28px] gap-1.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                   <span>Producto</span>
                   <span>Descripción</span>
                   <span className="text-right">Cant.</span>
                   <span className="text-right">Precio unit.</span>
+                  <span className="text-right">Desc. %</span>
                   <span className="text-right">IVA %</span>
                   <span className="text-right">Total</span>
                   <span />
                 </div>
 
                 {items.map((item, i) => (
-                  <div key={i} className="grid grid-cols-1 sm:grid-cols-[2.2fr_1fr_64px_100px_84px_104px_28px] gap-1.5 items-center">
+                  <div key={i} className="grid grid-cols-1 sm:grid-cols-[2.2fr_1fr_64px_100px_64px_84px_104px_28px] gap-1.5 items-center">
                     {/* Abre el buscador en modal: el catálogo se ve entero, con
                         código, costo e IVA, en vez de un desplegable angosto. */}
                     <div className="flex items-center gap-1">
@@ -914,6 +1043,11 @@ export function AddPurchaseInvoiceModal({
                     <input type="number" min={0} step="0.01" className={tinyInput + ' text-right'} placeholder="0.00"
                       value={item.unitPrice || ''}
                       onChange={(e) => setItem(i, 'unitPrice', parseFloat(e.target.value) || 0)} />
+                    <input type="number" min={0} max={100} step="0.01"
+                      className={tinyInput + ' text-right'} placeholder="0"
+                      title="Descuento de la línea, en %"
+                      value={itemDiscountPct(item) || ''}
+                      onChange={(e) => handleItemDiscountChange(i, parseFloat(e.target.value) || 0)} />
                     <select className={tinyInput} value={item.taxRate}
                       onChange={(e) => setItem(i, 'taxRate', parseFloat(e.target.value))}>
                       {TAX_RATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -931,10 +1065,10 @@ export function AddPurchaseInvoiceModal({
                 {/* Items total */}
                 <div className="flex justify-end gap-4 pt-1.5 border-t border-gray-100 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
                   <span>Subtotal ítems: <strong className="text-gray-700 dark:text-slate-300 tabular-nums">
-                    {formatCurrency(items.reduce((s, it) => s + itemSubtotal(it), 0), currencyState)}
+                    {formatCurrency(itemsGross, currencyState)}
                   </strong></span>
                   <span>Total ítems: <strong className="text-gray-700 dark:text-slate-300 tabular-nums">
-                    {formatCurrency(items.reduce((s, it) => s + itemTotal(it), 0), currencyState)}
+                    {formatCurrency(itemsTotalGross, currencyState)}
                   </strong></span>
                 </div>
               </div>
@@ -1023,6 +1157,20 @@ export function AddPurchaseInvoiceModal({
                 Totales
               </p>
               <div className="space-y-1.5">
+                {/* Con descuento, primero la base y lo descontado: los netos por
+                    alícuota que siguen ya vienen descontados. */}
+                {discountAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-[13px] text-gray-600 dark:text-slate-300">
+                      <span>Subtotal sin descuento</span>
+                      <span className="tabular-nums">{formatCurrency(baseAmount, currencyState)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px] text-emerald-700 dark:text-emerald-400 pb-1.5 mb-0.5 border-b border-dashed border-gray-200 dark:border-slate-700">
+                      <span>Descuento global {globalDiscountPct.toFixed(2)}%</span>
+                      <span className="tabular-nums">− {formatCurrency(discountAmount, currencyState)}</span>
+                    </div>
+                  </>
+                )}
                 {hasItems ? (
                   <>
                     {Object.entries(taxByRate).sort(([a], [b]) => Number(a) - Number(b)).map(([rate, val]) => (
@@ -1059,6 +1207,47 @@ export function AddPurchaseInvoiceModal({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Descuento del comprobante — en % o en $ sobre el neto. Se
+                prorratea entre los ítems, así que el IVA sale del neto ya
+                descontado (que es lo que después informa el Libro IVA). */}
+            <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+                  Descuento
+                </p>
+                <div className="flex rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden">
+                  {(['%', '$'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setGlobalDiscount(t, discountValue)}
+                      className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        !hasPerItemDiscount && discountType === t
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-white dark:bg-slate-700 text-gray-500 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-600'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input
+                type="number" min={0} step="0.01"
+                className="w-full text-sm text-right px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-700 tabular-nums"
+                placeholder="0.00"
+                value={hasPerItemDiscount ? '' : (discountValue || '')}
+                onChange={(e) => setGlobalDiscount(discountType, parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1.5 leading-relaxed">
+                {hasPerItemDiscount
+                  ? 'Este comprobante tiene descuentos distintos por línea. Si cargás un valor acá, se aplica a todos los ítems.'
+                  : discountType === '%'
+                    ? 'Se aplica a todas las líneas y reduce la base imponible.'
+                    : `Importe fijo — equivale a ${globalDiscountPct.toFixed(2)}% por ítem`}
+              </p>
             </div>
 
             <div className="rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 px-4 py-3.5">

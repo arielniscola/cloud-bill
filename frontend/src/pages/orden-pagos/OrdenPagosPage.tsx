@@ -127,6 +127,9 @@ export default function OrdenPagosPage() {
         page, limit,
         supplierId:     values.supplier || undefined,
         status:         tab === 'all' ? undefined : tab,
+        // Una OP anulada no es información de trabajo: ensucia el listado y los
+        // lotes. Sigue estando en su propia pestaña.
+        excludeCancelled: tab === 'all' || undefined,
         paymentMethod:  (values.method as never) || undefined,
         currency:       values.currency || undefined,
         search:         values.q || undefined,

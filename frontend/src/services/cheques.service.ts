@@ -12,6 +12,8 @@ interface ChequeFilters {
   status?:     string;
   customerId?: string;
   supplierId?: string;
+  /** Talonario propio del que salió el cheque. */
+  chequeraId?: string;
   page?:       number;
   limit?:      number;
 }

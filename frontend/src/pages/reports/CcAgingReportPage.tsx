@@ -99,12 +99,14 @@ export default function CcAgingReportPage() {
   const [suppliers, setSuppliers] = useState<AgingEntityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'customers' | 'suppliers'>('customers');
+  const [rate, setRate] = useState<{ rate: number; stale: boolean } | null>(null);
 
   useEffect(() => {
     reportsService.ccAging()
       .then((res) => {
         setCustomers(res.customers);
         setSuppliers(res.suppliers);
+        setRate(res.exchangeRate);
       })
       .catch(() => toast.error('Error al generar el reporte'))
       .finally(() => setLoading(false));
@@ -134,7 +136,7 @@ export default function CcAgingReportPage() {
     <div>
       <PageHeader
         title="Deuda por antigüedad"
-        subtitle="Comprobantes impagos de cuenta corriente, por antigüedad del vencimiento"
+        subtitle="Comprobantes impagos de cuenta corriente, por antigüedad del vencimiento (importes en pesos)"
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => navigate('/reports')}>
@@ -169,6 +171,20 @@ export default function CcAgingReportPage() {
           </button>
         ))}
       </div>
+
+      {/* Con qué cotización se convirtió lo que está en moneda extranjera */}
+      {!loading && (
+        rate ? (
+          <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
+            Importes en pesos · cotización USD ${rate.rate.toLocaleString('es-AR')}
+            {rate.stale && ' (última conocida)'}
+          </p>
+        ) : (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+            Sin cotización: la deuda en moneda extranjera no está incluida en estos totales.
+          </p>
+        )
+      )}
 
       <Card padding="none">
         {loading ? (

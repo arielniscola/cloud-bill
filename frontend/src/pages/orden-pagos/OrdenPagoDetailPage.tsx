@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Printer, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, formatChequeNumber } from '../../components/shared';
 import { ordenPagosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { PAYMENT_METHODS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
@@ -323,7 +323,7 @@ export default function OrdenPagoDetailPage() {
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${c.type === 'EGRESO' ? 'text-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-300' : 'text-purple-700 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300'}`}>
                       {c.type === 'EGRESO' ? 'Propio' : 'Endosado'}
                     </span>
-                    <span className="font-mono text-xs font-semibold text-gray-800 dark:text-slate-200">{c.checkNumber ?? c.number}</span>
+                    <span className="font-mono text-xs font-semibold text-gray-800 dark:text-slate-200">{c.checkNumber ? formatChequeNumber(c.checkNumber) : c.number}</span>
                     <span className="text-xs text-gray-500 dark:text-slate-400">{c.bank ?? '—'}</span>
                     <span className="text-xs text-gray-400 ml-auto tabular-nums">{c.dueDate ? `Vto ${formatDate(c.dueDate)}` : 'Sin vto'}</span>
                     <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white w-28 text-right">
@@ -339,14 +339,27 @@ export default function OrdenPagoDetailPage() {
         {/* Total sidebar */}
         <div className="space-y-4">
           <Card>
-            {Number(op.retentionAmount) > 0 && (
+            {(Number(op.retentionAmount) > 0 || Number(op.onAccountAmount ?? 0) > 0) && (
               <div className="mb-3 pb-3 border-b border-dashed border-gray-200 dark:border-slate-700 space-y-0.5">
+                {/* Lo imputado a las facturas es el total menos el excedente */}
                 <p className="text-xs text-gray-500 dark:text-slate-400 tabular-nums">
-                  Cancelado al proveedor: {formatCurrency(Number(op.amount), op.currency)}
+                  Imputado a facturas: {formatCurrency(Number(op.amount) - Number(op.onAccountAmount ?? 0), op.currency)}
                 </p>
-                <p className="text-xs text-violet-600 dark:text-violet-400 tabular-nums">
-                  − Retenciones: {formatCurrency(Number(op.retentionAmount), op.currency)}
-                </p>
+                {Number(op.onAccountAmount ?? 0) > 0 && (
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 tabular-nums">
+                    + Excedente a cuenta: {formatCurrency(Number(op.onAccountAmount), op.currency)}
+                    <span className="block text-[11px] text-gray-400 dark:text-slate-500">
+                      {op.status === 'PAID'
+                        ? 'Registrado como crédito interno a favor en la cuenta del proveedor'
+                        : 'Al pagar la orden queda como crédito interno a favor en la cuenta del proveedor'}
+                    </span>
+                  </p>
+                )}
+                {Number(op.retentionAmount) > 0 && (
+                  <p className="text-xs text-violet-600 dark:text-violet-400 tabular-nums">
+                    − Retenciones: {formatCurrency(Number(op.retentionAmount), op.currency)}
+                  </p>
+                )}
               </div>
             )}
             <p className="text-xs text-gray-400 dark:text-slate-500 mb-1">

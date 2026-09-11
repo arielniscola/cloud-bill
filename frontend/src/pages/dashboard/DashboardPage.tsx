@@ -620,7 +620,8 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-gray-800 dark:text-slate-200 truncate">{ca.customer.name}</p>
                   </div>
                   <span className="text-sm font-semibold text-red-600 dark:text-red-400 ml-2 flex-shrink-0 tabular-nums">
-                    {formatCurrency(ca.balance)}
+                    {/* La cuenta corriente es por moneda: el saldo se muestra en la suya */}
+                    {formatCurrency(ca.balance, ca.currency as 'ARS' | 'USD')}
                   </span>
                 </Link>
               ))}

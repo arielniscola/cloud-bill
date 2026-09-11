@@ -28,6 +28,8 @@ export interface Cheque {
   updatedAt:      string;
   customer?:      { id: string; name: string } | null;
   supplier?:      { id: string; name: string } | null;
+  /** Orden de pago con la que se entregó el cheque (a quién partió). */
+  ordenPago?:     { id: string; number: string } | null;
 }
 
 export interface CreateChequeDTO {

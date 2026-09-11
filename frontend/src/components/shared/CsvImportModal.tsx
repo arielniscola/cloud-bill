@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, Download, X, CheckCircle, AlertTriangle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Download, X, CheckCircle, AlertTriangle, FileText, ChevronDown, ChevronUp, Plus, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { Button } from '../ui';
@@ -39,7 +39,7 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
       <li><span className="font-medium">preciousd</span> — precio de venta en USD (opcional)</li>
       <li><span className="font-medium">iva</span> — % o fracción (21 o 0.21). Default: 21</li>
       <li><span className="font-medium">rubro / superrubro / marca / proveedor</span> — deben existir (no se crean)</li>
-      <li>Si el SKU ya existe → <span className="italic">actualiza</span> el producto</li>
+      <li>Si el SKU ya existe → <span className="italic">actualiza</span> el producto (sin distinguir mayúsculas); si no existe, se <span className="italic">crea</span></li>
     </ul>
   ),
   customers: (
@@ -209,7 +209,7 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
     const total = dataLines.length;
     setProgress({ done: 0, total });
 
-    const acc: ImportResult = { imported: 0, skipped: 0, total: 0, errors: [] };
+    const acc: ImportResult = { imported: 0, created: 0, updated: 0, skipped: 0, total: 0, errors: [] };
     let failed = false;
 
     try {
@@ -219,6 +219,8 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
         try {
           const res = await importChunk(chunkCsv, start);
           acc.imported += res.imported;
+          acc.created  = (acc.created ?? 0) + (res.created ?? 0);
+          acc.updated  = (acc.updated ?? 0) + (res.updated ?? 0);
           acc.skipped  += res.skipped;
           acc.total    += res.total;
           acc.errors.push(...res.errors);
@@ -231,7 +233,10 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
 
       setResult(acc);
       if (acc.imported > 0) {
-        toast.success(`${acc.imported} ${ENTITY_LABELS[entity].toLowerCase()} importado${acc.imported !== 1 ? 's' : ''}`);
+        const breakdown = (acc.created ?? 0) + (acc.updated ?? 0) > 0
+          ? ` (${acc.created} nuevos · ${acc.updated} actualizados)`
+          : '';
+        toast.success(`${acc.imported} ${ENTITY_LABELS[entity].toLowerCase()} importado${acc.imported !== 1 ? 's' : ''}${breakdown}`);
         onSuccess(acc.imported);
       }
       if (failed) {
@@ -369,6 +374,18 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
                   <CheckCircle className="w-4 h-4 text-emerald-500" />
                   <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{result.imported} importados</span>
                 </div>
+                {(result.created ?? 0) > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800">
+                    <Plus className="w-4 h-4 text-indigo-500" />
+                    <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">{result.created} nuevos</span>
+                  </div>
+                )}
+                {(result.updated ?? 0) > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800">
+                    <RefreshCw className="w-4 h-4 text-sky-500" />
+                    <span className="text-sm font-semibold text-sky-700 dark:text-sky-400">{result.updated} actualizados</span>
+                  </div>
+                )}
                 {result.skipped > 0 && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
                     <AlertTriangle className="w-4 h-4 text-amber-500" />

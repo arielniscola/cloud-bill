@@ -7,10 +7,13 @@ import {
   ArrowLeftRight, CreditCard, FileText, Smartphone, CheckCircle2,
 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '../ui';
-import BancoSelect from './BancoSelect';
+import BancoSelect, { useBancos, findBancoByName } from './BancoSelect';
+import ChequeNumberInput from './ChequeNumberInput';
 import { cashRegistersService, appSettingsService, cardsService } from '../../services';
 import bankService from '../../services/bank.service';
 import { formatCurrency } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign } from '../../utils/currencyConversion';
 import type { CreateReciboDTO, CashRegister } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
 import type { Card } from '../../types/card.types';
@@ -87,6 +90,19 @@ export function PaymentModal({
     submit:   isRefund ? 'Confirmar devolución' : 'Confirmar pago',
   };
   const isUSD = currency === 'USD';
+  // El saldo se muestra en pesos con la cotización del día; el importe en la
+  // moneda del comprobante queda como referencia. El campo "Monto" sigue
+  // cargándose en la moneda del comprobante, que es como se guarda el recibo.
+  const er = useExchangeRate();
+  const foreignDoc = isForeign(currency);
+  const money = (n: number) => {
+    const ars = toArs(n, currency, er.rate);
+    return formatCurrency(ars ?? n, ars === null ? currency : 'ARS');
+  };
+  const ref = (n: number) =>
+    foreignDoc && er.rate !== null
+      ? <span className="ml-1 text-[10px] font-normal text-gray-400 dark:text-slate-500">{formatCurrency(n, currency)}</span>
+      : null;
   const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -114,6 +130,7 @@ export function PaymentModal({
     },
   });
 
+  const bancos = useBancos();
   const paymentMethod = watch('paymentMethod');
   const amount = watch('amount') || 0;
   const exchangeRate = watch('exchangeRate') || 1;
@@ -125,6 +142,7 @@ export function PaymentModal({
   const selectedCard = cards.find((c) => c.id === selectedCardId) ?? null;
   const selectedInstallments = watch('installments') || 1;
   const surchargePercent = watch('surchargePercent') || 0;
+  const chequeBanco = findBancoByName(bancos, watch('bank'));
   const surchargeAmount = amount > 0 && surchargePercent > 0
     ? Math.round(amount * surchargePercent / 100 * 100) / 100
     : 0;
@@ -133,14 +151,12 @@ export function PaymentModal({
   const needsCaja = CAJA_METHODS.includes(paymentMethod);
   const needsBanco = paymentMethod === 'BANK_TRANSFER';
 
+  // La cotización sale del servicio compartido (mismo valor que usan la cuenta
+  // corriente y los listados), no de un fetch propio del modal.
   const fetchBNARate = async () => {
     setLoadingRate(true);
     try {
-      const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
-      const data = await res.json();
-      if (data?.venta) setValue('exchangeRate', Number(data.venta));
-    } catch {
-      // leave current value
+      await er.refresh();
     } finally {
       setLoadingRate(false);
     }
@@ -185,6 +201,12 @@ export function PaymentModal({
       .finally(() => setLoadingCR(false));
     if (isUSD) fetchBNARate();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // La cotización del formulario sigue a la del servicio compartido: así el
+  // recibo se registra con el mismo valor con el que se mostró el saldo.
+  useEffect(() => {
+    if (open && isUSD && er.rate) setValue('exchangeRate', er.rate);
+  }, [open, isUSD, er.rate, setValue]);
 
   // When switching method, pre-select the first available destination
   useEffect(() => {
@@ -257,17 +279,21 @@ export function PaymentModal({
           {total !== undefined && total > remaining && (
             <div className="grid grid-cols-2 gap-y-1 px-4 py-2.5 border-b border-gray-200 dark:border-slate-600 text-xs">
               <span className="text-gray-500 dark:text-slate-400">Total del comprobante</span>
-              <span className="text-right font-medium text-gray-700 dark:text-slate-200 tabular-nums">{formatCurrency(total, currency)}</span>
+              <span className="text-right font-medium text-gray-700 dark:text-slate-200 tabular-nums">
+                {money(total)}{ref(total)}
+              </span>
               <span className="text-gray-500 dark:text-slate-400">
                 {isRefund ? 'Devuelto' : 'Cobrado'}{paidCount ? ` en ${paidCount} recibo${paidCount !== 1 ? 's' : ''}` : ''}
               </span>
-              <span className="text-right font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">− {formatCurrency(total - remaining, currency)}</span>
+              <span className="text-right font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                − {money(total - remaining)}{ref(total - remaining)}
+              </span>
             </div>
           )}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-600">
             <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Saldo pendiente</span>
             <span className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(remaining, currency)}
+              {money(remaining)}{ref(remaining)}
             </span>
           </div>
           {amount > 0 && (
@@ -282,7 +308,7 @@ export function PaymentModal({
                 </span>
               ) : (
                 <span className="text-sm font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                  {formatCurrency(afterPayment, currency)}
+                  {money(afterPayment)}{ref(afterPayment)}
                 </span>
               )}
             </div>
@@ -458,24 +484,24 @@ export function PaymentModal({
         )}
 
         {paymentMethod === 'CHECK' && (
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="N° de cheque"
-              {...register('reference')}
-              error={errors.reference?.message}
-            />
+          <div className="space-y-3">
             <BancoSelect
               label="Banco emisor"
               value={watch('bank')}
               onChange={(v) => setValue('bank', v)}
             />
-            <div className="col-span-2">
-              <Input
-                label="Fecha de vencimiento"
-                type="date"
-                {...register('checkDueDate')}
-              />
-            </div>
+            <ChequeNumberInput
+              value={watch('reference')}
+              onChange={(v) => setValue('reference', v)}
+              bancoCode={chequeBanco?.code}
+              sucursal={chequeBanco?.sucursal}
+              error={errors.reference?.message}
+            />
+            <Input
+              label="Fecha de vencimiento"
+              type="date"
+              {...register('checkDueDate')}
+            />
           </div>
         )}
 

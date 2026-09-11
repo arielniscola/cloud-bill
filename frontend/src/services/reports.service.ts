@@ -139,6 +139,74 @@ export interface AccountsReceivableFilters {
   minBalance?: number;
 }
 
+// ── Deudores a una fecha de corte ────────────────────────────────────────────
+// Con `asOf` el mismo endpoint deja de mirar el saldo de hoy y reconstruye
+// cuánto se debía a esa fecha a partir de los comprobantes.
+
+export interface DebtorDocumentRow {
+  documentId:  string;
+  number:      string;
+  type:        string;
+  date:        string;
+  dueDate:     string | null;
+  currency:    string;
+  total:       number;
+  paid:        number;
+  /** Saldo del comprobante a la fecha de corte, en su moneda. */
+  balance:     number;
+  /** Ese mismo saldo convertido a pesos. */
+  balanceArs:  number;
+  /** Días de atraso a la fecha de corte (0 = todavía no vencía). */
+  overdueDays: number;
+}
+
+export interface DebtorRow {
+  entityId:   string;
+  entityName: string;
+  taxId:      string | null;
+  /** Saldo total a la fecha de corte, en pesos. */
+  balanceArs: number;
+  /** Saldo por moneda de origen (para no perder el importe real en USD). */
+  byCurrency: Record<string, number>;
+  notDue:     number;
+  d0_30:      number;
+  d31_60:     number;
+  d61_90:     number;
+  d90plus:    number;
+  docCount:   number;
+  oldestDays: number;
+  documents:  DebtorDocumentRow[];
+  /** Notas de crédito ya descontadas del saldo. */
+  creditsArs: number;
+}
+
+export interface DebtorsFilters {
+  /** Fecha de corte (YYYY-MM-DD). Es lo que activa este modo del reporte. */
+  asOf:        string;
+  /**
+   * Fecha desde (YYYY-MM-DD), opcional: deja solo los comprobantes EMITIDOS en
+   * el período. Sin ella se toma todo el historial hasta el corte.
+   */
+  from?:       string;
+  side?:       'customers' | 'suppliers';
+  /**
+   * Piso de saldo en ARS (default 0.01): oculta a los deudores cuyo saldo al
+   * corte quede por debajo. Sirve para sacar del listado las diferencias de
+   * centavos y las deudas chicas que no se van a reclamar.
+   */
+  minBalance?: number;
+}
+
+export interface DebtorsResponse {
+  asOf:  string;
+  from:  string | null;
+  side:  'customers' | 'suppliers';
+  data:  DebtorRow[];
+  totalBalance: number;
+  totals: { notDue: number; d0_30: number; d31_60: number; d61_90: number; d90plus: number };
+  exchangeRate: { rate: number; fetchedAt: string; stale: boolean; source: string } | null;
+}
+
 // ── Aging de cuentas corrientes ───────────────────────────────────────────────
 export interface AgingEntityRow {
   entityId: string;
@@ -261,11 +329,32 @@ export const reportsService = {
     return { data: res.data.data, totalBalance: res.data.totalBalance };
   },
 
-  async ccAging(): Promise<{ customers: AgingEntityRow[]; suppliers: AgingEntityRow[] }> {
-    const res = await api.get<{ status: string; customers: AgingEntityRow[]; suppliers: AgingEntityRow[] }>(
-      '/reports/cc-aging'
+  /** Deudores a una fecha de corte (clientes o proveedores). */
+  async debtors(filters: DebtorsFilters): Promise<DebtorsResponse> {
+    const res = await api.get<{ status: string } & DebtorsResponse>(
+      '/reports/accounts-receivable', { params: clean(filters) }
     );
-    return { customers: res.data.customers, suppliers: res.data.suppliers };
+    const { asOf, from, side, data, totalBalance, totals, exchangeRate } = res.data;
+    return { asOf, from: from ?? null, side, data, totalBalance, totals, exchangeRate };
+  },
+
+  /** Importes en pesos: lo que está en USD se convierte con `exchangeRate`. */
+  async ccAging(): Promise<{
+    customers: AgingEntityRow[];
+    suppliers: AgingEntityRow[];
+    exchangeRate: { rate: number; fetchedAt: string; stale: boolean; source: string } | null;
+  }> {
+    const res = await api.get<{
+      status: string;
+      customers: AgingEntityRow[];
+      suppliers: AgingEntityRow[];
+      exchangeRate: { rate: number; fetchedAt: string; stale: boolean; source: string } | null;
+    }>('/reports/cc-aging');
+    return {
+      customers: res.data.customers,
+      suppliers: res.data.suppliers,
+      exchangeRate: res.data.exchangeRate ?? null,
+    };
   },
 
   async cashFlow(filters: CashFlowFilters): Promise<{ data: CashFlowRow[]; totalAmount: number }> {

@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '../../components/ui';
-import { PageHeader, DataTable, SearchInput } from '../../components/shared';
+import { PageHeader, DataTable, SearchInput, ExchangeRateBadge } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
 import { suppliersService, ordenPagosService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign } from '../../utils/currencyConversion';
 import type { Supplier, TaxCondition } from '../../types';
 
 // ── Avatar helpers ───────────────────────────────────────────────
@@ -37,6 +39,7 @@ const TAX_BADGE: Record<TaxCondition, { label: string; className: string }> = {
 export default function SupplierAccountsPage() {
   const navigate = useNavigate();
   const fiscalMode = useFiscalModeStore((s) => s.viewMode);
+  const er = useExchangeRate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [balances, setBalances] = useState<Record<string, Record<string, number>>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -110,21 +113,28 @@ export default function SupplierAccountsPage() {
     },
     {
       key: 'balance',
-      header: 'Saldo',
+      header: 'Saldo ARS',
       render: (s) => {
         const byCurrency = balances[s.id] ?? {};
         const entries = Object.entries(byCurrency).filter(([, v]) => Math.abs(v) > 0.005);
         if (entries.length === 0) return <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>;
+
+        // Deuda consolidada en pesos: los saldos en moneda extranjera se
+        // convierten con la cotización del día y quedan abajo como referencia.
+        const totalArs = entries.reduce((sum, [c, v]) => sum + (toArs(v, c, er.rate) ?? 0), 0);
+        const foreign = entries.filter(([c]) => isForeign(c));
+        const weOwe = totalArs > 0;
+
         return (
           <div className="flex flex-col gap-0.5">
-            {entries.map(([currency, balance]) => {
-              const weOwe = balance > 0;
-              return (
-                <span key={currency} className={`text-sm font-semibold tabular-nums ${weOwe ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                  {weOwe ? '' : '+'}{formatCurrency(Math.abs(balance), currency)}
-                </span>
-              );
-            })}
+            <span className={`text-sm font-semibold tabular-nums ${weOwe ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {weOwe ? '' : '+'}{formatCurrency(Math.abs(totalArs), 'ARS')}
+            </span>
+            {foreign.map(([currency, balance]) => (
+              <span key={currency} className="text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
+                {formatCurrency(balance, currency)}
+              </span>
+            ))}
           </div>
         );
       },
@@ -156,13 +166,15 @@ export default function SupplierAccountsPage() {
       />
 
       <Card padding="none">
-        <div className="flex items-center px-4 py-3 border-b border-gray-100 dark:border-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700">
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1); }}
             placeholder="Buscar proveedor…"
             className="w-64"
           />
+          {/* Los saldos se muestran en pesos: hay que ver con qué cotización */}
+          <ExchangeRateBadge er={er} />
         </div>
 
         <DataTable

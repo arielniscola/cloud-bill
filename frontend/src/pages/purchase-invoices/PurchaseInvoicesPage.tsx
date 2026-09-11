@@ -15,6 +15,8 @@ import { purchaseInvoicesService, suppliersService } from '../../services';
 import { formatDate, formatCurrency, daysUntil } from '../../utils/formatters';
 import { exportToExcel } from '../../utils/excelExport';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign } from '../../utils/currencyConversion';
 import type {
   PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceStatus,
   PurchaseInvoiceFilters, PurchaseInvoiceSummary,
@@ -113,7 +115,10 @@ export default function PurchaseInvoicesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState(() => values.search.trim());
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [usdRate, setUsdRate] = useState<number | null>(null);  // cotización actual (Banco Nación venta)
+  // Cotización del día compartida con el resto del sistema: los importes de las
+  // facturas en moneda extranjera se muestran en pesos con este valor.
+  const er = useExchangeRate();
+  const usdRate = er.rate;
 
   // Vista: "summary" (por defecto) o "sheet" (planilla densa). Se recuerda por navegador.
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -189,13 +194,6 @@ export default function PurchaseInvoicesPage() {
       .catch(() => { /* non-blocking */ });
   }, []);
 
-  // Cotización del día (Banco Nación venta) para mostrar el valor actual de facturas en USD
-  useEffect(() => {
-    fetch('https://dolarapi.com/v1/dolares/oficial')
-      .then((r) => r.json())
-      .then((d) => { if (d?.venta) setUsdRate(Number(d.venta)); })
-      .catch(() => { /* sin conexión: no se muestra el valor actual */ });
-  }, []);
 
   // Auto-open prefilled from a remito (navigated from PurchaseRemitoDetailPage)
   useEffect(() => {
@@ -363,21 +361,29 @@ export default function PurchaseInvoicesPage() {
   };
 
   const exportRows = () => {
-    const rows = (selected.length > 0 ? selected : invoices).map((inv) => ({
-      fecha:     formatDate(inv.date),
-      tipo:      TYPE_SHORT[inv.type] ?? inv.type,
-      numero:    inv.number,
-      proveedor: inv.supplier?.name ?? '',
-      vencimiento: inv.dueDate ? formatDate(inv.dueDate) : '',
-      moneda:    inv.currency || 'ARS',
-      neto:      Number(inv.subtotal ?? 0),
-      iva:       Number(inv.taxAmount ?? 0),
-      tributos:  Number(inv.tributosAmount ?? 0),
-      total:     Number(inv.amount),
-      pagado:    Number(inv.paidAmount ?? 0),
-      saldo:     Number(inv.amount) - Number(inv.paidAmount ?? 0),
-      estado:    STATUS_CFG[inv.status].label,
-    }));
+    // Se exporta en pesos (cotización del día) y se conserva el importe en
+    // moneda original como referencia.
+    const rows = (selected.length > 0 ? selected : invoices).map((inv) => {
+      const toA = (n: number) => toArs(n, inv.currency, usdRate) ?? n;
+      const foreign = isForeign(inv.currency);
+      return {
+        fecha:     formatDate(inv.date),
+        tipo:      TYPE_SHORT[inv.type] ?? inv.type,
+        numero:    inv.number,
+        proveedor: inv.supplier?.name ?? '',
+        vencimiento: inv.dueDate ? formatDate(inv.dueDate) : '',
+        neto:      toA(Number(inv.subtotal ?? 0)),
+        iva:       toA(Number(inv.taxAmount ?? 0)),
+        tributos:  toA(Number(inv.tributosAmount ?? 0)),
+        total:     toA(Number(inv.amount)),
+        pagado:    toA(Number(inv.paidAmount ?? 0)),
+        saldo:     toA(Number(inv.amount) - Number(inv.paidAmount ?? 0)),
+        monedaOrigen:  foreign ? inv.currency : '',
+        totalOrigen:   foreign ? Number(inv.amount) : '',
+        saldoOrigen:   foreign ? Number(inv.amount) - Number(inv.paidAmount ?? 0) : '',
+        estado:    STATUS_CFG[inv.status].label,
+      };
+    });
     if (rows.length === 0) { toast.error('No hay filas para exportar'); return; }
     exportToExcel(
       `facturas-compra-${new Date().toISOString().slice(0, 10)}`,
@@ -388,13 +394,15 @@ export default function PurchaseInvoicesPage() {
         { header: 'Número', key: 'numero', width: 18 },
         { header: 'Proveedor', key: 'proveedor', width: 30 },
         { header: 'Vencimiento', key: 'vencimiento', width: 13 },
-        { header: 'Moneda', key: 'moneda', width: 9 },
-        { header: 'Neto', key: 'neto', width: 14, format: 'currency' },
-        { header: 'IVA', key: 'iva', width: 14, format: 'currency' },
-        { header: 'Otros tributos', key: 'tributos', width: 14, format: 'currency' },
-        { header: 'Total', key: 'total', width: 15, format: 'currency' },
-        { header: 'Pagado', key: 'pagado', width: 14, format: 'currency' },
-        { header: 'Saldo', key: 'saldo', width: 15, format: 'currency' },
+        { header: 'Neto ARS', key: 'neto', width: 14, format: 'currency' },
+        { header: 'IVA ARS', key: 'iva', width: 14, format: 'currency' },
+        { header: 'Otros tributos ARS', key: 'tributos', width: 16, format: 'currency' },
+        { header: 'Total ARS', key: 'total', width: 15, format: 'currency' },
+        { header: 'Pagado ARS', key: 'pagado', width: 14, format: 'currency' },
+        { header: 'Saldo ARS', key: 'saldo', width: 15, format: 'currency' },
+        { header: 'Moneda orig.', key: 'monedaOrigen', width: 12 },
+        { header: 'Total orig.', key: 'totalOrigen', width: 14, format: 'currency' },
+        { header: 'Saldo orig.', key: 'saldoOrigen', width: 14, format: 'currency' },
         { header: 'Estado', key: 'estado', width: 14 },
       ],
       rows,
@@ -436,12 +444,23 @@ export default function PurchaseInvoicesPage() {
     );
   };
 
-  const rowActions = (inv: PurchaseInvoice) => (
+  const rowActions = (inv: PurchaseInvoice) => {
+    // Con toda la mercadería ya recibida no queda nada que remitar: el form se
+    // abriría vacío y cualquier línea que se cargara a mano sería stock de más.
+    const fullyReceived = inv.reception?.status === 'FULL';
+    return (
     <div className="inline-flex items-center gap-0.5">
       <button
-        onClick={(e) => { e.stopPropagation(); handleGenerateRemito(inv); }}
-        className="w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-300 hover:text-indigo-600 transition-colors"
-        title="Registrar mercadería (remito de compra)">
+        disabled={fullyReceived}
+        onClick={(e) => { e.stopPropagation(); if (!fullyReceived) handleGenerateRemito(inv); }}
+        className={`w-7 h-7 inline-flex items-center justify-center rounded-md transition-colors ${
+          fullyReceived
+            ? 'text-gray-200 dark:text-slate-700 cursor-not-allowed'
+            : 'text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
+        }`}
+        title={fullyReceived
+          ? 'Mercadería ya recibida por completo en remitos de compra'
+          : 'Registrar mercadería (remito de compra)'}>
         <PackagePlus className="w-4 h-4" />
       </button>
       {canModify(inv) && (
@@ -453,7 +472,8 @@ export default function PurchaseInvoicesPage() {
         </button>
       )}
     </div>
-  );
+    );
+  };
 
   const hasFilters = activeFilters.length > 0 || !!search;
 
@@ -729,18 +749,15 @@ export default function PurchaseInvoicesPage() {
                         </td>
                         <td className="px-4 py-3.5 align-top">{dueBadge(inv)}</td>
                         <td className="px-4 py-3.5 align-top text-right">
+                          {/* El importe se lee en pesos (cotización del día); el original
+                              en moneda extranjera y el valor al emitir quedan de referencia. */}
                           <p className={`text-sm font-semibold tabular-nums ${credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-800 dark:text-slate-200'}`}>
-                            {credit && '− '}{formatCurrency(amount, inv.currency || 'ARS')}
+                            {credit && '− '}{formatCurrency(toArs(amount, inv.currency, usdRate) ?? amount, isForeign(inv.currency) && usdRate === null ? inv.currency! : 'ARS')}
                           </p>
-                          {/* Facturas en moneda extranjera: valor al emitir y valor de hoy */}
-                          {inv.currency && inv.currency !== 'ARS' && Number(inv.exchangeRate) > 1 && (
+                          {isForeign(inv.currency) && (
                             <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5 tabular-nums">
-                              al emitir {formatCurrency(amount * Number(inv.exchangeRate), 'ARS')} · cotiz. {Number(inv.exchangeRate).toLocaleString('es-AR')}
-                            </p>
-                          )}
-                          {inv.currency && inv.currency !== 'ARS' && usdRate && (
-                            <p className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 mt-0.5 tabular-nums">
-                              hoy {formatCurrency(amount * usdRate, 'ARS')} · cotiz. {usdRate.toLocaleString('es-AR')}
+                              {formatCurrency(amount, inv.currency!)}
+                              {Number(inv.exchangeRate) > 1 && ` · al emitir ${formatCurrency(amount * Number(inv.exchangeRate), 'ARS')}`}
                             </p>
                           )}
                         </td>
@@ -753,14 +770,20 @@ export default function PurchaseInvoicesPage() {
                             </span>
                           ) : (
                             <>
+                              {/* Lo que se adeuda de esta factura, también en pesos */}
                               <div className="flex items-baseline justify-between gap-2">
                                 <span className={`text-sm font-semibold tabular-nums ${paid > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-800 dark:text-slate-200'}`}>
-                                  {formatCurrency(balance, inv.currency || 'ARS')}
+                                  {formatCurrency(toArs(balance, inv.currency, usdRate) ?? balance, isForeign(inv.currency) && usdRate === null ? inv.currency! : 'ARS')}
                                 </span>
                                 <span className="text-[11px] text-gray-400 dark:text-slate-500 tabular-nums">
                                   {paid > 0 ? `${pct} % pagado` : 'sin pagos'}
                                 </span>
                               </div>
+                              {isForeign(inv.currency) && usdRate !== null && (
+                                <p className="text-[11px] text-gray-400 dark:text-slate-500 tabular-nums">
+                                  {formatCurrency(balance, inv.currency!)} pendientes
+                                </p>
+                              )}
                               <div className="mt-1.5 h-1 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
                                 <div className="h-1 rounded-full bg-amber-500" style={{ width: `${pct}%` }} />
                               </div>
@@ -810,6 +833,10 @@ export default function PurchaseInvoicesPage() {
                     const cur = inv.currency || 'ARS';
                     const paid = Number(inv.paidAmount ?? 0);
                     const balance = Number(inv.amount) - paid;
+                    // La planilla se lee íntegramente en pesos; si no hay
+                    // cotización se cae al importe en su moneda original.
+                    const toA = (n: number) => toArs(n, cur, usdRate) ?? n;
+                    const dispCur = isForeign(cur) && usdRate === null ? cur : 'ARS';
                     const days = daysUntil(inv.dueDate);
                     const isSelected = selectedIds.includes(inv.id);
                     return (
@@ -827,8 +854,9 @@ export default function PurchaseInvoicesPage() {
                         <td className="px-3 py-2 text-[13px] text-gray-700 dark:text-slate-300 truncate">
                           {inv.supplier?.name ?? '—'}
                           {cur !== 'ARS' && (
-                            <span className="ml-2 text-[11px] font-semibold px-1.5 py-0.5 rounded-full border text-gray-600 bg-gray-50 border-gray-200 tabular-nums">
-                              {cur} {Number(inv.exchangeRate).toLocaleString('es-AR')}
+                            <span className="ml-2 text-[11px] font-semibold px-1.5 py-0.5 rounded-full border text-gray-600 bg-gray-50 border-gray-200 tabular-nums"
+                              title={`Importe original ${formatCurrency(Number(inv.amount), cur)} · cotización al emitir ${Number(inv.exchangeRate).toLocaleString('es-AR')}`}>
+                              {cur} {formatCurrency(Number(inv.amount), cur)}
                             </span>
                           )}
                         </td>
@@ -840,26 +868,26 @@ export default function PurchaseInvoicesPage() {
                           {inv.dueDate ? formatDate(inv.dueDate) : '—'}
                         </td>
                         <td className={`px-3 py-2 text-[13px] text-right tabular-nums ${credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-slate-300'}`}>
-                          {sign}{formatCurrency(Number(inv.subtotal ?? 0), cur)}
+                          {sign}{formatCurrency(toA(Number(inv.subtotal ?? 0)), dispCur)}
                         </td>
                         <td className={`px-3 py-2 text-[13px] text-right tabular-nums ${credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-slate-300'}`}>
                           {Number(inv.taxAmount ?? 0) === 0
                             ? <span className="text-gray-300 dark:text-slate-600">—</span>
-                            : <>{sign}{formatCurrency(Number(inv.taxAmount), cur)}</>}
+                            : <>{sign}{formatCurrency(toA(Number(inv.taxAmount)), dispCur)}</>}
                         </td>
                         <td className="px-3 py-2 text-[13px] text-right tabular-nums text-gray-600 dark:text-slate-300">
                           {Number(inv.tributosAmount ?? 0) === 0
                             ? <span className="text-gray-300 dark:text-slate-600">—</span>
-                            : formatCurrency(Number(inv.tributosAmount), cur)}
+                            : formatCurrency(toA(Number(inv.tributosAmount)), dispCur)}
                         </td>
                         <td className={`px-3 py-2 text-[13px] text-right tabular-nums font-semibold ${credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-800 dark:text-slate-200'}`}>
-                          {sign}{formatCurrency(Number(inv.amount), cur)}
+                          {sign}{formatCurrency(toA(Number(inv.amount)), dispCur)}
                         </td>
                         <td className="px-3 py-2 text-[13px] text-right tabular-nums font-semibold">
                           {inv.status === 'PAID'
                             ? <span className="text-gray-300 dark:text-slate-600">—</span>
                             : <span className={credit ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
-                                {sign}{formatCurrency(balance, cur)}
+                                {sign}{formatCurrency(toA(balance), dispCur)}
                               </span>}
                         </td>
                         <td className="px-3 py-2">
@@ -881,23 +909,25 @@ export default function PurchaseInvoicesPage() {
                       Totales de esta página ({invoices.length} de {total})
                     </td>
                     <td className="px-3 py-2.5" />
+                    {/* Totales con la cotización del DÍA, igual que las filas. Lo que
+                        no se puede convertir (sin cotización) queda fuera de la suma. */}
                     <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatCurrency(invoices.reduce((s, i) => s + Number(i.subtotal ?? 0) * (Number(i.exchangeRate) || 1), 0), 'ARS')}
+                      {formatCurrency(invoices.reduce((s, i) => s + (toArs(Number(i.subtotal ?? 0), i.currency, usdRate) ?? 0), 0), 'ARS')}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatCurrency(invoices.reduce((s, i) => s + Number(i.taxAmount ?? 0) * (Number(i.exchangeRate) || 1), 0), 'ARS')}
+                      {formatCurrency(invoices.reduce((s, i) => s + (toArs(Number(i.taxAmount ?? 0), i.currency, usdRate) ?? 0), 0), 'ARS')}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatCurrency(invoices.reduce((s, i) => s + Number(i.tributosAmount ?? 0) * (Number(i.exchangeRate) || 1), 0), 'ARS')}
+                      {formatCurrency(invoices.reduce((s, i) => s + (toArs(Number(i.tributosAmount ?? 0), i.currency, usdRate) ?? 0), 0), 'ARS')}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-gray-900 dark:text-white">
-                      {formatCurrency(invoices.reduce((s, i) => s + Number(i.amount) * (Number(i.exchangeRate) || 1), 0), 'ARS')}
+                      {formatCurrency(invoices.reduce((s, i) => s + (toArs(Number(i.amount), i.currency, usdRate) ?? 0), 0), 'ARS')}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-amber-700 dark:text-amber-400">
                       {formatCurrency(
                         invoices
                           .filter((i) => i.status !== 'PAID')
-                          .reduce((s, i) => s + (Number(i.amount) - Number(i.paidAmount ?? 0)) * (Number(i.exchangeRate) || 1), 0),
+                          .reduce((s, i) => s + (toArs(Number(i.amount) - Number(i.paidAmount ?? 0), i.currency, usdRate) ?? 0), 0),
                         'ARS'
                       )}
                     </td>

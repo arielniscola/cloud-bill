@@ -61,6 +61,12 @@ export interface OrdenPago {
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
   retenciones?: OrdenPagoRetencion[];
+  /**
+   * Excedente pagado por encima de lo imputado a las facturas (derivado de
+   * `amount`). Al pagar la orden se convirtió en crédito interno a favor
+   * nuestro en la cuenta del proveedor.
+   */
+  onAccountAmount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -196,6 +202,12 @@ export interface CreateOrdenPagoDTO {
   notes?: string;
   items: CreateOrdenPagoItemDTO[];
   amount?: number;  // pago a cuenta (sin facturas)
+  /**
+   * Excedente pagado por encima de lo imputado a las facturas. Al pagar la
+   * orden genera un crédito interno (saldo a favor nuestro) en la cuenta del
+   * proveedor, imputable a facturas futuras.
+   */
+  onAccountAmount?: number;
   ajustes?: CreateOrdenPagoAjusteDTO[];
   retenciones?: CreateOrdenPagoRetencionDTO[];
   chequesEnCartera?: string[];
@@ -238,6 +250,14 @@ export interface CreateSupplierCcAdjustmentDTO {
   debits: { purchaseInvoiceId: string; amount: number }[];
   credits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   manualAmount?: number;
+  /**
+   * 'ARS' = los importes van en pesos y el backend los convierte a la moneda de
+   * cada comprobante con `exchangeRate`. Es lo que usa la cuenta corriente, que
+   * trabaja siempre en pesos.
+   */
+  amountCurrency?: 'ARS' | 'NATIVE';
+  /** Cotización del día (pesos por dólar) usada para la conversión. */
+  exchangeRate?: number;
 }
 
 export interface OrdenPagoFilters {
@@ -251,6 +271,8 @@ export interface OrdenPagoFilters {
   search?: string;
   onlyRetentions?: boolean;
   onlyOnAccount?: boolean;
+  /** Deja las anuladas fuera del listado (los totales y las pestañas no cambian). */
+  excludeCancelled?: boolean;
   dateFrom?: string;
   dateTo?: string;
 }

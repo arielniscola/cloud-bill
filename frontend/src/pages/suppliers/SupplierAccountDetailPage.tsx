@@ -6,10 +6,12 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, ArsAmount, ExchangeRateBadge, formatChequeNumber } from '../../components/shared';
 import { suppliersService, ordenPagosService, chequesService, internalNotesService } from '../../services';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { exportToExcel } from '../../utils/excelExport';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign, round2 } from '../../utils/currencyConversion';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type { Supplier, TaxCondition } from '../../types';
 import { CHEQUE_STATUS_LABELS, type Cheque } from '../../types/cheque.types';
@@ -53,7 +55,10 @@ const KIND_CFG: Record<SupplierMovementKind, { label: string; className: string 
 };
 const KIND_ORDER: SupplierMovementKind[] = ['FC', 'NC', 'ND', 'OP', 'NOTE', 'RETENTION', 'PURCHASE', 'ADJUSTMENT', 'OTHER'];
 
-// ── Balance card (una por moneda — nunca se netea USD contra ARS) ─
+// ── Balance card ─────────────────────────────────────────────────
+// La deuda se expresa SIEMPRE en pesos, convirtiendo los saldos en moneda
+// extranjera con la cotización del día. El saldo en su moneda original queda
+// como referencia debajo.
 type BalanceStatus = 'weOwe' | 'favor' | 'settled';
 const BALANCE_STATUS_CFG: Record<BalanceStatus, { label: string; icon: typeof TrendingDown; valueClass: string; badgeClass: string }> = {
   weOwe:   { label: 'Debemos al proveedor',   icon: TrendingDown, valueClass: 'text-red-600 dark:text-red-400',         badgeClass: 'text-red-600 bg-red-50 border-red-200'            },
@@ -61,31 +66,9 @@ const BALANCE_STATUS_CFG: Record<BalanceStatus, { label: string; icon: typeof Tr
   settled: { label: 'Sin saldo pendiente',     icon: Minus,        valueClass: 'text-gray-400 dark:text-slate-500',      badgeClass: 'text-gray-500 bg-gray-100 border-gray-200'        },
 };
 
-function SingleBalanceCard({ currency, balance }: { currency: string; balance: number }) {
-  const status: BalanceStatus = balance > 0 ? 'weOwe' : balance < 0 ? 'favor' : 'settled';
-  const statusCfg = BALANCE_STATUS_CFG[status];
-  const StatusIcon = statusCfg.icon;
-
-  return (
-    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-          Saldo {currency}
-        </span>
-        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
-          <StatusIcon className="w-3 h-3" />
-          {statusCfg.label}
-        </span>
-      </div>
-
-      <p className={`text-3xl font-bold tabular-nums ${statusCfg.valueClass}`}>
-        {formatCurrency(Math.abs(balance), currency)}
-      </p>
-    </div>
-  );
-}
-
-function BalanceCard({ balances, isLoading }: { balances: Record<string, number>; isLoading: boolean }) {
+function BalanceCard({
+  balances, isLoading, er,
+}: { balances: Record<string, number>; isLoading: boolean; er: ReturnType<typeof useExchangeRate> }) {
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-3 animate-pulse">
@@ -96,13 +79,54 @@ function BalanceCard({ balances, isLoading }: { balances: Record<string, number>
     );
   }
 
-  const currencies = Object.keys(balances).length > 0 ? Object.keys(balances).sort() : ['ARS'];
+  const entries = Object.entries(balances).filter(([, v]) => Math.abs(v) > 0.005).sort(([a], [b]) => a.localeCompare(b));
+  // Saldo consolidado: los saldos en moneda extranjera se convierten con la
+  // cotización del día. Si no hay cotización, esos saldos no se pueden sumar.
+  const unconvertible = entries.filter(([c]) => isForeign(c) && toArs(1, c, er.rate) === null);
+  const totalArs = entries.reduce((s, [c, v]) => s + (toArs(v, c, er.rate) ?? 0), 0);
+
+  const status: BalanceStatus = totalArs > 0 ? 'weOwe' : totalArs < 0 ? 'favor' : 'settled';
+  const statusCfg = BALANCE_STATUS_CFG[status];
+  const StatusIcon = statusCfg.icon;
+  const foreignEntries = entries.filter(([c]) => isForeign(c));
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {currencies.map((currency) => (
-        <SingleBalanceCard key={currency} currency={currency} balance={balances[currency] ?? 0} />
-      ))}
+    <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+          Saldo total en pesos
+        </span>
+        <div className="flex items-center gap-3">
+          <ExchangeRateBadge er={er} />
+          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
+            <StatusIcon className="w-3 h-3" />
+            {statusCfg.label}
+          </span>
+        </div>
+      </div>
+
+      <p className={`text-3xl font-bold tabular-nums ${statusCfg.valueClass}`}>
+        {formatCurrency(Math.abs(totalArs), 'ARS')}
+      </p>
+
+      {/* Referencia: composición del saldo en su moneda de origen */}
+      {foreignEntries.length > 0 && (
+        <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+          Incluye{' '}
+          {foreignEntries.map(([c, v], i) => (
+            <span key={c}>
+              {i > 0 && ' · '}
+              <span className="tabular-nums font-medium text-gray-500 dark:text-slate-400">{formatCurrency(v, c)}</span>
+            </span>
+          ))}
+          {' '}convertido a la cotización del día
+        </p>
+      )}
+      {unconvertible.length > 0 && (
+        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+          Sin cotización disponible: el saldo en {unconvertible.map(([c]) => c).join(', ')} no está incluido.
+        </p>
+      )}
     </div>
   );
 }
@@ -123,6 +147,8 @@ export default function SupplierAccountDetailPage() {
   const { supplierId } = useParams<{ supplierId: string }>();
   const navigate = useNavigate();
   const fiscalMode = useFiscalModeStore((s) => s.viewMode);
+  // Cotización del día: toda la pantalla expresa la deuda en pesos con este valor.
+  const er = useExchangeRate();
 
   const [supplier,  setSupplier]  = useState<Supplier | null>(null);
   const [movements, setMovements] = useState<SupplierAccountMovement[]>([]);
@@ -138,7 +164,6 @@ export default function SupplierAccountDetailPage() {
   // Cuenta Corriente: imputación manual de débitos (FC/ND) contra créditos (NC/pago a cuenta)
   const [openItems, setOpenItems] = useState<OpenAccountItems>({ debits: [], credits: [] });
   const [openItemsLoading, setOpenItemsLoading] = useState(false);
-  const [ccCurrencyFilter, setCcCurrencyFilter] = useState<'' | 'ARS' | 'USD'>('');
   const [selectedDebits, setSelectedDebits] = useState<Map<string, string>>(new Map());
   const [selectedCredits, setSelectedCredits] = useState<Map<string, string>>(new Map());
   const [manualAmount, setManualAmount] = useState('');
@@ -157,17 +182,16 @@ export default function SupplierAccountDetailPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'' | SupplierMovementType>('');
   const [kindFilter, setKindFilter] = useState<Set<SupplierMovementKind>>(new Set());
-  const [currencyFilter, setCurrencyFilter] = useState<'' | 'ARS' | 'USD'>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   // Selection
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const hasActiveFilters = !!(search || typeFilter || kindFilter.size > 0 || currencyFilter || dateFrom || dateTo);
+  const hasActiveFilters = !!(search || typeFilter || kindFilter.size > 0 || dateFrom || dateTo);
 
   const clearFilters = () => {
-    setSearch(''); setTypeFilter(''); setKindFilter(new Set()); setCurrencyFilter(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setTypeFilter(''); setKindFilter(new Set()); setDateFrom(''); setDateTo('');
   };
 
   // Debounce search
@@ -187,7 +211,7 @@ export default function SupplierAccountDetailPage() {
           limit: 1000, // vista analítica: traemos todo el set filtrado para selección/neto
           type: typeFilter || undefined,
           kinds: kindFilter.size > 0 ? Array.from(kindFilter) : undefined,
-          currency: currencyFilter || undefined,
+
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           search: debouncedSearch || undefined,
@@ -210,7 +234,7 @@ export default function SupplierAccountDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [supplierId, typeFilter, kindFilter, currencyFilter, dateFrom, dateTo, debouncedSearch, navigate, fiscalMode]);
+  }, [supplierId, typeFilter, kindFilter, dateFrom, dateTo, debouncedSearch, navigate, fiscalMode]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -253,55 +277,68 @@ export default function SupplierAccountDetailPage() {
     if (tab === 'cuentaCorriente') fetchOpenItems();
   }, [tab, fetchOpenItems]);
 
+  // Los importes tildados se manejan SIEMPRE en pesos: el saldo en moneda
+  // extranjera se convierte con la cotización del día y el backend lo vuelve a
+  // pasar a la moneda del comprobante para imputarlo.
+  const balanceInArs = (item: { balance: number; currency: string }) =>
+    toArs(item.balance, item.currency, er.rate);
+
   const toggleDebit = (item: OpenDebitItem) => {
+    const ars = balanceInArs(item);
+    if (ars === null) { toast.error('Sin cotización disponible para imputar en pesos'); return; }
     setSelectedDebits((prev) => {
       const next = new Map(prev);
       if (next.has(item.purchaseInvoiceId)) next.delete(item.purchaseInvoiceId);
-      else next.set(item.purchaseInvoiceId, item.balance.toFixed(2));
+      else next.set(item.purchaseInvoiceId, ars.toFixed(2));
       return next;
     });
   };
   const toggleCredit = (item: OpenCreditItem) => {
     const key = item.source === 'INVOICE' ? item.purchaseInvoiceId! : item.movementId!;
+    const ars = balanceInArs(item);
+    if (ars === null) { toast.error('Sin cotización disponible para imputar en pesos'); return; }
     setSelectedCredits((prev) => {
       const next = new Map(prev);
       if (next.has(key)) next.delete(key);
-      else next.set(key, item.balance.toFixed(2));
+      else next.set(key, ars.toFixed(2));
       return next;
     });
   };
 
-  // Moneda de la imputación: la del primer ítem tildado (débito o crédito)
-  const ccCurrency = useMemo(() => {
-    const firstDebit = openItems.debits.find((d) => selectedDebits.has(d.purchaseInvoiceId));
-    if (firstDebit) return firstDebit.currency;
-    const firstCredit = openItems.credits.find((c) =>
-      selectedCredits.has(c.source === 'INVOICE' ? c.purchaseInvoiceId! : c.movementId!));
-    return firstCredit?.currency ?? null;
-  }, [openItems, selectedDebits, selectedCredits]);
-
-  // Filtro de moneda de la pestaña (independiente de la selección ya hecha)
-  const visibleDebits = useMemo(
-    () => ccCurrencyFilter ? openItems.debits.filter((d) => d.currency === ccCurrencyFilter) : openItems.debits,
-    [openItems.debits, ccCurrencyFilter]
-  );
-  const visibleCredits = useMemo(
-    () => ccCurrencyFilter ? openItems.credits.filter((c) => c.currency === ccCurrencyFilter) : openItems.credits,
-    [openItems.credits, ccCurrencyFilter]
-  );
+  // Ya no hay restricción de moneda: se puede cruzar un crédito en USD contra
+  // una factura en pesos, porque la imputación se hace en pesos.
+  const visibleDebits = openItems.debits;
+  const visibleCredits = openItems.credits;
 
   const ccSumDebits = useMemo(() => Array.from(selectedDebits.values()).reduce((s, v) => s + (parseFloat(v) || 0), 0), [selectedDebits]);
   const ccSumCredits = useMemo(() => Array.from(selectedCredits.values()).reduce((s, v) => s + (parseFloat(v) || 0), 0), [selectedCredits]);
-  const ccDiff = ccSumDebits - ccSumCredits;
+  const ccDiff = round2(ccSumDebits - ccSumCredits);
   const ccHasSelection = selectedDebits.size > 0 || selectedCredits.size > 0;
 
+  // ¿La imputación mezcla monedas? Determina si el residuo es una diferencia de
+  // cambio (se registra como tal) o un ajuste común.
+  const ccMixesCurrencies = useMemo(() => {
+    const currencies = new Set<string>();
+    openItems.debits.forEach((d) => { if (selectedDebits.has(d.purchaseInvoiceId)) currencies.add(d.currency); });
+    openItems.credits.forEach((c) => {
+      const key = c.source === 'INVOICE' ? c.purchaseInvoiceId! : c.movementId!;
+      if (selectedCredits.has(key)) currencies.add(c.currency);
+    });
+    return currencies.size > 1;
+  }, [openItems, selectedDebits, selectedCredits]);
+
   const handleCreateCcAdjustment = async () => {
-    if (!supplierId || !ccCurrency) return;
+    if (!supplierId) return;
+    if (!er.rate) { toast.error('Sin cotización disponible: no se puede imputar en pesos'); return; }
     const manual = parseFloat(manualAmount) || 0;
     setSavingAdjustment(true);
     try {
       await ordenPagosService.createAdjustment(supplierId, {
-        currency: ccCurrency,
+        // Los importes van en pesos; el backend convierte cada uno a la moneda
+        // de su comprobante con esta misma cotización.
+        currency: 'ARS',
+        amountCurrency: 'ARS',
+        exchangeRate: er.rate,
         description: adjDescription.trim() || undefined,
         debits: Array.from(selectedDebits.entries()).map(([purchaseInvoiceId, amount]) => ({ purchaseInvoiceId, amount: parseFloat(amount) || 0 })),
         credits: Array.from(selectedCredits.entries()).map(([id, amount]) => {
@@ -353,21 +390,23 @@ export default function SupplierAccountDetailPage() {
   // Exportar el resumen de cuenta (movimientos filtrados) a Excel
   const handleExport = () => {
     if (movements.length === 0) { toast.error('No hay movimientos para exportar'); return; }
-    const rows = movements.map((m) => ({
-      fechaImputable: new Date(m.createdAt).toLocaleDateString('es-AR'),
-      fechaComprobante: m.docDate ? new Date(m.docDate).toLocaleDateString('es-AR') : '',
-      tipo: KIND_CFG[m.kind ?? 'OTHER'].label,
-      comprobante: m.docNumber ?? '',
-      descripcion: m.description ?? '',
-      moneda: m.currency,
-      debito: m.type === 'DEBIT' ? Number(m.amount) : 0,
-      credito: m.type === 'CREDIT' ? Number(m.amount) : 0,
-      saldo: Number(m.balance),
-    }));
-    // Fila de totales: solo tiene sentido sumar débito/crédito/saldo cuando
-    // todos los movimientos exportados están en la misma moneda.
-    const currenciesPresent = Object.keys(totalsAll);
-    const singleCurrency = currenciesPresent.length === 1 ? currenciesPresent[0] : null;
+    // El extracto se exporta en pesos (misma lectura que la pantalla) y se
+    // conserva el importe en moneda original como referencia.
+    const rows = movements.map((m) => {
+      const ars = toArs(Number(m.amount), m.currency, er.rate);
+      return {
+        fechaImputable: new Date(m.createdAt).toLocaleDateString('es-AR'),
+        fechaComprobante: m.docDate ? new Date(m.docDate).toLocaleDateString('es-AR') : '',
+        tipo: KIND_CFG[m.kind ?? 'OTHER'].label,
+        comprobante: m.docNumber ?? '',
+        descripcion: m.description ?? '',
+        debito: m.type === 'DEBIT' ? (ars ?? 0) : 0,
+        credito: m.type === 'CREDIT' ? (ars ?? 0) : 0,
+        saldo: runningArs.get(m.id) ?? 0,
+        monedaOrigen: isForeign(m.currency) ? m.currency : '',
+        importeOrigen: isForeign(m.currency) ? Number(m.amount) : '',
+      };
+    });
     exportToExcel(
       `cta_cte_${supplier?.name ?? 'proveedor'}`.replace(/\s+/g, '_'),
       'Cuenta corriente',
@@ -377,15 +416,19 @@ export default function SupplierAccountDetailPage() {
         { header: 'Tipo',           key: 'tipo',             width: 14 },
         { header: 'Comprobante',    key: 'comprobante',      width: 18 },
         { header: 'Descripción',    key: 'descripcion',      width: 36 },
-        { header: 'Moneda',        key: 'moneda',           width: 10 },
-        { header: 'Débito',         key: 'debito',           width: 14, format: 'currency' },
-        { header: 'Crédito',        key: 'credito',          width: 14, format: 'currency' },
-        { header: 'Saldo',          key: 'saldo',            width: 14, format: 'currency' },
+        { header: 'Débito ARS',     key: 'debito',           width: 14, format: 'currency' },
+        { header: 'Crédito ARS',    key: 'credito',          width: 14, format: 'currency' },
+        { header: 'Saldo ARS',      key: 'saldo',            width: 14, format: 'currency' },
+        { header: 'Moneda orig.',   key: 'monedaOrigen',     width: 12 },
+        { header: 'Importe orig.',  key: 'importeOrigen',    width: 14, format: 'currency' },
       ],
       rows,
-      singleCurrency
-        ? { descripcion: 'TOTALES', moneda: singleCurrency, debito: totalsAll[singleCurrency].debit, credito: totalsAll[singleCurrency].credit, saldo: balance[singleCurrency] ?? 0 }
-        : { descripcion: 'TOTALES (ver por moneda arriba)' },
+      {
+        descripcion: er.rate ? `TOTALES (cotización USD ${er.rate})` : 'TOTALES',
+        debito: totalsAll.debit,
+        credito: totalsAll.credit,
+        saldo: balanceArs,
+      },
     );
   };
 
@@ -410,27 +453,58 @@ export default function SupplierAccountDetailPage() {
     setSelected(allSelected ? new Set() : new Set(movements.map((m) => m.id)));
   };
 
-  // Totales por moneda: nunca se suma un débito en USD con uno en ARS.
-  type CurrencyTotals = Record<string, { debit: number; credit: number }>;
-  const sumByCurrency = (rows: SupplierAccountMovement[]): CurrencyTotals => {
-    const totals: CurrencyTotals = {};
+  // Totales en pesos: los movimientos en moneda extranjera se convierten con la
+  // cotización del día. `skipped` cuenta los que no se pudieron convertir.
+  const sumArs = (rows: SupplierAccountMovement[]) => {
+    let debit = 0, credit = 0, skipped = 0;
     for (const m of rows) {
-      const t = (totals[m.currency] ??= { debit: 0, credit: 0 });
-      if (m.type === 'DEBIT') t.debit += Number(m.amount);
-      else t.credit += Number(m.amount);
+      const ars = toArs(Number(m.amount), m.currency, er.rate);
+      if (ars === null) { skipped++; continue; }
+      if (m.type === 'DEBIT') debit += ars; else credit += ars;
     }
-    return totals;
+    return { debit: round2(debit), credit: round2(credit), skipped };
   };
 
-  // Totals of selected (o de todo lo filtrado si no hay selección), por moneda
+  // Totals of selected (o de todo lo filtrado si no hay selección)
   const summary = useMemo(() => {
     const rows = selected.size > 0 ? movements.filter((m) => selected.has(m.id)) : movements;
-    const byCurrency = sumByCurrency(rows);
-    return { count: rows.length, byCurrency, isSelection: selected.size > 0 };
-  }, [movements, selected]);
+    return { count: rows.length, ...sumArs(rows), isSelection: selected.size > 0 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movements, selected, er.rate]);
 
-  // Totales de TODOS los movimientos filtrados (para el pie de la tabla), por moneda
-  const totalsAll = useMemo(() => sumByCurrency(movements), [movements]);
+  // Totales de TODOS los movimientos filtrados (para el pie de la tabla)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const totalsAll = useMemo(() => sumArs(movements), [movements, er.rate]);
+
+  // Saldo consolidado en pesos (todas las monedas convertidas)
+  const balanceArs = useMemo(
+    () => round2(Object.entries(balance).reduce((s, [c, v]) => s + (toArs(v, c, er.rate) ?? 0), 0)),
+    [balance, er.rate]
+  );
+  const openingBalanceArs = useMemo(
+    () => round2(Object.entries(openingBalance).reduce((s, [c, v]) => s + (toArs(v, c, er.rate) ?? 0), 0)),
+    [openingBalance, er.rate]
+  );
+
+  // Saldo corrido en pesos, recalculado al vuelo: el `balance` que trae cada
+  // movimiento es el acumulado POR MONEDA del ledger, así que no sirve para un
+  // extracto único en pesos. Los movimientos llegan del más nuevo al más viejo,
+  // por eso se acumula de atrás hacia adelante desde el saldo al inicio.
+  const runningArs = useMemo(() => {
+    const map = new Map<string, number>();
+    let acc = dateFrom ? openingBalanceArs : 0;
+    for (let i = movements.length - 1; i >= 0; i--) {
+      const m = movements[i];
+      const ars = toArs(Number(m.amount), m.currency, er.rate);
+      if (ars !== null) acc = round2(acc + (m.type === 'DEBIT' ? ars : -ars));
+      map.set(m.id, acc);
+    }
+    return map;
+  }, [movements, openingBalanceArs, dateFrom, er.rate]);
+
+  // El saldo corrido solo representa el saldo real de la cuenta cuando se ven
+  // todos los movimientos; con filtros de contenido es un acumulado del subconjunto.
+  const runningIsPartial = !!(debouncedSearch || typeFilter || kindFilter.size > 0);
 
   if (isLoading && !supplier) {
     return (
@@ -505,7 +579,7 @@ export default function SupplierAccountDetailPage() {
       </div>
 
       {/* ── Balance card ── */}
-      <BalanceCard balances={balance} isLoading={isLoading} />
+      <BalanceCard balances={balance} isLoading={isLoading} er={er} />
 
       {/* ── Tabs ── */}
       <div className="flex gap-1 bg-gray-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
@@ -542,19 +616,6 @@ export default function SupplierAccountDetailPage() {
                 onClick={() => setTypeFilter(val as '' | SupplierMovementType)}
                 className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                   typeFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Currency segmented */}
-          <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
-            {([['', 'Todas'], ['ARS', 'Pesos'], ['USD', 'Dólares']] as const).map(([val, label]) => (
-              <button key={val}
-                onClick={() => setCurrencyFilter(val as '' | 'ARS' | 'USD')}
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  currencyFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
                 }`}>
                 {label}
               </button>
@@ -621,31 +682,39 @@ export default function SupplierAccountDetailPage() {
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Comprobante</th>
                 <th className="px-4 py-3">Descripción</th>
-                <th className="px-4 py-3 text-right">Monto</th>
-                <th className="px-4 py-3 text-right">Saldo</th>
+                <th className="px-4 py-3 text-right">Monto ARS</th>
+                <th className="px-4 py-3 text-right" title={runningIsPartial ? 'Acumulado de los movimientos filtrados, no el saldo real de la cuenta' : undefined}>
+                  Saldo ARS{runningIsPartial && <span className="ml-1 normal-case font-normal text-amber-500">(del filtro)</span>}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
               {/* Saldo al inicio: solo al filtrar por fecha desde, una fila por moneda */}
-              {!isLoading && dateFrom && Object.entries(openingBalance).map(([currency, ob]) => (
-                <tr key={`opening-${currency}`} className="bg-gray-50/70 dark:bg-slate-800/40">
+              {!isLoading && dateFrom && Object.keys(openingBalance).length > 0 && (
+                <tr className="bg-gray-50/70 dark:bg-slate-800/40">
                   <td className="px-4 py-2.5" />
                   <td className="px-4 py-2.5 whitespace-nowrap text-xs text-gray-500 dark:text-slate-400">
                     {new Date(dateFrom).toLocaleDateString('es-AR')}
                   </td>
                   <td className="px-4 py-2.5" colSpan={4}>
-                    <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Saldo al inicio ({currency})</span>
+                    <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Saldo al inicio</span>
+                    {/* Referencia: composición del saldo inicial en su moneda de origen */}
+                    {Object.entries(openingBalance).filter(([c, v]) => isForeign(c) && Math.abs(v) > 0.005).map(([c, v]) => (
+                      <span key={c} className="ml-2 text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
+                        {formatCurrency(v, c)}
+                      </span>
+                    ))}
                   </td>
                   <td className="px-4 py-2.5" />
                   <td className="px-4 py-2.5 text-right">
                     <span className={`text-sm tabular-nums font-mono ${
-                      ob > 0 ? 'text-red-500 dark:text-red-400' : ob < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
+                      openingBalanceArs > 0 ? 'text-red-500 dark:text-red-400' : openingBalanceArs < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
                     }`}>
-                      {formatCurrency(ob, currency)}
+                      {formatCurrency(openingBalanceArs, 'ARS')}
                     </span>
                   </td>
                 </tr>
-              ))}
+              )}
               {isLoading ? (
                 <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">Cargando…</td></tr>
               ) : movements.length === 0 ? (
@@ -700,16 +769,25 @@ export default function SupplierAccountDetailPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`text-sm font-bold tabular-nums ${isCredit ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {isCredit ? '−' : '+'}{formatCurrency(mov.amount, mov.currency)}
-                        </span>
+                        <ArsAmount
+                          amount={Number(mov.amount)}
+                          currency={mov.currency}
+                          rate={er.rate}
+                          sign={isCredit ? '−' : '+'}
+                          className={`text-sm font-bold tabular-nums ${isCredit ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+                        />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`text-sm tabular-nums font-mono ${
-                          mov.balance > 0 ? 'text-red-500 dark:text-red-400' : mov.balance < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
-                        }`}>
-                          {formatCurrency(mov.balance, mov.currency)}
-                        </span>
+                        {(() => {
+                          const run = runningArs.get(mov.id) ?? 0;
+                          return (
+                            <span className={`text-sm tabular-nums font-mono ${
+                              run > 0 ? 'text-red-500 dark:text-red-400' : run < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
+                            }`}>
+                              {formatCurrency(run, 'ARS')}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
@@ -718,26 +796,29 @@ export default function SupplierAccountDetailPage() {
             </tbody>
             {!isLoading && movements.length > 0 && (
               <tfoot className="border-t-2 border-gray-200 dark:border-slate-600 bg-gray-50/70 dark:bg-slate-800/60">
-                {Object.keys(totalsAll).sort().map((currency) => (
-                  <tr key={currency}>
-                    <td colSpan={6} className="px-4 py-3 text-[11px] font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-                      Totales {currency} · {movements.filter((m) => m.currency === currency).length}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">+{formatCurrency(totalsAll[currency].debit, currency)}</span>
-                        <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">−{formatCurrency(totalsAll[currency].credit, currency)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`text-sm font-bold tabular-nums font-mono ${
-                        (balance[currency] ?? 0) > 0 ? 'text-red-600 dark:text-red-400' : (balance[currency] ?? 0) < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
-                      }`}>
-                        {formatCurrency(balance[currency] ?? 0, currency)}
+                <tr>
+                  <td colSpan={6} className="px-4 py-3 text-[11px] font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+                    Totales en pesos · {movements.length}
+                    {totalsAll.skipped > 0 && (
+                      <span className="ml-2 normal-case font-normal text-amber-600 dark:text-amber-400">
+                        ({totalsAll.skipped} sin cotización, no sumados)
                       </span>
-                    </td>
-                  </tr>
-                ))}
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-xs font-semibold tabular-nums text-red-600 dark:text-red-400">+{formatCurrency(totalsAll.debit, 'ARS')}</span>
+                      <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">−{formatCurrency(totalsAll.credit, 'ARS')}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`text-sm font-bold tabular-nums font-mono ${
+                      balanceArs > 0 ? 'text-red-600 dark:text-red-400' : balanceArs < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-slate-500'
+                    }`}>
+                      {formatCurrency(balanceArs, 'ARS')}
+                    </span>
+                  </td>
+                </tr>
               </tfoot>
             )}
           </table>
@@ -752,33 +833,37 @@ export default function SupplierAccountDetailPage() {
               {`Seleccionados · ${summary.count}`}
             </span>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              {Object.entries(summary.byCurrency).sort(([a], [b]) => a.localeCompare(b)).map(([currency, t]) => {
-                const net = t.debit - t.credit;
+              {(() => {
+                const net = summary.debit - summary.credit;
                 return (
-                  <div key={currency} className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase">{currency}</span>
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
                     <span className="flex items-center gap-1.5">
                       <span className="text-gray-400">Débitos:</span>
-                      <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(t.debit, currency)}</span>
+                      <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(summary.debit, 'ARS')}</span>
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span className="text-gray-400">Créditos:</span>
-                      <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(t.credit, currency)}</span>
+                      <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(summary.credit, 'ARS')}</span>
                     </span>
                     <span className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-slate-700">
                       <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Neto</span>
                       <span className={`text-base font-bold tabular-nums ${
                         net > 0 ? 'text-red-600 dark:text-red-400' : net < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'
                       }`}>
-                        {formatCurrency(Math.abs(net), currency)}
+                        {formatCurrency(Math.abs(net), 'ARS')}
                       </span>
                       <span className="text-[11px] text-gray-400">
                         {net > 0 ? '(debemos)' : net < 0 ? '(a favor)' : ''}
                       </span>
                     </span>
+                    {summary.skipped > 0 && (
+                      <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                        {summary.skipped} sin cotización
+                      </span>
+                    )}
                   </div>
                 );
-              })}
+              })()}
             </div>
           </div>
         </div>
@@ -789,22 +874,14 @@ export default function SupplierAccountDetailPage() {
       {/* ── Cuenta Corriente tab: imputación manual de débitos contra créditos ── */}
       {tab === 'cuentaCorriente' && (
         <div className="space-y-4 pb-24">
-          <p className="text-xs text-gray-400 dark:text-slate-500">
-            Seleccioná facturas/ND pendientes y los créditos (NC / pagos a cuenta) que las cubren. Si queda una
-            diferencia chica, cargala como ajuste manual para cerrar el saldo — no hace falta que coincidan exacto.
-          </p>
-
-          {/* Currency segmented */}
-          <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden w-fit">
-            {([['', 'Todas'], ['ARS', 'Pesos'], ['USD', 'Dólares']] as const).map(([val, label]) => (
-              <button key={val}
-                onClick={() => setCcCurrencyFilter(val as '' | 'ARS' | 'USD')}
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  ccCurrencyFilter === val ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300'
-                }`}>
-                {label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-gray-400 dark:text-slate-500 max-w-2xl">
+              Seleccioná facturas/ND pendientes y los créditos (NC / pagos a cuenta) que las cubren. Todos los
+              importes se manejan <strong className="font-semibold">en pesos</strong>: los comprobantes en moneda
+              extranjera se convierten con la cotización del día y se imputan en su moneda original. Si queda una
+              diferencia, cargala abajo para cerrar el saldo.
+            </p>
+            <ExchangeRateBadge er={er} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -822,7 +899,8 @@ export default function SupplierAccountDetailPage() {
                 ) : visibleDebits.length === 0 ? (
                   <p className="px-4 py-8 text-center text-sm text-gray-400">Sin facturas pendientes</p>
                 ) : visibleDebits.map((item) => {
-                  const disabled = !!ccCurrency && item.currency !== ccCurrency;
+                  const balArs = balanceInArs(item);
+                  const disabled = balArs === null; // sin cotización no se puede imputar en pesos
                   const checked = selectedDebits.has(item.purchaseInvoiceId);
                   return (
                     <div key={item.purchaseInvoiceId}
@@ -834,15 +912,24 @@ export default function SupplierAccountDetailPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-800 dark:text-slate-200">{item.number}</p>
                         <p className="text-xs text-gray-400 dark:text-slate-500">
-                          Saldo {formatCurrency(item.balance, item.currency)} de {formatCurrency(item.amount, item.currency)}
+                          Saldo {formatCurrency(balArs ?? item.balance, balArs === null ? item.currency : 'ARS')}
+                          {' de '}{formatCurrency(toArs(item.amount, item.currency, er.rate) ?? item.amount, balArs === null ? item.currency : 'ARS')}
+                          {isForeign(item.currency) && balArs !== null && (
+                            <span className="ml-1.5 text-[10px] text-gray-400 dark:text-slate-500">
+                              ({formatCurrency(item.balance, item.currency)} pendientes)
+                            </span>
+                          )}
                         </p>
                       </div>
                       {checked && (
-                        <input type="number" min={0} max={item.balance} step="0.01"
-                          value={selectedDebits.get(item.purchaseInvoiceId) ?? ''}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setSelectedDebits((prev) => new Map(prev).set(item.purchaseInvoiceId, e.target.value))}
-                          className="w-28 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-gray-400">ARS</span>
+                          <input type="number" min={0} max={balArs ?? undefined} step="0.01"
+                            value={selectedDebits.get(item.purchaseInvoiceId) ?? ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setSelectedDebits((prev) => new Map(prev).set(item.purchaseInvoiceId, e.target.value))}
+                            className="w-32 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                        </div>
                       )}
                     </div>
                   );
@@ -865,7 +952,8 @@ export default function SupplierAccountDetailPage() {
                   <p className="px-4 py-8 text-center text-sm text-gray-400">Sin créditos disponibles</p>
                 ) : visibleCredits.map((item) => {
                   const key = item.source === 'INVOICE' ? item.purchaseInvoiceId! : item.movementId!;
-                  const disabled = !!ccCurrency && item.currency !== ccCurrency;
+                  const balArs = balanceInArs(item);
+                  const disabled = balArs === null;
                   const checked = selectedCredits.has(key);
                   return (
                     <div key={key}
@@ -879,15 +967,24 @@ export default function SupplierAccountDetailPage() {
                           {item.source === 'INVOICE' ? item.number : (item.number || 'Pago a cuenta')}
                         </p>
                         <p className="text-xs text-gray-400 dark:text-slate-500">
-                          Disponible {formatCurrency(item.balance, item.currency)} de {formatCurrency(item.amount, item.currency)}
+                          Disponible {formatCurrency(balArs ?? item.balance, balArs === null ? item.currency : 'ARS')}
+                          {' de '}{formatCurrency(toArs(item.amount, item.currency, er.rate) ?? item.amount, balArs === null ? item.currency : 'ARS')}
+                          {isForeign(item.currency) && balArs !== null && (
+                            <span className="ml-1.5 text-[10px] text-gray-400 dark:text-slate-500">
+                              ({formatCurrency(item.balance, item.currency)} disponibles)
+                            </span>
+                          )}
                         </p>
                       </div>
                       {checked && (
-                        <input type="number" min={0} max={item.balance} step="0.01"
-                          value={selectedCredits.get(key) ?? ''}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setSelectedCredits((prev) => new Map(prev).set(key, e.target.value))}
-                          className="w-28 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-gray-400">ARS</span>
+                          <input type="number" min={0} max={balArs ?? undefined} step="0.01"
+                            value={selectedCredits.get(key) ?? ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setSelectedCredits((prev) => new Map(prev).set(key, e.target.value))}
+                            className="w-32 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                        </div>
                       )}
                     </div>
                   );
@@ -900,37 +997,52 @@ export default function SupplierAccountDetailPage() {
           {ccHasSelection && (
             <div className="sticky bottom-4 z-20 rounded-xl border border-gray-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur shadow-lg px-5 py-4 space-y-3">
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase">{ccCurrency}</span>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase">En pesos</span>
                 <span className="flex items-center gap-1.5">
                   <span className="text-gray-400">Débitos:</span>
-                  <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(ccSumDebits, ccCurrency || 'ARS')}</span>
+                  <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(ccSumDebits, 'ARS')}</span>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="text-gray-400">Créditos:</span>
-                  <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(ccSumCredits, ccCurrency || 'ARS')}</span>
+                  <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(ccSumCredits, 'ARS')}</span>
                 </span>
                 <span className="flex items-center gap-2 pl-3 border-l border-gray-200 dark:border-slate-700">
                   <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Diferencia</span>
                   <span className={`text-base font-bold tabular-nums ${
                     ccDiff > 0 ? 'text-red-600 dark:text-red-400' : ccDiff < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-slate-400'
                   }`}>
-                    {formatCurrency(Math.abs(ccDiff), ccCurrency || 'ARS')}
+                    {formatCurrency(Math.abs(ccDiff), 'ARS')}
                   </span>
                 </span>
+                {ccMixesCurrencies && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Se están cruzando comprobantes en distinta moneda — el residuo se registra como diferencia de cambio.
+                  </span>
+                )}
               </div>
 
               {ccDiff > 0.01 && (
                 <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-gray-100 dark:border-slate-700">
                   <div>
-                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Ajuste manual (opcional)</label>
+                    <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
+                      {ccMixesCurrencies ? 'Diferencia de cambio a registrar (ARS)' : 'Ajuste manual en ARS (opcional)'}
+                    </label>
                     <input type="number" min={0} max={ccDiff} step="0.01" placeholder="0.00"
                       value={manualAmount}
                       onChange={(e) => setManualAmount(e.target.value)}
                       className="w-32 text-sm text-right px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
+                    {ccMixesCurrencies && (
+                      <button type="button"
+                        onClick={() => setManualAmount(ccDiff.toFixed(2))}
+                        className="mt-1 block text-[11px] text-indigo-500 hover:underline">
+                        Usar la diferencia completa
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 min-w-[180px]">
                     <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Motivo</label>
-                    <input type="text" placeholder="Ej: diferencia de redondeo, descuento otorgado…"
+                    <input type="text"
+                      placeholder={ccMixesCurrencies ? 'Ej: diferencia de cambio' : 'Ej: diferencia de redondeo, descuento otorgado…'}
                       value={adjDescription}
                       onChange={(e) => setAdjDescription(e.target.value)}
                       className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
@@ -981,7 +1093,7 @@ export default function SupplierAccountDetailPage() {
                   cheques.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/40 transition-colors">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-700 dark:text-slate-300">{c.checkNumber || c.number}</span>
+                        <span className="font-mono text-xs text-gray-700 dark:text-slate-300">{c.checkNumber ? formatChequeNumber(c.checkNumber) : c.number}</span>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${

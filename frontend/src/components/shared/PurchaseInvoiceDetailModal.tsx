@@ -1,5 +1,8 @@
 import { X, Truck, Calendar, Hash, CreditCard, FileText, Package, Receipt, ArrowUpRight } from 'lucide-react';
-import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit, formatNumber } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign as isForeignCurrency } from '../../utils/currencyConversion';
+import ExchangeRateBadge from './ExchangeRateBadge';
 import { INVOICE_TYPES, SALE_CONDITIONS } from '../../utils/constants';
 import type { PurchaseInvoice } from '../../types';
 
@@ -43,17 +46,37 @@ interface Props {
 }
 
 export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito }: Props) {
+  // Toda la mercadería ya entró por remitos de compra: no queda nada por remitar.
+  const fullyReceived = invoice.reception?.status === 'FULL';
   const currency = invoice.currency || 'ARS';
   const items = invoice.items ?? [];
   const tributos = invoice.tributos ?? [];
   const remitos = invoice.remitos ?? [];
 
   const totalTributos    = tributos.reduce((s, t) => s + Number(t.amount), 0);
+  // El descuento GLOBAL vive en la cabecera y no está bajado a las líneas: los
+  // ítems van a precio de lista (netos, si acaso, de su descuento propio).
+  // Invariante: suma(item.subtotal) − discountAmount = subtotal.
+  const discountAmount   = Number(invoice.discountAmount ?? 0);
+  const discountPct      = Number(invoice.discountPct ?? 0);
+  const grossSubtotal    = Number(invoice.subtotal) + discountAmount;
+  // El descuento por línea es el otro modo de carga, excluyente del global.
+  const hasItemDiscount  = items.some((i) => Number(i.discountPct ?? 0) > 0);
   const paid             = Number(invoice.paidAmount ?? 0);
   const hasPaid          = invoice.paidAmount !== undefined;
   const saldo            = Number(invoice.amount) - paid;
 
   const isForeign = currency !== 'ARS' && Number(invoice.exchangeRate) > 1;
+
+  // La deuda se lee en pesos con la cotización del día; el importe del
+  // comprobante en su moneda queda como referencia. Las líneas se dejan en la
+  // moneda en que el proveedor emitió la factura.
+  const er = useExchangeRate();
+  const foreignDoc = isForeignCurrency(currency);
+  const arsOf = (n: number) => toArs(n, currency, er.rate);
+  const totalArs = arsOf(Number(invoice.amount));
+  const paidArs  = arsOf(paid);
+  const saldoArs = arsOf(saldo);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -142,7 +165,11 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
               <>
                 <div className="border-t border-dashed border-slate-200 dark:border-slate-700/60" />
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500 mb-3">Ítems del comprobante</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500 mb-3">
+                    Ítems del comprobante
+                    {/* Las líneas van tal como las emitió el proveedor; la conversión a pesos está en los totales. */}
+                    {foreignDoc && <span className="ml-2 normal-case tracking-normal font-normal">(importes en {currency})</span>}
+                  </p>
                   <div className="rounded-xl border border-slate-200/80 dark:border-slate-700/60 overflow-hidden">
                     <table className="min-w-full text-sm">
                       <thead>
@@ -150,6 +177,9 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
                           <th className="px-4 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">Descripción</th>
                           <th className="px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">Cant.</th>
                           <th className="px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">P. Unit.</th>
+                          {hasItemDiscount && (
+                            <th className="px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">Desc.</th>
+                          )}
                           <th className="px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">IVA</th>
                           <th className="px-4 py-2.5 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-slate-500">Total</th>
                         </tr>
@@ -160,6 +190,13 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
                             <td className="px-4 py-2.5 text-zinc-800 dark:text-slate-200">{item.description}</td>
                             <td className="px-4 py-2.5 text-right font-mono text-zinc-500 dark:text-slate-400 tabular-nums">{Number(item.quantity)}</td>
                             <td className="px-4 py-2.5 text-right font-mono text-zinc-500 dark:text-slate-400 tabular-nums">{formatCurrency(Number(item.unitPrice), currency)}</td>
+                            {hasItemDiscount && (
+                              <td className="px-4 py-2.5 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {Number(item.discountPct ?? 0) > 0
+                                  ? `${Number(item.discountPct).toFixed(2).replace(/\.00$/, '')}%`
+                                  : <span className="text-zinc-300 dark:text-slate-600">—</span>}
+                              </td>
+                            )}
                             <td className="px-4 py-2.5 text-right font-mono text-zinc-400 dark:text-slate-500 tabular-nums">{Number(item.taxRate)}%</td>
                             <td className="px-4 py-2.5 text-right font-mono font-medium text-zinc-800 dark:text-slate-200 tabular-nums">{formatCurrency(Number(item.total), currency)}</td>
                           </tr>
@@ -208,6 +245,20 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
             {/* Totals */}
             <div className="rounded-xl bg-slate-50/70 dark:bg-slate-700/20 border border-slate-200/60 dark:border-slate-700/40 p-5">
               <div className="space-y-2">
+                {discountAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-zinc-500 dark:text-slate-400">Subtotal ítems</span>
+                      <span className="font-mono tabular-nums text-zinc-700 dark:text-slate-300">{formatCurrency(grossSubtotal, currency)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-zinc-500 dark:text-slate-400">
+                        Descuento global{discountPct > 0 ? ` (${discountPct.toFixed(2)}%)` : ''}
+                      </span>
+                      <span className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">− {formatCurrency(discountAmount, currency)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-500 dark:text-slate-400">Neto Gravado</span>
                   <span className="font-mono tabular-nums text-zinc-700 dark:text-slate-300">{formatCurrency(Number(invoice.subtotal), currency)}</span>
@@ -224,18 +275,50 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
                 )}
                 <div className="flex justify-between items-baseline pt-2.5 mt-1 border-t border-slate-200 dark:border-slate-600/50">
                   <span className="text-sm font-semibold text-zinc-700 dark:text-slate-200">Total comprobante</span>
-                  <span className="text-lg font-bold font-mono tabular-nums tracking-tight text-zinc-900 dark:text-white">{formatCurrency(Number(invoice.amount), currency)}</span>
+                  <span className="flex flex-col items-end">
+                    <span className="text-lg font-bold font-mono tabular-nums tracking-tight text-zinc-900 dark:text-white">
+                      {formatCurrency(totalArs ?? Number(invoice.amount), totalArs === null ? currency : 'ARS')}
+                    </span>
+                    {foreignDoc && totalArs !== null && (
+                      <span className="text-[11px] font-mono tabular-nums text-zinc-400 dark:text-slate-500">
+                        {formatCurrency(Number(invoice.amount), currency)}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 {hasPaid && (
                   <div className="flex justify-between text-sm pt-2.5 mt-1 border-t border-slate-200 dark:border-slate-600/50">
                     <span className="text-zinc-500 dark:text-slate-400">Pagado</span>
-                    <span className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(paid, currency)}</span>
+                    <span className="flex flex-col items-end">
+                      <span className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(paidArs ?? paid, paidArs === null ? currency : 'ARS')}
+                      </span>
+                      {foreignDoc && paidArs !== null && (
+                        <span className="text-[11px] font-mono tabular-nums text-zinc-400 dark:text-slate-500">
+                          {formatCurrency(paid, currency)}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 )}
                 {hasPaid && saldo > 0.005 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500 dark:text-slate-400">Saldo pendiente</span>
-                    <span className="font-mono tabular-nums text-amber-600 dark:text-amber-400">{formatCurrency(saldo, currency)}</span>
+                    <span className="flex flex-col items-end">
+                      <span className="font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                        {formatCurrency(saldoArs ?? saldo, saldoArs === null ? currency : 'ARS')}
+                      </span>
+                      {foreignDoc && saldoArs !== null && (
+                        <span className="text-[11px] font-mono tabular-nums text-zinc-400 dark:text-slate-500">
+                          {formatCurrency(saldo, currency)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+                {foreignDoc && (
+                  <div className="flex justify-end pt-1.5">
+                    <ExchangeRateBadge er={er} />
                   </div>
                 )}
               </div>
@@ -251,19 +334,31 @@ export function PurchaseInvoiceDetailModal({ invoice, onClose, onGenerateRemito 
 
             {/* CTA — registrar mercadería */}
             {onGenerateRemito && (
-              <button
-                onClick={() => onGenerateRemito(invoice)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5
+              fullyReceived ? (
+                <div className="w-full flex items-center justify-center gap-2 px-4 py-2.5
                   rounded-xl text-sm font-medium
-                  text-indigo-600 dark:text-indigo-400
-                  bg-indigo-50/60 dark:bg-indigo-500/10
-                  border border-indigo-200/60 dark:border-indigo-500/20
-                  hover:bg-indigo-100/80 dark:hover:bg-indigo-500/20
-                  active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
-              >
-                Registrar mercadería (remito de compra)
-                <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
-              </button>
+                  text-emerald-700 dark:text-emerald-400
+                  bg-emerald-50/60 dark:bg-emerald-500/10
+                  border border-emerald-200/60 dark:border-emerald-500/20">
+                  Mercadería recibida por completo
+                </div>
+              ) : (
+                <button
+                  onClick={() => onGenerateRemito(invoice)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5
+                    rounded-xl text-sm font-medium
+                    text-indigo-600 dark:text-indigo-400
+                    bg-indigo-50/60 dark:bg-indigo-500/10
+                    border border-indigo-200/60 dark:border-indigo-500/20
+                    hover:bg-indigo-100/80 dark:hover:bg-indigo-500/20
+                    active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                >
+                  {invoice.reception?.status === 'PARTIAL'
+                    ? `Registrar mercadería — faltan ${formatNumber(invoice.reception.pendingQty, 2)} u.`
+                    : 'Registrar mercadería (remito de compra)'}
+                  <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
+                </button>
+              )
             )}
           </div>
         </div>

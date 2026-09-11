@@ -14,6 +14,9 @@ import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { invoicesService, recibosService, afipService, appSettingsService, activityLogsService, remitosService, ordenPedidosService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign } from '../../utils/currencyConversion';
+import ExchangeRateBadge from '../../components/shared/ExchangeRateBadge';
 import { buildAfipQrUrl } from '../../utils/afipFiscal';
 import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
 import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, OrdenPedido } from '../../types';
@@ -156,6 +159,7 @@ export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isInternetOnline } = useOnlineStatus();
+  const er = useExchangeRate();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -408,6 +412,9 @@ export default function InvoiceDetailPage() {
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(invoice.total) - paidAmount);
+  // La deuda se lee en pesos con la cotización del día.
+  const foreignDoc = isForeign(invoice.currency);
+  const arsOf = (n: number) => toArs(n, invoice.currency, er.rate);
   const isCancelled = invoice.status === 'CANCELLED';
   // Espejo de las guardas del backend: una factura autorizada por ARCA no se
   // anula (se revierte con NC) y una con cobros exige cancelar antes sus recibos.
@@ -602,29 +609,49 @@ export default function InvoiceDetailPage() {
             )}
           </div>
 
-          {/* Total / cobrado / saldo — lo que antes estaba al pie de la tabla */}
+          {/* Total / cobrado / saldo — en pesos, con el importe del comprobante
+              en su moneda como referencia. Las líneas de la factura se dejan en
+              la moneda en que se emitió. */}
           <div className="flex items-start gap-6 lg:gap-7 shrink-0 lg:text-right">
             <div>
               <p className="text-[11px] text-gray-500 dark:text-slate-400">Total</p>
               <p className="mt-1 text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(Number(invoice.total), invoice.currency)}
+                {formatCurrency(arsOf(Number(invoice.total)) ?? Number(invoice.total), foreignDoc && er.rate === null ? invoice.currency : 'ARS')}
               </p>
+              {foreignDoc && er.rate !== null && (
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 tabular-nums">
+                  {formatCurrency(Number(invoice.total), invoice.currency)}
+                </p>
+              )}
             </div>
             {!isDraft && (
               <div>
                 <p className="text-[11px] text-gray-500 dark:text-slate-400">{isCreditNote ? 'Devuelto' : 'Cobrado'}</p>
                 <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                  {formatCurrency(paidAmount, invoice.currency)}
+                  {formatCurrency(arsOf(paidAmount) ?? paidAmount, foreignDoc && er.rate === null ? invoice.currency : 'ARS')}
                 </p>
+                {foreignDoc && er.rate !== null && (
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500 tabular-nums">
+                    {formatCurrency(paidAmount, invoice.currency)}
+                  </p>
+                )}
               </div>
             )}
             {!isDraft && remaining > 0.009 && (
               <div className="pl-6 lg:pl-7 border-l border-gray-200 dark:border-slate-700">
                 <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Saldo</p>
                 <p className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400 tracking-tight tabular-nums">
-                  {formatCurrency(remaining, invoice.currency)}
+                  {formatCurrency(arsOf(remaining) ?? remaining, foreignDoc && er.rate === null ? invoice.currency : 'ARS')}
                 </p>
+                {foreignDoc && er.rate !== null && (
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500 tabular-nums">
+                    {formatCurrency(remaining, invoice.currency)}
+                  </p>
+                )}
               </div>
+            )}
+            {foreignDoc && (
+              <div className="self-center"><ExchangeRateBadge er={er} /></div>
             )}
           </div>
         </div>

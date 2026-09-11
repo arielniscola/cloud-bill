@@ -82,9 +82,44 @@ export interface SupplierProductStat {
   lastUnitPrice: number;
 }
 
+export type SupplierSortBy = 'name' | 'balance' | 'purchased12m' | 'lastPurchase';
+
 export interface SupplierFilters {
   page?: number;
   limit?: number;
   search?: string;
   isActive?: boolean;
+  /** Solo proveedores con saldo de cuenta corriente a pagar. */
+  hasBalance?: boolean;
+  /** Solo proveedores con facturas vencidas impagas. */
+  hasOverdue?: boolean;
+  sortBy?: SupplierSortBy;
+  sortDir?: 'asc' | 'desc';
+}
+
+/**
+ * Agregados de cuenta corriente y compras de un proveedor
+ * (`GET /suppliers/summary` y `GET /suppliers/:id/summary`).
+ * Todos los importes en ARS: los comprobantes en USD ya vienen convertidos con
+ * la cotización guardada en cada comprobante.
+ */
+export interface SupplierAging {
+  notDue: number;
+  d1_30: number;
+  d31_60: number;
+  d60plus: number;
+}
+
+export interface SupplierSummary {
+  supplierId: string;
+  /** Saldo de cuenta corriente por moneda (positivo = le debemos). */
+  balance: Record<string, number>;
+  pendingAmount: number;
+  pendingCount: number;
+  overdueAmount: number;
+  overdueCount: number;
+  nextDueDate: string | null;
+  lastPurchaseDate: string | null;
+  purchased12m: number;
+  aging: SupplierAging;
 }

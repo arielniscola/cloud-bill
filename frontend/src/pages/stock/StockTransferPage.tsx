@@ -65,7 +65,12 @@ export default function StockTransferPage() {
     if (!productId || !fromWarehouseId) { setCurrentStock(null); return; }
     setIsFetchingStock(true);
     stockService.getStock(productId, fromWarehouseId)
-      .then((s) => setCurrentStock(Number(s.quantity) - Number(s.reservedQuantity)))
+      // Disponible = cantidad − reservado, tolerando que falte alguno de los dos
+      // (mostraba "NaN disponibles" cuando la API no mandaba lo reservado).
+      .then((s) => {
+        const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+        setCurrentStock(num(s?.quantity) - num(s?.reservedQuantity));
+      })
       .catch(() => setCurrentStock(0))
       .finally(() => setIsFetchingStock(false));
   }, [productId, fromWarehouseId]);

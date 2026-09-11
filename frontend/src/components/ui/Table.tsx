@@ -18,6 +18,10 @@ export function TableHead({ children }: { children: ReactNode }) {
   return <thead className="bg-gray-50/80 dark:bg-slate-700/50">{children}</thead>;
 }
 
+export function TableFoot({ children }: { children: ReactNode }) {
+  return <tfoot className="bg-gray-50/80 dark:bg-slate-700/50">{children}</tfoot>;
+}
+
 export function TableBody({ children }: { children: ReactNode }) {
   return (
     <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">{children}</tbody>
@@ -50,15 +54,22 @@ export function TableRow({
 export function TableHeader({
   children,
   className,
+  dense = false,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
+  dense?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <th
       scope="col"
+      onClick={onClick}
       className={clsx(
-        'px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider',
+        'text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider',
+        dense ? 'px-4 py-2' : 'px-4 py-3',
+        onClick && 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-slate-200',
         className
       )}
     >
@@ -70,13 +81,19 @@ export function TableHeader({
 export function TableCell({
   children,
   className,
+  dense = false,
 }: {
   children: ReactNode;
   className?: string;
+  dense?: boolean;
 }) {
   return (
     <td
-      className={clsx('px-4 py-3.5 text-sm text-gray-700 dark:text-slate-300 whitespace-nowrap', className)}
+      className={clsx(
+        'text-sm text-gray-700 dark:text-slate-300 whitespace-nowrap',
+        dense ? 'px-4 py-2' : 'px-4 py-3.5',
+        className
+      )}
     >
       {children}
     </td>

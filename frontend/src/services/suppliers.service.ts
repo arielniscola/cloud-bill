@@ -1,11 +1,25 @@
 import api from './api';
 import type { Supplier, SupplierProductStat, CreateSupplierDTO, SupplierFilters, ApiResponse, PaginatedResponse } from '../types';
-import type { SupplierRetention, CreateSupplierRetentionDTO } from '../types/supplier.types';
+import type { SupplierRetention, CreateSupplierRetentionDTO, SupplierSummary } from '../types/supplier.types';
 
 export const suppliersService = {
   async getAll(filters?: SupplierFilters): Promise<PaginatedResponse<Supplier>> {
     const response = await api.get<PaginatedResponse<Supplier>>('/suppliers', { params: filters });
     return response.data;
+  },
+
+  /** Agregados de CC y compras de varios proveedores, en un solo pedido. */
+  async getSummaries(ids: string[]): Promise<Record<string, SupplierSummary>> {
+    if (ids.length === 0) return {};
+    const response = await api.get<ApiResponse<Record<string, SupplierSummary>>>('/suppliers/summary', {
+      params: { ids: ids.join(',') },
+    });
+    return response.data.data;
+  },
+
+  async getSummary(id: string): Promise<SupplierSummary> {
+    const response = await api.get<ApiResponse<SupplierSummary>>(`/suppliers/${id}/summary`);
+    return response.data.data;
   },
 
   async getById(id: string): Promise<Supplier> {

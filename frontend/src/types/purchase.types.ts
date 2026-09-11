@@ -14,6 +14,10 @@ export interface PurchaseInvoiceItem {
   description: string;
   quantity:    number;
   unitPrice:   number;
+  // Descuento PROPIO de la línea (0 si el del comprobante es global):
+  // `subtotal` ya viene neto de él y el IVA se calcula sobre ese neto.
+  discountPct?:    number;
+  discountAmount?: number;
   taxRate:     number;
   subtotal:    number;
   taxAmount:   number;
@@ -37,6 +41,15 @@ export interface PurchaseInvoiceRemitoLink {
   status: string;
 }
 
+export type ReceptionStatus = 'NONE' | 'PARTIAL' | 'FULL';
+
+export interface PurchaseInvoiceReception {
+  invoicedQty: number;
+  receivedQty: number;
+  pendingQty:  number;
+  status:      ReceptionStatus;
+}
+
 export interface PurchaseInvoice {
   id: string;
   purchaseId: string | null;           // legacy: compra vinculada (opcional)
@@ -44,9 +57,13 @@ export interface PurchaseInvoice {
   supplier?: Pick<Supplier, 'id' | 'name' | 'cuit'>;
   number: string;
   type: string;
-  subtotal: number;
+  subtotal: number;        // neto gravado, YA neto de descuentos
   taxRate: number;
   taxAmount: number;
+  // Descuento GLOBAL: `subtotal` = suma de los ítems − `discountAmount`.
+  // Excluyente del descuento por ítem; las líneas van a precio de lista.
+  discountPct?: number;
+  discountAmount?: number;
   amount: number;          // total del comprobante (neto + IVA + otros tributos)
   paidAmount?: number;     // suma de OP pagadas que imputan a esta factura (computado en el listado)
   tributosAmount?: number; // suma de "otros tributos" (computado en el listado; en el detalle vienen los tributos)
@@ -62,6 +79,12 @@ export interface PurchaseInvoice {
   items: PurchaseInvoiceItem[];
   tributos: PurchaseInvoiceTributo[];
   remitos?: PurchaseInvoiceRemitoLink[];
+  /**
+   * Recepción de mercadería, calculada en el backend contra los remitos de
+   * compra vinculados (los CANCELLED no cuentan). `FULL` = no queda nada por
+   * recibir; una factura sin detalle de ítems no se puede medir y viene `NONE`.
+   */
+  reception?: PurchaseInvoiceReception;
   originInvoiceId?: string | null;
   originInvoice?: { id: string; number: string; type: string } | null;
   createdAt: string;
@@ -72,6 +95,7 @@ export interface CreatePurchaseInvoiceItemDTO {
   description: string;
   quantity:    number;
   unitPrice:   number;
+  discountPct?: number;   // % de descuento PROPIO de la línea
   taxRate:     number;
 }
 
@@ -90,6 +114,8 @@ export interface CreatePurchaseInvoiceDTO {
   subtotal: number;
   taxRate: number;
   taxAmount: number;
+  discountPct?: number;
+  discountAmount?: number;
   amount: number;
   dueDate?: string | null;
   imputationDate?: string | null;

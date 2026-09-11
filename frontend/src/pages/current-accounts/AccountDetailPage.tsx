@@ -15,6 +15,10 @@ import { LoadingOverlay } from '../../components/ui/Spinner';
 import { currentAccountsService, customersService } from '../../services';
 import CreateInternalNoteModal from '../internal-notes/CreateInternalNoteModal';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
+import { toArs, isForeign, round2 } from '../../utils/currencyConversion';
+import ExchangeRateBadge from '../../components/shared/ExchangeRateBadge';
+import ArsAmount from '../../components/shared/ArsAmount';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type {
@@ -51,13 +55,16 @@ const ORIGINS: { key: MovementOrigin; label: string }[] = [
 ];
 
 // ── Tarjeta de saldo principal ───────────────────────────────────
+// La deuda se expresa en pesos: los saldos en moneda extranjera se convierten
+// con la cotización del día y quedan como referencia debajo. El límite de
+// crédito se sigue leyendo de la cuenta en pesos (es donde está definido).
 function BalanceCard({
-  currency, account, summary, isLoading,
+  accounts, summary, isLoading, rate,
 }: {
-  currency: Currency;
-  account: CurrentAccount | undefined;
+  accounts: CurrentAccount[];
   summary: CurrentAccountSummary | null;
   isLoading: boolean;
+  rate: number | null;
 }) {
   if (isLoading) {
     return (
@@ -69,8 +76,12 @@ function BalanceCard({
     );
   }
 
-  const balance = account?.balance ?? 0;
-  const creditLimit = account?.creditLimit ?? null;
+  const arsAcc = accounts.find((a) => a.currency === 'ARS');
+  const foreignAccounts = accounts.filter((a) => isForeign(a.currency) && Math.abs(Number(a.balance)) > 0.005);
+  const unconvertible = foreignAccounts.filter((a) => toArs(1, a.currency, rate) === null);
+  const balance = round2(accounts.reduce((s, a) => s + (toArs(Number(a.balance), a.currency, rate) ?? 0), 0));
+  const currency: Currency = 'ARS';
+  const creditLimit = arsAcc?.creditLimit ?? null;
   const aging = summary?.aging ?? null;
 
   type BalanceStatus = 'owes' | 'favor' | 'settled';
@@ -90,7 +101,7 @@ function BalanceCard({
     <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-          Saldo {currency}
+          Saldo total en pesos
         </span>
         <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusCfg.badgeClass}`}>
           <StatusIcon className="w-3 h-3" />
@@ -99,8 +110,29 @@ function BalanceCard({
       </div>
 
       <p className={`text-3xl font-bold tabular-nums ${statusCfg.valueClass}`}>
-        {formatCurrency(Math.abs(balance), currency)}
+        {formatCurrency(Math.abs(balance), 'ARS')}
       </p>
+
+      {/* Referencia: composición del saldo en su moneda de origen */}
+      {foreignAccounts.length > 0 && (
+        <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+          Incluye{' '}
+          {foreignAccounts.map((a, i) => (
+            <span key={a.id}>
+              {i > 0 && ' · '}
+              <span className="tabular-nums font-medium text-gray-500 dark:text-slate-400">
+                {formatCurrency(Number(a.balance), a.currency)}
+              </span>
+            </span>
+          ))}
+          {' '}convertido a la cotización del día
+        </p>
+      )}
+      {unconvertible.length > 0 && (
+        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+          Sin cotización disponible: el saldo en {unconvertible.map((a) => a.currency).join(', ')} no está incluido.
+        </p>
+      )}
 
       {aging && aging.docCount > 0 && (
         <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
@@ -286,6 +318,8 @@ export default function AccountDetailPage() {
   const [summary,   setSummary]   = useState<CurrentAccountSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>('ARS');
+  // Cotización del día: la cuenta corriente se lee íntegramente en pesos.
+  const er = useExchangeRate();
   const [paymentCurrency,  setPaymentCurrency]  = useState<Currency>('ARS');
   const [page,  setPage]  = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
@@ -328,10 +362,12 @@ export default function AccountDetailPage() {
       setAccounts(accountsData);
       setSummary(summaryData);
 
-      const hasAccount = accountsData.some((a: CurrentAccount) => a.currency === selectedCurrency);
+      // Extracto unificado: se traen las cuentas de todas las monedas y la
+      // vista las expresa en pesos con la cotización del día.
+      const hasAccount = accountsData.length > 0;
       if (hasAccount) {
         const movementsData = await currentAccountsService.getMovements(customerId, {
-          page, limit, currency: selectedCurrency,
+          page, limit, currency: 'ALL',
           ...(typeFilter ? { type: typeFilter } : {}),
           ...(origin ? { origin } : {}),
           ...(search ? { search } : {}),
@@ -418,15 +454,48 @@ export default function AccountDetailPage() {
   };
   const arsAccount = mergeAccounts(accounts.filter((a) => a.currency === 'ARS'));
   const usdAccount = mergeAccounts(accounts.filter((a) => a.currency === 'USD'));
+  // Una cuenta por moneda (ya sumadas FORMAL + INFORMAL) para consolidar en pesos.
+  const mergedAccounts = [arsAccount, usdAccount].filter(Boolean) as CurrentAccount[];
 
   const groups = useMemo(() => groupByMonth(movements), [movements]);
 
+  // Importe del movimiento expresado en pesos (null si no hay cotización).
+  const movArs = (m: AccountMovement) => toArs(Number(m.amount), m.currency ?? 'ARS', er.rate);
+
+  // Saldo consolidado en pesos de todas las cuentas del cliente.
+  const balanceArs = useMemo(
+    () => round2(mergedAccounts.reduce((s, a) => s + (toArs(Number(a.balance), a.currency, er.rate) ?? 0), 0)),
+    [mergedAccounts, er.rate]
+  );
+
+  // Saldo corrido en pesos: el `balance` guardado en cada movimiento es el
+  // acumulado de SU cuenta (y en SU moneda), así que no sirve para un extracto
+  // único. Se reconstruye hacia atrás desde el saldo actual, lo que solo es
+  // válido si estamos viendo los movimientos más recientes sin filtrar.
+  const runningReliable = page === 1 && !hasFilters;
+  const runningArs = useMemo(() => {
+    if (!runningReliable) return null;
+    const map = new Map<string, number>();
+    let acc = balanceArs;
+    for (const m of movements) {
+      map.set(m.id, round2(acc));
+      const ars = movArs(m);
+      if (ars !== null) acc -= m.type === 'DEBIT' ? ars : -ars;
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movements, balanceArs, runningReliable, er.rate]);
+
   const selection = useMemo(() => {
     const picked = movements.filter((m) => selected.has(m.id));
-    const debit  = picked.filter((m) => m.type === 'DEBIT').reduce((s, m) => s + Number(m.amount), 0);
-    const credit = picked.filter((m) => m.type === 'CREDIT').reduce((s, m) => s + Number(m.amount), 0);
-    return { count: picked.length, debit, credit, net: debit - credit };
-  }, [movements, selected]);
+    // Totales de la selección en pesos, con la cotización del día.
+    const sum = (t: 'DEBIT' | 'CREDIT') =>
+      round2(picked.filter((m) => m.type === t).reduce((s, m) => s + (toArs(Number(m.amount), m.currency ?? 'ARS', er.rate) ?? 0), 0));
+    const debit  = sum('DEBIT');
+    const credit = sum('CREDIT');
+    return { count: picked.length, debit, credit, net: round2(debit - credit) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movements, selected, er.rate]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -510,22 +579,16 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Saldos y comportamiento ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* La antigüedad del resumen es de la moneda elegida: solo se muestra
-            en la tarjeta que le corresponde. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Un único saldo consolidado en pesos. La antigüedad del resumen se
+            calcula sobre la cuenta en pesos. */}
         <BalanceCard
-          currency="ARS"
-          account={arsAccount}
-          summary={selectedCurrency === 'ARS' ? summary : null}
+          accounts={mergedAccounts}
+          summary={summary}
           isLoading={isLoading && !customer}
+          rate={er.rate}
         />
-        <BalanceCard
-          currency="USD"
-          account={usdAccount}
-          summary={selectedCurrency === 'USD' ? summary : null}
-          isLoading={isLoading && !customer}
-        />
-        <BehaviourCard summary={summary} currency={selectedCurrency} isLoading={isLoading && !customer} />
+        <BehaviourCard summary={summary} currency="ARS" isLoading={isLoading && !customer} />
       </div>
 
       {/* ── Movements ── */}
@@ -537,21 +600,8 @@ export default function AccountDetailPage() {
             {total > 0 && <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-slate-500">· {total}</span>}
           </h3>
 
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-700 p-1 rounded-xl">
-            {(['ARS', 'USD'] as Currency[]).map((cur) => (
-              <button
-                key={cur}
-                onClick={() => { setSelectedCurrency(cur); setPage(1); }}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                  selectedCurrency === cur
-                    ? 'bg-white dark:bg-slate-600 text-gray-800 dark:text-slate-200 shadow-sm'
-                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
-                }`}
-              >
-                {cur}
-              </button>
-            ))}
-          </div>
+          {/* El extracto es único y se lee en pesos: no hay solapa por moneda. */}
+          <ExchangeRateBadge er={er} />
         </div>
 
         {/* Filtros */}
@@ -636,9 +686,12 @@ export default function AccountDetailPage() {
                   <th className="px-4 py-3">Comprobante</th>
                   <th className="px-4 py-3">Detalle</th>
                   <th className="px-4 py-3">Vencimiento</th>
-                  <th className="px-4 py-3 text-right">Debe</th>
-                  <th className="px-4 py-3 text-right">Haber</th>
-                  <th className="px-4 py-3 text-right">Saldo</th>
+                  <th className="px-4 py-3 text-right">Debe ARS</th>
+                  <th className="px-4 py-3 text-right">Haber ARS</th>
+                  <th className="px-4 py-3 text-right"
+                    title={runningReliable ? undefined : 'Solo se calcula sobre los movimientos más recientes sin filtrar'}>
+                    Saldo ARS
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
@@ -732,21 +785,36 @@ export default function AccountDetailPage() {
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               {isCredit
                                 ? <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>
-                                : <span className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(mov.amount, selectedCurrency)}</span>}
+                                : <ArsAmount amount={Number(mov.amount)} currency={mov.currency ?? 'ARS'} rate={er.rate}
+                                    className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400" />}
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               {isCredit
-                                ? <span className="text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(mov.amount, selectedCurrency)}</span>
+                                ? <ArsAmount amount={Number(mov.amount)} currency={mov.currency ?? 'ARS'} rate={er.rate}
+                                    className="text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-400" />
                                 : <span className="text-gray-300 dark:text-slate-600 text-sm">—</span>}
                             </td>
                             <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <span className={`text-sm tabular-nums font-mono ${
-                                mov.balance > 0 ? 'text-red-500 dark:text-red-400'
-                                : mov.balance < 0 ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-gray-400 dark:text-slate-500'
-                              }`}>
-                                {formatCurrency(mov.balance, selectedCurrency)}
-                              </span>
+                              {(() => {
+                                const run = runningArs?.get(mov.id);
+                                if (run === undefined) {
+                                  return (
+                                    <span className="text-gray-300 dark:text-slate-600 text-sm"
+                                      title="El saldo corrido en pesos solo puede calcularse sobre los movimientos más recientes sin filtrar">
+                                      —
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className={`text-sm tabular-nums font-mono ${
+                                    run > 0 ? 'text-red-500 dark:text-red-400'
+                                    : run < 0 ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-gray-400 dark:text-slate-500'
+                                  }`}>
+                                    {formatCurrency(run, 'ARS')}
+                                  </span>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );
@@ -764,10 +832,10 @@ export default function AccountDetailPage() {
                 {selection.count} {selection.count === 1 ? 'movimiento seleccionado' : 'movimientos seleccionados'}
               </span>
               <div className="flex flex-wrap items-center gap-4 text-xs text-indigo-700 dark:text-indigo-300">
-                <span>Debe <span className="font-bold tabular-nums">{formatCurrency(selection.debit, selectedCurrency)}</span></span>
-                <span>Haber <span className="font-bold tabular-nums">{formatCurrency(selection.credit, selectedCurrency)}</span></span>
+                <span>Debe <span className="font-bold tabular-nums">{formatCurrency(selection.debit, 'ARS')}</span></span>
+                <span>Haber <span className="font-bold tabular-nums">{formatCurrency(selection.credit, 'ARS')}</span></span>
                 <span className="text-indigo-900 dark:text-indigo-200">
-                  Neto <span className="font-bold tabular-nums">{formatCurrency(selection.net, selectedCurrency)}</span>
+                  Neto <span className="font-bold tabular-nums">{formatCurrency(selection.net, 'ARS')}</span>
                 </span>
                 <button
                   type="button"
