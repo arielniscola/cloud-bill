@@ -882,6 +882,9 @@ model AppSettings {
   printFormatOrdenPedido       String   @default("THERMAL_80MM")
   printFormatRemito            String   @default("A4")
   printFormatRecibo            String   @default("A4")
+  // Casilla "Registrar pago al crear" tildada por defecto (migr. 20260918120000)
+  defaultRegisterPaymentInvoice     Boolean @default(false)
+  defaultRegisterPaymentOrdenPedido Boolean @default(false)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 

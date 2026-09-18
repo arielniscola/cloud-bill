@@ -19,6 +19,7 @@ import { sendInvoiceEmail } from '../../services/EmailService';
 import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { resolveSaleWarehouse, setSaleWarehouse } from '../../../shared/utils/saleWarehouse';
+import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import prisma from '../../database/prisma';
 import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
@@ -27,6 +28,19 @@ type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 
 
 /** `claimDraft: false` = el estado ya lo movió el llamador (emisión ARCA). */
 type IssuanceOpts = { claimDraft?: boolean };
+
+/**
+ * Cliente de la factura: el elegido o, si no se eligió ninguno, el genérico
+ * "Consumidor Final" de la empresa. Una venta a cuenta corriente sin cliente no
+ * tiene a quién imputarle la deuda, así que se rechaza.
+ */
+async function resolveInvoiceCustomerId(body: any, companyId: string): Promise<string> {
+  if (body.customerId) return body.customerId;
+  if (effectiveSaleCondition(body.saleCondition, body.paymentTerms) === 'CUENTA_CORRIENTE') {
+    throw new AppError('Una venta a cuenta corriente requiere seleccionar un cliente', 400);
+  }
+  return resolveConsumidorFinalCustomerId(companyId);
+}
 
 /**
  * Efectos de la emisión de una factura: movimiento en cuenta corriente (venta
@@ -197,10 +211,11 @@ export class InvoiceController {
         if (!customer) throw new NotFoundError('Cliente');
         if (!customer.isActive) throw new AppError('El cliente está inactivo y no puede recibir nuevas facturas', 400);
       }
+      const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
 
       const invoice = await invoiceRepository.create({
         type: req.body.type,
-        customerId: req.body.customerId,
+        customerId,
         userId: req.user!.userId,
         companyId: req.companyId,
         fiscalMode: req.fiscalMode,
@@ -424,9 +439,11 @@ export class InvoiceController {
       const currency: Currency = req.body.currency || 'ARS';
       const exchangeRate: number = req.body.exchangeRate || 1;
 
+      const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
+
       const invoice = await invoiceRepository.updateWithItems(req.params.id, {
         type: req.body.type,
-        customerId: req.body.customerId,
+        customerId,
         userId: req.user!.userId,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
         notes: req.body.notes,

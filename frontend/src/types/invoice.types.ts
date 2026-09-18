@@ -90,7 +90,7 @@ export interface CreateInvoiceItemDTO {
 
 export interface CreateInvoiceDTO {
   type: InvoiceType;
-  customerId: string;
+  customerId?: string | null; // vacío = Consumidor Final
   date?: string;
   dueDate?: string | null;
   notes?: string | null;

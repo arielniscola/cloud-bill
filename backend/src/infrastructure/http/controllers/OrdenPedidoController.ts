@@ -21,6 +21,7 @@ import {
 } from '../../../application/dtos/ordenPedido.dto';
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import { resolveSaleWarehouse, setSaleWarehouse, getSaleWarehouseId } from '../../../shared/utils/saleWarehouse';
+import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
 import prisma from '../../database/prisma';
 
 /**
@@ -174,6 +175,11 @@ export class OrdenPedidoController {
         const customer = await customerRepo.findById(data.customerId);
         if (!customer) throw new NotFoundError('Cliente');
         if (!customer.isActive) throw new AppError('El cliente está inactivo', 400);
+      }
+      // Sin cliente la orden es de "Consumidor Final": no hay a quién cargarle
+      // la deuda de una venta a cuenta corriente.
+      if (!data.customerId && effectiveSaleCondition(data.saleCondition, data.paymentTerms) === 'CUENTA_CORRIENTE') {
+        throw new AppError('Una venta a cuenta corriente requiere seleccionar un cliente', 400);
       }
 
       // Calculate totals from items
@@ -458,21 +464,22 @@ export class OrdenPedidoController {
 
       if (op.status === 'CONVERTED') throw new AppError('La orden ya fue convertida a factura', 400);
       if (op.status === 'CANCELLED') throw new AppError('No se puede convertir una orden cancelada', 400);
-      if (!op.customerId) throw new AppError('La orden debe tener un cliente para convertirse en factura', 400);
 
       const itemsWithoutProduct = op.items.filter((i) => !i.productId);
       if (itemsWithoutProduct.length > 0) {
         throw new AppError('Todos los items deben tener un producto asignado para generar la factura', 400);
       }
 
-      const invoiceType = req.body.invoiceType || 'FACTURA_B';
+      // Orden sin cliente → se factura a "Consumidor Final" con Factura C.
+      const customerId = op.customerId ?? await resolveConsumidorFinalCustomerId(req.companyId!);
+      const invoiceType = op.customerId ? (req.body.invoiceType || 'FACTURA_B') : 'FACTURA_C';
       const opSaleCondition = (op as any).saleCondition ?? 'CONTADO';
 
       // Invoice from OP: fiscal only — no stock movements, no payments, no CC account movement
       // (stock and CC account movement were already handled at OP creation)
       const invoice = await invoiceRepo.create({
         type: invoiceType,
-        customerId: op.customerId,
+        customerId,
         userId: req.user!.userId,
         companyId: req.companyId,
         fiscalMode: ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
@@ -587,10 +594,8 @@ export class OrdenPedidoController {
         throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
       }
 
-      if (!op.customerId) throw new AppError('La orden debe tener un cliente para registrar un pago', 400);
-      // Capturado fuera del callback: TypeScript no sostiene el narrowing del
-      // guard de arriba a través del closure de la transacción.
-      const customerId = op.customerId;
+      // Orden sin cliente: el recibo se imputa al "Consumidor Final" de la empresa.
+      const customerId = op.customerId ?? await resolveConsumidorFinalCustomerId(req.companyId!);
 
       // Todo el cobro se confirma o se revierte junto: el recibo, el
       // movimiento bancario, el saldo de la cuenta bancaria, la cuenta
@@ -641,7 +646,8 @@ export class OrdenPedidoController {
 
         const exchangeRate = paymentData.exchangeRate ?? 1;
         const arsAmount = Number(paymentData.amount) * exchangeRate;
-        const isCC = effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE';
+        // Sin cliente no hubo DEBIT al crear la orden: no hay deuda que cancelar.
+        const isCC = !!op.customerId && effectiveSaleCondition((op as any).saleCondition, (op as any).paymentTerms) === 'CUENTA_CORRIENTE';
 
         if (isCC) {
           let currentAccount = await currentAccountRepo.findByCustomerId(customerId, op.currency as any, req.fiscalMode);

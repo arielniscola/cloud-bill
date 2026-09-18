@@ -125,7 +125,8 @@ const invoiceSchema = z.object({
     'NOTA_CREDITO_A', 'NOTA_CREDITO_B', 'NOTA_CREDITO_C',
     'NOTA_DEBITO_A', 'NOTA_DEBITO_B', 'NOTA_DEBITO_C',
   ]),
-  customerId: z.string().min(1, 'Seleccioná un cliente'),
+  // Vacío = venta a "Consumidor Final" (el backend la imputa al cliente genérico).
+  customerId: z.string().optional().nullable(),
   date: z.string().optional(),
   isService: z.boolean().default(false),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
@@ -137,6 +138,15 @@ const invoiceSchema = z.object({
   items: z.array(invoiceItemSchema).min(1, 'Agrega al menos un ítem'),
 }).superRefine((data, ctx) => {
   const isNcNd = data.type.startsWith('NOTA_CREDITO_') || data.type.startsWith('NOTA_DEBITO_');
+  if (!data.customerId && (isNcNd || data.saleCondition === 'CUENTA_CORRIENTE')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: isNcNd
+        ? 'Seleccioná un cliente'
+        : 'Una venta a cuenta corriente requiere seleccionar un cliente',
+      path: ['customerId'],
+    });
+  }
   if (isNcNd && !data.originInvoiceId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -473,7 +483,10 @@ export default function InvoiceFormPage() {
     if (skipCustomerAutoForRef.current === customerId) { skipCustomerAutoForRef.current = null; return; }
     const customer = findCustomer(customerId);
     if (type.startsWith('FACTURA_')) {
-      const autoType = getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition);
+      // Sin cliente la venta es a Consumidor Final y va con Factura C.
+      const autoType = customerId
+        ? getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition)
+        : 'FACTURA_C';
       if (autoType !== type) setValue('type', autoType);
     }
     if (customer?.saleCondition === 'CUENTA_CORRIENTE') {
@@ -501,6 +514,8 @@ export default function InvoiceFormPage() {
         if (settingsData?.companyTaxCondition) {
           setCompanyTaxCondition(settingsData.companyTaxCondition);
         }
+        // Casilla "Registrar pago al crear": arranca según la config de la empresa.
+        if (settingsData?.defaultRegisterPaymentInvoice) setRegisterPayment(true);
         // Depósito de stock: preselecciona el por defecto (o el único activo)
         // sin pisar el que ya trajo una factura en edición.
         const activeWarehouses = warehousesData.filter((w) => w.isActive);
@@ -1530,7 +1545,9 @@ export default function InvoiceFormPage() {
                   if (picked) setCustomerCache((prev) => ({ ...prev, [id]: picked }));
                   setValue('customerId', id);
                 }}
-                label="Cliente *"
+                label="Cliente"
+                placeholder="Consumidor final"
+                clearLabel="Sin cliente (consumidor final)"
                 error={errors.customerId?.message}
                 serverSearch
                 searchParams={{ isActive: true }}

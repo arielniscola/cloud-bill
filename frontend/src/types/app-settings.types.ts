@@ -24,6 +24,8 @@ export interface AppSettings {
   mpWebhookSecret:              string | null;
   mpMode:                       'test' | 'production';
   mpPosId:                      string | null;
+  defaultRegisterPaymentInvoice?:     boolean;
+  defaultRegisterPaymentOrdenPedido?: boolean;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -53,4 +55,6 @@ export interface UpdateAppSettingsDTO {
   mpWebhookSecret?:              string | null;
   mpMode?:                       'test' | 'production';
   mpPosId?:                      string | null;
+  defaultRegisterPaymentInvoice?:     boolean;
+  defaultRegisterPaymentOrdenPedido?: boolean;
 }

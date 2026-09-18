@@ -23,7 +23,8 @@ export const createInvoiceSchema = z.object({
     'NOTA_DEBITO_B',
     'NOTA_DEBITO_C',
   ]),
-  customerId: z.string().uuid(),
+  // Sin cliente = venta a "Consumidor Final" (se resuelve en el controller).
+  customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
   dueDate: z.preprocess(emptyToUndefined, z.string().optional()),
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.enum(['ARS', 'USD']).default('ARS'),

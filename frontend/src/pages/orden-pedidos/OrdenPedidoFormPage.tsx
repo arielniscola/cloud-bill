@@ -7,7 +7,7 @@ import { clsx } from 'clsx';
 import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService, warehousesService, productVariantsService } from '../../services';
@@ -23,7 +23,7 @@ import {
   searchProductsOffline,
 } from '../../lib/offline/adapters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
-import type { Customer, Product, Currency } from '../../types';
+import type { Customer, Product, Currency, CreateReciboDTO } from '../../types';
 
 const ordenPedidoItemSchema = z.object({
   productId: z.string().optional().nullable(),
@@ -44,6 +44,15 @@ const ordenPedidoSchema = z.object({
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   items: z.array(ordenPedidoItemSchema).min(1, 'Agrega al menos un ítem'),
+}).superRefine((data, ctx) => {
+  // Sin cliente la orden es de Consumidor Final: no hay a quién cargarle la deuda.
+  if (!data.customerId && data.saleCondition === 'CUENTA_CORRIENTE') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Una venta a cuenta corriente requiere seleccionar un cliente',
+      path: ['customerId'],
+    });
+  }
 });
 
 type OrdenPedidoFormData = z.output<typeof ordenPedidoSchema>;
@@ -122,6 +131,11 @@ export default function OrdenPedidoFormPage() {
   const [hasPerItemDiscount, setHasPerItemDiscount] = useState(false);
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  // "Registrar pago al crear": arranca según la config de la empresa. La orden
+  // recién creada queda acá mientras el modal de pago está abierto.
+  const [registerPayment, setRegisterPayment] = useState(false);
+  const [createdOp, setCreatedOp] = useState<OrdenPedido | null>(null);
+  const [isPaymentLoading, setIsPaymentLoading] = useState(false);
 
   const {
     register, control, handleSubmit, setValue, watch, reset, getValues,
@@ -227,6 +241,7 @@ export default function OrdenPedidoFormPage() {
             stalePriceWarnDays1: settingsData.stalePriceWarnDays1 ?? 10,
             stalePriceWarnDays2: settingsData.stalePriceWarnDays2 ?? 20,
           });
+          if (!isEditing && settingsData.defaultRegisterPaymentOrdenPedido) setRegisterPayment(true);
         }
         const activeWarehouses = warehousesData.filter((w) => w.isActive);
         setWarehouses(activeWarehouses);
@@ -586,7 +601,8 @@ export default function OrdenPedidoFormPage() {
           await budgetsService.updateStatus(fromBudget.id, { status: 'CONVERTED' }).catch(() => null);
         }
         toast.success('Orden de pedido creada');
-        navigate(`/orden-pedidos/${op.id}`);
+        if (registerPayment && data.saleCondition !== 'CUENTA_CORRIENTE') setCreatedOp(op);
+        else navigate(`/orden-pedidos/${op.id}`);
       }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -596,6 +612,27 @@ export default function OrdenPedidoFormPage() {
     }
   };
 
+
+  // Solo se cobra una orden confirmada: si nació en borrador se confirma recién
+  // al registrar el pago, así cancelar el modal la deja como estaba.
+  const handlePaymentConfirm = async (data: CreateReciboDTO) => {
+    if (!createdOp) return;
+    setIsPaymentLoading(true);
+    try {
+      if (createdOp.status === 'DRAFT') {
+        const confirmed = await ordenPedidosService.updateStatus(createdOp.id, { status: 'CONFIRMED' });
+        setCreatedOp(confirmed);
+      }
+      await ordenPedidosService.pay(createdOp.id, data);
+      toast.success('Pago registrado');
+      navigate(`/orden-pedidos/${createdOp.id}`);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al registrar pago');
+    } finally {
+      setIsPaymentLoading(false);
+    }
+  };
 
   if (isFetching) return (
     <div>
@@ -890,6 +927,7 @@ export default function OrdenPedidoFormPage() {
                     setValue('customerId', id || null);
                   }}
                   clearLabel="Sin cliente (consumidor final)"
+                  error={errors.customerId?.message}
                   searchParams={{ isActive: true }}
                   serverSearch
                 />
@@ -1034,6 +1072,17 @@ export default function OrdenPedidoFormPage() {
 
             {/* Actions */}
             <div className="flex flex-col gap-2.5">
+              {!isEditing && saleCondition !== 'CUENTA_CORRIENTE' && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
+                    checked={registerPayment}
+                    onChange={(e) => setRegisterPayment(e.target.checked)}
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Registrar pago al crear</span>
+                </label>
+              )}
               <Button type="submit" isLoading={isLoading} className="w-full justify-center">
                 {isEditing ? 'Guardar cambios' : 'Crear orden de pedido'}
                 <kbd className="ml-1.5 text-[10px] font-mono font-normal opacity-60 px-1 py-0.5 rounded bg-white/20 border border-white/30 leading-none">Ctrl+↵</kbd>
@@ -1051,6 +1100,19 @@ export default function OrdenPedidoFormPage() {
 
         </div>
       </form>
+
+      <PaymentModal
+        open={createdOp !== null}
+        onClose={() => {
+          if (createdOp) navigate(`/orden-pedidos/${createdOp.id}`);
+          setCreatedOp(null);
+        }}
+        onSubmit={handlePaymentConfirm}
+        remaining={Number(createdOp?.total ?? 0)}
+        currency={createdOp?.currency ?? 'ARS'}
+        isLoading={isPaymentLoading}
+        title="Registrar pago"
+      />
 
       <ConfirmDialog
         isOpen={showExitConfirm}

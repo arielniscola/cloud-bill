@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Save, FileText, Building2 } from 'lucide-react';
+import { Save, FileText, Building2, Banknote } from 'lucide-react';
 import { Button, Select } from '../../components/ui';
 import { appSettingsService, cashRegistersService } from '../../services';
 import type { CashRegister } from '../../types';
@@ -15,6 +15,8 @@ export default function BudgetSettingsCard() {
   const [cashRegisters,            setCashRegisters]            = useState<CashRegister[]>([]);
   const [invoiceCashRegisterId,    setInvoiceCashRegisterId]    = useState<string>('');
   const [companyTaxCondition,      setCompanyTaxCondition]      = useState<string>('RESPONSABLE_INSCRIPTO');
+  const [registerPaymentInvoice,     setRegisterPaymentInvoice]     = useState(false);
+  const [registerPaymentOrdenPedido, setRegisterPaymentOrdenPedido] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving,  setIsSaving]  = useState(false);
 
@@ -28,6 +30,8 @@ export default function BudgetSettingsCard() {
         setCashRegisters(crData);
         setInvoiceCashRegisterId(settingsData.defaultInvoiceCashRegisterId ?? '');
         setCompanyTaxCondition(  settingsData.companyTaxCondition          ?? 'RESPONSABLE_INSCRIPTO');
+        setRegisterPaymentInvoice(!!settingsData.defaultRegisterPaymentInvoice);
+        setRegisterPaymentOrdenPedido(!!settingsData.defaultRegisterPaymentOrdenPedido);
       } catch {
         // ignore
       } finally {
@@ -42,6 +46,8 @@ export default function BudgetSettingsCard() {
       await appSettingsService.update({
         defaultInvoiceCashRegisterId: invoiceCashRegisterId || null,
         companyTaxCondition,
+        defaultRegisterPaymentInvoice: registerPaymentInvoice,
+        defaultRegisterPaymentOrdenPedido: registerPaymentOrdenPedido,
       });
       toast.success('Configuración guardada');
     } catch (err: unknown) {
@@ -94,6 +100,39 @@ export default function BudgetSettingsCard() {
               value={invoiceCashRegisterId}
               onChange={setInvoiceCashRegisterId}
             />
+          </div>
+        </div>
+
+        {/* Register payment on create */}
+        <div className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-xl">
+          <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-800 dark:text-slate-200 mb-1">Registrar pago al crear</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
+              Si la casilla "Registrar pago al crear" arranca tildada. Se puede destildar en cada comprobante.
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
+                  checked={registerPaymentInvoice}
+                  onChange={(e) => setRegisterPaymentInvoice(e.target.checked)}
+                />
+                <span className="text-sm text-gray-700 dark:text-slate-300">En facturas de venta</span>
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded text-indigo-600 border-gray-300 dark:border-slate-600 focus:ring-indigo-500 dark:bg-slate-700"
+                  checked={registerPaymentOrdenPedido}
+                  onChange={(e) => setRegisterPaymentOrdenPedido(e.target.checked)}
+                />
+                <span className="text-sm text-gray-700 dark:text-slate-300">En órdenes de pedido</span>
+              </label>
+            </div>
           </div>
         </div>
 

@@ -3,6 +3,22 @@ import { IAppSettingsRepository } from '../../../domain/repositories/IAppSetting
 import { AppSettings, UpdateAppSettingsInput } from '../../../domain/entities/AppSettings';
 import prisma from '../prisma';
 
+// Las columnas defaultRegisterPayment* llegan con la migración 20260918120000;
+// si todavía no se aplicó, la lectura cae en `false` y la escritura se saltea
+// en vez de romper el guardado del resto de la configuración.
+let hasRegisterPaymentColumns: boolean | null = null;
+async function registerPaymentColumnsExist(): Promise<boolean> {
+  if (hasRegisterPaymentColumns !== null) return hasRegisterPaymentColumns;
+  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'app_settings' AND column_name = 'defaultRegisterPaymentInvoice'
+    ) AS "exists"
+  `;
+  hasRegisterPaymentColumns = rows[0]?.exists ?? false;
+  return hasRegisterPaymentColumns;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const INCLUDE = {
   defaultBudgetCashRegister:  { select: { id: true, name: true } },
@@ -49,6 +65,8 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       mpWebhookSecret:             r.mpWebhookSecret ?? null,
       mpMode:                      (r.mpMode ?? 'test') as 'test' | 'production',
       mpPosId:                     r.mpPosId ?? null,
+      defaultRegisterPaymentInvoice:     Boolean(r.defaultRegisterPaymentInvoice),
+      defaultRegisterPaymentOrdenPedido: Boolean(r.defaultRegisterPaymentOrdenPedido),
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -132,6 +150,19 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         "defaultInvoiceCashRegisterId" = EXCLUDED."defaultInvoiceCashRegisterId",
         "updatedAt"                    = NOW()
     `;
+
+    if (await registerPaymentColumnsExist()) {
+      const registerPaymentInvoice =
+        data.defaultRegisterPaymentInvoice ?? current?.defaultRegisterPaymentInvoice ?? false;
+      const registerPaymentOrdenPedido =
+        data.defaultRegisterPaymentOrdenPedido ?? current?.defaultRegisterPaymentOrdenPedido ?? false;
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET
+          "defaultRegisterPaymentInvoice"     = ${registerPaymentInvoice},
+          "defaultRegisterPaymentOrdenPedido" = ${registerPaymentOrdenPedido}
+        WHERE id = ${companyId}
+      `;
+    }
 
     return (await this.get(companyId))!;
   }

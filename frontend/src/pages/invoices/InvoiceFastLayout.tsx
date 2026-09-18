@@ -247,7 +247,9 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                   customers={customers}
                   value={customerId}
                   onChange={onCustomerChange}
-                  label="Cliente *"
+                  label="Cliente"
+                  placeholder="Consumidor final"
+                  clearLabel="Sin cliente (consumidor final)"
                   error={customerError}
                   serverSearch
                   searchParams={{ isActive: true }}

@@ -234,7 +234,7 @@ export default function OrdenPedidoDetailPage() {
   const isDraft = op.status === 'DRAFT';
   const canConvert = op.status !== 'CONVERTED' && op.status !== 'CANCELLED';
   const isTerminal = op.status === 'CONVERTED' || op.status === 'CANCELLED';
-  const canPay = (op.status === 'CONFIRMED' || op.status === 'PARTIALLY_PAID') && !!op.customerId;
+  const canPay = op.status === 'CONFIRMED' || op.status === 'PARTIALLY_PAID';
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
   const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
   const remaining = Math.max(0, Number(op.total) - paidAmount);
@@ -762,22 +762,20 @@ export default function OrdenPedidoDetailPage() {
             la factura no vuelve a moverlos. La orden quedará marcada como convertida.
           </p>
 
-          {!op.customerId && (
-            <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3.5">
-              <XCircle className="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                Esta orden no tiene cliente asignado. Editá la orden y asigná un cliente antes de convertirla.
-              </p>
-            </div>
-          )}
-
-          {op.customerId && op.items.some((i) => !i.productId) && (
+          {op.items.some((i) => !i.productId) && (
             <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3.5">
               <XCircle className="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-amber-800 dark:text-amber-300">
                 Algunos ítems no tienen producto asignado. Editá la orden y asigná productos a todos los ítems.
               </p>
             </div>
+          )}
+
+          {!op.customerId && op.items.every((i) => i.productId) && (
+            <p className="text-sm text-gray-600 dark:text-slate-400">
+              La orden no tiene cliente: se facturará a <span className="font-medium">Consumidor Final</span> con{' '}
+              <span className="font-medium">Factura C</span>.
+            </p>
           )}
 
           {op.customerId && op.items.every((i) => i.productId) && (
@@ -796,7 +794,7 @@ export default function OrdenPedidoDetailPage() {
             <Button
               onClick={handleConvert}
               isLoading={isConverting}
-              disabled={!op.customerId || op.items.some((i) => !i.productId)}
+              disabled={op.items.some((i) => !i.productId)}
             >
               <FileText className="w-4 h-4 mr-2" />
               Generar factura
