@@ -885,6 +885,11 @@ model AppSettings {
   // Casilla "Registrar pago al crear" tildada por defecto (migr. 20260918120000)
   defaultRegisterPaymentInvoice     Boolean @default(false)
   defaultRegisterPaymentOrdenPedido Boolean @default(false)
+  // Recargo por horario aplicado al precio de venta (migr. 20260922120000)
+  timeSurchargeEnabled Boolean @default(false)
+  timeSurchargeFrom    String  @default("20:00")
+  timeSurchargeTo      String  @default("23:59")
+  timeSurchargePct     Decimal @default(0) @db.Decimal(6, 2)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 

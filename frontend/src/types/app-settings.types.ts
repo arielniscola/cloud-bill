@@ -26,6 +26,10 @@ export interface AppSettings {
   mpPosId:                      string | null;
   defaultRegisterPaymentInvoice?:     boolean;
   defaultRegisterPaymentOrdenPedido?: boolean;
+  timeSurchargeEnabled?:             boolean;
+  timeSurchargeFrom?:                string;
+  timeSurchargeTo?:                  string;
+  timeSurchargePct?:                 number;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -57,4 +61,8 @@ export interface UpdateAppSettingsDTO {
   mpPosId?:                      string | null;
   defaultRegisterPaymentInvoice?:     boolean;
   defaultRegisterPaymentOrdenPedido?: boolean;
+  timeSurchargeEnabled?:             boolean;
+  timeSurchargeFrom?:                string;
+  timeSurchargeTo?:                  string;
+  timeSurchargePct?:                 number;
 }

@@ -13,6 +13,7 @@ import SmtpSettingsCard from './SmtpSettingsCard';
 import BudgetSettingsCard from './BudgetSettingsCard';
 import StockSettingsCard from './StockSettingsCard';
 import PriceSettingsCard from './PriceSettingsCard';
+import TimeSurchargeSettingsCard from './TimeSurchargeSettingsCard';
 import PrintSettingsCard from './PrintSettingsCard';
 import UsersSettingsCard from './UsersSettingsCard';
 import CompanySettingsCard from './CompanySettingsCard';
@@ -272,6 +273,7 @@ export default function SettingsPage() {
         <div className="max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6 auto-rows-min">
           <BudgetSettingsCard />
           <PriceSettingsCard />
+          <TimeSurchargeSettingsCard />
           <div className="lg:col-span-2"><PrintSettingsCard /></div>
         </div>
       )}

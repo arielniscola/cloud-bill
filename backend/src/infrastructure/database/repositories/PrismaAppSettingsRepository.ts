@@ -19,6 +19,20 @@ async function registerPaymentColumnsExist(): Promise<boolean> {
   return hasRegisterPaymentColumns;
 }
 
+// Idem para el recargo por horario (migración 20260922120000).
+let hasTimeSurchargeColumns: boolean | null = null;
+async function timeSurchargeColumnsExist(): Promise<boolean> {
+  if (hasTimeSurchargeColumns !== null) return hasTimeSurchargeColumns;
+  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'app_settings' AND column_name = 'timeSurchargeEnabled'
+    ) AS "exists"
+  `;
+  hasTimeSurchargeColumns = rows[0]?.exists ?? false;
+  return hasTimeSurchargeColumns;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const INCLUDE = {
   defaultBudgetCashRegister:  { select: { id: true, name: true } },
@@ -67,6 +81,10 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       mpPosId:                     r.mpPosId ?? null,
       defaultRegisterPaymentInvoice:     Boolean(r.defaultRegisterPaymentInvoice),
       defaultRegisterPaymentOrdenPedido: Boolean(r.defaultRegisterPaymentOrdenPedido),
+      timeSurchargeEnabled:        Boolean(r.timeSurchargeEnabled),
+      timeSurchargeFrom:           r.timeSurchargeFrom ?? '20:00',
+      timeSurchargeTo:             r.timeSurchargeTo   ?? '23:59',
+      timeSurchargePct:            r.timeSurchargePct != null ? Number(r.timeSurchargePct) : 0,
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -160,6 +178,21 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
         UPDATE "app_settings" SET
           "defaultRegisterPaymentInvoice"     = ${registerPaymentInvoice},
           "defaultRegisterPaymentOrdenPedido" = ${registerPaymentOrdenPedido}
+        WHERE id = ${companyId}
+      `;
+    }
+
+    if (await timeSurchargeColumnsExist()) {
+      const surchargeEnabled = data.timeSurchargeEnabled ?? current?.timeSurchargeEnabled ?? false;
+      const surchargeFrom    = data.timeSurchargeFrom    ?? current?.timeSurchargeFrom    ?? '20:00';
+      const surchargeTo      = data.timeSurchargeTo      ?? current?.timeSurchargeTo      ?? '23:59';
+      const surchargePct     = data.timeSurchargePct     ?? current?.timeSurchargePct     ?? 0;
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET
+          "timeSurchargeEnabled" = ${surchargeEnabled},
+          "timeSurchargeFrom"    = ${surchargeFrom},
+          "timeSurchargeTo"      = ${surchargeTo},
+          "timeSurchargePct"     = ${surchargePct}
         WHERE id = ${companyId}
       `;
     }

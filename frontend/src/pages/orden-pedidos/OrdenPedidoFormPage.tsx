@@ -4,7 +4,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { clsx } from 'clsx';
-import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus, Search } from 'lucide-react';
+import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus, Search, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal } from '../../components/shared';
@@ -13,7 +13,9 @@ import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService, warehousesService, productVariantsService } from '../../services';
 import type { ProductVariant } from '../../types/product-variant.types';
 import type { Budget, AppSettings, Warehouse, OrdenPedido } from '../../types';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
+import { useTimeSurcharge } from '../../hooks/useTimeSurcharge';
+import { applyTimeSurcharge } from '../../utils/timeSurcharge';
 import { isOffline } from '../../stores/offline.store';
 import { checkStockOffline, queueSaleOffline } from '../../lib/offline/offlineSale';
 import {
@@ -204,6 +206,11 @@ export default function OrdenPedidoFormPage() {
     }
   }, [customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Recargo por horario: mientras la franja configurada esté vigente, el precio
+  // de lista entra recargado en el comprobante (no toca el precio del producto).
+  const timeSurcharge = useTimeSurcharge();
+  const salePrice = (price: number) => applyTimeSurcharge(Number(price), timeSurcharge);
+
   // When currency changes, update item prices
   useEffect(() => {
     if (products.length === 0) return;
@@ -211,7 +218,7 @@ export default function OrdenPedidoFormPage() {
       if (!item.productId) return;
       const product = products.find((p) => p.id === item.productId);
       if (!product) return;
-      setValue(`items.${index}.unitPrice`, currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price);
+      setValue(`items.${index}.unitPrice`, salePrice(currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price));
     });
   }, [currency]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -366,7 +373,7 @@ export default function OrdenPedidoFormPage() {
       setValue(`items.${index}.productId`, productId);
       (setValue as any)(`items.${index}.variantId`, null);
       setValue(`items.${index}.description`, product.name);
-      setValue(`items.${index}.unitPrice`, currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price);
+      setValue(`items.${index}.unitPrice`, salePrice(currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price));
       setValue(`items.${index}.taxRate`, product.taxRate);
       void loadVariantsFor(productId);
     } else {
@@ -381,7 +388,7 @@ export default function OrdenPedidoFormPage() {
     const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
     (setValue as any)(`items.${index}.variantId`, variantId || null);
     if (variant && variant.priceOverride !== null && variant.priceOverride !== undefined) {
-      setValue(`items.${index}.unitPrice`, Number(variant.priceOverride));
+      setValue(`items.${index}.unitPrice`, salePrice(Number(variant.priceOverride)));
     }
     if (variant) {
       const baseDesc = products.find((p) => p.id === item.productId)?.name ?? '';
@@ -416,10 +423,10 @@ export default function OrdenPedidoFormPage() {
       setValue(`items.${emptyIndex}.productId`, product.id);
       setValue(`items.${emptyIndex}.description`, product.name);
       setValue(`items.${emptyIndex}.quantity`, qty);
-      setValue(`items.${emptyIndex}.unitPrice`, product.price);
+      setValue(`items.${emptyIndex}.unitPrice`, salePrice(product.price));
       setValue(`items.${emptyIndex}.taxRate`, product.taxRate);
     } else {
-      append({ productId: product.id, description: product.name, quantity: qty, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
+      append({ productId: product.id, description: product.name, quantity: qty, unitPrice: salePrice(product.price), discountPct: 0, taxRate: product.taxRate });
     }
   };
 
@@ -657,6 +664,12 @@ export default function OrdenPedidoFormPage() {
       />
 
       <form onSubmit={handleSubmit(onSubmit)}>
+        {timeSurcharge.active && (
+          <div className="mb-3 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <Clock className="w-4 h-4 flex-shrink-0" />
+            Recargo por horario activo: los precios se cargan con +{formatNumber(timeSurcharge.pct)} % ({timeSurcharge.from} a {timeSurcharge.to}).
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
 
           {/* ── Left column: items + notes ── */}

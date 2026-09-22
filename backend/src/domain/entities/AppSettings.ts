@@ -26,6 +26,11 @@ export interface AppSettings {
   mpPosId:                      string | null;
   defaultRegisterPaymentInvoice:     boolean;
   defaultRegisterPaymentOrdenPedido: boolean;
+  /** Recargo por horario: se suma al precio de venta dentro de la ventana. */
+  timeSurchargeEnabled:              boolean;
+  timeSurchargeFrom:                 string;  // "HH:mm"
+  timeSurchargeTo:                   string;  // "HH:mm" (puede ser menor que From: cruza medianoche)
+  timeSurchargePct:                  number;
   createdAt: Date;
   updatedAt: Date;
   defaultBudgetCashRegister?:  { id: string; name: string } | null;
@@ -59,4 +64,8 @@ export interface UpdateAppSettingsInput {
   mpPosId?:                      string | null;
   defaultRegisterPaymentInvoice?:     boolean;
   defaultRegisterPaymentOrdenPedido?: boolean;
+  timeSurchargeEnabled?:             boolean;
+  timeSurchargeFrom?:                string;
+  timeSurchargeTo?:                  string;
+  timeSurchargePct?:                 number;
 }

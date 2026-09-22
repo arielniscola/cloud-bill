@@ -4,7 +4,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import type { FieldErrors, UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search, ChevronDown, FileText, Send, Zap, RotateCcw, X } from 'lucide-react';
+import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search, ChevronDown, FileText, Send, Zap, RotateCcw, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
 import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
@@ -15,6 +15,8 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useAuthStore } from '../../stores/auth.store';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService, afipService } from '../../services';
+import { useTimeSurcharge } from '../../hooks/useTimeSurcharge';
+import { applyTimeSurcharge } from '../../utils/timeSurcharge';
 import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
@@ -325,6 +327,7 @@ export default function InvoiceFormPage() {
     localStorage.getItem(LAYOUT_KEY) === 'fast' ? 'fast' : 'classic'
   );
   const [priceEditMode, setPriceEditMode] = useState(() => localStorage.getItem(PRICE_EDIT_KEY) === '1');
+  const timeSurcharge = useTimeSurcharge();
 
   const chooseLayout = (next: FormLayout) => {
     setLayout(next);
@@ -400,6 +403,10 @@ export default function InvoiceFormPage() {
   const isService = watch('isService');
   const originInvoiceId = watch('originInvoiceId');
   const isNcNd = type.startsWith('NOTA_CREDITO_') || type.startsWith('NOTA_DEBITO_');
+  // Recargo por horario: los precios de lista entran recargados mientras la
+  // franja configurada esté vigente. No aplica a NC/ND, que copian el precio
+  // del comprobante de origen.
+  const salePrice = (price: number) => (isNcNd ? price : applyTimeSurcharge(Number(price), timeSurcharge));
 
   /**
    * Refleja en el control de descuento los porcentajes que trae un comprobante
@@ -678,7 +685,7 @@ export default function InvoiceFormPage() {
     if (product) {
       setValue(`items.${index}.productId`, productId);
       setValue(`items.${index}.variantId`, null);
-      setValue(`items.${index}.unitPrice`, product.price);
+      setValue(`items.${index}.unitPrice`, salePrice(product.price));
       setValue(`items.${index}.taxRate`, product.taxRate);
       setProductCache((prev) => ({ ...prev, [productId]: product }));
       void loadVariantsFor(productId);
@@ -723,7 +730,7 @@ export default function InvoiceFormPage() {
     const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
     setValue(`items.${index}.variantId`, variantId || null);
     if (variant && variant.priceOverride !== null && variant.priceOverride !== undefined) {
-      setValue(`items.${index}.unitPrice`, Number(variant.priceOverride));
+      setValue(`items.${index}.unitPrice`, salePrice(Number(variant.priceOverride)));
     }
   };
 
@@ -740,11 +747,11 @@ export default function InvoiceFormPage() {
     if (emptyIndex >= 0) {
       setValue(`items.${emptyIndex}.productId`, product.id);
       setValue(`items.${emptyIndex}.quantity`, qty);
-      setValue(`items.${emptyIndex}.unitPrice`, product.price);
+      setValue(`items.${emptyIndex}.unitPrice`, salePrice(product.price));
       setValue(`items.${emptyIndex}.discountPct`, 0);
       setValue(`items.${emptyIndex}.taxRate`, product.taxRate);
     } else {
-      append({ productId: product.id, quantity: qty, unitPrice: product.price, discountPct: 0, taxRate: product.taxRate });
+      append({ productId: product.id, quantity: qty, unitPrice: salePrice(product.price), discountPct: 0, taxRate: product.taxRate });
     }
   };
 
@@ -1206,6 +1213,12 @@ export default function InvoiceFormPage() {
       <div className="flex items-center justify-end mb-3">{layoutSwitch}</div>
 
       <form onSubmit={(e) => { e.preventDefault(); runSubmit(effectiveAction); }}>
+        {timeSurcharge.active && !isNcNd && (
+          <div className="mb-3 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <Clock className="w-4 h-4 flex-shrink-0" />
+            Recargo por horario activo: los precios se cargan con +{formatNumber(timeSurcharge.pct)} % ({timeSurcharge.from} a {timeSurcharge.to}).
+          </div>
+        )}
         {layout === 'fast' ? (
           <InvoiceFastLayout
             customers={customers}

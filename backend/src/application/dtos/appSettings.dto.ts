@@ -27,6 +27,10 @@ export const updateAppSettingsSchema = z.object({
   mpPosId:                      z.string().optional().nullable(),
   defaultRegisterPaymentInvoice:     z.boolean().optional(),
   defaultRegisterPaymentOrdenPedido: z.boolean().optional(),
+  timeSurchargeEnabled:              z.boolean().optional(),
+  timeSurchargeFrom:                 z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horario inválido (HH:mm)').optional(),
+  timeSurchargeTo:                   z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horario inválido (HH:mm)').optional(),
+  timeSurchargePct:                  z.number().min(0).max(100).optional(),
 });
 
 export type UpdateAppSettingsDTO = z.infer<typeof updateAppSettingsSchema>;
