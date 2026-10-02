@@ -14,6 +14,7 @@ import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
+import type { DefaultInvoiceType } from '../../types/app-settings.types';
 import type { Customer, Product, Currency, InvoiceType } from '../../types';
 
 const budgetItemSchema = z.object({
@@ -73,6 +74,7 @@ export default function BudgetFormPage() {
   const [customerCache, setCustomerCache] = useState<Record<string, Customer>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [companyTaxCondition, setCompanyTaxCondition] = useState<string>('RESPONSABLE_INSCRIPTO');
+  const [configuredInvoiceType, setConfiguredInvoiceType] = useState<DefaultInvoiceType>('AUTO');
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -122,7 +124,7 @@ export default function BudgetFormPage() {
     // El cliente elegido por búsqueda server-side puede no estar en `customers`.
     const customer = customerCache[customerId] ?? customers.find((c) => c.id === customerId);
     if (type.startsWith('FACTURA_')) {
-      const autoType = getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition);
+      const autoType = getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition, configuredInvoiceType);
       if (autoType !== type) setValue('type', autoType);
     }
     if (customer?.saleCondition === 'CUENTA_CORRIENTE') {
@@ -155,6 +157,12 @@ export default function BudgetFormPage() {
         setProducts(productsData.data);
         if (settingsData?.companyTaxCondition) {
           setCompanyTaxCondition(settingsData.companyTaxCondition);
+        }
+        // Tipo fijado en Configuración: se aplica al presupuesto nuevo.
+        const configuredType = settingsData?.defaultInvoiceType ?? 'AUTO';
+        setConfiguredInvoiceType(configuredType);
+        if (configuredType !== 'AUTO' && !isEditing && (getValues('type') ?? '').startsWith('FACTURA_')) {
+          setValue('type', configuredType);
         }
       } catch {
         toast.error('Error al cargar datos');

@@ -67,6 +67,8 @@ interface PaymentModalProps {
   total?: number;
   /** Cantidad de recibos ya emitidos contra el documento */
   paidCount?: number;
+  /** Medio con el que abre el modal (por defecto efectivo). */
+  defaultPaymentMethod?: PaymentFormData['paymentMethod'];
 }
 
 export function PaymentModal({
@@ -81,6 +83,7 @@ export function PaymentModal({
   mode = 'payment',
   total,
   paidCount,
+  defaultPaymentMethod = 'CASH',
 }: PaymentModalProps) {
   const isRefund = mode === 'refund';
   const L = {
@@ -167,7 +170,7 @@ export function PaymentModal({
     reset({
       amount: remaining,
       exchangeRate: 1,
-      paymentMethod: 'CASH',
+      paymentMethod: defaultPaymentMethod,
       cashRegisterId: null,
       bankAccountId: null,
       reference: null,
@@ -197,6 +200,14 @@ export function PaymentModal({
         setValue('cashRegisterId', found ? found.id : crs[0]?.id ?? null);
         const firstBank = (banks as BankAccount[]).find((b) => b.isActive);
         setValue('bankAccountId', firstBank?.id ?? null);
+        // Abierto directo en "Tarjeta": el efecto de cambio de medio corrió
+        // antes de que llegaran las tarjetas, así que la primera se elige acá.
+        const firstCard = (cardList as Card[]).find((c) => c.isActive);
+        if (defaultPaymentMethod === 'CARD' && firstCard) {
+          setValue('cardId', firstCard.id);
+          setValue('installments', 1);
+          setValue('surchargePercent', firstCard.surcharges.find((s) => s.installments === 1)?.surchargePercent ?? 0);
+        }
       })
       .finally(() => setLoadingCR(false));
     if (isUSD) fetchBNARate();

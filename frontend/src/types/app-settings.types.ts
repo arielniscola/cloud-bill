@@ -1,3 +1,5 @@
+export type DefaultInvoiceType = 'AUTO' | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C';
+
 export interface AppSettings {
   id: string;
   defaultInvoiceCashRegisterId: string | null;
@@ -30,6 +32,7 @@ export interface AppSettings {
   timeSurchargeFrom?:                string;
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
+  defaultInvoiceType?:               DefaultInvoiceType;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -65,4 +68,5 @@ export interface UpdateAppSettingsDTO {
   timeSurchargeFrom?:                string;
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
+  defaultInvoiceType?:               DefaultInvoiceType;
 }

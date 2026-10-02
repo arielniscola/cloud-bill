@@ -109,6 +109,10 @@ export default function OrdenPedidoDetailPage() {
       .then((s) => {
         const fmt = (s.printFormatOrdenPedido ?? s.printFormat ?? 'THERMAL_80MM') as 'A4' | 'THERMAL_80MM';
         setPrintFormat(fmt);
+        // Tipo de factura preseleccionado al convertir la orden.
+        if (s.defaultInvoiceType && s.defaultInvoiceType !== 'AUTO') {
+          setSelectedInvoiceType(s.defaultInvoiceType);
+        }
       })
       .catch(() => {});
   }, []);

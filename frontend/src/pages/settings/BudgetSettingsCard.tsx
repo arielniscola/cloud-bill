@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Save, FileText, Building2, Banknote } from 'lucide-react';
+import { Save, FileText, Building2, Banknote, Receipt } from 'lucide-react';
 import { Button, Select } from '../../components/ui';
 import { appSettingsService, cashRegistersService } from '../../services';
 import type { CashRegister } from '../../types';
+import type { DefaultInvoiceType } from '../../types/app-settings.types';
 
 const COMPANY_TAX_OPTIONS = [
   { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
@@ -11,10 +12,18 @@ const COMPANY_TAX_OPTIONS = [
   { value: 'EXENTO',                label: 'Exento' },
 ];
 
+const INVOICE_TYPE_OPTIONS = [
+  { value: 'AUTO',      label: 'Automático (según condición fiscal)' },
+  { value: 'FACTURA_A', label: 'Factura A' },
+  { value: 'FACTURA_B', label: 'Factura B' },
+  { value: 'FACTURA_C', label: 'Factura C' },
+];
+
 export default function BudgetSettingsCard() {
   const [cashRegisters,            setCashRegisters]            = useState<CashRegister[]>([]);
   const [invoiceCashRegisterId,    setInvoiceCashRegisterId]    = useState<string>('');
   const [companyTaxCondition,      setCompanyTaxCondition]      = useState<string>('RESPONSABLE_INSCRIPTO');
+  const [defaultInvoiceType,       setDefaultInvoiceType]       = useState<DefaultInvoiceType>('AUTO');
   const [registerPaymentInvoice,     setRegisterPaymentInvoice]     = useState(false);
   const [registerPaymentOrdenPedido, setRegisterPaymentOrdenPedido] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +39,7 @@ export default function BudgetSettingsCard() {
         setCashRegisters(crData);
         setInvoiceCashRegisterId(settingsData.defaultInvoiceCashRegisterId ?? '');
         setCompanyTaxCondition(  settingsData.companyTaxCondition          ?? 'RESPONSABLE_INSCRIPTO');
+        setDefaultInvoiceType(settingsData.defaultInvoiceType ?? 'AUTO');
         setRegisterPaymentInvoice(!!settingsData.defaultRegisterPaymentInvoice);
         setRegisterPaymentOrdenPedido(!!settingsData.defaultRegisterPaymentOrdenPedido);
       } catch {
@@ -46,6 +56,7 @@ export default function BudgetSettingsCard() {
       await appSettingsService.update({
         defaultInvoiceCashRegisterId: invoiceCashRegisterId || null,
         companyTaxCondition,
+        defaultInvoiceType,
         defaultRegisterPaymentInvoice: registerPaymentInvoice,
         defaultRegisterPaymentOrdenPedido: registerPaymentOrdenPedido,
       });
@@ -150,6 +161,25 @@ export default function BudgetSettingsCard() {
               options={COMPANY_TAX_OPTIONS}
               value={companyTaxCondition}
               onChange={setCompanyTaxCondition}
+            />
+          </div>
+        </div>
+
+        {/* Default invoice type */}
+        <div className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-xl">
+          <div className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Receipt className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-800 dark:text-slate-200 mb-1">Tipo de factura por defecto</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
+              Tipo preseleccionado en facturas, presupuestos y al convertir órdenes de pedido.
+              En "Automático" se elige según la condición fiscal de la empresa y del cliente. Se puede cambiar en cada comprobante.
+            </p>
+            <Select
+              options={INVOICE_TYPE_OPTIONS}
+              value={defaultInvoiceType}
+              onChange={(v) => setDefaultInvoiceType(v as DefaultInvoiceType)}
             />
           </div>
         </div>

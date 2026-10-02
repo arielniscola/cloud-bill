@@ -10,6 +10,7 @@ import { IReciboRepository } from '../../../domain/repositories/IReciboRepositor
 import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
+import { IAppSettingsRepository } from '../../../domain/repositories/IAppSettingsRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { effectiveSaleCondition } from '../../../shared/utils/paymentTerms';
 import { sendOrdenPedidoEmail } from '../../services/EmailService';
@@ -470,9 +471,16 @@ export class OrdenPedidoController {
         throw new AppError('Todos los items deben tener un producto asignado para generar la factura', 400);
       }
 
-      // Orden sin cliente → se factura a "Consumidor Final" con Factura C.
+      // Orden sin cliente → se factura a "Consumidor Final" con Factura C, salvo
+      // que la empresa haya fijado otro tipo por defecto en la configuración.
       const customerId = op.customerId ?? await resolveConsumidorFinalCustomerId(req.companyId!);
-      const invoiceType = op.customerId ? (req.body.invoiceType || 'FACTURA_B') : 'FACTURA_C';
+      let invoiceType = req.body.invoiceType || 'FACTURA_B';
+      if (!op.customerId) {
+        const settings = await container.resolve<IAppSettingsRepository>('AppSettingsRepository')
+          .get(req.companyId).catch(() => null);
+        const configured = settings?.defaultInvoiceType;
+        invoiceType = configured && configured !== 'AUTO' ? configured : 'FACTURA_C';
+      }
       const opSaleCondition = (op as any).saleCondition ?? 'CONTADO';
 
       // Invoice from OP: fiscal only — no stock movements, no payments, no CC account movement

@@ -112,6 +112,7 @@ export interface PayInvoiceDTO {
   amount: number;
   paymentMethod: string;
   cashRegisterId?: string | null;
+  bankAccountId?: string | null;
   reference?: string | null;
   bank?: string | null;
   checkDueDate?: string | null;

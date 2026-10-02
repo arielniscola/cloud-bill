@@ -14,16 +14,21 @@ import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useAuthStore } from '../../stores/auth.store';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
-import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService, afipService } from '../../services';
+import { invoicesService, customersService, productsService, appSettingsService, stockService, productVariantsService, warehousesService, afipService, cashRegistersService, bankService } from '../../services';
 import { useTimeSurcharge } from '../../hooks/useTimeSurcharge';
 import { applyTimeSurcharge } from '../../utils/timeSurcharge';
 import type { ProductVariant } from '../../types/product-variant.types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
-import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
-import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse, Stock } from '../../types';
+import { getDefaultInvoiceType, getConsumidorFinalInvoiceType } from '../../utils/getDefaultInvoiceType';
+import type { DefaultInvoiceType } from '../../types/app-settings.types';
+import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse, Stock, CashRegister } from '../../types';
+import type { BankAccount } from '../../types/bank.types';
 import { INVOICE_TYPES } from '../../utils/constants';
 import InvoiceFastLayout from './InvoiceFastLayout';
+import InvoiceCounterLayout from './InvoiceCounterLayout';
+import { COUNTER_INLINE_METHODS, parseAmount } from './invoiceCounter';
+import type { CounterLastSale, CounterPayment } from './invoiceCounter';
 
 const NC_TYPE_MAP: Partial<Record<InvoiceType, InvoiceType>> = {
   FACTURA_A: 'NOTA_CREDITO_A',
@@ -45,10 +50,11 @@ const SUBMIT_ACTION_KEY = 'cloud-bill:invoice-submit-action';
 /**
  * Layout del formulario, elegido por el usuario y recordado en este navegador.
  * `classic` es la vista de siempre (grilla + sidebar); `fast` es la carga
- * rápida: comprobante plegado, buscador protagonista y filas grandes.
+ * rápida: comprobante plegado, buscador protagonista y filas grandes;
+ * `counter` es el mostrador: escanear, cobrar en pantalla y seguir vendiendo.
  */
 const LAYOUT_KEY = 'cloud-bill:invoice-layout';
-type FormLayout = 'classic' | 'fast';
+type FormLayout = 'classic' | 'fast' | 'counter';
 /**
  * Dentro de la carga rápida, si la lista arranca en modo columnas editables.
  * Es preferencia del usuario, no de la factura: quien negocia precios lo deja
@@ -107,6 +113,8 @@ function sumAvailable(stocks: Stock[]): number {
     return sum + ((Number.isFinite(qty) ? qty : 0) - (Number.isFinite(reserved) ? reserved : 0));
   }, 0);
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function errorMessage(error: unknown): string | undefined {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -297,6 +305,9 @@ export default function InvoiceFormPage() {
   const [originInvoices, setOriginInvoices] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [companyTaxCondition, setCompanyTaxCondition] = useState<string>('RESPONSABLE_INSCRIPTO');
+  // Tipo de factura fijado en Configuración ('AUTO' = según condición fiscal).
+  // Ref y no state: lo leen la autoselección por cliente y el reset del mostrador.
+  const configuredInvoiceTypeRef = useRef<DefaultInvoiceType>('AUTO');
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
   const [registerPayment, setRegisterPayment] = useState(false);
@@ -323,9 +334,22 @@ export default function InvoiceFormPage() {
     return stored === 'draft' || stored === 'issue' || stored === 'arca' ? stored : 'issue';
   });
   const [showArcaConfirm, setShowArcaConfirm] = useState(false);
-  const [layout, setLayout] = useState<FormLayout>(() =>
-    localStorage.getItem(LAYOUT_KEY) === 'fast' ? 'fast' : 'classic'
-  );
+  const [layout, setLayout] = useState<FormLayout>(() => {
+    const stored = localStorage.getItem(LAYOUT_KEY);
+    return stored === 'fast' || stored === 'counter' ? stored : 'classic';
+  });
+  // ── Mostrador: cobro en pantalla ──
+  const [counterPayment, setCounterPayment] = useState<CounterPayment>({
+    method: 'CASH', cashRegisterId: '', bankAccountId: '', reference: '', received: '',
+  });
+  const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [lastSale, setLastSale] = useState<CounterLastSale | null>(null);
+  const [paymentDefaultMethod, setPaymentDefaultMethod] = useState<CreateReciboDTO['paymentMethod']>('CASH');
+  // Venta del mostrador cobrada con tarjeta/cheque: espera a que el modal de
+  // cobro confirme para dejar la pantalla lista para la siguiente.
+  const pendingCounterSaleRef = useRef<CounterLastSale | null>(null);
+  const counterDataLoadedRef = useRef(false);
   const [priceEditMode, setPriceEditMode] = useState(() => localStorage.getItem(PRICE_EDIT_KEY) === '1');
   const timeSurcharge = useTimeSurcharge();
 
@@ -351,7 +375,7 @@ export default function InvoiceFormPage() {
   );
 
   const {
-    register, control, handleSubmit, setValue, watch, reset,
+    register, control, handleSubmit, setValue, getValues, watch, reset,
     formState: { errors },
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema) as any,
@@ -381,7 +405,7 @@ export default function InvoiceFormPage() {
   const appendItem = () => append({ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 });
 
   useFormKeyboardShortcuts({
-    onSubmit: () => runSubmit(effectiveAction),
+    onSubmit: () => (effectiveLayout === 'counter' ? submitCounter() : runSubmit(effectiveAction)),
     onAddItem: appendItem,
     onCancel: () => setShowExitConfirm(true),
     onDuplicateLastItem: () => {
@@ -403,6 +427,8 @@ export default function InvoiceFormPage() {
   const isService = watch('isService');
   const originInvoiceId = watch('originInvoiceId');
   const isNcNd = type.startsWith('NOTA_CREDITO_') || type.startsWith('NOTA_DEBITO_');
+  // El mostrador cobra: no aplica a NC/ND (eso es una devolución).
+  const effectiveLayout: FormLayout = layout === 'counter' && isNcNd ? 'classic' : layout;
   // Recargo por horario: los precios de lista entran recargados mientras la
   // franja configurada esté vigente. No aplica a NC/ND, que copian el precio
   // del comprobante de origen.
@@ -490,10 +516,12 @@ export default function InvoiceFormPage() {
     if (skipCustomerAutoForRef.current === customerId) { skipCustomerAutoForRef.current = null; return; }
     const customer = findCustomer(customerId);
     if (type.startsWith('FACTURA_')) {
-      // Sin cliente la venta es a Consumidor Final y va con Factura C.
+      // Sin cliente la venta es a Consumidor Final y va con Factura C
+      // (salvo que la configuración fije otro tipo).
+      const configured = configuredInvoiceTypeRef.current;
       const autoType = customerId
-        ? getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition)
-        : 'FACTURA_C';
+        ? getDefaultInvoiceType(customer?.taxCondition ?? null, companyTaxCondition, configured)
+        : getConsumidorFinalInvoiceType(configured);
       if (autoType !== type) setValue('type', autoType);
     }
     if (customer?.saleCondition === 'CUENTA_CORRIENTE') {
@@ -520,6 +548,14 @@ export default function InvoiceFormPage() {
         setProducts(productsData.data);
         if (settingsData?.companyTaxCondition) {
           setCompanyTaxCondition(settingsData.companyTaxCondition);
+        }
+        // Tipo de factura fijado en Configuración: la autoselección por cliente
+        // ya corrió antes de que llegara, así que se aplica acá a la factura nueva.
+        const configuredType = settingsData?.defaultInvoiceType ?? 'AUTO';
+        configuredInvoiceTypeRef.current = configuredType;
+        if (configuredType !== 'AUTO' && !isEditing && !creditNoteFrom && !debitNoteFrom
+            && (getValues('type') ?? '').startsWith('FACTURA_')) {
+          setValue('type', configuredType);
         }
         // Casilla "Registrar pago al crear": arranca según la config de la empresa.
         if (settingsData?.defaultRegisterPaymentInvoice) setRegisterPayment(true);
@@ -581,6 +617,29 @@ export default function InvoiceFormPage() {
     };
     fetchInvoice();
   }, [id, isEditing, reset, navigate]);
+
+  // Cajas y cuentas del cobro en pantalla: se piden recién al usar el mostrador.
+  useEffect(() => {
+    if (effectiveLayout !== 'counter' || counterDataLoadedRef.current) return;
+    counterDataLoadedRef.current = true;
+    Promise.all([
+      cashRegistersService.getAll(true).catch(() => [] as CashRegister[]),
+      bankService.getAll().catch(() => [] as BankAccount[]),
+      appSettingsService.get().catch(() => null),
+    ]).then(([crs, banks, settings]) => {
+      const activeBanks = banks.filter((b) => b.isActive);
+      setCashRegisters(crs);
+      setBankAccounts(activeBanks);
+      const preferred = settings?.defaultInvoiceCashRegisterId
+        ? crs.find((c) => c.id === settings.defaultInvoiceCashRegisterId)
+        : null;
+      setCounterPayment((prev) => ({
+        ...prev,
+        cashRegisterId: prev.cashRegisterId || preferred?.id || crs[0]?.id || '',
+        bankAccountId: prev.bankAccountId || activeBanks[0]?.id || '',
+      }));
+    });
+  }, [effectiveLayout]);
 
   // ── Borrador local ──────────────────────────────────────────────────────
   // Red de seguridad ante el cierre accidental de la pestaña. No reemplaza al
@@ -976,11 +1035,14 @@ export default function InvoiceFormPage() {
       };
 
       let invoiceId = id ?? '';
+      let invoiceNumber = '';
       try {
         if (isEditing) {
           await invoicesService.update(id, payload);
         } else {
-          invoiceId = (await invoicesService.create(payload)).id;
+          const created = await invoicesService.create(payload);
+          invoiceId = created.id;
+          invoiceNumber = created.number ?? '';
         }
         // Solo el borrador de "factura nueva": editar o emitir una NC no debe
         // descartar una carga a medio hacer que quedó en otra pestaña.
@@ -999,6 +1061,7 @@ export default function InvoiceFormPage() {
         try {
           if (action === 'arca') {
             const { invoice: emitted, warnings } = await afipService.emitInvoice(invoiceId);
+            if (emitted?.number) invoiceNumber = emitted.number;
             toast.success(`Factura emitida ante ARCA. CAE: ${emitted.cae}`);
             if (warnings) toast(`Observaciones ARCA: ${warnings}`, { icon: '⚠️', duration: 8000 });
           } else {
@@ -1015,7 +1078,51 @@ export default function InvoiceFormPage() {
         }
       }
 
-      if (!isEditing && registerPayment) setCreatedInvoiceId(invoiceId);
+      if (effectiveLayout === 'counter' && !isEditing && action !== 'draft') {
+        const total = round2(grandTotal);
+        const sale: CounterLastSale = {
+          id: invoiceId,
+          label: `${INVOICE_TYPES[data.type] ?? 'Factura'} ${invoiceNumber}`.trim(),
+          total,
+          change: 0,
+          paid: false,
+        };
+        if (data.saleCondition === 'CUENTA_CORRIENTE') {
+          startNewSale(sale);
+          return;
+        }
+        const method = counterPayment.method;
+        if (COUNTER_INLINE_METHODS.includes(method)) {
+          try {
+            await invoicesService.pay(invoiceId, {
+              amount: total,
+              paymentMethod: method,
+              cashRegisterId: method === 'CASH' ? counterPayment.cashRegisterId || null : null,
+              bankAccountId: method === 'BANK_TRANSFER' ? counterPayment.bankAccountId || null : null,
+              reference: counterPayment.reference.trim() || null,
+            });
+          } catch (error: unknown) {
+            toast.error(
+              `${errorMessage(error) || 'Error al registrar el cobro'} — la factura quedó emitida: registrá el cobro desde el detalle`,
+              { duration: 8000 }
+            );
+            navigate(`/invoices/${invoiceId}`);
+            return;
+          }
+          const received = parseAmount(counterPayment.received);
+          toast.success('Venta cobrada');
+          startNewSale({ ...sale, paid: true, change: method === 'CASH' && received > total ? round2(received - total) : 0 });
+          return;
+        }
+        // Tarjeta o cheque: el modal completa el detalle y, al confirmar,
+        // arranca la venta siguiente.
+        pendingCounterSaleRef.current = { ...sale, paid: true };
+        setPaymentDefaultMethod(method);
+        setCreatedInvoiceId(invoiceId);
+        return;
+      }
+
+      if (!isEditing && registerPayment && effectiveLayout !== 'counter') setCreatedInvoiceId(invoiceId);
       else navigate(`/invoices/${invoiceId}`);
     } finally {
       setIsLoading(false);
@@ -1048,10 +1155,11 @@ export default function InvoiceFormPage() {
     toast.error(firstMessage);
   };
 
-  const runSubmit = (action: SubmitAction) => {
+  const runSubmit = (action: SubmitAction, opts?: { skipArcaConfirm?: boolean }) => {
     submitActionRef.current = action;
-    // El CAE es irreversible: se confirma antes de crear, no después.
-    if (action === 'arca') {
+    // El CAE es irreversible: se confirma antes de crear, no después. El
+    // mostrador lo saltea: ahí "Pedir CAE" es una casilla visible junto al botón.
+    if (action === 'arca' && !opts?.skipArcaConfirm) {
       void handleSubmit(() => setShowArcaConfirm(true), onInvalid)();
       return;
     }
@@ -1069,6 +1177,11 @@ export default function InvoiceFormPage() {
     try {
       await invoicesService.pay(createdInvoiceId, data);
       toast.success('Pago registrado');
+      const counterSale = pendingCounterSaleRef.current;
+      if (counterSale) {
+        startNewSale(counterSale);
+        return;
+      }
       navigate(`/invoices/${createdInvoiceId}`);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -1109,6 +1222,58 @@ export default function InvoiceFormPage() {
   ];
   const effectiveAction: SubmitAction =
     submitAction === 'arca' && arcaDisabledReason ? 'issue' : submitAction;
+  // El mostrador siempre emite: guardar borrador es un botón aparte.
+  const counterAction: SubmitAction = effectiveAction === 'arca' ? 'arca' : 'issue';
+
+  /** Deja el mostrador listo para la venta siguiente, con el aviso de la que terminó. */
+  const startNewSale = (sale: CounterLastSale) => {
+    pendingCounterSaleRef.current = null;
+    setCreatedInvoiceId(null);
+    reset({
+      // Sin cliente la venta es a Consumidor Final: la autoselección por
+      // cliente también la lleva a Factura C (o al tipo fijado en Configuración).
+      type: getConsumidorFinalInvoiceType(configuredInvoiceTypeRef.current),
+      customerId: '',
+      date: new Date().toISOString().substring(0, 10),
+      isService: false,
+      stockBehavior: 'DISCOUNT',
+      saleCondition: 'CONTADO',
+      paymentTerms: 'Contado',
+      // undefined y no null: el alta del backend rechaza null en estos campos.
+      dueDate: undefined,
+      notes: undefined,
+      originInvoiceId: undefined,
+      items: [{ productId: '', quantity: 1, unitPrice: 0, discountPct: 0, taxRate: 21 }],
+    });
+    setDiscountType('%');
+    setDiscountValue(0);
+    setHasPerItemDiscount(false);
+    // El stock cacheado ya no refleja lo que se acaba de vender.
+    setStockByProduct({});
+    setCounterPayment((prev) => ({ ...prev, method: 'CASH', reference: '', received: '' }));
+    setLastSale(sale);
+  };
+
+  const submitCounter = () => {
+    if (isLoading || createdInvoiceId) return;
+    if (saleCondition !== 'CUENTA_CORRIENTE') {
+      const { method, received } = counterPayment;
+      if (method === 'CASH' && !counterPayment.cashRegisterId) {
+        toast.error('No hay una caja abierta para registrar el efectivo');
+        return;
+      }
+      if (method === 'BANK_TRANSFER' && !counterPayment.bankAccountId) {
+        toast.error('Elegí la cuenta bancaria de la transferencia');
+        return;
+      }
+      const receivedAmount = parseAmount(received);
+      if (method === 'CASH' && receivedAmount > 0 && receivedAmount < round2(grandTotal)) {
+        toast.error('El efectivo recibido no alcanza para el total');
+        return;
+      }
+    }
+    runSubmit(counterAction, { skipArcaConfirm: true });
+  };
 
   const pageTitle = isEditing ? 'Editar Factura'
     : creditNoteFrom ? 'Nueva Nota de Crédito'
@@ -1162,13 +1327,14 @@ export default function InvoiceFormPage() {
       {([
         ['classic', 'Clásico'],
         ['fast', 'Carga rápida'],
+        ...(isNcNd ? [] : [['counter', 'Mostrador']]),
       ] as Array<[FormLayout, string]>).map(([value, label]) => (
         <button
           key={value}
           type="button"
           onClick={() => chooseLayout(value)}
           className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-            layout === value
+            effectiveLayout === value
               ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
               : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
           }`}
@@ -1219,7 +1385,60 @@ export default function InvoiceFormPage() {
             Recargo por horario activo: los precios se cargan con +{formatNumber(timeSurcharge.pct)} % ({timeSurcharge.from} a {timeSurcharge.to}).
           </div>
         )}
-        {layout === 'fast' ? (
+        {effectiveLayout === 'counter' ? (
+          <InvoiceCounterLayout
+            customers={customers}
+            customerId={customerId}
+            selectedCustomer={selectedCustomer}
+            onCustomerChange={(pickedId, picked) => {
+              if (picked) setCustomerCache((prev) => ({ ...prev, [pickedId]: picked }));
+              setValue('customerId', pickedId);
+            }}
+            customerError={errors.customerId?.message}
+            type={type}
+            typeOptions={INVOICE_TYPE_OPTIONS}
+            onTypeChange={(value) => setValue('type', value as InvoiceType)}
+            isTypeC={isTypeC}
+            warehouses={warehouses}
+            effectiveWarehouseId={effectiveWarehouseId}
+            onWarehouseChange={setWarehouseId}
+            saleCondition={saleCondition}
+            onSaleConditionChange={(cc) => handlePaymentTermsChange(cc ? 'CUENTA_CORRIENTE' : 'Contado')}
+            needsCustomerId={needsCustomerId}
+            cashIdThreshold={CASH_ID_THRESHOLD}
+            products={products}
+            fields={fields}
+            items={items}
+            itemsError={errors.items?.message}
+            findProduct={findProduct}
+            variantsByProduct={variantsByProduct}
+            stockFor={stockFor}
+            calcItemAmounts={calcItemAmounts}
+            onAddProduct={handleBarcodeAdd}
+            onQuantityChange={handleQuantityChange}
+            onVariantChange={handleVariantChange}
+            onRemoveItem={remove}
+            onOpenCatalog={() => setShowCatalog(true)}
+            totals={totals}
+            grandTotal={grandTotal}
+            discountType={discountType}
+            discountValue={discountValue}
+            onDiscountChange={setGlobalDiscount}
+            payment={counterPayment}
+            onPaymentChange={(patch) => setCounterPayment((prev) => ({ ...prev, ...patch }))}
+            cashRegisters={cashRegisters}
+            bankAccounts={bankAccounts}
+            withArca={counterAction === 'arca'}
+            arcaDisabledReason={arcaDisabledReason}
+            onWithArcaChange={(next) => chooseAction(next ? 'arca' : 'issue')}
+            isLoading={isLoading}
+            onSubmit={submitCounter}
+            onSaveDraft={() => runSubmit('draft')}
+            onCancel={() => setShowExitConfirm(true)}
+            lastSale={lastSale}
+            onDismissLastSale={() => setLastSale(null)}
+          />
+        ) : effectiveLayout === 'fast' ? (
           <InvoiceFastLayout
             customers={customers}
             customerId={customerId}
@@ -1755,6 +1974,7 @@ export default function InvoiceFormPage() {
       <PaymentModal
         open={createdInvoiceId !== null}
         onClose={() => {
+          pendingCounterSaleRef.current = null;
           if (createdInvoiceId) navigate(`/invoices/${createdInvoiceId}`);
           setCreatedInvoiceId(null);
         }}
@@ -1763,6 +1983,7 @@ export default function InvoiceFormPage() {
         currency="ARS"
         isLoading={isPaymentLoading}
         title="Registrar pago"
+        defaultPaymentMethod={paymentDefaultMethod}
       />
 
       <ImportFromOPModal

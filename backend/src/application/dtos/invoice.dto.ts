@@ -48,6 +48,9 @@ export const payInvoiceSchema = z.object({
   amount: z.number().positive('El monto debe ser mayor a 0'),
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
   cashRegisterId: z.string().uuid().optional().nullable(),
+  // Transferencia: cuenta donde entra la plata. Sin declararlo acá Zod lo
+  // descartaba y el cobro no generaba el movimiento bancario.
+  bankAccountId: z.string().uuid().optional().nullable(),
   reference: z.string().optional().nullable(),
   bank: z.string().optional().nullable(),
   checkDueDate: z.string().optional().nullable(),

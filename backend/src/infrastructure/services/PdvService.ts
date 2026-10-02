@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import * as soap from 'soap';
+import { createAfipSoapClient } from './afipSoapClient';
 import prisma from '../database/prisma';
 import { AfipConfig } from '../../domain/entities/AfipConfig';
 
@@ -155,7 +155,7 @@ export class PdvService {
     if (cbteTipo === undefined) throw new Error(`Tipo de comprobante no soportado: ${invoiceType}`);
 
     const env = config.isProduction ? 'prod' : 'test';
-    const wsfeClient = await soap.createClientAsync(WSFE_WSDL[env]);
+    const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
 
     const [lastRes] = await (wsfeClient as any).FECompUltimoAutorizadoAsync({
       Auth: { Token: ta.token, Sign: ta.sign, Cuit: config.cuit },

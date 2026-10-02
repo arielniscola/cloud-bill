@@ -1,3 +1,5 @@
+export type DefaultInvoiceType = 'AUTO' | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C';
+
 export interface AppSettings {
   id: string;
   defaultBudgetCashRegisterId:  string | null;
@@ -31,6 +33,8 @@ export interface AppSettings {
   timeSurchargeFrom:                 string;  // "HH:mm"
   timeSurchargeTo:                   string;  // "HH:mm" (puede ser menor que From: cruza medianoche)
   timeSurchargePct:                  number;
+  /** Tipo de factura preseleccionado; 'AUTO' = según condición fiscal empresa/cliente. */
+  defaultInvoiceType:                DefaultInvoiceType;
   createdAt: Date;
   updatedAt: Date;
   defaultBudgetCashRegister?:  { id: string; name: string } | null;
@@ -68,4 +72,5 @@ export interface UpdateAppSettingsInput {
   timeSurchargeFrom?:                string;
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
+  defaultInvoiceType?:               DefaultInvoiceType;
 }

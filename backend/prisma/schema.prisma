@@ -890,6 +890,8 @@ model AppSettings {
   timeSurchargeFrom    String  @default("20:00")
   timeSurchargeTo      String  @default("23:59")
   timeSurchargePct     Decimal @default(0) @db.Decimal(6, 2)
+  // Tipo de factura preseleccionado: AUTO | FACTURA_A | FACTURA_B | FACTURA_C (migr. 20261001120000)
+  defaultInvoiceType   String  @default("AUTO")
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 

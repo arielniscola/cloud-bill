@@ -1,208 +1,41 @@
 import { Fragment, useMemo } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
 import { confirmLogoutWithPendingSales } from '../../lib/offline/logoutGuard';
 import { isAvailableOffline, OFFLINE_UNAVAILABLE_HINT } from '../../lib/offline/offlineRoutes';
 import { useOfflineStore } from '../../stores/offline.store';
-import {
-  Home,
-  TrendingUp,
-  Users,
-  CreditCard,
-  Calculator,
-  FileText,
-  ClipboardList,
-  Receipt,
-  Truck,
-  ShoppingCart,
-  Package,
-  FolderTree,
-  Tag,
-  Layers,
-  PackageSearch,
-  BarChart2,
-  ArrowRightLeft,
-  ClipboardCheck,
-  Warehouse,
-  Brain,
-  Landmark,
-  BookOpen,
-  BookMarked,
-  Settings,
-  History,
-  ChevronDown,
-  LogOut,
-  User,
-  ShoppingBag,
-  Banknote,
-  Store,
-  Smartphone,
-  FileEdit,
-  Sliders,
-  Building2,
-  Crown,
-  CloudOff,
-} from 'lucide-react';
+import { Settings, History, ChevronDown, LogOut, User } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useFeatures } from '../../hooks/useFeatures';
 import NotificationBell from '../notifications/NotificationBell';
 import { getNavTheme } from '../../utils/navThemes';
-
-interface NavItem {
-  name: string;
-  href: string;
-  icon: React.ElementType;
-  featureKey?: string;
-}
+import { navModules, superAdminModules, hrefPath, isHrefActive, type NavItem } from './navConfig';
 
 interface NavSection {
   heading?: string;
   items: NavItem[];
 }
 
-interface NavDropdown {
-  name: string;
-  icon: React.ElementType;
-  moduleKey?: string;
-  featureKey?: string;
-  requiredRoles?: readonly string[];
-  sections: NavSection[];
-}
-
-interface NavLinkEntry extends NavItem {
-  moduleKey?: string;
-  requiredRoles?: readonly string[];
-}
-
 type NavEntry =
-  | ({ type: 'link' } & NavLinkEntry)
-  | ({ type: 'dropdown' } & NavDropdown);
+  | { type: 'link'; name: string; href: string; icon: React.ElementType }
+  | { type: 'dropdown'; key: string; name: string; icon: React.ElementType; sections: NavSection[] };
 
-const superAdminNavigation: NavEntry[] = [
-  { type: 'link', name: 'Empresas', href: '/companies', icon: Building2 },
-  { type: 'link', name: 'Usuarios', href: '/users',     icon: Users },
-  { type: 'link', name: 'Planes',   href: '/plans',     icon: Crown },
-];
+/**
+ * "Sistema" no va como desplegable: Configuración e Historial ya están en el
+ * menú del usuario (a la derecha).
+ */
+const NAVBAR_EXCLUDED_MODULES = new Set(['sistema']);
 
-const navigation: NavEntry[] = [
-  { type: 'link', name: 'Inicio',       href: '/',          icon: Home },
-  { type: 'link', name: 'Estadísticas', href: '/dashboard', icon: TrendingUp },
-  {
-    type: 'dropdown',
-    name: 'Ventas',
-    icon: Store,
-    moduleKey: 'ventas',
-    requiredRoles: ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK', 'FINANCES'] as const,
-    sections: [
-      {
-        heading: 'Clientes',
-        items: [
-          { name: 'Clientes',           href: '/customers',        icon: Users },
-          { name: 'Cuentas Corrientes', href: '/current-accounts', icon: CreditCard, featureKey: 'current_accounts' },
-          { name: 'Notas Internas',     href: '/internal-notes',   icon: FileEdit },
-        ],
-      },
-      {
-        heading: 'Documentos',
-        items: [
-          { name: 'Órdenes de Pedido', href: '/orden-pedidos', icon: ShoppingBag },
-          { name: 'Ventas pendientes', href: '/ventas-pendientes', icon: CloudOff },
-          { name: 'Presupuestos',      href: '/budgets',       icon: Calculator },
-          { name: 'Facturas',          href: '/invoices',      icon: FileText },
-          { name: 'Remitos',           href: '/remitos',       icon: ClipboardList },
-          { name: 'Recibos',           href: '/recibos',       icon: Receipt },
-        ],
-      },
-    ],
-  },
-  {
-    type: 'dropdown',
-    name: 'Compras',
-    icon: ShoppingCart,
-    moduleKey: 'compras',
-    requiredRoles: ['ADMIN', 'FINANCES', 'PURCHASES'] as const,
-    sections: [
-      {
-        items: [
-          { name: 'Proveedores',         href: '/suppliers',                  icon: Truck },
-          { name: 'Ctas. Ctes.',         href: '/supplier-accounts',          icon: CreditCard, featureKey: 'supplier_accounts' },
-          { name: 'Compras',             href: '/purchases',                  icon: ShoppingCart },
-          { name: 'Remitos de Compra',   href: '/purchase-remitos',           icon: PackageSearch },
-          { name: 'Reporte de facturas', href: '/reports/purchase-invoices',  icon: BarChart2, featureKey: 'reports' },
-          { name: 'Órdenes de Pago',     href: '/orden-pagos',                icon: Banknote },
-        ],
-      },
-    ],
-  },
-  {
-    type: 'dropdown',
-    name: 'Catálogo',
-    icon: Package,
-    moduleKey: 'catalogo',
-    sections: [
-      {
-        heading: 'Productos',
-        items: [
-          { name: 'Lista',                 href: '/products',                icon: Package },
-          { name: 'Rubros',            href: '/rubros',              icon: FolderTree },
-          { name: 'Marcas',                href: '/brands',                  icon: Tag },
-          { name: 'Categorías',                href: '/categories',                  icon: Layers },
-          { name: 'Campos personalizados', href: '/products/custom-fields',  icon: Sliders },
-        ],
-      },
-      {
-        heading: 'Stock',
-        items: [
-          { name: 'Inventario',     href: '/stock',                icon: PackageSearch },
-          { name: 'Movimientos',    href: '/stock/movements',      icon: BarChart2 },
-          { name: 'Transferencias', href: '/stock/transfer',       icon: ArrowRightLeft, featureKey: 'multi_warehouse' },
-          { name: 'Conteo físico',  href: '/stock/physical-count', icon: ClipboardCheck },
-          { name: 'Almacenes',      href: '/warehouses',           icon: Warehouse },
-          { name: 'Inteligente',    href: '/stock/intelligence',   icon: Brain, featureKey: 'stock_intelligence' },
-        ],
-      },
-    ],
-  },
-  {
-    type: 'dropdown',
-    name: 'Finanzas',
-    icon: Landmark,
-    moduleKey: 'finanzas',
-    requiredRoles: ['ADMIN', 'FINANCES'] as const,
-    sections: [
-      {
-        items: [
-          { name: 'Cajas',             href: '/cash-registers', icon: Landmark },
-          { name: 'Banco de Cheques',  href: '/banco-cheques',  icon: Banknote,   featureKey: 'bank_module' },
-          { name: 'Cuentas Bancarias', href: '/banks',          icon: Landmark,   featureKey: 'bank_module' },
-          { name: 'Tarjetas',          href: '/cards',          icon: CreditCard, featureKey: 'cards' },
-          { name: 'MercadoPago',       href: '/mercadopago',    icon: Smartphone, featureKey: 'mercadopago' },
-          { name: 'Libro IVA',         href: '/iva',            icon: BookOpen,   featureKey: 'iva_book' },
-          { name: 'Reportes',          href: '/reports',        icon: BarChart2,  featureKey: 'reports' },
-        ],
-      },
-    ],
-  },
-  {
-    type: 'dropdown',
-    name: 'Contabilidad',
-    icon: BookMarked,
-    moduleKey: 'finanzas',
-    featureKey: 'accounting',
-    requiredRoles: ['ADMIN', 'FINANCES'] as const,
-    sections: [
-      {
-        items: [
-          { name: 'Asientos Contables', href: '/accounting/journal-entries', icon: BookOpen },
-          { name: 'Libro IVA',          href: '/iva',                        icon: BookOpen,   featureKey: 'iva_book' },
-          { name: 'Plan de Cuentas',    href: '/accounting/accounts',        icon: BookMarked },
-        ],
-      },
-    ],
-  },
-];
+/** Agrupa los items consecutivos por `section`, igual que el panel del Sidebar. */
+const toSections = (items: NavItem[]): NavSection[] =>
+  items.reduce<NavSection[]>((acc, item) => {
+    const last = acc[acc.length - 1];
+    if (last && last.heading === item.section) last.items.push(item);
+    else acc.push({ heading: item.section, items: [item] });
+    return acc;
+  }, []);
 
 export default function Navbar() {
   const { user, logout } = useAuthStore();
@@ -223,33 +56,43 @@ export default function Navbar() {
   const offlineBlocked = (href: string) =>
     connection === 'offline' && !isAvailableOffline(href);
 
+  const location = useLocation();
+  const pendingSales = useOfflineStore((s) => s.pendingSales);
+
   const visibleEntries = useMemo<NavEntry[]>(() => {
-    if (role === 'SUPER_ADMIN') return superAdminNavigation;
+    // SUPER_ADMIN: sus pocas pantallas van como links directos.
+    if (role === 'SUPER_ADMIN') {
+      return superAdminModules.flatMap((m) =>
+        (m.items ?? []).map((i) => ({ type: 'link' as const, name: i.name, href: i.href, icon: i.icon }))
+      );
+    }
 
-    const passes = (e: { moduleKey?: string; featureKey?: string; requiredRoles?: readonly string[] }) => {
-      if (e.requiredRoles && !e.requiredRoles.includes(role)) return false;
-      if (e.moduleKey && !isModuleEnabled(e.moduleKey)) return false;
-      if (e.featureKey && !hasFeature(e.featureKey as any)) return false;
-      return true;
-    };
-
-    return navigation.reduce<NavEntry[]>((acc, entry) => {
-      if (entry.type === 'link') {
-        if (passes(entry)) acc.push(entry);
+    return navModules.reduce<NavEntry[]>((acc, m) => {
+      if (NAVBAR_EXCLUDED_MODULES.has(m.key)) return acc;
+      if (m.requiredRoles && !m.requiredRoles.includes(role)) return acc;
+      if (m.moduleKey && !isModuleEnabled(m.moduleKey)) return acc;
+      if (m.featureKey && !hasFeature(m.featureKey as any)) return acc;
+      if (!m.items) {
+        acc.push({ type: 'link', name: m.name, href: m.href, icon: m.icon });
         return acc;
       }
-      if (!passes(entry)) return acc;
-      const sections = entry.sections
-        .map((s) => ({
-          ...s,
-          items: s.items.filter((it) => !it.featureKey || hasFeature(it.featureKey as any)),
-        }))
-        .filter((s) => s.items.length > 0);
-      if (sections.length === 0) return acc;
-      acc.push({ ...entry, sections });
+      const items = m.items.filter((i) => !i.featureKey || hasFeature(i.featureKey as any));
+      if (items.length === 0) return acc;
+      acc.push({ type: 'dropdown', key: m.key, name: m.name, icon: m.icon, sections: toSections(items) });
       return acc;
     }, []);
   }, [role, isModuleEnabled, hasFeature]);
+
+  const itemIsActive = (href: string) => isHrefActive(href, location.pathname, location.search);
+
+  /** El desplegable se resalta si la ruta actual es (o cuelga de) alguna de sus pantallas. */
+  const dropdownIsActive = (sections: NavSection[]) =>
+    sections.some((s) =>
+      s.items.some((i) => {
+        const path = hrefPath(i.href);
+        return itemIsActive(i.href) || (path !== '/' && location.pathname.startsWith(path + '/'));
+      })
+    );
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-40 border-b border-white/10" style={{ backgroundColor: theme.bg }}>
@@ -286,13 +129,13 @@ export default function Navbar() {
                     {entry.name}
                   </NavLink>
                 ) : (
-                  <Menu as="div" className="relative" key={entry.name}>
+                  <Menu as="div" className="relative" key={entry.key}>
                     {({ open }) => (
                       <>
                         <Menu.Button
                           className={clsx(
                             'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
-                            open
+                            open || dropdownIsActive(entry.sections)
                               ? 'bg-white/20 text-white'
                               : 'text-white/70 hover:bg-white/10 hover:text-white'
                           )}
@@ -316,7 +159,7 @@ export default function Navbar() {
                           leaveFrom="transform opacity-100 scale-100"
                           leaveTo="transform opacity-0 scale-95"
                         >
-                          <Menu.Items className="absolute left-0 mt-1 w-52 origin-top-left rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-slate-700 focus:outline-none py-1.5 z-50">
+                          <Menu.Items className="absolute left-0 mt-1 w-60 max-h-[calc(100vh-5rem)] overflow-y-auto origin-top-left rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-slate-700 focus:outline-none py-1.5 z-50">
                             {entry.sections.map((section, si) => (
                               <div key={si}>
                                 {si > 0 && <div className="my-1.5 border-t border-gray-100 dark:border-slate-700" />}
@@ -338,12 +181,12 @@ export default function Navbar() {
                                         }}
                                         aria-disabled={offlineBlocked(item.href) || undefined}
                                         title={offlineBlocked(item.href) ? OFFLINE_UNAVAILABLE_HINT : undefined}
-                                        className={({ isActive }) =>
+                                        className={() =>
                                           clsx(
                                             'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg transition-colors duration-100',
                                             offlineBlocked(item.href)
                                               ? 'text-gray-300 dark:text-slate-600 cursor-not-allowed'
-                                              : isActive
+                                              : itemIsActive(item.href)
                                               ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
                                               : active
                                               ? 'bg-gray-50 dark:bg-slate-700/80 text-gray-900 dark:text-slate-200'
@@ -352,7 +195,12 @@ export default function Navbar() {
                                         }
                                       >
                                         <item.icon className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-slate-500" />
-                                        {item.name}
+                                        <span className="truncate">{item.name}</span>
+                                        {item.href === '/ventas-pendientes' && pendingSales > 0 && (
+                                          <span className="ml-auto rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold leading-[16px] text-white">
+                                            {pendingSales}
+                                          </span>
+                                        )}
                                       </NavLink>
                                     )}
                                   </Menu.Item>

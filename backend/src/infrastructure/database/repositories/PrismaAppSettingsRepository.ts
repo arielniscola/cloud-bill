@@ -33,6 +33,20 @@ async function timeSurchargeColumnsExist(): Promise<boolean> {
   return hasTimeSurchargeColumns;
 }
 
+// Idem para el tipo de factura por defecto (migración 20261001120000).
+let hasDefaultInvoiceTypeColumn: boolean | null = null;
+async function defaultInvoiceTypeColumnExists(): Promise<boolean> {
+  if (hasDefaultInvoiceTypeColumn !== null) return hasDefaultInvoiceTypeColumn;
+  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'app_settings' AND column_name = 'defaultInvoiceType'
+    ) AS "exists"
+  `;
+  hasDefaultInvoiceTypeColumn = rows[0]?.exists ?? false;
+  return hasDefaultInvoiceTypeColumn;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const INCLUDE = {
   defaultBudgetCashRegister:  { select: { id: true, name: true } },
@@ -85,6 +99,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       timeSurchargeFrom:           r.timeSurchargeFrom ?? '20:00',
       timeSurchargeTo:             r.timeSurchargeTo   ?? '23:59',
       timeSurchargePct:            r.timeSurchargePct != null ? Number(r.timeSurchargePct) : 0,
+      defaultInvoiceType:          r.defaultInvoiceType ?? 'AUTO',
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -193,6 +208,13 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
           "timeSurchargeFrom"    = ${surchargeFrom},
           "timeSurchargeTo"      = ${surchargeTo},
           "timeSurchargePct"     = ${surchargePct}
+        WHERE id = ${companyId}
+      `;
+    }
+
+    if (data.defaultInvoiceType !== undefined && await defaultInvoiceTypeColumnExists()) {
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET "defaultInvoiceType" = ${data.defaultInvoiceType}
         WHERE id = ${companyId}
       `;
     }

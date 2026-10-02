@@ -1,5 +1,5 @@
 import * as forge from 'node-forge';
-import * as soap from 'soap';
+import { createAfipSoapClient } from './afipSoapClient';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -258,7 +258,7 @@ export class AfipService {
     const tra = this.buildTRA(service);
     const cms = this.signTRA(tra, config.cert, config.privateKey);
 
-    const wsaaClient = await soap.createClientAsync(WSAA_WSDL[env]);
+    const wsaaClient = await createAfipSoapClient(WSAA_WSDL[env]);
     let loginResult: any;
     try {
       [loginResult] = await (wsaaClient as any).loginCmsAsync({ in0: cms });
@@ -293,7 +293,7 @@ export class AfipService {
     const env = config.isProduction ? 'prod' : 'test';
     const ta = await this.getTA(config, 'ws_sr_constancia_inscripcion');
 
-    const client = await soap.createClientAsync(PADRON_WSDL[env]);
+    const client = await createAfipSoapClient(PADRON_WSDL[env]);
     let result: any;
     try {
       [result] = await (client as any).getPersonaAsync({
@@ -366,7 +366,7 @@ export class AfipService {
     try {
       const env = config.isProduction ? 'prod' : 'test';
       // 1. Test WSFE server status (no auth needed)
-      const wsfeClient = await soap.createClientAsync(WSFE_WSDL[env]);
+      const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
       const [dummyRes] = await (wsfeClient as any).FEDummyAsync({});
       const d = dummyRes?.FEDummyResult;
       if (!(d?.AppServer === 'OK' && d?.DbServer === 'OK' && d?.AuthServer === 'OK')) {
@@ -398,7 +398,7 @@ export class AfipService {
 
     const ta = await this.getTA(config);
     const env = config.isProduction ? 'prod' : 'test';
-    const wsfeClient = await soap.createClientAsync(WSFE_WSDL[env]);
+    const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
     const auth = { Token: ta.token, Sign: ta.sign, Cuit: config.cuit };
 
     const docTipo = DOC_TIPO_MAP[invoice.customer.taxCondition] ?? 99;
