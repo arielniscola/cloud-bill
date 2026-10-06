@@ -203,9 +203,67 @@ export class AfipService {
   }
 
   /** Sign TRA with PKCS7 (CMS) using the private key + certificate */
+  /**
+   * Parsea y valida certificado + clave PEM con mensajes entendibles. El error típico es
+   * pegar el CSR ("CERTIFICATE REQUEST") o la clave en el campo del certificado.
+   * Si se pasan ambos, verifica que la clave corresponda al certificado.
+   */
+  parseCredentials(certPem?: string | null, keyPem?: string | null): {
+    cert?: forge.pki.Certificate;
+    key?: forge.pki.rsa.PrivateKey;
+  } {
+    const header = (pem: string) => pem.match(/-----BEGIN ([A-Z0-9 ]+)-----/)?.[1] ?? null;
+    let cert: forge.pki.Certificate | undefined;
+    let key: forge.pki.rsa.PrivateKey | undefined;
+
+    if (certPem?.trim()) {
+      const h = header(certPem);
+      if (h !== 'CERTIFICATE') {
+        const hint =
+          h === null ? 'no tiene la línea "-----BEGIN CERTIFICATE-----" (¿se pegó incompleto o en formato binario/DER?)'
+          : h === 'CERTIFICATE REQUEST' || h === 'NEW CERTIFICATE REQUEST'
+            ? 'es el pedido de certificado (CSR), no el certificado. Descargá el .crt que genera ARCA en "Administración de Certificados Digitales" y pegá ese'
+          : h.includes('PRIVATE KEY') ? 'es una clave privada; va en el campo "Clave Privada"'
+          : `tiene encabezado "${h}"`;
+        throw new Error(`El certificado de ARCA es inválido: ${hint}.`);
+      }
+      try {
+        cert = forge.pki.certificateFromPem(certPem.trim());
+      } catch (e: any) {
+        throw new Error(`El certificado de ARCA no se pudo leer: ${e.message}`);
+      }
+    }
+
+    if (keyPem?.trim()) {
+      const h = header(keyPem);
+      if (h === 'ENCRYPTED PRIVATE KEY' || /Proc-Type: 4,ENCRYPTED/.test(keyPem)) {
+        throw new Error('La clave privada está protegida con contraseña; exportala sin contraseña.');
+      }
+      if (h !== 'RSA PRIVATE KEY' && h !== 'PRIVATE KEY') {
+        const hint = h === 'CERTIFICATE' ? 'es un certificado; va en el campo "Certificado"'
+          : h === null ? 'no tiene la línea "-----BEGIN ... PRIVATE KEY-----"'
+          : `tiene encabezado "${h}"`;
+        throw new Error(`La clave privada de ARCA es inválida: ${hint}.`);
+      }
+      try {
+        key = forge.pki.privateKeyFromPem(keyPem.trim()) as forge.pki.rsa.PrivateKey;
+      } catch (e: any) {
+        throw new Error(`La clave privada de ARCA no se pudo leer: ${e.message}`);
+      }
+    }
+
+    if (cert && key) {
+      const pub = cert.publicKey as forge.pki.rsa.PublicKey;
+      if (!pub.n || pub.n.compareTo(key.n) !== 0) {
+        throw new Error('La clave privada no corresponde al certificado (fue generado con otro CSR/clave).');
+      }
+    }
+    return { cert, key };
+  }
+
   private signTRA(traXml: string, certPem: string, keyPem: string): string {
-    const cert = forge.pki.certificateFromPem(certPem);
-    const key = forge.pki.privateKeyFromPem(keyPem);
+    const { cert, key } = this.parseCredentials(certPem, keyPem);
+    if (!cert || !key) throw new Error('Falta el certificado o la clave privada de ARCA.');
     const p7 = forge.pkcs7.createSignedData();
     p7.content = forge.util.createBuffer(traXml, 'utf8');
     p7.addCertificate(cert);

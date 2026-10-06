@@ -58,6 +58,13 @@ export class AfipController {
         ? Number(salePoint)
         : (existing?.salePoint ?? 1);
 
+      // Validar lo que se pegó antes de guardarlo (el campo vacío conserva el actual)
+      try {
+        afipService.parseCredentials(cert || existing?.cert, privateKey || existing?.privateKey);
+      } catch (e: any) {
+        throw new AppError(e.message, 400);
+      }
+
       const config = await repo.upsert({
         cuit,
         salePoint: resolvedSalePoint,
