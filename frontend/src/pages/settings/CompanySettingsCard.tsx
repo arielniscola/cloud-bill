@@ -152,6 +152,25 @@ function CompanyFormModal({ isOpen, onClose, onSave, editing }: CompanyFormModal
           <Input label="Teléfono" value={form.phone ?? ''} onChange={f('phone')} />
         </div>
         <Input label="Email" type="email" value={form.email ?? ''} onChange={f('email')} />
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <Input
+              label="Logo (URL)"
+              type="url"
+              placeholder="https://…/logos/mi-empresa.png"
+              value={form.logoUrl ?? ''}
+              onChange={f('logoUrl')}
+            />
+          </div>
+          {form.logoUrl && (
+            <div className="w-12 h-12 rounded-lg border border-gray-200 dark:border-slate-700 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+              <img src={form.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+          )}
+        </div>
+        <p className="-mt-2 text-xs text-gray-500 dark:text-slate-400">
+          PNG o JPG del mismo dominio de la app (p. ej. subido a <code>public/logos/</code>). Sale en facturas, recibos y órdenes de pago.
+        </p>
         {editing && (
           <div className="flex items-center gap-2">
             <input

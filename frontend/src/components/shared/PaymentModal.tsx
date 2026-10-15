@@ -4,24 +4,25 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   Banknote, XCircle, Info, RefreshCw,
-  ArrowLeftRight, CreditCard, FileText, Smartphone, CheckCircle2,
+  ArrowLeftRight, CreditCard, FileText, Smartphone, CheckCircle2, Wallet,
 } from 'lucide-react';
 import { Modal, Button, Input, Select, Textarea } from '../ui';
-import BancoSelect, { useBancos, findBancoByName } from './BancoSelect';
+import BancoSelect from './BancoSelect';
+import { useBancos, findBancoByName } from './bancosCatalog';
 import ChequeNumberInput from './ChequeNumberInput';
-import { cashRegistersService, appSettingsService, cardsService } from '../../services';
+import { cashRegistersService, appSettingsService, cardsService, currentAccountsService } from '../../services';
 import bankService from '../../services/bank.service';
 import { formatCurrency } from '../../utils/formatters';
 import { useExchangeRate } from '../../hooks/useExchangeRate';
 import { toArs, isForeign } from '../../utils/currencyConversion';
-import type { CreateReciboDTO, CashRegister } from '../../types';
+import type { CreateReciboDTO, CashRegister, CustomerCredit } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
 import type { Card } from '../../types/card.types';
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive('El monto debe ser mayor a 0'),
   exchangeRate: z.coerce.number().positive('La cotización debe ser mayor a 0').default(1),
-  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD', 'COMPENSACION']),
   cashRegisterId: z.string().optional().nullable(),
   bankAccountId: z.string().optional().nullable(),
   reference: z.string().optional().nullable(),
@@ -32,6 +33,10 @@ const paymentSchema = z.object({
   cardId: z.string().optional().nullable(),
   surchargePercent: z.coerce.number().min(0).optional().nullable(),
   surchargeAmount: z.coerce.number().min(0).optional().nullable(),
+  discountAmount: z.coerce.number().min(0, 'No puede ser negativo').optional().nullable(),
+  interestAmount: z.coerce.number().min(0, 'No puede ser negativo').optional().nullable(),
+  /** Saldo a favor elegido: `INVOICE:<id>` o `MOVEMENT:<id>`. */
+  creditKey: z.string().optional().nullable(),
 });
 
 type PaymentFormData = z.infer<typeof paymentSchema>;
@@ -47,6 +52,10 @@ const METHODS: Array<{
   { value: 'MERCADO_PAGO',  label: 'Mercado Pago',   icon: <Smartphone className="w-4 h-4" /> },
   { value: 'CHECK',         label: 'Cheque',         icon: <FileText className="w-4 h-4" /> },
 ];
+
+const CREDIT_METHOD = { value: 'COMPENSACION' as const, label: 'Saldo a favor', icon: <Wallet className="w-4 h-4" /> };
+const creditKeyOf = (c: CustomerCredit) =>
+  c.creditInvoiceId ? `INVOICE:${c.creditInvoiceId}` : `MOVEMENT:${c.creditMovementId}`;
 
 // Methods that need a cash register destination — MP va a su propia cuenta,
 // no a caja física.
@@ -69,6 +78,10 @@ interface PaymentModalProps {
   paidCount?: number;
   /** Medio con el que abre el modal (por defecto efectivo). */
   defaultPaymentMethod?: PaymentFormData['paymentMethod'];
+  /** Cliente del comprobante: habilita "Saldo a favor" (NC, NC internas, pagos a cuenta). */
+  customerId?: string | null;
+  /** Habilita descuento cedido / recargo en el cobro (solo cobro de facturas). */
+  allowAdjustments?: boolean;
 }
 
 export function PaymentModal({
@@ -84,6 +97,8 @@ export function PaymentModal({
   total,
   paidCount,
   defaultPaymentMethod = 'CASH',
+  customerId,
+  allowAdjustments = false,
 }: PaymentModalProps) {
   const isRefund = mode === 'refund';
   const L = {
@@ -111,6 +126,8 @@ export function PaymentModal({
   const [cards, setCards] = useState<Card[]>([]);
   const [loadingCR, setLoadingCR] = useState(false);
   const [loadingRate, setLoadingRate] = useState(false);
+  const [credits, setCredits] = useState<CustomerCredit[]>([]);
+  const [showAdjustments, setShowAdjustments] = useState(false);
 
   const {
     register,
@@ -138,8 +155,16 @@ export function PaymentModal({
   const amount = watch('amount') || 0;
   const exchangeRate = watch('exchangeRate') || 1;
   const arsEquivalent = isUSD ? amount * exchangeRate : 0;
-  const afterPayment = Math.max(0, remaining - amount);
-  const isFullPayment = amount > 0 && afterPayment === 0;
+  const discountAmount = Number(watch('discountAmount') || 0);
+  const interestAmount = Number(watch('interestAmount') || 0);
+  // Lo que el cobro aplica a la factura: plata + descuento cedido − recargo.
+  const applied = Math.round((Number(amount) + discountAmount - interestAmount) * 100) / 100;
+  const afterPayment = Math.max(0, Math.round((remaining - applied) * 100) / 100);
+  const isFullPayment = applied > 0 && afterPayment === 0;
+  const isCompensation = watch('paymentMethod') === 'COMPENSACION';
+  const selectedCredit = credits.find((c) => creditKeyOf(c) === watch('creditKey')) ?? null;
+  const fullAmount = Math.max(0, Math.round((remaining - discountAmount + interestAmount) * 100) / 100);
+  const suggestedAmount = isCompensation && selectedCredit ? Math.min(fullAmount, selectedCredit.balance) : fullAmount;
 
   const selectedCardId = watch('cardId');
   const selectedCard = cards.find((c) => c.id === selectedCardId) ?? null;
@@ -181,7 +206,17 @@ export function PaymentModal({
       cardId: null,
       surchargePercent: null,
       surchargeAmount: null,
+      discountAmount: null,
+      interestAmount: null,
+      creditKey: null,
     });
+    setShowAdjustments(false);
+    setCredits([]);
+    if (customerId && !isRefund) {
+      currentAccountsService.getCredits(customerId, currency)
+        .then((list) => setCredits(list))
+        .catch(() => setCredits([]));
+    }
     setLoadingCR(true);
     Promise.all([
       cashRegistersService.getAll(true),
@@ -227,6 +262,13 @@ export function PaymentModal({
     if (needsCaja && cashRegisters.length > 0 && !watch('cashRegisterId')) {
       setValue('cashRegisterId', cashRegisters[0].id);
     }
+    if (paymentMethod === 'COMPENSACION') {
+      const first = credits[0];
+      if (first && !watch('creditKey')) {
+        setValue('creditKey', creditKeyOf(first));
+        setValue('amount', Math.min(Number(watch('amount') || 0) || remaining, first.balance));
+      }
+    }
     if (paymentMethod !== 'CARD') {
       setValue('cardId', null);
       setValue('surchargePercent', null);
@@ -257,6 +299,7 @@ export function PaymentModal({
 
   const handleFormSubmit = async (data: PaymentFormData) => {
     const isCard = data.paymentMethod === 'CARD';
+    const credit = data.paymentMethod === 'COMPENSACION' ? selectedCredit : null;
     await onSubmit({
       amount: data.amount,
       exchangeRate: isUSD ? data.exchangeRate : undefined,
@@ -271,13 +314,20 @@ export function PaymentModal({
       cardId: isCard ? (data.cardId || null) : null,
       surchargePercent: isCard ? (data.surchargePercent || null) : null,
       surchargeAmount: isCard ? (surchargeAmount || null) : null,
+      discountAmount: allowAdjustments ? (Number(data.discountAmount) || 0) : 0,
+      interestAmount: allowAdjustments ? (Number(data.interestAmount) || 0) : 0,
+      creditInvoiceId: credit?.creditInvoiceId ?? null,
+      creditMovementId: credit?.creditMovementId ?? null,
     } as any);
   };
 
   // Determine if submit should be disabled
   const submitDisabled =
     (needsCaja && cashRegisters.length === 0) ||
-    (needsBanco && bankAccounts.length === 0);
+    (needsBanco && bankAccounts.length === 0) ||
+    (isCompensation && (!selectedCredit || amount > selectedCredit.balance + 0.005)) ||
+    applied <= 0 || applied > remaining + 0.005;
+  const methods = credits.length > 0 ? [...METHODS, CREDIT_METHOD] : METHODS;
 
   return (
     <Modal isOpen={open} onClose={onClose} title={L.title} size="md">
@@ -373,10 +423,10 @@ export function PaymentModal({
             <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
               {isUSD ? `${L.amount} (USD)` : L.amount}
             </label>
-            {amount !== remaining && remaining > 0 && (
+            {Number(amount) !== suggestedAmount && suggestedAmount > 0 && (
               <button
                 type="button"
-                onClick={() => setValue('amount', remaining)}
+                onClick={() => setValue('amount', suggestedAmount)}
                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 font-medium transition-colors"
               >
                 {L.total}
@@ -387,19 +437,66 @@ export function PaymentModal({
             type="number"
             step="0.01"
             min="0.01"
-            max={remaining}
             {...register('amount')}
             error={errors.amount?.message}
           />
+          {applied > remaining + 0.005 && (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+              Lo aplicado ({money(applied)}) supera el saldo pendiente.
+            </p>
+          )}
         </div>
+
+        {/* ── Descuento cedido / recargo ── */}
+        {allowAdjustments && !isRefund && (
+          showAdjustments ? (
+            <div className="rounded-xl border border-gray-200 dark:border-slate-600 p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Descuento cedido"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0,00"
+                  {...register('discountAmount')}
+                  error={errors.discountAmount?.message}
+                />
+                <Input
+                  label="Recargo / interés"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0,00"
+                  {...register('interestAmount')}
+                  error={errors.interestAmount?.message}
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                El descuento cancela deuda sin cobrarla; el recargo se suma a lo que paga el cliente.
+                Los dos quedan como movimientos propios en la cuenta corriente.
+                {(discountAmount > 0 || interestAmount > 0) && (
+                  <> Aplicado a la factura: <strong className="tabular-nums">{money(applied)}</strong>.</>
+                )}
+              </p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAdjustments(true)}
+              className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200"
+            >
+              + Descuento o recargo
+            </button>
+          )
+        )}
 
         {/* ── Payment method ── */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
             Método de pago
           </label>
-          <div className="grid grid-cols-5 gap-2">
-            {METHODS.map((m) => {
+          <div className={`grid gap-2 ${methods.length > 5 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-5'}`}>
+            {methods.map((m) => {
               const active = paymentMethod === m.value;
               return (
                 <button
@@ -462,6 +559,35 @@ export function PaymentModal({
               onChange={(val) => setValue('bankAccountId', val || null)}
             />
           )
+        )}
+
+        {/* ── Saldo a favor (compensación) ── */}
+        {isCompensation && (
+          <div className="space-y-2">
+            <Select
+              label="Saldo a favor a aplicar"
+              options={credits.map((c) => ({
+                value: creditKeyOf(c),
+                label: `${c.number} — disponible ${formatCurrency(c.balance, c.currency)}`,
+              }))}
+              value={watch('creditKey') ?? ''}
+              onChange={(val) => {
+                setValue('creditKey', val || null);
+                const c = credits.find((x) => creditKeyOf(x) === val);
+                if (c && Number(watch('amount')) > c.balance) setValue('amount', Math.min(c.balance, fullAmount));
+              }}
+            />
+            <div className="flex items-start gap-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3">
+              <Info className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-emerald-800 dark:text-emerald-300">
+                Se emite un recibo de <strong>compensación</strong>: aplica el crédito del cliente a esta factura
+                sin mover caja ni banco.
+                {selectedCredit && amount > selectedCredit.balance + 0.005 && (
+                  <> El monto supera lo disponible ({formatCurrency(selectedCredit.balance, selectedCredit.currency)}).</>
+                )}
+              </p>
+            </div>
+          </div>
         )}
 
         {/* ── Mercado Pago notice ── */}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 /**
@@ -28,7 +28,8 @@ export function useUrlFilters<T extends Record<string, string>>(defaults: T) {
   // filtro se escribía y se borraba en el mismo tick. Este ref guarda lo último
   // escrito para que las llamadas encadenadas compongan.
   const latestRef = useRef<URLSearchParams | null>(null);
-  latestRef.current = searchParams;
+  // En un layout effect (no durante el render): corre antes de cualquier handler.
+  useLayoutEffect(() => { latestRef.current = searchParams; }, [searchParams]);
 
   const values = useMemo(() => {
     const out = { ...initialDefaults };

@@ -169,9 +169,10 @@ export const PAYMENT_METHODS = {
   MERCADO_PAGO: 'Mercado Pago',
   CHECK: 'Cheque',
   CARD: 'Tarjeta',
-  // Exclusivo de Órdenes de Pago (ver OP_PAYMENT_METHOD_OPTIONS) — no aparece en
-  // cobros a clientes ni en filtros de reportes.
-  COMPENSACION: 'Compensación Cli/Prov',
+  // En Órdenes de Pago es la compensación cliente/proveedor; en recibos de cliente,
+  // la aplicación de saldo a favor (NC, NC interna, pago a cuenta). No se ofrece
+  // como medio de cobro común ni en filtros de reportes.
+  COMPENSACION: 'Compensación',
 } as const;
 
 /** AFIP: ventas en efectivo > este monto requieren identificar al cliente */
@@ -185,7 +186,7 @@ export const PAYMENT_METHOD_OPTIONS = Object.entries(PAYMENT_METHODS)
 // igual que Cheque) además de los métodos generales.
 export const OP_PAYMENT_METHOD_OPTIONS = [
   ...PAYMENT_METHOD_OPTIONS,
-  { value: 'COMPENSACION', label: PAYMENT_METHODS.COMPENSACION },
+  { value: 'COMPENSACION', label: 'Compensación Cli/Prov' },
 ];
 
 export const RECIBO_STATUSES = {

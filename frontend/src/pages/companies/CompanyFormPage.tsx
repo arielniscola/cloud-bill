@@ -7,7 +7,8 @@ import { CuitInput } from '../../components/shared';
 import companiesService from '../../services/companies.service';
 import type { CreateCompanyDTO, UpdateCompanyDTO } from '../../types/company.types';
 import { PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, type PlanName } from '../../utils/planFeatures';
-import { useCompanyStore } from '../../stores/company.store';
+import { useCompanyStore } from '../../stores/company.store';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const TAX_OPTIONS = [
   { value: 'RESPONSABLE_INSCRIPTO', label: 'Responsable Inscripto' },
@@ -86,8 +87,8 @@ export default function CompanyFormPage() {
         return;
       }
       navigate('/companies');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al guardar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al guardar');
     } finally {
       setIsSaving(false);
     }

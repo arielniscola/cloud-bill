@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Save, RefreshCw, CheckSquare, Square, ChevronDown, X, Wand2, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -99,7 +98,6 @@ const ctrlCls = 'w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 
 
 // ── Main page ─────────────────────────────────────────────────────
 export default function BulkProductUpdatePage() {
-  const navigate = useNavigate();
 
   // Filters
   const [supplierId, setSupplierId] = useState('');
@@ -182,7 +180,7 @@ export default function BulkProductUpdatePage() {
   const allSelected = products.length > 0 && products.every((p) => selected.has(p.id));
   const toggle = (id: string) => {
     setSelectAllByFilter(false);
-    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
   const toggleAll = () => {
     setSelectAllByFilter(false);

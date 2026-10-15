@@ -45,13 +45,10 @@ export { default as CsvImportModal } from './CsvImportModal';
 export { default as CuitInput } from './CuitInput';
 export { ReceiveOrdenCompraModal } from './ReceiveOrdenCompraModal';
 export { AddPurchaseInvoiceModal } from './AddPurchaseInvoiceModal';
-export { default as BancoSelect, useBancos, findBancoByName, refreshBancos } from './BancoSelect';
-export {
-  default as ChequeNumberInput,
-  parseChequeNumber,
-  joinChequeNumber,
-  formatChequeNumber,
-} from './ChequeNumberInput';
+export { default as BancoSelect } from './BancoSelect';
+export { useBancos, findBancoByName, refreshBancos } from './bancosCatalog';
+export { default as ChequeNumberInput } from './ChequeNumberInput';
+export { parseChequeNumber, joinChequeNumber, formatChequeNumber } from '../../utils/chequeNumber';
 export { default as CreateCustomerModal } from './CreateCustomerModal';
 export { default as FeatureGuard } from './FeatureGuard';
 

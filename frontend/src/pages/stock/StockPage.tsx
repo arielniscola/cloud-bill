@@ -14,7 +14,6 @@ import { usePermissions } from '../../hooks/usePermissions';
 
 // ── Types ──────────────────────────────────────────────────────────
 type Tab = 'list' | 'by_warehouse';
-type StockStatus = 'out_of_stock' | 'low_stock' | 'with_reserves' | 'normal' | 'no_minimum';
 
 // ── Helpers ────────────────────────────────────────────────────────
 function getStatus(stock: Stock): 'out_of_stock' | 'low_stock' | 'with_reserves' | 'normal' {

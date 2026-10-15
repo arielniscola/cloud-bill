@@ -26,13 +26,18 @@ export interface Remito {
   invoiceId: string | null;
   budgetId: string | null;
   ordenPedidoId: string | null;
-  invoice?: { id: string; number: string; type: string } | null;
+  invoice?: {
+    id: string; number: string; type: string;
+    afipPtVenta?: number | null; afipCbtNum?: number | null;
+    saleCondition?: string; paymentTerms?: string | null;
+  } | null;
   budget?: { id: string; number: string } | null;
   date: string;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
   fiscalMode?: string;
   notes: string | null;
+  transport?: string | null;
   items: RemitoItem[];
   createdAt: string;
   updatedAt: string;
@@ -41,6 +46,7 @@ export interface Remito {
 export interface CreateRemitoDTO {
   customerId: string;
   notes?: string;
+  transport?: string | null;
   invoiceId?: string;
   budgetId?: string;
   items: { productId: string; variantId?: string | null; quantity: number }[];

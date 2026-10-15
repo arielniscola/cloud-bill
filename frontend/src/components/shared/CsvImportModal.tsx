@@ -123,7 +123,7 @@ function parsePreview(text: string): Preview {
 const CHUNK_SIZE = 200;
 
 function splitCsvLines(text: string): { header: string; dataLines: string[] } {
-  const clean = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const clean = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = clean.split('\n').filter((l) => l.trim().length > 0);
   return { header: lines[0] ?? '', dataLines: lines.slice(1) };
 }

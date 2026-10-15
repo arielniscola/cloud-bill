@@ -7,6 +7,7 @@ import { PageHeader, FeatureGuard } from '../../components/shared';
 import { accountingService } from '../../services/accounting.service';
 import { formatCurrency } from '../../utils/formatters';
 import type { Account, CreateJournalEntryLineDTO } from '../../types/accounting.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 interface LineRow extends CreateJournalEntryLineDTO {
   key: number;
@@ -86,8 +87,8 @@ function JournalEntryFormContent() {
       });
       toast.success(`Asiento ${entry.number} creado`);
       navigate(`/accounting/journal-entries/${entry.id}`);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al crear el asiento');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al crear el asiento');
     } finally {
       setIsSaving(false);
     }

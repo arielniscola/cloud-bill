@@ -7,7 +7,7 @@ import pdvService from '../../services/pdv.service';
 import usersService from '../../services/users.service';
 import type { PuntoDeVenta } from '../../types/pdv.types';
 import type { UserDTO } from '../../services/users.service';
-import { useAuthStore } from '../../stores';
+import { apiErrorMessage } from '../../utils/apiError';
 
 // ── PdV Form Modal ────────────────────────────────────────────────────────────
 interface PdvFormModalProps {
@@ -52,8 +52,8 @@ function PdvFormModal({ isOpen, onClose, onSave, editing }: PdvFormModalProps) {
       }
       onSave();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al guardar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al guardar');
     } finally {
       setIsSaving(false);
     }
@@ -114,8 +114,8 @@ function AssignUserModal({ isOpen, onClose, onSave, pdv, allUsers }: AssignModal
       toast.success('Usuario asignado');
       onSave();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al asignar usuario');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al asignar usuario');
     } finally {
       setIsSaving(false);
     }
@@ -154,7 +154,6 @@ function AssignUserModal({ isOpen, onClose, onSave, pdv, allUsers }: AssignModal
 
 // ── Main Card ─────────────────────────────────────────────────────────────────
 export default function PdvSettingsCard() {
-  const { user } = useAuthStore();
   const [pdvs, setPdvs] = useState<PuntoDeVenta[]>([]);
   const [users, setUsers] = useState<UserDTO[]>([]);
   const [isLoading, setIsLoading] = useState(true);

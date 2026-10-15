@@ -12,7 +12,9 @@ import { Button, Modal, Input } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import Pagination from '../../components/shared/Pagination';
 import { LoadingOverlay } from '../../components/ui/Spinner';
-import { currentAccountsService, customersService } from '../../services';
+import { currentAccountsService, customersService, cashRegistersService } from '../../services';
+import bankService from '../../services/bank.service';
+import type { BankAccount } from '../../types/bank.types';
 import CreateInternalNoteModal from '../internal-notes/CreateInternalNoteModal';
 import { formatCurrency, formatCuit } from '../../utils/formatters';
 import { useExchangeRate } from '../../hooks/useExchangeRate';
@@ -23,7 +25,7 @@ import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import type {
   Customer, CurrentAccount, AccountMovement, Currency, TaxCondition,
-  MovementType, MovementOrigin, CurrentAccountSummary,
+  MovementType, MovementOrigin, CurrentAccountSummary, CashRegister,
 } from '../../types';
 
 // ── Avatar helper ────────────────────────────────────────────────
@@ -266,10 +268,24 @@ function BehaviourCard({ summary, currency, isLoading }: { summary: CurrentAccou
 }
 
 // ── Schemas ──────────────────────────────────────────────────────
+// Pago a cuenta: genera un recibo sin factura (entra a caja o banco según el medio)
+// y queda como saldo a favor, aplicable después a facturas al cobrarlas.
 const paymentSchema = z.object({
-  amount:      z.coerce.number().positive('El monto debe ser mayor a 0'),
-  description: z.string().optional(),
+  amount:         z.coerce.number().positive('El monto debe ser mayor a 0'),
+  description:    z.string().optional(),
+  paymentMethod:  z.enum(['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'MERCADO_PAGO']),
+  cashRegisterId: z.string().optional().nullable(),
+  bankAccountId:  z.string().optional().nullable(),
+  reference:      z.string().optional().nullable(),
 });
+
+const PAGO_A_CUENTA_METHODS = [
+  { value: 'CASH', label: 'Efectivo' },
+  { value: 'BANK_TRANSFER', label: 'Transferencia' },
+  { value: 'CHECK', label: 'Cheque' },
+  { value: 'CARD', label: 'Tarjeta' },
+  { value: 'MERCADO_PAGO', label: 'Mercado Pago' },
+];
 const creditLimitSchema = z.object({
   creditLimit: z.coerce.number().min(0, 'Debe ser mayor o igual a 0').nullable(),
 });
@@ -317,7 +333,7 @@ export default function AccountDetailPage() {
   const [movements, setMovements] = useState<AccountMovement[]>([]);
   const [summary,   setSummary]   = useState<CurrentAccountSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency>('ARS');
+  const [selectedCurrency] = useState<Currency>('ARS');
   // Cotización del día: la cuenta corriente se lee íntegramente en pesos.
   const er = useExchangeRate();
   const [paymentCurrency,  setPaymentCurrency]  = useState<Currency>('ARS');
@@ -344,7 +360,11 @@ export default function AccountDetailPage() {
 
   const paymentForm = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema) as any,
+    defaultValues: { paymentMethod: 'CASH' },
   });
+  const payMethod = paymentForm.watch('paymentMethod');
+  const [cashRegisters, setCashRegisters] = useState<CashRegister[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const creditForm = useForm<CreditLimitFormData>({
     resolver: zodResolver(creditLimitSchema) as any,
   });
@@ -400,9 +420,19 @@ export default function AccountDetailPage() {
   }, [movements]);
 
   const openPaymentModal = () => {
-    paymentForm.reset();
+    paymentForm.reset({ paymentMethod: 'CASH', cashRegisterId: null, bankAccountId: null });
     setPaymentCurrency(selectedCurrency);
     setIsPaymentModalOpen(true);
+    Promise.all([
+      cashRegistersService.getAll(true).catch(() => []),
+      bankService.getAll().catch(() => []),
+    ]).then(([crs, banks]) => {
+      setCashRegisters(crs as CashRegister[]);
+      const activeBanks = (banks as BankAccount[]).filter((b) => b.isActive);
+      setBankAccounts(activeBanks);
+      paymentForm.setValue('cashRegisterId', (crs as CashRegister[])[0]?.id ?? null);
+      paymentForm.setValue('bankAccountId', activeBanks[0]?.id ?? null);
+    });
   };
 
   const openCreditModal = () => {
@@ -415,8 +445,17 @@ export default function AccountDetailPage() {
     if (!customerId) return;
     setIsSaving(true);
     try {
-      await currentAccountsService.registerPayment(customerId, { ...data, currency: paymentCurrency });
-      toast.success('Pago registrado');
+      const usesCaja = data.paymentMethod === 'CASH' || data.paymentMethod === 'CARD';
+      const result = await currentAccountsService.registerPayment(customerId, {
+        amount: data.amount,
+        description: data.description,
+        currency: paymentCurrency,
+        paymentMethod: data.paymentMethod,
+        cashRegisterId: usesCaja ? (data.cashRegisterId || null) : null,
+        bankAccountId: data.paymentMethod === 'BANK_TRANSFER' ? (data.bankAccountId || null) : null,
+        reference: data.reference || null,
+      });
+      toast.success(result.recibo ? `Pago a cuenta registrado (${result.recibo.number})` : 'Pago registrado');
       setIsPaymentModalOpen(false);
       paymentForm.reset();
       fetchData();
@@ -862,7 +901,7 @@ export default function AccountDetailPage() {
       </div>
 
       {/* ── Payment modal ── */}
-      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Registrar pago">
+      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Registrar pago a cuenta">
         <form onSubmit={paymentForm.handleSubmit(handlePayment)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Moneda</label>
@@ -894,11 +933,60 @@ export default function AccountDetailPage() {
             error={paymentForm.formState.errors.amount?.message}
           />
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Medio de pago</label>
+            <select
+              className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+              {...paymentForm.register('paymentMethod')}
+            >
+              {PAGO_A_CUENTA_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+
+          {(payMethod === 'CASH' || payMethod === 'CARD') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Caja destino</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                {...paymentForm.register('cashRegisterId')}
+              >
+                {cashRegisters.length === 0 && <option value="">Sin cajas activas</option>}
+                {cashRegisters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {payMethod === 'BANK_TRANSFER' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Cuenta bancaria destino</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                {...paymentForm.register('bankAccountId')}
+              >
+                {bankAccounts.length === 0 && <option value="">Sin cuentas activas</option>}
+                {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.bank}</option>)}
+              </select>
+            </div>
+          )}
+
+          {payMethod !== 'CASH' && (
+            <Input
+              label={payMethod === 'CHECK' ? 'N° de cheque' : 'N° de referencia'}
+              placeholder="Opcional"
+              {...paymentForm.register('reference')}
+            />
+          )}
+
           <Input
             label="Descripción"
-            placeholder="Ej: Pago en efectivo, transferencia…"
+            placeholder="Ej: Adelanto, seña…"
             {...paymentForm.register('description')}
           />
+
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            Se emite un recibo sin factura. Queda como saldo a favor del cliente y se aplica a sus facturas
+            al cobrarlas con "Saldo a favor".
+          </p>
 
           <div className="flex gap-3 pt-2">
             <Button type="submit" isLoading={isSaving}>Registrar pago</Button>

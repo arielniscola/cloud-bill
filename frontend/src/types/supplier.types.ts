@@ -3,6 +3,8 @@ import type { RetentionType } from './purchase.types';
 
 export interface Supplier {
   id: string;
+  /** Código visible correlativo por empresa (lo asigna el alta). */
+  code?: number | null;
   name: string;
   cuit: string | null;
   taxCondition: TaxCondition;

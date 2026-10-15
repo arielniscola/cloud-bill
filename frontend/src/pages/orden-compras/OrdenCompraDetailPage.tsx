@@ -8,7 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog, ReceiveOrdenCompraModal } from '../../components/shared';
-import { ordenComprasService, purchasesService } from '../../services';
+import { ordenComprasService} from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import type { OrdenCompra, OrdenCompraStatus } from '../../types';
 

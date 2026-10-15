@@ -10,6 +10,7 @@ import type {
   Currency,
   ApiResponse,
   PaginatedResponse,
+  CustomerCredit,
 } from '../types';
 
 export const currentAccountsService = {
@@ -39,13 +40,23 @@ export const currentAccountsService = {
     return response.data;
   },
 
+  /** Pago a cuenta: genera un recibo sin factura (caja/banco según el medio). */
   async registerPayment(
     customerId: string,
     data: RegisterPaymentDTO
-  ): Promise<AccountMovement> {
-    const response = await api.post<ApiResponse<AccountMovement>>(
+  ): Promise<AccountMovement & { recibo?: { id: string; number: string } }> {
+    const response = await api.post<ApiResponse<AccountMovement> & { recibo?: { id: string; number: string } }>(
       `/current-accounts/customer/${customerId}/payment`,
       data
+    );
+    return { ...response.data.data, recibo: response.data.recibo };
+  },
+
+  /** Saldo a favor aplicable a facturas (NC con remanente, NC internas, pagos a cuenta). */
+  async getCredits(customerId: string, currency?: string): Promise<CustomerCredit[]> {
+    const response = await api.get<ApiResponse<CustomerCredit[]>>(
+      `/current-accounts/customer/${customerId}/credits`,
+      { params: { currency } }
     );
     return response.data.data;
   },

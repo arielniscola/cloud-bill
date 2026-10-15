@@ -6,9 +6,9 @@ import {
   Trash2, Pencil, BookText, ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Badge, Button, Select } from '../../components/ui';
+import { Button, Select } from '../../components/ui';
 import {
-  PageHeader, SearchInput, Pagination, BancoSelect, ChequeNumberInput,
+  PageHeader, Pagination, BancoSelect, ChequeNumberInput,
   useBancos, findBancoByName, joinChequeNumber, parseChequeNumber, formatChequeNumber,
 } from '../../components/shared';
 import { recibosService, customersService, cashRegistersService, bankService, suppliersService } from '../../services';
@@ -23,6 +23,7 @@ import {
 } from '../../types/cheque.types';
 import type { Recibo, CheckStatus, Customer } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 function isOverdue(recibo: Recibo): boolean {
@@ -87,8 +88,8 @@ function DepositModal({
       onDeposited(updated);
       toast.success('Cheque depositado');
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al depositar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al depositar');
     } finally {
       setSaving(false);
     }
@@ -191,8 +192,8 @@ function ChequeFormModal({
       onCreated(created);
       toast.success(`Cheque ${type === 'INGRESO' ? 'ingresado' : 'egresado'} correctamente`);
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al guardar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al guardar');
     } finally {
       setSaving(false);
     }
@@ -577,8 +578,8 @@ function ChequeraFormModal({
       toast.success(existing ? 'Chequera actualizada' : 'Chequera creada');
       onSaved();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al guardar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al guardar');
     } finally {
       setSaving(false);
     }
@@ -943,8 +944,8 @@ export default function BancoCheques() {
       const updated = await recibosService.updateCheckStatus(id, status);
       setChecks((prev) => prev.map((c) => (c.id === id ? updated : c)));
       toast.success(`Estado actualizado`);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Error al actualizar');
+    } catch (error) {
+      toast.error(apiErrorMessage(error) || 'Error al actualizar');
     } finally {
       setUpdatingId(null);
     }
@@ -957,8 +958,8 @@ export default function BancoCheques() {
       const updated = await chequesService.updateStatus(id, status);
       setManualCheques((prev) => prev.map((c) => (c.id === id ? updated : c)));
       toast.success(`Estado actualizado`);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Error al actualizar');
+    } catch (error) {
+      toast.error(apiErrorMessage(error) || 'Error al actualizar');
     } finally {
       setUpdatingManId(null);
     }

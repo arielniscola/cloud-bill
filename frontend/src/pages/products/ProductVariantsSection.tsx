@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Button, Input, Modal } from '../../components/ui';
 import { productVariantsService } from '../../services';
 import type { ProductVariant } from '../../types/product-variant.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 interface Props {
   productId: string | null;
@@ -113,8 +114,8 @@ export default function ProductVariantsSection({ productId, enabled, disabledRea
       setEditingId(null);
       setForm(EMPTY_FORM);
       await load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al guardar variante');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al guardar variante');
     } finally {
       setIsSaving(false);
     }
@@ -139,8 +140,8 @@ export default function ProductVariantsSection({ productId, enabled, disabledRea
       await productVariantsService.delete(id);
       toast.success('Variante eliminada');
       await load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al eliminar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al eliminar');
     }
   };
 
@@ -394,8 +395,8 @@ function BulkVariantsModal({ isOpen, onClose, productId, onCreated }: BulkProps)
       toast.success(`${result.length} variantes creadas`);
       reset();
       onCreated();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al generar variantes');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al generar variantes');
     } finally {
       setIsSaving(false);
     }

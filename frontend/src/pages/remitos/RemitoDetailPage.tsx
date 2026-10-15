@@ -7,7 +7,8 @@ import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
-import { remitosService, afipService } from '../../services';
+import { remitosService } from '../../services';
+import { loadPrintContext, downloadBlob } from '../../utils/printContext';
 import { formatDate, formatCuit } from '../../utils/formatters';
 import { REMITO_STATUSES } from '../../utils/constants';
 import type { Remito } from '../../types';
@@ -58,18 +59,17 @@ export default function RemitoDetailPage() {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
 
+  const generateRemitoPdfBlob = async (r: Remito): Promise<Blob> => {
+    const ctx = await loadPrintContext();
+    return pdf(<RemitoPDF remito={r} ctx={ctx} />).toBlob();
+  };
+
   const handleDownloadPDF = async () => {
     if (!remito) return;
     setIsGeneratingPDF(true);
     try {
-      const afipConfig = await afipService.getConfig();
-      const blob = await pdf(<RemitoPDF remito={remito} afipConfig={afipConfig} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `remito-${remito.number}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const blob = await generateRemitoPdfBlob(remito);
+      downloadBlob(blob, `remito-${remito.number}.pdf`);
     } catch (error: unknown) {
       const err = error as { message?: string };
       toast.error(err.message || 'Error al generar PDF');
@@ -453,7 +453,9 @@ export default function RemitoDetailPage() {
         defaultEmail={(remito as any)?.customer?.email ?? ''}
         documentLabel={remito ? `Remito ${remito.number}` : ''}
         onSend={async (to) => {
-          await remitosService.sendEmail(remito!.id, to);
+          // Adjunta el mismo PDF que se descarga (si falla, el backend arma el suyo).
+          const blob = await generateRemitoPdfBlob(remito!).catch(() => undefined);
+          await remitosService.sendEmail(remito!.id, to, blob);
           toast.success('Correo enviado correctamente');
         }}
       />

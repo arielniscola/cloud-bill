@@ -129,7 +129,7 @@ function UserFormModal({ isOpen, onClose, onSave, editing, companies }: UserForm
                 className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10"
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                minLength={6}
+                minLength={8}
                 required
               />
               <button type="button" onClick={() => setShowPass((v) => !v)}
@@ -137,7 +137,7 @@ function UserFormModal({ isOpen, onClose, onSave, editing, companies }: UserForm
                 {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Mínimo 6 caracteres</p>
+            <p className="text-xs text-gray-400 mt-1">Mínimo 8 caracteres</p>
           </div>
         )}
         <Select label="Rol *" options={ROLE_OPTIONS} value={form.role}
@@ -193,13 +193,13 @@ function ChangePasswordModal({ isOpen, onClose, user }: ChangePasswordModalProps
           <div className="relative">
             <input type={showPass ? 'text' : 'password'}
               className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10"
-              value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} required />
+              value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
             <button type="button" onClick={() => setShowPass((v) => !v)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-1">Mínimo 6 caracteres</p>
+          <p className="text-xs text-gray-400 mt-1">Mínimo 8 caracteres</p>
         </div>
         <div className="flex gap-2 pt-2 justify-end">
           <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>

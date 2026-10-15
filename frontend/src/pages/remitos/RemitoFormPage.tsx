@@ -18,6 +18,7 @@ const remitoItemSchema = z.object({
 const remitoSchema = z.object({
   customerId: z.string().min(1, 'Selecciona un cliente'),
   notes: z.string().optional().nullable(),
+  transport: z.string().optional().nullable(),
   items: z.array(remitoItemSchema).min(1, 'Agrega al menos un item'),
 });
 
@@ -167,6 +168,8 @@ export default function RemitoFormPage() {
       const remito = await remitosService.create({
         customerId: data.customerId,
         notes: data.notes || undefined,
+        // Vacío + factura de origen → el backend hereda el transporte de la factura.
+        transport: data.transport ? data.transport : undefined,
         invoiceId: invoiceId || undefined,
         budgetId: budgetId || undefined,
         items: data.items,
@@ -339,6 +342,13 @@ export default function RemitoFormPage() {
                     {...register('notes')}
                     rows={3}
                     placeholder="Observaciones internas..."
+                  />
+                </div>
+                <div>
+                  <Input
+                    label="Transporte"
+                    placeholder={invoiceId ? 'Vacío = el de la factura' : 'Ej: Transporte propio'}
+                    {...register('transport')}
                   />
                 </div>
               </div>

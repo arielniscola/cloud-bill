@@ -6,7 +6,7 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import {
   Tag, Layers, DollarSign, FileText,
-  Power, Barcode, Ruler, TrendingUp, Boxes,
+  Power, Barcode, Boxes,
 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
@@ -316,7 +316,6 @@ export default function ProductFormPage() {
   const taxRate    = watch('taxRate')    ?? 21;
   const cost       = watch('cost')        ?? 0;
   const price      = watch('price')       ?? 0;
-  const salePriceUSD = watch('salePriceUSD') ?? 0;
   const isActiveVal = watch('isActive');
   const trackStockVal = watch('trackStock');
 

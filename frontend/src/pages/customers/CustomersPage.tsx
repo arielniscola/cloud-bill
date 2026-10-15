@@ -8,7 +8,6 @@ import { customersService } from '../../services';
 import { TAX_CONDITIONS, SALE_CONDITIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { formatCuit } from '../../utils/formatters';
 import type { Customer, TaxCondition } from '../../types';
-import type { DataTableProps } from '../../components/shared/DataTable';
 import DataTable from '../../components/shared/DataTable';
 import type { Column } from '../../components/shared/DataTable';
 

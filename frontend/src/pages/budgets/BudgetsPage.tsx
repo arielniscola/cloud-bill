@@ -10,7 +10,6 @@ import { budgetsService, customersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
-  BUDGET_STATUSES,
   BUDGET_STATUS_OPTIONS,
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';

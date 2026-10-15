@@ -4,13 +4,13 @@ import { ArrowLeft, Eye, EyeOff, ShieldCheck, ShoppingBag, DollarSign, Truck, Ey
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button, Input } from '../../components/ui';
-import { CuitInput } from '../../components/shared';
 import usersService from '../../services/users.service';
 import companiesService from '../../services/companies.service';
 import type { CreateUserDTO, UpdateUserDTO } from '../../services/users.service';
 import type { Company } from '../../types/company.types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuthStore } from '../../stores';
+import { apiErrorMessage } from '../../utils/apiError';
 
 type AssignableRole = 'ADMIN' | 'SELLER' | 'FINANCES' | 'PURCHASES' | 'WAREHOUSE_CLERK';
 
@@ -157,8 +157,8 @@ export default function UserFormPage() {
         toast.success('Usuario creado');
       }
       navigate('/users');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al guardar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al guardar');
     } finally {
       setIsSaving(false);
     }
@@ -220,7 +220,7 @@ export default function UserFormPage() {
                     className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10"
                     value={form.password}
                     onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                    minLength={6}
+                    minLength={8}
                     required
                   />
                   <button type="button" onClick={() => setShowPass(v => !v)}
@@ -228,7 +228,7 @@ export default function UserFormPage() {
                     {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Mínimo 6 caracteres</p>
+                <p className="text-xs text-gray-400 mt-1">Mínimo 8 caracteres</p>
               </div>
             )}
           </div>

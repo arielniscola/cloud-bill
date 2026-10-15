@@ -6,6 +6,7 @@ import { suppliersService } from '../../services';
 import { RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
 import type { SupplierRetention, CreateSupplierRetentionDTO, RetentionBase } from '../../types/supplier.types';
 import type { RetentionType } from '../../types/purchase.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(
   RETENTION_TYPE_OPTIONS.map((o) => [o.value, o.label]),
@@ -99,8 +100,8 @@ export default function SupplierRetentionsTab({ supplierId }: { supplierId: stri
       }
       setIsModalOpen(false);
       await fetchData();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al guardar la retención');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al guardar la retención');
     } finally {
       setIsSaving(false);
     }

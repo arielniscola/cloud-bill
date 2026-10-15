@@ -42,8 +42,27 @@ export interface InvoiceItem {
 
 export type DeliveryStatus = 'NOT_DELIVERED' | 'PARTIALLY_DELIVERED' | 'DELIVERED';
 
+/** NC aplicada a una factura (detalle de la factura). */
+export interface AppliedCreditNote {
+  id: string;
+  number: string;
+  type: string;
+  total: number;
+  status: string;
+  /** Lo que esa NC aplicó a esta factura. */
+  applied: number;
+}
+
 export interface Invoice {
   id: string;
+  /** Cobrado/aplicado (recibos + descuentos − recargos + compensaciones). Lo trae el detalle y el listado. */
+  paidAmount?: number;
+  /** Pendiente de cobro (en una NC: pendiente de devolver o aplicar). Solo el detalle. */
+  pendingAmount?: number;
+  /** NC aplicadas o vinculadas a esta factura. Solo el detalle. */
+  creditNotes?: AppliedCreditNote[];
+  /** Suma de NC emitidas sobre esta factura (listado): marca "Con NC". */
+  creditNotesTotal?: number;
   type: InvoiceType;
   number: string;
   customerId: string;
@@ -62,6 +81,7 @@ export interface Invoice {
   paymentTerms: string | null;
   saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior: 'DISCOUNT' | 'RESERVE';
+  transport?: string | null;
   fiscalMode?: string;
   originInvoiceId: string | null;
   originInvoice?: Invoice;
@@ -95,6 +115,7 @@ export interface CreateInvoiceDTO {
   dueDate?: string | null;
   notes?: string | null;
   paymentTerms?: string | null;
+  transport?: string | null;
   saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior?: 'DISCOUNT' | 'RESERVE';
   originInvoiceId?: string | null;

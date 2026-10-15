@@ -6,6 +6,7 @@ import { Button } from '../ui';
 import { formatCurrency } from '../../utils/formatters';
 import { mercadoPagoService } from '../../services';
 import type { MpPreferenceResult, MpQrResult, CreateMpPreferenceDTO } from '../../types/mercadopago.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 interface Props {
   open: boolean;
@@ -74,8 +75,8 @@ export default function MercadoPagoPayModal({
       if (ordenPedidoId) dto.ordenPedidoId = ordenPedidoId;
       const result = await mercadoPagoService.createPreference(dto);
       setPreference(result);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al generar el link de pago');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al generar el link de pago');
       onClose();
     } finally {
       setIsLoading(false);
@@ -92,8 +93,8 @@ export default function MercadoPagoPayModal({
       if (ordenPedidoId) dto.ordenPedidoId = ordenPedidoId;
       const result = await mercadoPagoService.createQrOrder(dto);
       setQr(result);
-    } catch (err: any) {
-      setQrError(err?.response?.data?.message ?? 'Error al generar el QR presencial');
+    } catch (err) {
+      setQrError(apiErrorMessage(err) ?? 'Error al generar el QR presencial');
     } finally {
       setQrLoading(false);
     }

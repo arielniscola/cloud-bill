@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Smartphone, RefreshCw, Link2, AlertCircle, TrendingUp, TrendingDown,
-  Clock, CheckCircle, ExternalLink, Search,
+  Smartphone, RefreshCw, Link2, TrendingUp, TrendingDown,
+  Clock, CheckCircle, Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PageHeader } from '../../components/shared';
@@ -11,6 +11,7 @@ import { mercadoPagoService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import type { MpMovement, MpBalance } from '../../types/mercadopago.types';
 import LinkMpPaymentModal from './LinkMpPaymentModal';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const MOVEMENT_TYPE_LABEL: Record<string, string> = {
   income:        'Ingreso',
@@ -41,7 +42,7 @@ export default function MercadoPagoPage() {
   const [offset,      setOffset]      = useState(0);
   const [mpPayId,     setMpPayId]     = useState('');
   const [showLink,    setShowLink]    = useState(false);
-  const [linkMov,     setLinkMov]     = useState<MpMovement | null>(null);
+  const [,            setLinkMov]     = useState<MpMovement | null>(null);
   const LIMIT = 20;
 
   const load = useCallback(async (newOffset = 0) => {
@@ -55,8 +56,8 @@ export default function MercadoPagoPage() {
       setMovements(mov.results);
       setTotal(mov.total);
       setOffset(newOffset);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? '';
+    } catch (err) {
+      const msg = apiErrorMessage(err) ?? '';
       if (msg.includes('configurado')) {
         setIsMpConfig(false);
       } else {

@@ -37,7 +37,7 @@ export default defineConfig({
       },
 
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf}'],
 
         // El bundle trae react-pdf, xlsx y recharts: los chunks superan el
         // limite por defecto de 2 MiB y quedarian fuera del precache.

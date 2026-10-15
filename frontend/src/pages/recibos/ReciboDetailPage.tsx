@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { XCircle, ArrowRight } from 'lucide-react';
+import { XCircle, ArrowRight, Printer, Download } from 'lucide-react';
+import { pdf } from '@react-pdf/renderer';
 import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader, ConfirmDialog } from '../../components/shared';
@@ -8,6 +9,8 @@ import { recibosService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { PAYMENT_METHODS, RECIBO_STATUSES } from '../../utils/constants';
 import type { Recibo } from '../../types';
+import ReciboPDF from '../../components/pdf/ReciboPDF';
+import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
 
 function SkeletonDetail() {
   return (
@@ -31,6 +34,23 @@ export default function ReciboDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const handlePdf = async (mode: 'print' | 'download') => {
+    if (!recibo) return;
+    setIsGeneratingPDF(true);
+    try {
+      const ctx = await loadPrintContext();
+      const blob = await pdf(<ReciboPDF recibo={recibo} ctx={ctx} />).toBlob();
+      if (mode === 'print') printBlob(blob);
+      else downloadBlob(blob, `recibo-${recibo.number}.pdf`);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      toast.error(err.message || 'Error al generar PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   useEffect(() => {
     const fetch = async () => {
@@ -77,12 +97,22 @@ export default function ReciboDetailPage() {
         title={`Recibo ${recibo.number}`}
         backTo="/recibos"
         actions={
-          recibo.status === 'EMITTED' ? (
-            <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
-              <XCircle className="w-4 h-4 mr-2" />
-              Cancelar recibo
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => handlePdf('print')} isLoading={isGeneratingPDF}>
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir
             </Button>
-          ) : undefined
+            <Button variant="outline" onClick={() => handlePdf('download')} disabled={isGeneratingPDF}>
+              <Download className="w-4 h-4 mr-2" />
+              PDF
+            </Button>
+            {recibo.status === 'EMITTED' && (
+              <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
+                <XCircle className="w-4 h-4 mr-2" />
+                Cancelar recibo
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -175,6 +205,34 @@ export default function ReciboDetailPage() {
                 <span className="text-sm text-amber-600 dark:text-amber-400">
                   {(recibo as any).surchargePercent}% (+{formatCurrency((recibo as any).surchargeAmount ?? 0, recibo.currency)})
                 </span>
+              </div>
+            )}
+            {Number(recibo.discountAmount ?? 0) > 0 && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Descuento cedido</span>
+                <span className="text-sm text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(Number(recibo.discountAmount), recibo.currency)}
+                </span>
+              </div>
+            )}
+            {Number(recibo.interestAmount ?? 0) > 0 && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Recargo / interés</span>
+                <span className="text-sm text-amber-600 dark:text-amber-400">
+                  {formatCurrency(Number(recibo.interestAmount), recibo.currency)}
+                </span>
+              </div>
+            )}
+            {recibo.paymentMethod === 'COMPENSACION' && (
+              <div className="flex justify-between items-center px-5 py-3">
+                <span className="text-sm text-gray-500 dark:text-slate-400">Saldo a favor aplicado</span>
+                {recibo.creditInvoiceId ? (
+                  <a href={`/invoices/${recibo.creditInvoiceId}`} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
+                    Ver nota de crédito
+                  </a>
+                ) : (
+                  <span className="text-sm text-gray-900 dark:text-white">NC interna / pago a cuenta</span>
+                )}
               </div>
             )}
             {recibo.cashRegister && (

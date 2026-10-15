@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog, Pagination } from '../../components/shared';
 import { recurringInvoicesService } from '../../services';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
 import { INVOICE_TYPES } from '../../utils/constants';
 import { RECURRING_FREQUENCY_LABELS, type RecurringInvoice } from '../../types/recurring-invoice.types';
 

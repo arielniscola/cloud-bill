@@ -1,3 +1,4 @@
+import { blobToBase64 } from '../utils/blob';
 import api from './api';
 import type {
   Invoice,
@@ -78,8 +79,7 @@ export const invoicesService = {
   async sendEmail(id: string, to: string, pdfBlob?: Blob): Promise<void> {
     let pdfBase64: string | undefined;
     if (pdfBlob) {
-      const buffer = await pdfBlob.arrayBuffer();
-      pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      pdfBase64 = await blobToBase64(pdfBlob);
     }
     await api.post(`/invoices/${id}/send-email`, { to, pdfBase64 });
   },

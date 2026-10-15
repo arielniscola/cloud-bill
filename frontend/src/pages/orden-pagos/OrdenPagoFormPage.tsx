@@ -20,6 +20,7 @@ import type { Cheque } from '../../types/cheque.types';
 import type { Chequera } from '../../types/chequera.types';
 import type { Account } from '../../types/accounting.types';
 import type { PendingPurchaseInvoice, CreateOrdenPagoItemDTO, CreateOrdenPagoChequePropioDTO, CreateOrdenPagoAjusteDTO, CreateOrdenPagoRetencionDTO } from '../../types/ordenPago.types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const INVOICE_TYPE_LABELS: Record<string, string> = {
   FACTURA_A: 'Factura A', FACTURA_B: 'Factura B', FACTURA_C: 'Factura C', FACTURA_M: 'Factura M',
@@ -481,8 +482,8 @@ export default function OrdenPagoFormPage() {
       });
       toast.success(`Orden de Pago ${op.number} creada`);
       navigate(`/orden-pagos/${op.id}`);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al crear orden de pago');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al crear orden de pago');
     } finally {
       setIsSubmitting(false);
     }

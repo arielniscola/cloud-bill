@@ -58,7 +58,7 @@ export interface CreateProductDTO {
   customFields?: ProductCustomFieldValueDTO[];
 }
 
-export interface UpdateProductDTO extends Partial<CreateProductDTO> {}
+export type UpdateProductDTO = Partial<CreateProductDTO>;
 
 export interface ProductFilters {
   page?: number;

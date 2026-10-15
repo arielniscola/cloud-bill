@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 export interface FormKeyboardShortcutsOptions {
   onSubmit: () => void;
@@ -21,7 +21,7 @@ export interface FormKeyboardShortcutsOptions {
  */
 export function useFormKeyboardShortcuts(options: FormKeyboardShortcutsOptions) {
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useLayoutEffect(() => { optionsRef.current = options; });
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

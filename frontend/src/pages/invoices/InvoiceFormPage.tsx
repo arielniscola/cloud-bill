@@ -142,6 +142,7 @@ const invoiceSchema = z.object({
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  transport: z.string().optional().nullable(),
   paymentTerms: z.string().optional().nullable(),
   saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   originInvoiceId: z.string().uuid().optional().nullable(),
@@ -591,6 +592,7 @@ export default function InvoiceFormPage() {
           stockBehavior: (invoice.stockBehavior as 'DISCOUNT' | 'RESERVE') ?? 'DISCOUNT',
           dueDate: invoice.dueDate ? invoice.dueDate.substring(0, 10) : null,
           notes: invoice.notes,
+          transport: invoice.transport ?? null,
           paymentTerms: invoice.paymentTerms,
           saleCondition: invoice.saleCondition ?? 'CONTADO',
           originInvoiceId: invoice.originInvoiceId ?? null,
@@ -1763,6 +1765,13 @@ export default function InvoiceFormPage() {
                 {...register('notes')}
                 rows={3}
               />
+              <div className="mt-3">
+                <Input
+                  label="Transporte"
+                  placeholder="Ej: Transporte propio"
+                  {...register('transport')}
+                />
+              </div>
             </div>
           </div>
 

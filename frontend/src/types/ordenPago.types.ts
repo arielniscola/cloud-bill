@@ -14,7 +14,7 @@ export interface OrdenPagoItem {
   purchaseInvoiceId: string | null;
   amount: number;
   purchase?: Pick<Purchase, 'id' | 'number' | 'total' | 'date'> & { paidAmount: number };
-  invoice?: { id: string; number: string; type: string; amount: number; status: string };
+  invoice?: { id: string; number: string; type: string; amount: number; status: string; date?: string | null; currency?: string };
 }
 
 export interface PendingPurchaseInvoice {
@@ -38,7 +38,9 @@ export interface OrdenPago {
   id: string;
   number: string;
   supplierId: string;
-  supplier?: Pick<Supplier, 'id' | 'name' | 'cuit'>;
+  // El detalle trae además los datos de contacto y el código (impresión).
+  supplier?: Pick<Supplier, 'id' | 'name' | 'cuit'>
+    & Partial<Pick<Supplier, 'code' | 'address' | 'city' | 'phone' | 'email' | 'taxCondition'>>;
   userId: string;
   user?: { id: string; name: string };
   cashRegisterId: string | null;
@@ -216,8 +218,11 @@ export interface CreateOrdenPagoDTO {
 
 // ── Imputación manual de cuenta corriente (fuera del flujo de OP) ──────────
 
+/** Débito pendiente: FC/ND de compra, o nota de débito interna (`source: 'MOVEMENT'`). */
 export interface OpenDebitItem {
-  purchaseInvoiceId: string;
+  source: 'INVOICE' | 'MOVEMENT';
+  purchaseInvoiceId?: string;
+  movementId?: string;
   number: string;
   type: string;
   currency: string;
@@ -247,7 +252,7 @@ export interface OpenAccountItems {
 export interface CreateSupplierCcAdjustmentDTO {
   currency: string;
   description?: string;
-  debits: { purchaseInvoiceId: string; amount: number }[];
+  debits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   credits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   manualAmount?: number;
   /**

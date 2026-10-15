@@ -13,4 +13,4 @@ export interface CreateRubroDTO {
   parentId?: string | null;
 }
 
-export interface UpdateRubroDTO extends Partial<CreateRubroDTO> {}
+export type UpdateRubroDTO = Partial<CreateRubroDTO>;

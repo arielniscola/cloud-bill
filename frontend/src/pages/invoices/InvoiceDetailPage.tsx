@@ -22,6 +22,7 @@ import { INVOICE_TYPES, INVOICE_STATUSES } from '../../utils/constants';
 import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, OrdenPedido } from '../../types';
 import InvoicePDF from '../../components/pdf/InvoicePDF';
 import InformalInvoicePDF from '../../components/pdf/InformalInvoicePDF';
+import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   NOT_DELIVERED: 'Sin entregas',
@@ -327,19 +328,25 @@ export default function InvoiceDetailPage() {
   };
 
   const generateInvoicePdfBlob = async (): Promise<Blob> => {
-    const afipConfig = await afipService.getConfig();
-    // Informal (sin CAE, sin validez fiscal): formato reducido, 2 comprobantes
-    // por hoja A4 — no lleva QR/CAE ni desglose de IVA.
+    // Informal (sin CAE, sin validez fiscal): modelo "presupuesto", 2 copias
+    // por hoja A4 — no lleva datos del emisor, QR/CAE ni desglose de IVA.
     if (invoice!.fiscalMode === 'INFORMAL') {
-      return pdf(<InformalInvoicePDF invoice={invoice!} afipConfig={afipConfig} />).toBlob();
+      return pdf(<InformalInvoicePDF invoice={invoice!} />).toBlob();
     }
+    const ctx = await loadPrintContext();
     let qrCodeDataUrl: string | undefined;
-    const qrUrl = buildAfipQrUrl(invoice!, afipConfig?.cuit, afipConfig?.salePoint);
+    const qrUrl = buildAfipQrUrl(invoice!, ctx.afipConfig?.cuit, ctx.afipConfig?.salePoint);
     if (qrUrl) {
       qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
     }
     return pdf(
-      <InvoicePDF invoice={invoice!} afipConfig={afipConfig} qrCodeDataUrl={qrCodeDataUrl} />
+      <InvoicePDF
+        invoice={invoice!}
+        ctx={ctx}
+        qrCodeDataUrl={qrCodeDataUrl}
+        payments={recibos}
+        remitos={linkedRemitos.filter((r) => r.status !== 'CANCELLED')}
+      />
     ).toBlob();
   };
 
@@ -348,12 +355,7 @@ export default function InvoiceDetailPage() {
     setIsGeneratingPDF(true);
     try {
       const blob = await generateInvoicePdfBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `factura-${invoice.number}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `factura-${invoice.number}.pdf`);
     } catch (error: unknown) {
       const err = error as { message?: string };
       toast.error(err.message || 'Error al generar PDF');
@@ -374,25 +376,7 @@ export default function InvoiceDetailPage() {
     setIsGeneratingPDF(true);
     try {
       const blob = await generateInvoicePdfBlob();
-      const url = URL.createObjectURL(blob);
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      iframe.src = url;
-      document.body.appendChild(iframe);
-
-      const cleanup = () => { URL.revokeObjectURL(url); iframe.remove(); };
-      iframe.onload = () => {
-        const win = iframe.contentWindow;
-        if (!win) { cleanup(); return; }
-        win.focus();
-        win.print();
-        win.onafterprint = cleanup;
-      };
-      // Red de seguridad por si el navegador no dispara "afterprint" en el visor de PDF embebido.
-      setTimeout(cleanup, 120000);
+      printBlob(blob);
     } catch (error: unknown) {
       const err = error as { message?: string };
       toast.error(err.message || 'Error al generar PDF');
@@ -410,8 +394,13 @@ export default function InvoiceDetailPage() {
 
   const isDraft = invoice.status === 'DRAFT';
   const activeRecibos = recibos.filter((r) => r.status === 'EMITTED');
-  const paidAmount = activeRecibos.reduce((sum, r) => sum + Number(r.amount), 0);
-  const remaining = Math.max(0, Number(invoice.total) - paidAmount);
+  // Cobrado/aplicado y pendiente vienen del backend: incluyen descuentos
+  // cedidos, recargos y NC / saldo a favor aplicados (recibos de compensación).
+  const paidAmount = invoice.paidAmount ?? activeRecibos.reduce(
+    (sum, r) => sum + Number(r.amount) + Number(r.discountAmount ?? 0) - Number(r.interestAmount ?? 0), 0
+  );
+  const remaining = Math.max(0, invoice.pendingAmount ?? Number(invoice.total) - paidAmount);
+  const appliedCreditNotes = invoice.creditNotes ?? [];
   // La deuda se lee en pesos con la cotización del día.
   const foreignDoc = isForeign(invoice.currency);
   const arsOf = (n: number) => toArs(n, invoice.currency, er.rate);
@@ -559,10 +548,20 @@ export default function InvoiceDetailPage() {
       })),
     },
     {
+      title: 'Notas de crédito aplicadas',
+      docs: appliedCreditNotes.map((nc) => ({
+        label: nc.number,
+        to: `/invoices/${nc.id}`,
+        badge: nc.applied > 0 ? `Aplicada ${formatCurrency(nc.applied, invoice.currency)}` : 'Sin aplicar',
+        detail: formatCurrency(Number(nc.total), invoice.currency),
+      })),
+    },
+    {
       title: 'Recibos',
       docs: activeRecibos.map((r) => ({
         label: r.number,
         to: `/recibos/${r.id}`,
+        badge: r.paymentMethod === 'COMPENSACION' ? 'Compensación' : undefined,
         detail: formatCurrency(Number(r.amount), invoice.currency),
       })),
     },
@@ -587,6 +586,14 @@ export default function InvoiceDetailPage() {
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ring-1 ring-inset text-indigo-700 bg-indigo-50 ring-indigo-200/60 dark:text-indigo-300 dark:bg-indigo-900/30 dark:ring-indigo-700/60 leading-none uppercase">
                 {INVOICE_TYPES[invoice.type]}
               </span>
+              {appliedCreditNotes.length > 0 && (
+                <span
+                  title={appliedCreditNotes.map((nc) => nc.number).join(', ')}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ring-1 ring-inset text-rose-700 bg-rose-50 ring-rose-200/60 dark:text-rose-300 dark:bg-rose-900/30 dark:ring-rose-700/60 leading-none"
+                >
+                  Con NC
+                </span>
+              )}
               <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight tabular-nums">
                 {formatInvoiceNumber(invoice)}
               </h1>
@@ -1043,6 +1050,8 @@ export default function InvoiceDetailPage() {
         isLoading={isPayLoading}
         defaultCashRegisterId={undefined}
         mode={isCreditNote ? 'refund' : 'payment'}
+        customerId={isCreditNote ? null : invoice.customerId}
+        allowAdjustments={!isCreditNote}
       />
 
       <ConfirmDialog

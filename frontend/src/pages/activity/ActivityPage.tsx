@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Clock, Download, ExternalLink } from 'lucide-react';
+import { Clock, Download, ExternalLink } from 'lucide-react';
 import { activityLogsService } from '../../services';
 import { usersService } from '../../services';
 import type { ActivityLog, ActivityLogFilters, ActivityAction } from '../../types';

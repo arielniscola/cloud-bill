@@ -3,6 +3,7 @@ import { ImagePlus, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { productsService } from '../../services/products.service';
+import { apiErrorMessage } from '../../utils/apiError';
 
 /**
  * Imagen del producto — módulo "imagenes".
@@ -44,8 +45,8 @@ export default function ProductImageSection({
       const updated = await productsService.uploadImage(productId, file);
       onChange(updated.imageUrl ?? null);
       toast.success('Imagen actualizada');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || 'Error al subir la imagen');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || (err instanceof Error && err.message) || 'Error al subir la imagen');
     } finally {
       setIsBusy(false);
       // Permite volver a elegir el mismo archivo después de un error.
@@ -60,8 +61,8 @@ export default function ProductImageSection({
       await productsService.deleteImage(productId);
       onChange(null);
       toast.success('Imagen eliminada');
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al eliminar la imagen');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al eliminar la imagen');
     } finally {
       setIsBusy(false);
     }

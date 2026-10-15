@@ -194,6 +194,7 @@ export default function SupplierDetailPage() {
       <PageHeader
         title={supplier.name}
         subtitle={[
+          supplier.code ? `Cód. ${String(supplier.code).padStart(5, '0')}` : null,
           supplier.cuit ? formatCuit(supplier.cuit) : null,
           taxLabel,
           supplier.city,

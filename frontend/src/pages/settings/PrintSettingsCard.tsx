@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Save, FileText, Receipt, ClipboardList, Calculator, ShoppingBag } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Button } from '../../components/ui';
+import { Button, Input } from '../../components/ui';
 import { appSettingsService } from '../../services';
+import type { RemitoCopies } from '../../types/app-settings.types';
 
 type Format = 'A4' | 'THERMAL_80MM';
 
@@ -51,7 +52,7 @@ const DOC_TYPES: DocTypeRow[] = [
     label: 'Remitos',
     description: 'Comprobantes de entrega de mercadería',
     icon: ClipboardList,
-    available: { A4: false, THERMAL_80MM: false },
+    available: { A4: true, THERMAL_80MM: false },
     defaultFormat: 'A4',
   },
   {
@@ -59,12 +60,18 @@ const DOC_TYPES: DocTypeRow[] = [
     label: 'Recibos',
     description: 'Comprobantes de pago de clientes',
     icon: Receipt,
-    available: { A4: false, THERMAL_80MM: false },
+    available: { A4: true, THERMAL_80MM: false },
     defaultFormat: 'A4',
   },
 ];
 
 type FormatsState = Record<DocTypeRow['key'], Format>;
+
+const REMITO_COPIES: { value: RemitoCopies; label: string; description: string }[] = [
+  { value: 'TWO_PER_PAGE', label: '2 copias por hoja', description: 'Original y duplicado en la misma hoja A4' },
+  { value: 'ONE_PER_PAGE', label: '1 copia por hoja', description: 'Original y duplicado, cada uno en su hoja' },
+  { value: 'SINGLE', label: 'Una sola copia', description: 'Un único remito a hoja completa' },
+];
 
 export default function PrintSettingsCard() {
   const [formats, setFormats] = useState<FormatsState>({
@@ -74,6 +81,11 @@ export default function PrintSettingsCard() {
     printFormatRemito: 'A4',
     printFormatRecibo: 'A4',
   });
+  // Datos que se imprimen en los comprobantes (encabezado de factura/remito).
+  const [printData, setPrintData] = useState({
+    printWebsite: '', printEstablishment: '', remitoCai: '', remitoCaiExpiry: '',
+  });
+  const [remitoCopies, setRemitoCopies] = useState<RemitoCopies>('TWO_PER_PAGE');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -87,6 +99,13 @@ export default function PrintSettingsCard() {
           printFormatRemito:      (s.printFormatRemito      ?? s.printFormat ?? 'A4') as Format,
           printFormatRecibo:      (s.printFormatRecibo      ?? s.printFormat ?? 'A4') as Format,
         });
+        setPrintData({
+          printWebsite:       s.printWebsite ?? '',
+          printEstablishment: s.printEstablishment ?? '',
+          remitoCai:          s.remitoCai ?? '',
+          remitoCaiExpiry:    s.remitoCaiExpiry ?? '',
+        });
+        setRemitoCopies(s.remitoCopies ?? 'TWO_PER_PAGE');
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
@@ -95,7 +114,14 @@ export default function PrintSettingsCard() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await appSettingsService.update(formats);
+      await appSettingsService.update({
+        ...formats,
+        printWebsite:       printData.printWebsite.trim() || null,
+        printEstablishment: printData.printEstablishment.trim() || null,
+        remitoCai:          printData.remitoCai.trim() || null,
+        remitoCaiExpiry:    printData.remitoCaiExpiry || null,
+        remitoCopies,
+      });
       toast.success('Configuración guardada');
     } catch {
       toast.error('Error al guardar');
@@ -171,6 +197,68 @@ export default function PrintSettingsCard() {
             </div>
           );
         })}
+      </div>
+
+      <div className="mb-5 pt-4 border-t border-gray-100 dark:border-slate-700">
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Copias del remito</h4>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 mb-3">
+          Cómo se imprimen el original y el duplicado del remito A4.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {REMITO_COPIES.map((opt) => {
+            const active = remitoCopies === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setRemitoCopies(opt.value)}
+                className={clsx(
+                  'text-left p-3 rounded-xl border transition-all duration-150',
+                  active
+                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
+                    : 'border-gray-200 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-700/30 hover:border-gray-300 dark:hover:border-slate-600',
+                )}
+              >
+                <p className="text-sm font-medium text-gray-700 dark:text-slate-300 leading-tight">{opt.label}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{opt.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mb-5 pt-4 border-t border-gray-100 dark:border-slate-700">
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Datos en los comprobantes</h4>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 mb-3">
+          Se imprimen en el encabezado. Logo, teléfono y email salen de los datos de la empresa; CUIT, IIBB e inicio de
+          actividades, de la configuración de ARCA.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input
+            label="Sitio web"
+            placeholder="www.miempresa.com.ar"
+            value={printData.printWebsite}
+            onChange={(e) => setPrintData((d) => ({ ...d, printWebsite: e.target.value }))}
+          />
+          <Input
+            label="N° de establecimiento"
+            placeholder="13-0600609-00"
+            value={printData.printEstablishment}
+            onChange={(e) => setPrintData((d) => ({ ...d, printEstablishment: e.target.value }))}
+          />
+          <Input
+            label="CAI de remitos (cód. 091)"
+            placeholder="Opcional"
+            value={printData.remitoCai}
+            onChange={(e) => setPrintData((d) => ({ ...d, remitoCai: e.target.value }))}
+          />
+          <Input
+            label="Vencimiento del CAI"
+            type="date"
+            value={printData.remitoCaiExpiry}
+            onChange={(e) => setPrintData((d) => ({ ...d, remitoCaiExpiry: e.target.value }))}
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

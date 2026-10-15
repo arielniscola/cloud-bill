@@ -13,20 +13,25 @@ export default function SmtpSettingsCard() {
     smtpFrom:   '',
     smtpSecure: false,
   });
+  // La contraseña guardada no viaja al navegador: solo se sabe si existe.
+  const [passSet, setPassSet]     = useState(false);
   const [showPass, setShowPass]   = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving]   = useState(false);
 
   useEffect(() => {
     appSettingsService.get()
-      .then((s) => setForm({
-        smtpHost:   s.smtpHost   ?? '',
-        smtpPort:   s.smtpPort   ?? 587,
-        smtpUser:   s.smtpUser   ?? '',
-        smtpPass:   s.smtpPass   ?? '',
-        smtpFrom:   s.smtpFrom   ?? '',
-        smtpSecure: s.smtpSecure ?? false,
-      }))
+      .then((s) => {
+        setForm({
+          smtpHost:   s.smtpHost   ?? '',
+          smtpPort:   s.smtpPort   ?? 587,
+          smtpUser:   s.smtpUser   ?? '',
+          smtpPass:   '',
+          smtpFrom:   s.smtpFrom   ?? '',
+          smtpSecure: s.smtpSecure ?? false,
+        });
+        setPassSet(Boolean(s.smtpPassSet));
+      })
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
@@ -37,14 +42,17 @@ export default function SmtpSettingsCard() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await appSettingsService.update({
+      const saved = await appSettingsService.update({
         smtpHost:   form.smtpHost   || null,
         smtpPort:   Number(form.smtpPort),
         smtpUser:   form.smtpUser   || null,
-        smtpPass:   form.smtpPass   || null,
+        // Vacío = conservar la guardada (o dejarla sin cargar si se quitó).
+        ...(form.smtpPass ? { smtpPass: form.smtpPass } : passSet ? {} : { smtpPass: null }),
         smtpFrom:   form.smtpFrom   || null,
         smtpSecure: form.smtpSecure,
       });
+      setPassSet(Boolean(saved.smtpPassSet));
+      set('smtpPass', '');
       toast.success('Configuración SMTP guardada');
     } catch {
       toast.error('Error al guardar');
@@ -127,7 +135,8 @@ export default function SmtpSettingsCard() {
               type={showPass ? 'text' : 'password'}
               value={form.smtpPass}
               onChange={(e) => set('smtpPass', e.target.value)}
-              placeholder="••••••••••••"
+              placeholder={passSet ? 'Guardada — escribí para reemplazarla' : '••••••••••••'}
+              autoComplete="new-password"
             />
             <button
               type="button"
@@ -137,6 +146,15 @@ export default function SmtpSettingsCard() {
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {passSet && !form.smtpPass && (
+            <button
+              type="button"
+              onClick={() => setPassSet(false)}
+              className="mt-1.5 text-xs text-gray-400 hover:text-red-500 dark:text-slate-500"
+            >
+              Quitar la contraseña guardada
+            </button>
+          )}
         </div>
 
         <div className="sm:col-span-2">

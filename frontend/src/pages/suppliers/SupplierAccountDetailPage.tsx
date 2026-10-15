@@ -283,13 +283,17 @@ export default function SupplierAccountDetailPage() {
   const balanceInArs = (item: { balance: number; currency: string }) =>
     toArs(item.balance, item.currency, er.rate);
 
+  // Débito pendiente: factura/ND de compra (por purchaseInvoiceId) o nota de
+  // débito interna (por movementId).
+  const debitKey = (item: OpenDebitItem) => item.purchaseInvoiceId ?? item.movementId ?? '';
   const toggleDebit = (item: OpenDebitItem) => {
     const ars = balanceInArs(item);
     if (ars === null) { toast.error('Sin cotización disponible para imputar en pesos'); return; }
+    const key = debitKey(item);
     setSelectedDebits((prev) => {
       const next = new Map(prev);
-      if (next.has(item.purchaseInvoiceId)) next.delete(item.purchaseInvoiceId);
-      else next.set(item.purchaseInvoiceId, ars.toFixed(2));
+      if (next.has(key)) next.delete(key);
+      else next.set(key, ars.toFixed(2));
       return next;
     });
   };
@@ -319,7 +323,7 @@ export default function SupplierAccountDetailPage() {
   // cambio (se registra como tal) o un ajuste común.
   const ccMixesCurrencies = useMemo(() => {
     const currencies = new Set<string>();
-    openItems.debits.forEach((d) => { if (selectedDebits.has(d.purchaseInvoiceId)) currencies.add(d.currency); });
+    openItems.debits.forEach((d) => { if (selectedDebits.has(debitKey(d))) currencies.add(d.currency); });
     openItems.credits.forEach((c) => {
       const key = c.source === 'INVOICE' ? c.purchaseInvoiceId! : c.movementId!;
       if (selectedCredits.has(key)) currencies.add(c.currency);
@@ -340,7 +344,12 @@ export default function SupplierAccountDetailPage() {
         amountCurrency: 'ARS',
         exchangeRate: er.rate,
         description: adjDescription.trim() || undefined,
-        debits: Array.from(selectedDebits.entries()).map(([purchaseInvoiceId, amount]) => ({ purchaseInvoiceId, amount: parseFloat(amount) || 0 })),
+        debits: Array.from(selectedDebits.entries()).map(([id, amount]) => {
+          const src = openItems.debits.find((d) => debitKey(d) === id);
+          return src?.source === 'MOVEMENT'
+            ? { movementId: id, amount: parseFloat(amount) || 0 }
+            : { purchaseInvoiceId: id, amount: parseFloat(amount) || 0 };
+        }),
         credits: Array.from(selectedCredits.entries()).map(([id, amount]) => {
           const src = openItems.credits.find((c) => (c.source === 'INVOICE' ? c.purchaseInvoiceId : c.movementId) === id);
           return src?.source === 'INVOICE'
@@ -897,20 +906,26 @@ export default function SupplierAccountDetailPage() {
                 {openItemsLoading ? (
                   <p className="px-4 py-8 text-center text-sm text-gray-400">Cargando…</p>
                 ) : visibleDebits.length === 0 ? (
-                  <p className="px-4 py-8 text-center text-sm text-gray-400">Sin facturas pendientes</p>
+                  <p className="px-4 py-8 text-center text-sm text-gray-400">Sin débitos pendientes</p>
                 ) : visibleDebits.map((item) => {
                   const balArs = balanceInArs(item);
                   const disabled = balArs === null; // sin cotización no se puede imputar en pesos
-                  const checked = selectedDebits.has(item.purchaseInvoiceId);
+                  const key = debitKey(item);
+                  const checked = selectedDebits.has(key);
                   return (
-                    <div key={item.purchaseInvoiceId}
+                    <div key={key}
                       className={`px-4 py-3 flex items-center gap-3 ${disabled ? 'opacity-40' : 'cursor-pointer hover:bg-gray-50/60 dark:hover:bg-slate-700/40'}`}
                       onClick={() => !disabled && toggleDebit(item)}>
                       <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleDebit(item)}
                         onClick={(e) => e.stopPropagation()}
                         className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 dark:text-slate-200">{item.number}</p>
+                        <p className="text-sm text-gray-800 dark:text-slate-200">
+                          {item.number}
+                          {item.source === 'MOVEMENT' && (
+                            <span className="ml-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">ND interna</span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400 dark:text-slate-500">
                           Saldo {formatCurrency(balArs ?? item.balance, balArs === null ? item.currency : 'ARS')}
                           {' de '}{formatCurrency(toArs(item.amount, item.currency, er.rate) ?? item.amount, balArs === null ? item.currency : 'ARS')}
@@ -925,9 +940,9 @@ export default function SupplierAccountDetailPage() {
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-gray-400">ARS</span>
                           <input type="number" min={0} max={balArs ?? undefined} step="0.01"
-                            value={selectedDebits.get(item.purchaseInvoiceId) ?? ''}
+                            value={selectedDebits.get(key) ?? ''}
                             onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setSelectedDebits((prev) => new Map(prev).set(item.purchaseInvoiceId, e.target.value))}
+                            onChange={(e) => setSelectedDebits((prev) => new Map(prev).set(key, e.target.value))}
                             className="w-32 text-sm text-right px-2 py-1 rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white" />
                         </div>
                       )}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Edit, Lock, TrendingUp, TrendingDown, Activity,
+  Edit, Lock, TrendingUp, Activity,
   ArrowUpCircle, ArrowDownCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';

@@ -11,4 +11,4 @@ export interface CreateBrandDTO {
   isActive?: boolean;
 }
 
-export interface UpdateBrandDTO extends Partial<CreateBrandDTO> {}
+export type UpdateBrandDTO = Partial<CreateBrandDTO>;

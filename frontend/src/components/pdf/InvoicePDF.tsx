@@ -1,621 +1,332 @@
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
-import type { Invoice } from '../../types/invoice.types';
-import type { AfipConfigSummary } from '../../types/afip.types';
-import { fiscalTransparency, FISCAL_TRANSPARENCY_LEGEND } from '../../utils/afipFiscal';
+import type { Invoice, InvoiceItem } from '../../types/invoice.types';
+import type { Recibo } from '../../types/recibo.types';
+import type { PrintContext } from '../../utils/printContext';
+import {
+  fiscalTransparency, FISCAL_TRANSPARENCY_LEGEND, afipTypeCode, invoiceLetter, invoiceTypeName, afipInvoiceNumber,
+} from '../../utils/afipFiscal';
+import { amountToWords } from '../../utils/numberToWords';
+import { formatChequeNumber } from '../../utils/chequeNumber';
+import { DocHeader, KV } from './pdfShared';
+import {
+  ps, INK, LABEL, SOFT, HAIR, PLACEHOLDER, fmtMoney, fmtNum, fmtQty, fmtDate, fmtCuit, fmtCode,
+  taxConditionTitle, saleConditionTitle,
+} from './pdfFormat';
 
-// ─── Colors ────────────────────────────────────────────────────────────────
-const BLUE = '#1a3a6b';
-const LIGHT_BG = '#f0f4f8';
-const GRAY = '#666666';
-const DARK = '#1a1a1a';
-const BORDER = '#cccccc';
-const WHITE = '#ffffff';
+// Factura / NC / ND fiscal (A, B, C), línea "Clásico refinado":
+//   · encabezado emisor | letra + código ARCA | comprobante y datos fiscales
+//   · cliente con código, CUIT, IIBB, domicilio, condición de venta e IVA
+//   · ítems Código / Descripción / Cant. / P. Unit. / Bonif. / Total a precio
+//     final (IVA incluido), como el modelo de referencia, en todas las letras
+//   · forma de pago (cada cobro registrado) y datos de entrega lado a lado
+//   · recuadro final con QR, CAE y totales; la A discrimina IVA 21 % y 10,5 %
+//     siempre (y otras alícuotas si se usaron)
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+const COLS = { code: 63, qty: 39, price: 69, bonif: 34.5, total: 73.5 };
+
 const s = StyleSheet.create({
-  page: {
-    fontFamily: 'Helvetica',
-    fontSize: 8,
-    color: DARK,
-    paddingHorizontal: 35,
-    paddingVertical: 30,
-    backgroundColor: WHITE,
+  customer: {
+    flexDirection: 'row', paddingVertical: 9, paddingHorizontal: 3,
+    borderBottomWidth: 0.75, borderBottomColor: INK,
   },
-
-  // ── "ORIGINAL" stamp ──
-  original: {
-    position: 'absolute',
-    top: 30,
-    right: 35,
-    fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: BLUE,
-    borderWidth: 1,
-    borderColor: BLUE,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    letterSpacing: 1,
-  },
-
-  // ── Header 3-column ──
-  header: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: BORDER,
-    minHeight: 100,
-  },
-  headerLeft: {
-    flex: 5,
-    padding: 10,
-    borderRightWidth: 1,
-    borderRightColor: BORDER,
-    justifyContent: 'center',
-  },
-  headerCenter: {
-    width: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRightWidth: 1,
-    borderRightColor: BORDER,
-    backgroundColor: LIGHT_BG,
-  },
-  headerRight: {
-    flex: 5,
-    padding: 10,
-    justifyContent: 'center',
-  },
-
-  // company
-  companyName: {
-    fontSize: 12,
-    fontFamily: 'Helvetica-Bold',
-    color: DARK,
-    marginBottom: 4,
-  },
-  row: { flexDirection: 'row', marginBottom: 2 },
-  labelGray: { fontSize: 7, color: GRAY, marginRight: 3 },
-  valueText: { fontSize: 7.5, color: DARK },
-
-  // type letter box
-  typeBox: {
-    width: 60,
-    height: 60,
-    borderWidth: 2,
-    borderColor: BLUE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  typeLetter: {
-    fontSize: 44,
-    fontFamily: 'Helvetica-Bold',
-    color: BLUE,
-    lineHeight: 1,
-  },
-  typeLabel: {
-    fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
-    color: BLUE,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-
-  // invoice ID (right)
-  invoiceTitle: {
-    fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: DARK,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  invoiceNumber: {
-    fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
-    color: BLUE,
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-
-  // ── Customer section ──
-  customerSection: {
-    borderWidth: 1,
-    borderTopWidth: 0,
-    borderColor: BORDER,
-    padding: 8,
-    backgroundColor: '#fafafa',
-  },
-  customerRow: { flexDirection: 'row', marginBottom: 3, flexWrap: 'wrap' },
-  customerField: { width: '50%', flexDirection: 'row' },
-  customerFieldFull: { width: '100%', flexDirection: 'row' },
-
-  // ── Items table ──
-  table: { marginTop: 14, borderWidth: 1, borderColor: BORDER },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: BLUE,
-    paddingVertical: 5,
-    paddingHorizontal: 4,
-  },
-  thCell: {
-    color: WHITE,
-    fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'center',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    borderTopWidth: 0.5,
-    borderTopColor: BORDER,
-  },
-  tableRowAlt: { backgroundColor: '#f8f9fb' },
-  tdCell: { fontSize: 7.5, color: DARK },
-
-  // column widths
-  colDesc: { flex: 4 },
-  colQty: { width: 38, textAlign: 'right' },
-  colPrice: { width: 65, textAlign: 'right' },
-  colTaxRate: { width: 35, textAlign: 'center' },
-  colTaxAmt: { width: 60, textAlign: 'right' },
-  colTotal: { width: 65, textAlign: 'right' },
-
-  // ── Totals ──
-  totalsWrapper: { marginTop: 10, flexDirection: 'row', justifyContent: 'flex-end' },
-  totalsBox: { width: 230 },
-  totalsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderTopWidth: 0.5,
-    borderTopColor: BORDER,
-    borderLeftWidth: 1,
-    borderLeftColor: BORDER,
-    borderRightWidth: 1,
-    borderRightColor: BORDER,
-  },
-  totalsFirstRow: {
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-  },
-  totalsLabel: { fontSize: 7.5, color: GRAY },
-  totalsValue: { fontSize: 7.5, color: DARK },
-  totalFinalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: BLUE,
-  },
-  totalFinalLabel: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: WHITE },
-  totalFinalValue: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: WHITE },
-
-  // ── Notes ──
-  notes: {
-    marginTop: 8,
-    padding: 8,
-    borderWidth: 0.5,
-    borderColor: BORDER,
-    backgroundColor: '#fafafa',
-  },
-  notesLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: GRAY, marginBottom: 2 },
-  notesText: { fontSize: 7.5, color: DARK },
-
-  // ── Régimen de Transparencia Fiscal (Ley 27.743) ──
-  fiscalBox: {
-    marginTop: 8,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: DARK,
-  },
-  fiscalLegend: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
-  fiscalRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
-  fiscalLabel: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
-  fiscalValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
-
-  // ── Footer (CAE + QR) ──
-  footer: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: LIGHT_BG,
-  },
-  footerInfo: { flex: 1 },
-  footerQr: { width: 80, alignItems: 'center' },
-  caeTitle: {
-    fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-    color: DARK,
-    marginBottom: 5,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  caeRow: { flexDirection: 'row', marginBottom: 3 },
-  caeLabel: { fontSize: 7, color: GRAY, width: 75 },
-  caeValue: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: DARK, flex: 1 },
-  qrLabel: { fontSize: 6, color: GRAY, textAlign: 'center', marginTop: 3 },
-
-  // ── Draft watermark ──
-  draftWatermark: {
-    position: 'absolute',
-    top: 300,
-    left: 80,
-    fontSize: 80,
-    fontFamily: 'Helvetica-Bold',
-    color: '#e0e0e0',
-    transform: 'rotate(-45deg)',
-    opacity: 0.5,
+  colCode: { width: COLS.code },
+  colDesc: { flex: 1, paddingRight: 6 },
+  colQty: { width: COLS.qty, textAlign: 'right' },
+  colPrice: { width: COLS.price, textAlign: 'right' },
+  colBonif: { width: COLS.bonif, textAlign: 'right' },
+  colTotal: { width: COLS.total, textAlign: 'right' },
+  payRow: { flexDirection: 'row', paddingVertical: 3.75, borderBottomWidth: 0.75, borderBottomColor: HAIR },
+  totRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2.25 },
+  qr: {
+    width: 72, height: 72, borderWidth: 0.75, borderStyle: 'dashed', borderColor: PLACEHOLDER,
+    alignItems: 'center', justifyContent: 'center',
   },
 });
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-const INVOICE_TYPE_LABELS: Record<string, string> = {
-  FACTURA_A: 'Factura A',
-  FACTURA_B: 'Factura B',
-  FACTURA_C: 'Factura C',
-  NOTA_CREDITO_A: 'Nota de Crédito A',
-  NOTA_CREDITO_B: 'Nota de Crédito B',
-  NOTA_CREDITO_C: 'Nota de Crédito C',
-  NOTA_DEBITO_A: 'Nota de Débito A',
-  NOTA_DEBITO_B: 'Nota de Débito B',
-  NOTA_DEBITO_C: 'Nota de Débito C',
-};
-
-function getTypeLetter(type: string): string {
-  return type.slice(-1); // last char: A, B or C
-}
-
-function getTypeShortName(type: string): string {
-  if (type.startsWith('FACTURA')) return 'Factura';
-  if (type.startsWith('NOTA_CREDITO')) return 'Nota de Crédito';
-  if (type.startsWith('NOTA_DEBITO')) return 'Nota de Débito';
-  return 'Comprobante';
-}
-
-function fmtCurrency(value: number, currency: string = 'ARS'): string {
-  const sym = currency === 'USD' ? 'USD ' : '$ ';
-  return `${sym}${value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function fmtDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const yyyy = d.getUTCFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
-
-function fmtCuit(cuit: string): string {
-  const c = cuit.replace(/\D/g, '');
-  if (c.length === 11) return `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}`;
-  return cuit;
-}
-
-function invoiceNumber(invoice: Invoice): string {
-  if (invoice.afipPtVenta && invoice.afipCbtNum) {
-    return `${String(invoice.afipPtVenta).padStart(4, '0')}-${String(invoice.afipCbtNum).padStart(8, '0')}`;
-  }
-  return invoice.number;
-}
-
-// ─── Component ─────────────────────────────────────────────────────────────
-
 interface InvoicePDFProps {
   invoice: Invoice;
-  afipConfig: AfipConfigSummary | null;
+  ctx: PrintContext;
   qrCodeDataUrl?: string;
+  /** Cobros emitidos de la factura (forma de pago). */
+  payments?: Recibo[];
+  /** Remitos vinculados. */
+  remitos?: { number: string }[];
 }
 
-interface InvoicePageProps extends InvoicePDFProps {
-  typeLetter: string;
-  typeShort: string;
-  isDraft: boolean;
-  taxBreakdown: Record<number, { base: number; tax: number }>;
-  issuerName: string;
-  issuerAddress: string;
-  issuerCuit: string;
-  issuerTaxCondition: string;
-  issuerGrossIncome: string;
-  issuerActivityStart: string;
+function itemCode(item: InvoiceItem): string {
+  return item.variant?.sku || item.product?.sku || '';
 }
 
-function InvoicePage({
-  invoice, qrCodeDataUrl, typeLetter, typeShort, isDraft,
-  taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
-  issuerGrossIncome, issuerActivityStart,
-}: InvoicePageProps) {
-  // Factura C does not discriminate IVA
-  const isTypeC = typeLetter === 'C';
+function itemDescription(item: InvoiceItem): string {
+  const base = item.description || item.product?.name || 'Producto';
+  return item.variant?.name ? `${base} - ${item.variant.name}` : base;
+}
+
+/** Precio unitario final (IVA incluido, antes de la bonificación). */
+function grossUnitPrice(item: InvoiceItem): number {
+  return Number(item.unitPrice) * (1 + Number(item.taxRate) / 100);
+}
+
+/** Una fila por cobro: medio, detalle (banco / número / vto.) e importe. */
+function paymentRows(payments: Recibo[]) {
+  return payments.map((p) => {
+    const parts: string[] = [];
+    let method = p.paymentMethod as string;
+    switch (p.paymentMethod) {
+      case 'CASH':
+        method = 'Efectivo';
+        parts.push(p.currency === 'USD' ? `Dólares · cotización ${fmtNum(p.exchangeRate)}` : 'Pesos');
+        break;
+      case 'BANK_TRANSFER':
+        method = 'Transferencia';
+        if (p.bank) parts.push(p.bank);
+        if (p.reference) parts.push(p.reference);
+        break;
+      case 'CHECK':
+        method = 'Cheque';
+        if (p.bank) parts.push(p.bank);
+        if (p.reference) parts.push(formatChequeNumber(p.reference));
+        if (p.checkDueDate) parts.push(`vto. ${fmtDate(p.checkDueDate)}`);
+        break;
+      case 'CARD': {
+        method = 'Tarjeta';
+        const card = (p as { card?: { name?: string } }).card?.name;
+        if (card) parts.push(card);
+        if (p.installments) parts.push(`${p.installments} cuota(s)`);
+        break;
+      }
+      case 'MERCADO_PAGO':
+        method = 'Mercado Pago';
+        if (p.reference) parts.push(p.reference);
+        break;
+      case 'COMPENSACION':
+        // Saldo a favor aplicado (NC, NC interna o pago a cuenta): no es plata.
+        method = 'Compensación';
+        parts.push(p.creditInvoiceId ? 'Nota de crédito' : 'Saldo a favor');
+        break;
+    }
+    return { id: p.id, method, detail: parts.join(' · '), amount: Number(p.amount) || 0, currency: p.currency };
+  });
+}
+
+export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [], remitos = [] }: InvoicePDFProps) {
+  const { issuer } = ctx;
+  const letter = invoiceLetter(invoice.type);
+  const isTypeA = letter === 'A';
+  const isDraft = invoice.status === 'DRAFT';
+  const isCancelled = invoice.status === 'CANCELLED';
+  const currency = invoice.currency;
+  const customer = invoice.customer;
   const transparency = fiscalTransparency(invoice);
+  const typeName = invoiceTypeName(invoice.type).replace('CREDITO', 'CRÉDITO').replace('DEBITO', 'DÉBITO');
+
+  // Totales: neto antes de bonificación, bonificación, subtotal (neto) e IVA por alícuota.
+  const items = invoice.items ?? [];
+  const netBeforeDiscount = items.reduce((acc, i) => acc + Number(i.quantity) * Number(i.unitPrice), 0);
+  const discountNet = Math.max(0, netBeforeDiscount - Number(invoice.subtotal));
+  const ivaByRate = new Map<number, number>();
+  if (isTypeA) { ivaByRate.set(21, 0); ivaByRate.set(10.5, 0); }
+  for (const i of items) {
+    const rate = Number(i.taxRate);
+    if (rate === 0 && !ivaByRate.has(0)) continue;
+    ivaByRate.set(rate, (ivaByRate.get(rate) ?? 0) + Number(i.taxAmount));
+  }
+  // B / C: subtotal a precio final antes de la bonificación.
+  const grossBeforeDiscount = items.reduce((acc, i) => acc + Number(i.quantity) * grossUnitPrice(i), 0);
+  const discountGross = Math.max(0, grossBeforeDiscount - Number(invoice.total));
+
+  const rows = paymentRows(payments.filter((p) => p.status === 'EMITTED'));
+  const saleCond = saleConditionTitle(invoice.saleCondition, invoice.paymentTerms);
+  const origin = invoice.originInvoice
+    ? `${invoiceTypeName(invoice.originInvoice.type)} ${invoiceLetter(invoice.originInvoice.type)} ${afipInvoiceNumber(invoice.originInvoice)}`
+    : null;
+
   return (
-    <Page size="A4" style={s.page}>
-      {/* Draft watermark */}
-      {isDraft && <Text style={s.draftWatermark}>BORRADOR</Text>}
+    <Document title={`${typeName} ${letter} ${afipInvoiceNumber(invoice)}`} author={issuer.name || 'Cloud-Bill'}>
+      <Page size="A4" style={ps.page}>
+        {isDraft && <Text style={ps.watermark}>BORRADOR</Text>}
+        {isCancelled && <Text style={ps.watermark}>ANULADA</Text>}
 
-      {/* Copy label stamp */}
-      <Text style={s.original}>ORIGINAL</Text>
+        {/* ── ENCABEZADO ─────────────────────────────────────── */}
+        <DocHeader
+          logoSlot
+          issuer={issuer}
+          letter={letter}
+          letterCaption={`COD. ${String(afipTypeCode(invoice.type)).padStart(2, '0')}`}
+          title={typeName}
+          number={afipInvoiceNumber(invoice)}
+          date={{ label: 'Fecha de emisión', value: fmtDate(invoice.date) }}
+          rows={[
+            ['CUIT', fmtCuit(issuer.cuit)],
+            ['Cond. IVA', issuer.taxCondition],
+            ['IIBB', issuer.grossIncome],
+            ['Inicio actividades', issuer.activityStart ? fmtDate(issuer.activityStart) : ''],
+            ['Establecimiento', issuer.establishment],
+            ['Vencimiento', invoice.dueDate ? fmtDate(invoice.dueDate) : ''],
+          ]}
+          kicker={invoice.cae ? 'COMPROBANTE ELECTRÓNICO' : undefined}
+        />
+        <View style={ps.accentRule} />
 
-      {/* ── HEADER ──────────────────────────────────────────── */}
-      <View style={s.header}>
-        {/* Left: issuer */}
-        <View style={s.headerLeft}>
-          {issuerName ? <Text style={s.companyName}>{issuerName}</Text> : null}
-          {issuerAddress ? (
-            <View style={s.row}>
-              <Text style={s.labelGray}>Domicilio:</Text>
-              <Text style={s.valueText}>{issuerAddress}</Text>
-            </View>
-          ) : null}
-          {issuerCuit ? (
-            <View style={s.row}>
-              <Text style={s.labelGray}>CUIT:</Text>
-              <Text style={s.valueText}>{issuerCuit}</Text>
-            </View>
-          ) : null}
-          <View style={s.row}>
-            <Text style={s.labelGray}>Condición frente al IVA:</Text>
-            <Text style={s.valueText}>{issuerTaxCondition}</Text>
-          </View>
-          {issuerGrossIncome ? (
-            <View style={s.row}>
-              <Text style={s.labelGray}>Ingresos Brutos:</Text>
-              <Text style={s.valueText}>{issuerGrossIncome}</Text>
-            </View>
-          ) : null}
-          {issuerActivityStart ? (
-            <View style={s.row}>
-              <Text style={s.labelGray}>Inicio de Actividades:</Text>
-              <Text style={s.valueText}>{fmtDate(issuerActivityStart)}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Center: type letter */}
-        <View style={s.headerCenter}>
-          <Text style={[s.typeLabel, { marginBottom: 4 }]}>{typeShort}</Text>
-          <View style={s.typeBox}>
-            <Text style={s.typeLetter}>{typeLetter}</Text>
-          </View>
-          <Text style={[s.typeLabel, { marginTop: 4 }]}>Cód. {typeLetter}</Text>
-        </View>
-
-        {/* Right: invoice info */}
-        <View style={s.headerRight}>
-          <Text style={s.invoiceTitle}>Comprobante</Text>
-          <Text style={s.invoiceNumber}>{invoiceNumber(invoice)}</Text>
-          <View style={s.row}>
-            <Text style={s.labelGray}>Fecha de emisión:</Text>
-            <Text style={s.valueText}>{fmtDate(invoice.date)}</Text>
-          </View>
-          {invoice.dueDate && (
-            <View style={s.row}>
-              <Text style={s.labelGray}>Fecha de vencimiento:</Text>
-              <Text style={s.valueText}>{fmtDate(invoice.dueDate)}</Text>
-            </View>
-          )}
-          {invoice.currency === 'USD' && (
-            <View style={s.row}>
-              <Text style={s.labelGray}>Moneda:</Text>
-              <Text style={s.valueText}>USD (TC: {invoice.exchangeRate})</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* ── CUSTOMER ─────────────────────────────────────────── */}
-      <View style={s.customerSection}>
-        <View style={s.customerRow}>
-          <View style={s.customerFieldFull}>
-            <Text style={s.labelGray}>Razón Social / Nombre: </Text>
-            <Text style={[s.valueText, { fontFamily: 'Helvetica-Bold' }]}>
-              {invoice.customer?.name ?? ''}
-            </Text>
-          </View>
-        </View>
-        <View style={s.customerRow}>
-          {invoice.customer?.taxId && (
-            <View style={s.customerField}>
-              <Text style={s.labelGray}>CUIT: </Text>
-              <Text style={s.valueText}>{fmtCuit(invoice.customer.taxId)}</Text>
-            </View>
-          )}
-          {invoice.customer?.taxCondition && (
-            <View style={s.customerField}>
-              <Text style={s.labelGray}>Condición IVA: </Text>
-              <Text style={s.valueText}>
-                {invoice.customer.taxCondition.replace(/_/g, ' ')}
+        {/* ── CLIENTE ────────────────────────────────────────── */}
+        <View style={s.customer}>
+          <View style={{ flex: 1.25, paddingRight: 21 }}>
+            <View style={ps.kv}>
+              <Text style={{ width: 55, color: LABEL }}>Cliente</Text>
+              <Text style={{ flex: 1 }}>
+                <Text style={{ fontWeight: 600 }}>{customer?.name ?? 'CONSUMIDOR FINAL'}</Text>
+                {customer?.code ? <Text style={{ fontFamily: 'PlexMono', fontSize: 8.25, color: LABEL }}>{`  · ${fmtCode(customer.code)}`}</Text> : null}
               </Text>
             </View>
-          )}
-        </View>
-        {(invoice.customer?.address || invoice.customer?.city) && (
-          <View style={s.customerRow}>
-            <View style={s.customerFieldFull}>
-              <Text style={s.labelGray}>Domicilio: </Text>
-              <Text style={s.valueText}>
-                {[invoice.customer.address, invoice.customer.city, invoice.customer.province]
-                  .filter(Boolean)
-                  .join(', ')}
-              </Text>
+            <KV
+              labelWidth={55}
+              rows={[
+                ['Domicilio', customer?.address || '-'],
+                ['Localidad', [customer?.city, customer?.province].filter(Boolean).join(', ') + (customer?.postalCode ? ` · CP ${customer.postalCode}` : '') || '-'],
+              ]}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <KV
+              labelWidth={61}
+              rows={[
+                ['CUIT', fmtCuit(customer?.taxId) || '-'],
+                ['Cond. IVA', taxConditionTitle(customer?.taxCondition) || 'Consumidor Final'],
+                ['Ing. Brutos', customer?.grossIncome || '-'],
+              ]}
+            />
+            <View style={ps.kv}>
+              <Text style={{ width: 61, color: LABEL }}>Cond. venta</Text>
+              <Text style={{ flex: 1, fontWeight: 600 }}>{saleCond}</Text>
             </View>
           </View>
-        )}
-      </View>
-
-      {/* ── ITEMS TABLE ──────────────────────────────────────── */}
-      <View style={s.table}>
-        <View style={s.tableHeader}>
-          <Text style={[s.thCell, s.colDesc]}>Descripción</Text>
-          <Text style={[s.thCell, s.colQty]}>Cant.</Text>
-          <Text style={[s.thCell, s.colPrice]}>Precio Unit.</Text>
-          {!isTypeC && <Text style={[s.thCell, s.colTaxRate]}>IVA %</Text>}
-          {!isTypeC && <Text style={[s.thCell, s.colTaxAmt]}>IVA $</Text>}
-          <Text style={[s.thCell, s.colTotal]}>Total</Text>
         </View>
 
-        {invoice.items.map((item, idx) => (
-          <View key={item.id} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
-            <Text style={[s.tdCell, s.colDesc]}>
-              {item.product?.name ?? 'Producto'}
-              {item.product?.sku ? ` (${item.product.sku})` : ''}
-            </Text>
-            <Text style={[s.tdCell, s.colQty]}>{item.quantity}</Text>
-            <Text style={[s.tdCell, s.colPrice]}>
-              {fmtCurrency(item.unitPrice, invoice.currency)}
-            </Text>
-            {!isTypeC && <Text style={[s.tdCell, s.colTaxRate]}>{item.taxRate}%</Text>}
-            {!isTypeC && (
-              <Text style={[s.tdCell, s.colTaxAmt]}>
-                {fmtCurrency(item.taxAmount, invoice.currency)}
-              </Text>
-            )}
-            <Text style={[s.tdCell, s.colTotal]}>
-              {fmtCurrency(item.total, invoice.currency)}
-            </Text>
+        {/* ── ÍTEMS ──────────────────────────────────────────── */}
+        <View style={[ps.tableHead, { marginTop: 10.5 }]}>
+          <Text style={[ps.th, s.colCode]}>Código</Text>
+          <Text style={[ps.th, s.colDesc]}>Descripción</Text>
+          <Text style={[ps.th, s.colQty]}>Cant.</Text>
+          <Text style={[ps.th, s.colPrice]}>P. unit.</Text>
+          <Text style={[ps.th, s.colBonif]}>Bonif.</Text>
+          <Text style={[ps.th, s.colTotal]}>Total</Text>
+        </View>
+        {items.map((item) => (
+          <View key={item.id} style={ps.tableRow} wrap={false}>
+            <Text style={[ps.mono, s.colCode]}>{itemCode(item)}</Text>
+            <Text style={s.colDesc}>{itemDescription(item).toUpperCase()}</Text>
+            <Text style={s.colQty}>{fmtQty(item.quantity)}</Text>
+            <Text style={s.colPrice}>{fmtNum(grossUnitPrice(item))}</Text>
+            <Text style={s.colBonif}>{Number(item.discountPct) > 0 ? `${Number(item.discountPct).toLocaleString('es-AR')}%` : ''}</Text>
+            <Text style={s.colTotal}>{fmtNum(item.total)}</Text>
           </View>
         ))}
-      </View>
+        <Text style={{ paddingVertical: 4.5, paddingHorizontal: 3, color: LABEL, fontSize: 8.25 }}>
+          Precios con IVA incluido · Importes en {currency === 'USD' ? 'dólares' : 'pesos'}
+        </Text>
 
-      {/* ── TOTALS ───────────────────────────────────────────── */}
-      <View style={s.totalsWrapper}>
-        <View style={s.totalsBox}>
-          {!isTypeC && Object.entries(taxBreakdown).map(([rate, { base }], i) => (
-            <View key={rate} style={[s.totalsRow, i === 0 ? s.totalsFirstRow : {}]}>
-              <Text style={s.totalsLabel}>Neto gravado ({rate}%)</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(base, invoice.currency)}</Text>
-            </View>
-          ))}
-          {!isTypeC && Object.entries(taxBreakdown).map(([rate, { tax }]) => (
-            <View key={`iva-${rate}`} style={s.totalsRow}>
-              <Text style={s.totalsLabel}>IVA {rate}%</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(tax, invoice.currency)}</Text>
-            </View>
-          ))}
-          <View style={[s.totalsRow, isTypeC ? s.totalsFirstRow : {}]}>
-            <Text style={s.totalsLabel}>Subtotal</Text>
-            <Text style={s.totalsValue}>{fmtCurrency(invoice.subtotal, invoice.currency)}</Text>
-          </View>
-          {!isTypeC && (
-            <View style={s.totalsRow}>
-              <Text style={s.totalsLabel}>Total IVA</Text>
-              <Text style={s.totalsValue}>{fmtCurrency(invoice.taxAmount, invoice.currency)}</Text>
-            </View>
+        <View style={{ flexGrow: 1 }} />
+
+        {/* ── PIE ────────────────────────────────────────────── */}
+        <View wrap={false}>
+          {currency === 'USD' && (
+            <Text style={{ fontSize: 8.25, color: SOFT, paddingHorizontal: 3, marginBottom: 8 }}>
+              Tipo de cambio de la factura: U$S 1 = {fmtMoney(invoice.exchangeRate)}. Se factura según la cotización tipo
+              vendedor del BNA y se ajustará a la cotización del dólar tipo vendedor del BNA al momento del efectivo pago.
+            </Text>
           )}
-          <View style={s.totalFinalRow}>
-            <Text style={s.totalFinalLabel}>TOTAL</Text>
-            <Text style={s.totalFinalValue}>{fmtCurrency(invoice.total, invoice.currency)}</Text>
+
+          <View style={{ flexDirection: 'row', paddingHorizontal: 3, paddingBottom: 7.5 }}>
+            <View style={{ flex: 1, paddingRight: 21 }}>
+              <Text style={ps.sectionTitle}>Forma de pago · {saleCond}</Text>
+              {rows.length === 0 ? (
+                <Text style={{ paddingVertical: 3.75, color: LABEL }}>Sin cobros registrados</Text>
+              ) : rows.map((r) => (
+                <View key={r.id} style={s.payRow}>
+                  <Text style={{ width: 72 }}>{r.method}</Text>
+                  <Text style={{ flex: 1, color: LABEL, paddingRight: 6 }}>{r.detail}</Text>
+                  <Text style={{ width: 69, textAlign: 'right' }}>{fmtNum(r.amount)}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ps.sectionTitle}>Datos de entrega</Text>
+              <View style={{ paddingTop: 3.75 }}>
+                <KV
+                  labelWidth={61}
+                  rows={[
+                    ['Remito', remitos.map((r) => r.number).join(' · ') || '-'],
+                    ['Transporte', invoice.transport],
+                    ['Vendedor', invoice.user?.name],
+                    ['Asociado', origin],
+                    ['Observ.', invoice.notes],
+                  ]}
+                />
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
 
-      {/* ── RÉGIMEN DE TRANSPARENCIA FISCAL (Ley 27.743) ─────── */}
-      {transparency.applies && (
-        <View style={s.fiscalBox}>
-          <Text style={s.fiscalLegend}>{FISCAL_TRANSPARENCY_LEGEND}</Text>
-          {transparency.showAmount && (
-            <View style={s.fiscalRow}>
-              <Text style={s.fiscalLabel}>I.V.A. Contenido</Text>
-              <Text style={s.fiscalValue}>
-                {fmtCurrency(transparency.ivaContenido, invoice.currency)}
-              </Text>
+          <View style={[ps.box, { flexDirection: 'row', padding: 10.5 }]}>
+            {qrCodeDataUrl
+              ? <Image src={qrCodeDataUrl} style={{ width: 72, height: 72 }} />
+              : <View style={s.qr}><Text style={{ fontSize: 8.25, color: LABEL, textAlign: 'center' }}>{'QR\nARCA'}</Text></View>}
+            <View style={{ flex: 1, paddingHorizontal: 13.5, justifyContent: 'flex-end' }}>
+              {invoice.cae ? (
+                <>
+                  <Text style={{ color: LABEL, fontSize: 8.25, marginBottom: 2 }}>Comprobante autorizado por ARCA</Text>
+                  <Text style={{ marginBottom: 2 }}>CAE <Text style={{ fontFamily: 'PlexMono', fontWeight: 500 }}>{invoice.cae}</Text></Text>
+                  {invoice.caeExpiry ? <Text>Vto. CAE <Text style={{ fontWeight: 500 }}>{fmtDate(invoice.caeExpiry)}</Text></Text> : null}
+                </>
+              ) : (
+                <Text style={{ color: LABEL, fontSize: 8.25 }}>
+                  {isDraft ? 'Borrador: todavía no fue emitido.' : 'Sin CAE: este comprobante no fue autorizado por ARCA y no tiene validez fiscal.'}
+                </Text>
+              )}
             </View>
-          )}
-        </View>
-      )}
-
-      {/* ── NOTES ────────────────────────────────────────────── */}
-      {invoice.notes && (
-        <View style={s.notes}>
-          <Text style={s.notesLabel}>Observaciones</Text>
-          <Text style={s.notesText}>{invoice.notes}</Text>
-        </View>
-      )}
-
-      {/* ── FOOTER: CAE + QR ─────────────────────────────────── */}
-      {invoice.cae && (
-        <View style={s.footer}>
-          <View style={s.footerInfo}>
-            <Text style={s.caeTitle}>Comprobante Autorizado por ARCA</Text>
-            <View style={s.caeRow}>
-              <Text style={s.caeLabel}>CAE N°:</Text>
-              <Text style={s.caeValue}>{invoice.cae}</Text>
+            <View style={{ width: 198 }}>
+              {isTypeA ? (
+                <>
+                  <View style={s.totRow}><Text style={{ color: LABEL }}>Neto gravado</Text><Text>{fmtNum(netBeforeDiscount)}</Text></View>
+                  <View style={s.totRow}><Text style={{ color: LABEL }}>Descuento</Text><Text>{discountNet > 0 ? `- ${fmtNum(discountNet)}` : fmtNum(0)}</Text></View>
+                  <View style={s.totRow}><Text style={{ color: LABEL }}>Subtotal</Text><Text>{fmtNum(invoice.subtotal)}</Text></View>
+                  {[...ivaByRate.entries()].sort((a, b) => b[0] - a[0]).map(([rate, amount]) => (
+                    <View key={rate} style={s.totRow}>
+                      <Text style={{ color: LABEL }}>IVA {rate.toLocaleString('es-AR')}%</Text>
+                      <Text>{fmtNum(amount)}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <View style={s.totRow}><Text style={{ color: LABEL }}>Subtotal</Text><Text>{fmtNum(grossBeforeDiscount)}</Text></View>
+                  <View style={s.totRow}><Text style={{ color: LABEL }}>Descuento</Text><Text>{discountGross > 0 ? `- ${fmtNum(discountGross)}` : fmtNum(0)}</Text></View>
+                </>
+              )}
+              <View style={ps.totalLine}>
+                <Text style={{ fontWeight: 600, fontSize: 9.75 }}>TOTAL</Text>
+                <Text style={{ fontWeight: 700, fontSize: 13.5 }}>{fmtMoney(invoice.total, currency)}</Text>
+              </View>
             </View>
-            {invoice.caeExpiry && (
-              <View style={s.caeRow}>
-                <Text style={s.caeLabel}>Fecha de Vto. CAE:</Text>
-                <Text style={s.caeValue}>{fmtDate(invoice.caeExpiry)}</Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingTop: 4.5, paddingHorizontal: 3 }}>
+            <Text style={{ flex: 1, fontSize: 8.25, color: SOFT, paddingRight: 12 }}>
+              Son {currency === 'USD' ? 'dólares' : 'pesos'}: {amountToWords(invoice.total, currency)}.
+            </Text>
+            {transparency.applies && (
+              <View style={{ width: 198, borderWidth: 0.75, borderColor: INK, padding: 4.5 }}>
+                <Text style={{ fontSize: 7.5, fontWeight: 600 }}>{FISCAL_TRANSPARENCY_LEGEND}</Text>
+                {transparency.showAmount && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+                    <Text style={{ fontSize: 8.25, fontWeight: 600 }}>IVA contenido</Text>
+                    <Text style={{ fontSize: 8.25, fontWeight: 600 }}>{fmtMoney(transparency.ivaContenido, currency)}</Text>
+                  </View>
+                )}
               </View>
             )}
-            {invoice.afipPtVenta && (
-              <View style={s.caeRow}>
-                <Text style={s.caeLabel}>Punto de Venta:</Text>
-                <Text style={s.caeValue}>{String(invoice.afipPtVenta).padStart(4, '0')}</Text>
-              </View>
-            )}
           </View>
-          {qrCodeDataUrl && (
-            <View style={s.footerQr}>
-              <Image src={qrCodeDataUrl} style={{ width: 70, height: 70 }} />
-              <Text style={s.qrLabel}>Verificar en ARCA</Text>
-            </View>
-          )}
         </View>
-      )}
-
-      {/* No CAE notice */}
-      {!invoice.cae && !isDraft && (
-        <View style={[s.footer, { backgroundColor: '#fff8e1' }]}>
-          <Text style={{ fontSize: 7.5, color: '#8a6d00' }}>
-            Este comprobante no fue autorizado por ARCA (sin CAE). No tiene validez fiscal.
-          </Text>
-        </View>
-      )}
-    </Page>
-  );
-}
-
-export default function InvoicePDF({ invoice, afipConfig, qrCodeDataUrl }: InvoicePDFProps) {
-  const typeLetter = getTypeLetter(invoice.type);
-  const typeShort = getTypeShortName(invoice.type);
-  const isDraft = invoice.status === 'DRAFT';
-
-  const taxBreakdown = invoice.items.reduce<Record<number, { base: number; tax: number }>>(
-    (acc, item) => {
-      if (!acc[item.taxRate]) acc[item.taxRate] = { base: 0, tax: 0 };
-      acc[item.taxRate].base += item.subtotal;
-      acc[item.taxRate].tax += item.taxAmount;
-      return acc;
-    },
-    {}
-  );
-
-  const issuerName = afipConfig?.businessName ?? '';
-  const issuerAddress = afipConfig?.businessAddress ?? '';
-  const issuerCuit = afipConfig?.cuit ? fmtCuit(afipConfig.cuit) : '';
-  const issuerTaxCondition = afipConfig?.taxCondition ?? 'Responsable Inscripto';
-  const issuerGrossIncome = afipConfig?.grossIncome ?? '';
-  const issuerActivityStart = afipConfig?.activityStartDate ?? '';
-
-  const pageProps = {
-    invoice, afipConfig, qrCodeDataUrl, typeLetter, typeShort, isDraft,
-    taxBreakdown, issuerName, issuerAddress, issuerCuit, issuerTaxCondition,
-    issuerGrossIncome, issuerActivityStart,
-  };
-
-  return (
-    <Document
-      title={`${INVOICE_TYPE_LABELS[invoice.type]} ${invoiceNumber(invoice)}`}
-      author={issuerName || 'Cloud-Bill'}
-    >
-      <InvoicePage {...pageProps} />
+      </Page>
     </Document>
   );
 }

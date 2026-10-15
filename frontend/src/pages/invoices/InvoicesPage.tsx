@@ -610,6 +610,14 @@ export default function InvoicesPage() {
                               {statusCfg.label}
                             </span>
                           )}
+                          {Number(inv.creditNotesTotal ?? 0) > 0 && (
+                            <span
+                              title={`Notas de crédito por ${formatCurrency(Number(inv.creditNotesTotal), inv.currency)}`}
+                              className="ml-1 inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full border leading-none text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-900/30 dark:border-rose-700/60"
+                            >
+                              NC
+                            </span>
+                          )}
                         </td>
 
                         {/* Abrir en pestana nueva — para revisar varias sin perder la lista */}

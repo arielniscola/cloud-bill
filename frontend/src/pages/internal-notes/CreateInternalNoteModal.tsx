@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
 import { CustomerSearchSelect } from '../../components/shared';
 import { internalNotesService, customersService, suppliersService } from '../../services';
-import type { CreateInternalNoteDTO, Customer, Supplier, InternalNoteEntity } from '../../types';
+import type { CreateInternalNoteDTO, Customer, Supplier, InternalNoteEntity } from '../../types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 interface Props {
   onClose:   () => void;
@@ -73,8 +74,8 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
       };
       await internalNotesService.create(payload);
       onCreated();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al crear la nota');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al crear la nota');
     } finally {
       setIsLoading(false);
     }

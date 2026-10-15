@@ -5,6 +5,7 @@ import { Button, Input } from '../../components/ui';
 import { invoicesService, mercadoPagoService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
 import type { Invoice } from '../../types';
+import { apiErrorMessage } from '../../utils/apiError';
 
 interface Props {
   open: boolean;
@@ -48,8 +49,8 @@ export default function LinkMpPaymentModal({ open, onClose, onLinked, initialPay
       toast.success('Pago vinculado correctamente');
       onLinked();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al vincular el pago');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al vincular el pago');
     } finally {
       setIsLinking(false);
     }

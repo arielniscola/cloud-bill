@@ -33,10 +33,17 @@ export interface CurrentAccount {
   updatedAt: string;
 }
 
+/** Pago a cuenta del cliente: genera un recibo sin factura. */
 export interface RegisterPaymentDTO {
   amount: number;
   description?: string;
   currency: Currency;
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER' | 'CHECK' | 'CARD' | 'MERCADO_PAGO';
+  cashRegisterId?: string | null;
+  bankAccountId?: string | null;
+  reference?: string | null;
+  bank?: string | null;
+  checkDueDate?: string | null;
 }
 
 export interface SetCreditLimitDTO {

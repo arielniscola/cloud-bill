@@ -137,6 +137,7 @@ export default function CustomerDetailPage() {
     <div>
       <PageHeader
         title={customer.name}
+        subtitle={customer.code ? `Código ${String(customer.code).padStart(5, '0')}` : undefined}
         backTo="/customers"
         actions={
           canWrite ? (

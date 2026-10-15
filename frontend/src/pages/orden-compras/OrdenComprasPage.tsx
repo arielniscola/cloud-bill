@@ -8,7 +8,7 @@ import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { ordenComprasService, suppliersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import type { OrdenCompra, OrdenCompraStatus, OrdenCompraFilters } from '../../types';
+import type { OrdenCompra, OrdenCompraStatus} from '../../types';
 import type { Supplier } from '../../types';
 
 const STATUS_CFG: Record<OrdenCompraStatus, { label: string; className: string }> = {

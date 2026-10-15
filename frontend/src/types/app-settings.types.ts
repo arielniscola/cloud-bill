@@ -1,4 +1,6 @@
 export type DefaultInvoiceType = 'AUTO' | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C';
+/** Copias del remito A4: dos por hoja, una hoja por copia o una sola copia. */
+export type RemitoCopies = 'TWO_PER_PAGE' | 'ONE_PER_PAGE' | 'SINGLE';
 
 export interface AppSettings {
   id: string;
@@ -18,12 +20,12 @@ export interface AppSettings {
   smtpHost:                     string | null;
   smtpPort:                     number;
   smtpUser:                     string | null;
-  smtpPass:                     string | null;
+  smtpPassSet?:                 boolean;  // la contraseña no viaja al cliente
   smtpFrom:                     string | null;
   smtpSecure:                   boolean;
-  mpAccessToken:                string | null;
+  mpAccessTokenSet?:            boolean;
   mpPublicKey:                  string | null;
-  mpWebhookSecret:              string | null;
+  mpWebhookSecretSet?:          boolean;
   mpMode:                       'test' | 'production';
   mpPosId:                      string | null;
   defaultRegisterPaymentInvoice?:     boolean;
@@ -33,6 +35,11 @@ export interface AppSettings {
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
   defaultInvoiceType?:               DefaultInvoiceType;
+  printWebsite?:                     string | null;
+  printEstablishment?:               string | null;
+  remitoCai?:                        string | null;
+  remitoCaiExpiry?:                  string | null;
+  remitoCopies?:                     RemitoCopies;
   defaultInvoiceCashRegister?:  { id: string; name: string } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -69,4 +76,9 @@ export interface UpdateAppSettingsDTO {
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
   defaultInvoiceType?:               DefaultInvoiceType;
+  printWebsite?:                     string | null;
+  printEstablishment?:               string | null;
+  remitoCai?:                        string | null;
+  remitoCaiExpiry?:                  string | null;
+  remitoCopies?:                     RemitoCopies;
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Landmark, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Landmark, Pencil, Trash2} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Input, Select } from '../../components/ui';
 import { PageHeader, ConfirmDialog, BancoSelect } from '../../components/shared';

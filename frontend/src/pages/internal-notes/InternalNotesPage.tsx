@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { X, Plus, FileEdit, CheckCircle2, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, Plus, CheckCircle2, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Card, Button, Badge } from '../../components/ui';
+import { Card, Button} from '../../components/ui';
 import { PageHeader, Pagination, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
 import { internalNotesService, customersService, suppliersService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
 import type { InternalNote, InternalNoteType, InternalNoteStatus, Customer, Supplier } from '../../types';
-import CreateInternalNoteModal from './CreateInternalNoteModal';
+import CreateInternalNoteModal from './CreateInternalNoteModal';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const TYPE_LABEL: Record<InternalNoteType, string> = {
   DEBIT:  'Nota de Débito',
@@ -129,8 +130,8 @@ export default function InternalNotesPage() {
       toast.success('Nota interna anulada');
       setCancelId(null);
       fetchNotes();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Error al anular');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al anular');
     } finally {
       setIsCancelling(false);
     }

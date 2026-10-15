@@ -15,7 +15,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { CURRENCY_OPTIONS, PAYMENT_TERMS_OPTIONS, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType } from '../../utils/getDefaultInvoiceType';
 import type { DefaultInvoiceType } from '../../types/app-settings.types';
-import type { Customer, Product, Currency, InvoiceType } from '../../types';
+import type { Customer, Product, Currency} from '../../types';
 
 const budgetItemSchema = z.object({
   productId: z.string().optional().nullable(),

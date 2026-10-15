@@ -429,8 +429,6 @@ export default function OrdenPedidoDetailPage() {
         <div className="flex items-center gap-2 mb-6">
           {(['DRAFT', 'CONFIRMED', 'PAID'] as const).map((step, i, arr) => {
             const labels: Record<string, string> = { DRAFT: 'Borrador', CONFIRMED: 'Confirmada', PAID: 'Pagada' };
-            const order = ['DRAFT', 'CONFIRMED', 'PARTIALLY_PAID', 'PAID'];
-            const currentIdx = order.indexOf(op.status);
             const stepOrder = ['DRAFT', 'CONFIRMED', 'PAID'];
             const stepIdx = stepOrder.indexOf(step);
             const currentStepIdx = op.status === 'PARTIALLY_PAID' ? 2 : stepOrder.indexOf(op.status);

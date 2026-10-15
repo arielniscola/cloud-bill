@@ -12,6 +12,9 @@ export default function MercadoPagoSettingsCard() {
     mpMode:          'test' as 'test' | 'production',
     mpPosId:         '',
   });
+  // Token y secret guardados no viajan al navegador: solo se sabe si existen.
+  const [tokenSet,    setTokenSet]    = useState(false);
+  const [secretSet,   setSecretSet]   = useState(false);
   const [showToken,   setShowToken]   = useState(false);
   const [showSecret,  setShowSecret]  = useState(false);
   const [isLoading,   setIsLoading]   = useState(true);
@@ -19,13 +22,17 @@ export default function MercadoPagoSettingsCard() {
 
   useEffect(() => {
     appSettingsService.get()
-      .then((s) => setForm({
-        mpAccessToken:   s.mpAccessToken   ?? '',
-        mpPublicKey:     s.mpPublicKey     ?? '',
-        mpWebhookSecret: s.mpWebhookSecret ?? '',
-        mpMode:          s.mpMode          ?? 'test',
-        mpPosId:         s.mpPosId         ?? '',
-      }))
+      .then((s) => {
+        setForm({
+          mpAccessToken:   '',
+          mpPublicKey:     s.mpPublicKey     ?? '',
+          mpWebhookSecret: '',
+          mpMode:          s.mpMode          ?? 'test',
+          mpPosId:         s.mpPosId         ?? '',
+        });
+        setTokenSet(Boolean(s.mpAccessTokenSet));
+        setSecretSet(Boolean(s.mpWebhookSecretSet));
+      })
       .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
@@ -36,13 +43,17 @@ export default function MercadoPagoSettingsCard() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await appSettingsService.update({
-        mpAccessToken:   form.mpAccessToken   || null,
+      const saved = await appSettingsService.update({
+        // Vacío = conservar el guardado (o dejarlo sin cargar si se quitó).
+        ...(form.mpAccessToken ? { mpAccessToken: form.mpAccessToken } : tokenSet ? {} : { mpAccessToken: null }),
         mpPublicKey:     form.mpPublicKey     || null,
-        mpWebhookSecret: form.mpWebhookSecret || null,
+        ...(form.mpWebhookSecret ? { mpWebhookSecret: form.mpWebhookSecret } : secretSet ? {} : { mpWebhookSecret: null }),
         mpMode:          form.mpMode,
         mpPosId:         form.mpPosId || null,
       });
+      setTokenSet(Boolean(saved.mpAccessTokenSet));
+      setSecretSet(Boolean(saved.mpWebhookSecretSet));
+      setForm((prev) => ({ ...prev, mpAccessToken: '', mpWebhookSecret: '' }));
       toast.success('Configuración de MercadoPago guardada');
     } catch {
       toast.error('Error al guardar');
@@ -51,7 +62,7 @@ export default function MercadoPagoSettingsCard() {
     }
   };
 
-  const isConfigured = Boolean(form.mpAccessToken);
+  const isConfigured = tokenSet || Boolean(form.mpAccessToken);
 
   if (isLoading) {
     return (
@@ -127,7 +138,7 @@ export default function MercadoPagoSettingsCard() {
               type={showToken ? 'text' : 'password'}
               value={form.mpAccessToken}
               onChange={(e) => set('mpAccessToken', e.target.value)}
-              placeholder={form.mpMode === 'test' ? 'TEST-...' : 'APP_USR-...'}
+              placeholder={tokenSet ? 'Guardado — escribí para reemplazarlo' : form.mpMode === 'test' ? 'TEST-...' : 'APP_USR-...'}
               autoComplete="new-password"
             />
             <button
@@ -138,6 +149,15 @@ export default function MercadoPagoSettingsCard() {
               {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {tokenSet && !form.mpAccessToken && (
+            <button
+              type="button"
+              onClick={() => setTokenSet(false)}
+              className="mt-1.5 text-xs text-gray-400 hover:text-red-500 dark:text-slate-500"
+            >
+              Quitar el token guardado
+            </button>
+          )}
         </div>
 
         <div>
@@ -160,7 +180,7 @@ export default function MercadoPagoSettingsCard() {
               type={showSecret ? 'text' : 'password'}
               value={form.mpWebhookSecret}
               onChange={(e) => set('mpWebhookSecret', e.target.value)}
-              placeholder="Secret del webhook en el panel de MP"
+              placeholder={secretSet ? 'Guardado — escribí para reemplazarlo' : 'Secret del webhook en el panel de MP'}
               autoComplete="new-password"
             />
             <button
@@ -171,6 +191,15 @@ export default function MercadoPagoSettingsCard() {
               {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {secretSet && !form.mpWebhookSecret && (
+            <button
+              type="button"
+              onClick={() => setSecretSet(false)}
+              className="mt-1.5 text-xs text-gray-400 hover:text-red-500 dark:text-slate-500"
+            >
+              Quitar el secret guardado
+            </button>
+          )}
         </div>
 
         <div>

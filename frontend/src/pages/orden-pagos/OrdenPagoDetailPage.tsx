@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Printer, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ChevronLeft, Printer, Download, XCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { pdf } from '@react-pdf/renderer';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog, formatChequeNumber } from '../../components/shared';
@@ -8,6 +9,9 @@ import { ordenPagosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { PAYMENT_METHODS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
 import type { OrdenPago } from '../../types/ordenPago.types';
+import OrdenPagoPDF from '../../components/pdf/OrdenPagoPDF';
+import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const RETENTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   RETENTION_TYPE_OPTIONS.map((o) => [o.value, o.label]),
@@ -15,12 +19,6 @@ const RETENTION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
 const RETENTION_BASE_LABELS: Record<string, string> = Object.fromEntries(
   RETENTION_BASE_OPTIONS.map((o) => [o.value, o.label]),
 );
-
-const PAYMENT_STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Pendiente',
-  PARTIALLY_PAID: 'Pago parcial',
-  PAID: 'Pagado',
-};
 
 function SkeletonDetail() {
   return (
@@ -41,6 +39,22 @@ export default function OrdenPagoDetailPage() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const handlePdf = async (mode: 'print' | 'download', target: OrdenPago | null = op) => {
+    if (!target) return;
+    setIsGeneratingPDF(true);
+    try {
+      const ctx = await loadPrintContext();
+      const blob = await pdf(<OrdenPagoPDF op={target} ctx={ctx} />).toBlob();
+      if (mode === 'print') printBlob(blob);
+      else downloadBlob(blob, `orden-pago-${target.number}.pdf`);
+    } catch (err) {
+      toast.error((err instanceof Error && err.message) || 'Error al generar PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -60,8 +74,7 @@ export default function OrdenPagoDetailPage() {
       next.delete('print');
       return next;
     }, { replace: true });
-    const t = setTimeout(() => window.print(), 100);
-    return () => clearTimeout(t);
+    handlePdf('print', op);
   }, [op]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePay = async () => {
@@ -72,8 +85,8 @@ export default function OrdenPagoDetailPage() {
       setOp(updated);
       toast.success('Orden de pago marcada como pagada');
       setPayOpen(false);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al procesar el pago');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al procesar el pago');
     } finally {
       setIsPaying(false);
     }
@@ -87,8 +100,8 @@ export default function OrdenPagoDetailPage() {
       setOp((prev) => prev ? { ...prev, status: updated.status } : prev);
       toast.success('Orden de pago cancelada');
       setCancelOpen(false);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Error al cancelar');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) ?? 'Error al cancelar');
     } finally {
       setIsCancelling(false);
     }
@@ -119,9 +132,14 @@ export default function OrdenPagoDetailPage() {
               <ChevronLeft className="w-4 h-4 mr-1" />Volver
             </Button>
             {!isCancelled && (
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="w-4 h-4 mr-2" />Imprimir
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => handlePdf('print')} isLoading={isGeneratingPDF}>
+                  <Printer className="w-4 h-4 mr-2" />Imprimir
+                </Button>
+                <Button variant="outline" onClick={() => handlePdf('download')} disabled={isGeneratingPDF}>
+                  <Download className="w-4 h-4 mr-2" />PDF
+                </Button>
+              </>
             )}
             {isEmitted && (
               <Button onClick={() => setPayOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
@@ -251,10 +269,16 @@ export default function OrdenPagoDetailPage() {
                         </button>
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-medium">
-                        {item.invoice ? formatCurrency(Number(item.invoice.amount), op.currency) : '—'}
+                        {/* La factura en su moneda (puede no ser la de la OP: FC USD pagada en pesos) */}
+                        {item.invoice ? formatCurrency(Number(item.invoice.amount), item.invoice.currency ?? op.currency) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(Number(item.amount), op.currency)}
+                        {item.invoice?.currency && item.invoice.currency !== op.currency && Number(op.exchangeRate) > 0 && (
+                          <p className="text-[11px] font-normal text-gray-400 dark:text-slate-500">
+                            = {formatCurrency(Number(item.amount) / Number(op.exchangeRate), item.invoice.currency)} · cot. {Number(op.exchangeRate).toLocaleString('es-AR')}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ))}

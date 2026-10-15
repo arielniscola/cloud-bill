@@ -12,6 +12,7 @@ import {
   PLAN_NAMES, PLAN_LABELS, PLAN_DESCRIPTIONS, PLAN_COLORS,
   PLAN_FEATURE_MATRIX, FEATURE_LABELS, type PlanName,
 } from '../../utils/planFeatures';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const TAX_LABEL: Record<string, string> = {
   RESPONSABLE_INSCRIPTO: 'Responsable Inscripto',
@@ -62,8 +63,8 @@ export default function CompanyDetailPage() {
       await companiesService.updateModules(id, finalList);
       setCompany((prev) => prev ? { ...prev, enabledModules: finalList } : prev);
       toast.success(`Módulo "${MODULE_LABELS[key].label}" ${next.includes(key) ? 'activado' : 'desactivado'}`);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al actualizar módulos');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al actualizar módulos');
     } finally {
       setTogglingModule(null);
     }
@@ -76,8 +77,8 @@ export default function CompanyDetailPage() {
       await companiesService.updatePlan(id, selectedPlan);
       setCompany(prev => prev ? { ...prev, plan: selectedPlan } : prev);
       toast.success(`Plan actualizado a ${PLAN_LABELS[selectedPlan]}`);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al actualizar el plan');
+    } catch (err) {
+      toast.error(apiErrorMessage(err) || 'Error al actualizar el plan');
     } finally {
       setIsSavingPlan(false);
     }

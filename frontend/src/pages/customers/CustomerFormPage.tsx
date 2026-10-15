@@ -42,6 +42,7 @@ const customerSchema = z
     city: z.string().optional().nullable(),
     province: z.string().optional().nullable(),
     postalCode: z.string().optional().nullable(),
+    grossIncome: z.string().optional().nullable(),
     phone: z.string().optional().nullable(),
     email: z.string().email('Email inválido').optional().or(z.literal('')).nullable(),
     notes: z.string().optional().nullable(),
@@ -98,6 +99,7 @@ export default function CustomerFormPage() {
   const isEditing = !!id;
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(isEditing);
+  const [customerCode, setCustomerCode] = useState<number | null>(null);
   const [padronState, setPadronState] = useState<PadronState>('idle');
 
   const {
@@ -138,6 +140,8 @@ export default function CustomerFormPage() {
         setValue('city', c.city);
         setValue('province', c.province);
         setValue('postalCode', c.postalCode);
+        setValue('grossIncome', c.grossIncome ?? null);
+        setCustomerCode(c.code ?? null);
         setValue('phone', c.phone);
         setValue('email', c.email);
         setValue('notes', c.notes);
@@ -155,7 +159,7 @@ export default function CustomerFormPage() {
   const onSubmit = async (data: CustomerFormData) => {
     setIsLoading(true);
     try {
-      const payload = { ...data, email: data.email || null };
+      const payload = { ...data, email: data.email || null, grossIncome: data.grossIncome || null };
       if (isEditing) {
         await customersService.update(id, payload);
         toast.success('Cliente actualizado');
@@ -251,7 +255,14 @@ export default function CustomerFormPage() {
 
             {/* Nombre */}
             <div className="mt-4">
-              <FieldLabel required>Nombre / Razón Social</FieldLabel>
+              <div className="flex items-baseline justify-between gap-3">
+                <FieldLabel required>Nombre / Razón Social</FieldLabel>
+                {customerCode ? (
+                  <span className="text-xs text-gray-500 dark:text-slate-400">
+                    Código <span className="font-mono font-semibold text-gray-700 dark:text-slate-200">{String(customerCode).padStart(5, '0')}</span>
+                  </span>
+                ) : null}
+              </div>
               <input
                 type="text"
                 placeholder="Ej: Juan García o Acme S.A."
@@ -279,6 +290,17 @@ export default function CustomerFormPage() {
                 value={taxCondition}
                 onChange={(v) => setValue('taxCondition', v, { shouldValidate: !!errors.taxId })}
                 columns={4}
+              />
+            </div>
+
+            {/* Ingresos Brutos (se imprime en factura y remito) */}
+            <div className="mt-4">
+              <FieldLabel>N° de Ingresos Brutos</FieldLabel>
+              <input
+                type="text"
+                placeholder="Ej: 0600609"
+                {...register('grossIncome')}
+                className={fieldClass()}
               />
             </div>
 
