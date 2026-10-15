@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
-import { Decimal } from '@prisma/client/runtime/library';
 import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
@@ -10,6 +9,7 @@ import prisma from '../../database/prisma';
 import { computeDeliveryStatus } from '../../../shared/utils/deliveryStatus';
 import { resolveSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import { sendRemitoEmail } from '../../services/EmailService';
+import { readTransport, writeTransport } from '../../database/partyExtras';
 
 // Depósito donde opera el remito: el del documento de venta vinculado
 // (factura u orden de pedido) o el depósito por defecto de la empresa.
@@ -110,6 +110,11 @@ export class RemitoController {
         items: req.body.items,
       } as any);
 
+      const transport = req.body.transport !== undefined
+        ? req.body.transport
+        : (invoiceId ? await readTransport('invoices', invoiceId) : undefined);
+      await writeTransport('remitos', remito.id, transport ?? undefined);
+
       // Stock movements only for standalone remitos (linked docs handled stock at creation)
       if (!isLinked) {
         const defaultWarehouse = await warehouseRepository.findDefaultOrFirstActive(req.companyId);
@@ -190,7 +195,6 @@ export class RemitoController {
     try {
       const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
-      const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
       const remito = await remitoRepository.findById(req.params.id, req.companyId);
       if (!remito) {
@@ -289,7 +293,6 @@ export class RemitoController {
     try {
       const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
-      const warehouseRepository = container.resolve<IWarehouseRepository>('WarehouseRepository');
 
       const remito = await remitoRepository.findById(req.params.id, req.companyId);
       if (!remito) {

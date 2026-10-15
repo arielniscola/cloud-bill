@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
+import { startOfUtcDay, endOfUtcDay } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
@@ -346,12 +347,10 @@ export class PurchaseInvoiceController {
       if (q.saleCondition) conditions.push(Prisma.sql`pi."saleCondition" = ${q.saleCondition}`);
       if (q.type)          conditions.push(Prisma.sql`pi.type = ${q.type}`);
       if (q.search)        conditions.push(Prisma.sql`pi.number ILIKE ${'%' + q.search + '%'}`);
-      if (q.dateFrom)      conditions.push(Prisma.sql`pi.date >= ${new Date(q.dateFrom)}`);
-      if (q.dateTo) {
-        const to = new Date(q.dateTo);
-        to.setHours(23, 59, 59, 999);
-        conditions.push(Prisma.sql`pi.date <= ${to}`);
-      }
+      const from = q.dateFrom ? startOfUtcDay(q.dateFrom) : undefined;
+      const to   = q.dateTo ? endOfUtcDay(q.dateTo) : undefined;
+      if (from) conditions.push(Prisma.sql`pi.date >= ${from}`);
+      if (to)   conditions.push(Prisma.sql`pi.date <= ${to}`);
       const where = Prisma.join(conditions, ' AND ');
 
       // Lo ya imputado por órdenes de pago pagadas, en la moneda de la factura.
@@ -682,12 +681,10 @@ export class PurchaseInvoiceController {
       const opConditions: Prisma.Sql[] = [Prisma.sql`op."companyId" = ${req.companyId}`];
       if (q.supplierId) opConditions.push(Prisma.sql`op."supplierId" = ${q.supplierId}`);
       if (q.type)       opConditions.push(Prisma.sql`ret.type = ${q.type}`);
-      if (q.dateFrom)   opConditions.push(Prisma.sql`op.date >= ${new Date(q.dateFrom)}`);
-      if (q.dateTo) {
-        const to = new Date(q.dateTo);
-        to.setHours(23, 59, 59, 999);
-        opConditions.push(Prisma.sql`op.date <= ${to}`);
-      }
+      const opFrom = q.dateFrom ? startOfUtcDay(q.dateFrom) : undefined;
+      const opTo   = q.dateTo ? endOfUtcDay(q.dateTo) : undefined;
+      if (opFrom) opConditions.push(Prisma.sql`op.date >= ${opFrom}`);
+      if (opTo)   opConditions.push(Prisma.sql`op.date <= ${opTo}`);
       if (q.search) {
         const term = `%${q.search}%`;
         opConditions.push(Prisma.sql`(ret.certificate ILIKE ${term} OR op.number ILIKE ${term})`);

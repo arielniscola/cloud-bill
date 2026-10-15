@@ -85,3 +85,28 @@ export function endOfDay(input: string): Date | undefined {
   const [y, m, d] = input.split('-').map(Number);
   return fromWallClock(y, m, d, 23, 59, 59, 999);
 }
+
+/** Día calendario de hoy (`YYYY-MM-DD`) en la zona de la app. */
+export function todayIso(now: Date = new Date()): string {
+  return new Date(now.getTime() + tzOffsetMs(now)).toISOString().slice(0, 10);
+}
+
+/**
+ * Bordes de día en **UTC**, para las fechas de comprobante que se cargan sin
+ * hora (factura de compra, orden de pago, remito de compra): el front manda
+ * `YYYY-MM-DD` y se guardan como medianoche UTC. Contra esas columnas el día
+ * pedido es el día UTC — con los bordes argentinos de arriba, un comprobante
+ * fechado el 12 quedaría afuera de "desde el 12" y adentro de "hasta el 11".
+ * Un valor que ya traiga hora se respeta tal cual.
+ */
+export function startOfUtcDay(input: string): Date | undefined {
+  if (!input) return undefined;
+  const parsed = new Date(DATE_ONLY.test(input) ? `${input}T00:00:00.000Z` : input);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+export function endOfUtcDay(input: string): Date | undefined {
+  if (!input) return undefined;
+  const parsed = new Date(DATE_ONLY.test(input) ? `${input}T23:59:59.999Z` : input);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}

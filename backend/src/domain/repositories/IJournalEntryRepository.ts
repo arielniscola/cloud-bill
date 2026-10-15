@@ -15,5 +15,5 @@ export interface IJournalEntryRepository {
     filters: JournalEntryFilters
   ): Promise<{ data: JournalEntry[]; total: number; page: number; limit: number }>;
   findById(id: string, companyId?: string): Promise<JournalEntry | null>;
-  findByReference(referenceType: string, referenceId: string): Promise<JournalEntry[]>;
+  findByReference(referenceType: string, referenceId: string, companyId: string): Promise<JournalEntry[]>;
 }

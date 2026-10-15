@@ -36,14 +36,24 @@ export class AccountingController {
       const repo = container.resolve<IJournalEntryRepository>('JournalEntryRepository');
       const { page, limit, referenceType, referenceId, dateFrom, dateTo } = req.query;
 
+      const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+      const date = (v: unknown) => {
+        const d = typeof v === 'string' && v ? new Date(v) : undefined;
+        return d && !Number.isNaN(d.getTime()) ? d : undefined;
+      };
+      const int = (v: unknown, fallback: number, max: number) => {
+        const n = Math.floor(Number(v));
+        return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : fallback;
+      };
+
       const result = await repo.findAll(
-        { page: Number(page) || 1, limit: Number(limit) || 20 },
+        { page: int(page, 1, Number.MAX_SAFE_INTEGER), limit: int(limit, 20, 200) },
         {
           companyId: req.companyId!,
-          referenceType: referenceType as string | undefined,
-          referenceId: referenceId as string | undefined,
-          dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
-          dateTo: dateTo ? new Date(dateTo as string) : undefined,
+          referenceType: text(referenceType),
+          referenceId: text(referenceId),
+          dateFrom: date(dateFrom),
+          dateTo: date(dateTo),
         }
       );
 
@@ -135,7 +145,7 @@ export class AccountingController {
     try {
       const repo = container.resolve<IJournalEntryRepository>('JournalEntryRepository');
       const { type, id } = req.params;
-      const entries = await repo.findByReference(type, id);
+      const entries = await repo.findByReference(type, id, req.companyId!);
       res.json({ status: 'success', data: entries });
     } catch (error) {
       next(error);

@@ -1,17 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
+import { invalidateUserState } from '../middlewares/authMiddleware';
 import { container } from 'tsyringe';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
-import { AppError, NotFoundError, ConflictError, ForbiddenError } from '../../../shared/errors/AppError';
+import { AppError, NotFoundError, ConflictError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
 
 const createUserSchema = z.object({
   name:      z.string().min(1),
   username:  z.string().min(3, 'Mínimo 3 caracteres').regex(/^\S+$/, 'Sin espacios'),
   email:     z.string().email().optional().or(z.literal('')),
-  password:  z.string().min(6, 'Mínimo 6 caracteres'),
+  password:  z.string().min(8, 'Mínimo 8 caracteres'),
   role:      z.enum(['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).default('SELLER'),
   companyId: z.string().uuid('ID de empresa inválido'),
 });
@@ -26,7 +27,7 @@ const updateUserSchema = z.object({
 });
 
 const changePasswordSchema = z.object({
-  password: z.string().min(6, 'Mínimo 6 caracteres'),
+  password: z.string().min(8, 'Mínimo 8 caracteres'),
 });
 
 const dashboardShortcutsSchema = z.object({
@@ -121,6 +122,7 @@ export class UserController {
       }
 
       const updated = await repo.update(req.params.id, updateData as any);
+      invalidateUserState(req.params.id);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
@@ -175,6 +177,7 @@ export class UserController {
       if (!user) throw new NotFoundError('Usuario');
 
       await repo.delete(req.params.id);
+      invalidateUserState(req.params.id);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({

@@ -1,4 +1,5 @@
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
+import crypto from 'crypto';
 import axios from 'axios';
 
 export interface MpPreferenceInput {
@@ -226,17 +227,18 @@ export class MercadoPagoService {
     secret: string
   ): boolean {
     try {
-      const crypto = require('crypto');
-      const manifest = `id:${dataId};request-id:${xRequestId};`;
-      const parts = xSignature.split(',');
+      const parts = xSignature.split(',').map((p) => p.trim());
       const tsEntry = parts.find((p) => p.startsWith('ts='));
       const v1Entry = parts.find((p) => p.startsWith('v1='));
       if (!tsEntry || !v1Entry) return false;
-      const ts = tsEntry.split('=')[1];
-      const v1 = v1Entry.split('=')[1];
-      const signedManifest = `${ts}${manifest}`;
-      const hmac = crypto.createHmac('sha256', secret).update(signedManifest).digest('hex');
-      return hmac === v1;
+      const ts = tsEntry.slice(3);
+      const v1 = v1Entry.slice(3);
+      // Plantilla de MP: `id:[data.id];request-id:[x-request-id];ts:[ts];`, con
+      // el data.id en minúsculas cuando es alfanumérico.
+      const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestId};ts:${ts};`;
+      const expected: Buffer = crypto.createHmac('sha256', secret).update(manifest).digest();
+      const received = Buffer.from(v1, 'hex');
+      return received.length === expected.length && crypto.timingSafeEqual(received, expected);
     } catch {
       return false;
     }

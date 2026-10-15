@@ -25,7 +25,7 @@ export const reciboQuerySchema = z.object({
   ordenPedidoId: z.string().optional(),
   customerId: z.string().optional(),
   status: z.enum(['EMITTED', 'CANCELLED']).optional(),
-  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']).optional(),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD', 'COMPENSACION']).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
 });

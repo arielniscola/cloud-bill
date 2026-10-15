@@ -306,7 +306,7 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
     ${notesBlock}
   `;
 
-  const safeNumber = (inv.number ?? 'factura').replace(/[^a-zA-Z0-9\-]/g, '_');
+  const safeNumber = (inv.number ?? 'factura').replace(/[^a-zA-Z0-9-]/g, '_');
   const emailSummary = `<strong>${typeLabel} ${inv.number}</strong><br/>
     Fecha: ${fmtDate(inv.date)}<br/>
     Total: ${currencySymbol} ${fmt(inv.total)}`;
@@ -420,7 +420,7 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
     ${notesBlock}
   `;
 
-  const safeNumber = (bud.number ?? 'presupuesto').replace(/[^a-zA-Z0-9\-]/g, '_');
+  const safeNumber = (bud.number ?? 'presupuesto').replace(/[^a-zA-Z0-9-]/g, '_');
   let pdfBuffer: Buffer;
   if (pdfBase64) {
     pdfBuffer = base64ToBuffer(pdfBase64);
@@ -529,7 +529,7 @@ export async function sendOrdenPedidoEmail(ordenPedidoId: string, to: string, co
     ${notesBlock}
   `;
 
-  const safeNumber = (op.number ?? 'orden-pedido').replace(/[^a-zA-Z0-9\-]/g, '_');
+  const safeNumber = (op.number ?? 'orden-pedido').replace(/[^a-zA-Z0-9-]/g, '_');
   let pdfBuffer: Buffer;
   if (pdfBase64) {
     pdfBuffer = base64ToBuffer(pdfBase64);
@@ -615,7 +615,7 @@ export async function sendRemitoEmail(remitoId: string, to: string, companyId: s
     ${notesBlock}
   `;
 
-  const safeNumber = (rem.number ?? 'remito').replace(/[^a-zA-Z0-9\-]/g, '_');
+  const safeNumber = (rem.number ?? 'remito').replace(/[^a-zA-Z0-9-]/g, '_');
   let pdfBuffer: Buffer;
   if (pdfBase64) {
     pdfBuffer = base64ToBuffer(pdfBase64);

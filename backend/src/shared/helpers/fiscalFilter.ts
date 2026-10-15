@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { FiscalMode, FiscalModeFilter } from '../types';
+import { FiscalMode } from '../types';
 
 /**
  * Returns a Prisma.sql fragment to filter by fiscalMode.

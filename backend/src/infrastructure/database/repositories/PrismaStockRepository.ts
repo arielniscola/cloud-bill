@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { randomUUID } from 'crypto';
@@ -354,12 +355,10 @@ export class PrismaStockRepository implements IStockRepository {
     if (filters.warehouseId) conditions.push(Prisma.sql`sm."warehouseId" = ${filters.warehouseId}`);
     if (filters.companyId)   conditions.push(Prisma.sql`w."companyId" = ${filters.companyId}`);
     if (filters.type)        conditions.push(Prisma.sql`sm.type::text = ${filters.type}`);
-    if (filters.startDate)   conditions.push(Prisma.sql`sm."createdAt" >= ${new Date(filters.startDate)}`);
-    if (filters.endDate) {
-      const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999);
-      conditions.push(Prisma.sql`sm."createdAt" <= ${endDate}`);
-    }
+    const from = filters.startDate ? startOfDay(String(filters.startDate)) : undefined;
+    const to   = filters.endDate ? endOfDay(String(filters.endDate)) : undefined;
+    if (from) conditions.push(Prisma.sql`sm."createdAt" >= ${from}`);
+    if (to)   conditions.push(Prisma.sql`sm."createdAt" <= ${to}`);
     const whereClause = conditions.length > 0
       ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
       : Prisma.sql``;

@@ -1,8 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
+
+import { startOfDay, todayIso } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository';
-import { NotFoundError } from '../../../shared/errors/AppError';
+import { NotFoundError, AppError } from '../../../shared/errors/AppError';
+import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
+import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
+import { createPaymentSchema } from '../../../application/dtos/currentAccount.dto';
+import { addCustomerMovement } from '../../services/customerAccountMovements';
+import { getCustomerCredits } from '../../services/CustomerSettlementService';
+import { recordPaymentReceived } from '../../services/AccountingService';
 import { Currency } from '../../../shared/types';
 import prisma from '../../database/prisma';
 import { bucketizeAging, customerAgingRows } from '../../../shared/helpers/aging';
@@ -99,30 +107,102 @@ export class CurrentAccountController {
     }
   }
 
+  // Pago a cuenta del cliente (sin factura). Genera un RECIBO como cualquier
+  // cobro: entra a la caja o al banco, acredita la cuenta corriente y queda
+  // como saldo a favor que después se aplica a facturas (recibo de compensación).
   async addPayment(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
-        'CurrentAccountRepository'
-      );
+      const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
+      const cashRegisterRepo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
       await assertCustomerInCompany(req.params.customerId, req.companyId);
-      const currency: Currency = req.body.currency || 'ARS';
-      let currentAccount = await currentAccountRepository.findByCustomerId(req.params.customerId, currency, req.fiscalMode);
+      const data = createPaymentSchema.parse(req.body);
+      const fiscalMode = (req.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
 
-      if (!currentAccount) {
-        currentAccount = await currentAccountRepository.createForCustomer(req.params.customerId, currency, undefined, req.fiscalMode);
+      const isBankTransfer = data.paymentMethod === 'BANK_TRANSFER';
+      const usesCaja = data.paymentMethod === 'CASH' || data.paymentMethod === 'CARD';
+      if (usesCaja && data.cashRegisterId) {
+        const cashRegister = await cashRegisterRepo.findById(data.cashRegisterId);
+        if (!cashRegister) throw new AppError('Caja no encontrada', 400);
+        if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
       }
 
-      const movement = await currentAccountRepository.addMovement({
-        currentAccountId: currentAccount.id,
-        type: 'CREDIT',
-        amount: req.body.amount,
-        description: req.body.description || 'Payment',
+      let recibo: any;
+      let movement: any;
+      await prisma.$transaction(async (tx) => {
+        recibo = await reciboRepo.create({
+          invoiceId: null,
+          customerId: req.params.customerId,
+          userId: req.user!.userId,
+          cashRegisterId: usesCaja ? (data.cashRegisterId ?? null) : null,
+          amount: data.amount,
+          currency: data.currency,
+          paymentMethod: data.paymentMethod,
+          reference: data.reference ?? null,
+          bank: data.bank ?? null,
+          checkDueDate: data.checkDueDate ? new Date(data.checkDueDate) : null,
+          notes: data.description || 'Pago a cuenta',
+          companyId: req.companyId,
+          fiscalMode,
+        } as any, tx);
+
+        if (isBankTransfer && data.bankAccountId) {
+          await (tx as any).bankMovement.create({
+            data: {
+              bankAccountId: data.bankAccountId,
+              type: 'CREDIT',
+              amount: data.amount,
+              description: `Pago a cuenta (${recibo.number})`,
+              reciboId: recibo.id,
+              companyId: req.companyId,
+            },
+          });
+          await tx.$executeRaw`
+            UPDATE "bank_accounts" SET balance = balance + ${data.amount}, "updatedAt" = NOW() WHERE id = ${data.bankAccountId}
+          `;
+        }
+
+        movement = await addCustomerMovement({
+          customerId: req.params.customerId,
+          currency: data.currency,
+          fiscalMode,
+          type: 'CREDIT',
+          amount: data.amount,
+          description: `Pago a cuenta ${recibo.number}${data.description ? ` - ${data.description}` : ''}`,
+          reciboId: recibo.id,
+          cashRegisterId: usesCaja ? (data.cashRegisterId ?? null) : null,
+        }, tx);
+      }, { timeout: 30000 });
+
+      await recordPaymentReceived({
+        id: recibo.id,
+        number: recibo.number,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        companyId: req.companyId!,
+        userId: req.user!.userId,
       });
 
       res.status(201).json({
         status: 'success',
         data: movement,
+        recibo,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Saldo a favor del cliente aplicable a facturas (NC con remanente, NC
+  // internas y pagos a cuenta), para el cobro con "Usar saldo a favor".
+  async getCredits(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await assertCustomerInCompany(req.params.customerId, req.companyId);
+      const credits = await getCustomerCredits(req.params.customerId, {
+        companyId: req.companyId,
+        currency: typeof req.query.currency === 'string' && req.query.currency ? req.query.currency : undefined,
+        fiscalMode: req.fiscalMode,
+      });
+      res.json({ status: 'success', data: credits });
     } catch (error) {
       next(error);
     }
@@ -161,9 +241,7 @@ export class CurrentAccountController {
   async getStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const companyId = req.companyId!;
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
+      const monthStart = startOfDay(`${todayIso().slice(0, 7)}-01`)!;
 
       const [agingRows, collected] = await Promise.all([
         customerAgingRows(companyId, req.fiscalMode, undefined, (req.query.currency as string) || 'ARS'),
@@ -173,6 +251,7 @@ export class CurrentAccountController {
           WHERE r."companyId" = ${companyId}
             AND (${req.fiscalMode ?? null}::text IS NULL OR r."fiscalMode" = ${req.fiscalMode ?? null})
             AND r.status = 'EMITTED'
+            AND r."paymentMethod" <> 'COMPENSACION'
             AND r.date >= ${monthStart}
           GROUP BY r.currency
         `,
@@ -225,6 +304,7 @@ export class CurrentAccountController {
           WHERE r."companyId" = ${companyId}
             AND (${req.fiscalMode ?? null}::text IS NULL OR r."fiscalMode" = ${req.fiscalMode ?? null})
             AND r.status = 'EMITTED'
+            AND r."paymentMethod" <> 'COMPENSACION'
             AND r."customerId" = ${customerId}
             AND r.date >= ${since90}
           GROUP BY r.currency

@@ -1,4 +1,6 @@
 export type DefaultInvoiceType = 'AUTO' | 'FACTURA_A' | 'FACTURA_B' | 'FACTURA_C';
+/** Copias del remito A4: dos por hoja, una hoja por copia o una sola copia. */
+export type RemitoCopies = 'TWO_PER_PAGE' | 'ONE_PER_PAGE' | 'SINGLE';
 
 export interface AppSettings {
   id: string;
@@ -35,6 +37,12 @@ export interface AppSettings {
   timeSurchargePct:                  number;
   /** Tipo de factura preseleccionado; 'AUTO' = según condición fiscal empresa/cliente. */
   defaultInvoiceType:                DefaultInvoiceType;
+  /** Datos de impresión de comprobantes. */
+  printWebsite:                      string | null;
+  printEstablishment:                string | null;  // N° de establecimiento (IIBB)
+  remitoCai:                         string | null;  // CAI del talonario de remitos R
+  remitoCaiExpiry:                   string | null;  // 'YYYY-MM-DD'
+  remitoCopies:                      RemitoCopies;
   createdAt: Date;
   updatedAt: Date;
   defaultBudgetCashRegister?:  { id: string; name: string } | null;
@@ -73,4 +81,9 @@ export interface UpdateAppSettingsInput {
   timeSurchargeTo?:                  string;
   timeSurchargePct?:                 number;
   defaultInvoiceType?:               DefaultInvoiceType;
+  printWebsite?:                     string | null;
+  printEstablishment?:               string | null;
+  remitoCai?:                        string | null;
+  remitoCaiExpiry?:                  string | null;
+  remitoCopies?:                     RemitoCopies;
 }

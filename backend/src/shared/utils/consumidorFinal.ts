@@ -1,4 +1,5 @@
 import prisma from '../../infrastructure/database/prisma';
+import { assignCustomerCode } from '../../infrastructure/database/partyExtras';
 
 export const CONSUMIDOR_FINAL_NAME = 'Consumidor Final';
 
@@ -30,6 +31,7 @@ export async function resolveConsumidorFinalCustomerId(companyId: string): Promi
       data: { ...where, saleCondition: 'CONTADO' },
       select: { id: true },
     });
+    await assignCustomerCode(created.id, companyId, tx);
     return created.id;
   });
 }

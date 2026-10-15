@@ -58,7 +58,7 @@ export interface ParsedCsv {
 
 export function parseCsv(raw: string): ParsedCsv {
   // Strip UTF-8 BOM
-  const text = raw.replace(/^﻿/, '');
+  const text = raw.replace(/^\uFEFF/, '');
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(Boolean);
   if (lines.length < 2) return { rows: [], malformed: new Map() };
   const delim = detectDelimiter(lines[0]);

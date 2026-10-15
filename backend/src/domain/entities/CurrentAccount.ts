@@ -34,4 +34,6 @@ export interface CreateAccountMovementInput {
   invoiceId?: string;
   budgetId?: string;
   cashRegisterId?: string;
+  ordenPedidoId?: string;
+  reciboId?: string;
 }

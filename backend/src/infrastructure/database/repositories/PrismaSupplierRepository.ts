@@ -1,4 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
+import { round2 } from '../../../shared/utils/money';
 import { Prisma } from '@prisma/client';
 import {
   ISupplierRepository, SupplierFilters, SupplierSummary,
@@ -9,6 +10,7 @@ import {
 } from '../../../domain/entities/Supplier';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { attachSupplierExtra, attachSupplierExtras, assignSupplierCode } from '../partyExtras';
 
 type RawRetention = { id: string; retentionType: string | null; retentionPercentage: any };
 
@@ -301,7 +303,7 @@ export class PrismaSupplierRepository implements ISupplierRepository {
 
     // Redondeo a 2 decimales: los importes vienen de sumas con cotización.
     for (const s of Object.values(result)) {
-      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const r2 = round2;
       s.pendingAmount = r2(s.pendingAmount);
       s.overdueAmount = r2(s.overdueAmount);
       s.purchased12m = r2(s.purchased12m);
@@ -376,7 +378,9 @@ export class PrismaSupplierRepository implements ISupplierRepository {
     }
 
     return {
-      data: data.map((s) => ({ ...s, ...(retMap.get(s.id) ?? { retentionType: null, retentionPercentage: null }) })) as Supplier[],
+      data: await attachSupplierExtras(
+        data.map((s) => ({ ...s, ...(retMap.get(s.id) ?? { retentionType: null, retentionPercentage: null }) })) as Supplier[],
+      ),
       total, page, limit,
       totalPages: Math.ceil(total / limit),
     };
@@ -386,7 +390,7 @@ export class PrismaSupplierRepository implements ISupplierRepository {
     const supplier = await prisma.supplier.findFirst({ where: { id, ...(companyId ? ({ companyId } as any) : {}) } });
     if (!supplier) return null;
     const retention = await this.getRetention(id);
-    return { ...supplier, ...retention } as Supplier;
+    return attachSupplierExtra({ ...supplier, ...retention } as Supplier);
   }
 
   async findByCuit(cuit: string, companyId?: string): Promise<Supplier | null> {
@@ -399,7 +403,7 @@ export class PrismaSupplierRepository implements ISupplierRepository {
   }
 
   async create(data: CreateSupplierInput): Promise<Supplier> {
-    const { retentionType = null, retentionPercentage = null, ...rest } = data as any;
+    const { retentionType = null, retentionPercentage = null, code: _code, ...rest } = data as any;
     const created = await prisma.supplier.create({
       data: {
         ...rest,
@@ -409,11 +413,12 @@ export class PrismaSupplierRepository implements ISupplierRepository {
     await prisma.$executeRaw(
       Prisma.sql`UPDATE suppliers SET "retentionType" = ${retentionType}, "retentionPercentage" = ${retentionPercentage} WHERE id = ${created.id}`
     );
-    return { ...created, retentionType, retentionPercentage } as Supplier;
+    const code = await assignSupplierCode(created.id, (created as any).companyId);
+    return { ...created, retentionType, retentionPercentage, code } as Supplier;
   }
 
   async update(id: string, data: UpdateSupplierInput): Promise<Supplier> {
-    const { retentionType, retentionPercentage, ...rest } = data as any;
+    const { retentionType, retentionPercentage, code: _code, ...rest } = data as any;
     const updated = await prisma.supplier.update({ where: { id }, data: rest });
     if (retentionType !== undefined || retentionPercentage !== undefined) {
       const current = await this.getRetention(id);

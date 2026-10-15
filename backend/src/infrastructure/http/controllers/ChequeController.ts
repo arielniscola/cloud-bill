@@ -155,6 +155,7 @@ export class ChequeController {
           reference:  cheque.checkNumber || cheque.number,
           direction:  enteringBounced ? 'DEBIT' : 'CREDIT',
           companyId:  req.companyId!,
+          userId:     req.user!.userId,
           fiscalMode: cheque.fiscalMode,
         });
         if (enteringBounced) {

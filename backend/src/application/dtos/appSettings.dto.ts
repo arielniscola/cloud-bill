@@ -32,6 +32,11 @@ export const updateAppSettingsSchema = z.object({
   timeSurchargeTo:                   z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horario inválido (HH:mm)').optional(),
   timeSurchargePct:                  z.number().min(0).max(100).optional(),
   defaultInvoiceType:                z.enum(['AUTO', 'FACTURA_A', 'FACTURA_B', 'FACTURA_C']).optional(),
+  printWebsite:                      z.string().max(200).optional().nullable(),
+  printEstablishment:                z.string().max(50).optional().nullable(),
+  remitoCai:                         z.string().max(30).optional().nullable(),
+  remitoCaiExpiry:                   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (AAAA-MM-DD)').or(z.literal('')).optional().nullable(),
+  remitoCopies:                      z.enum(['TWO_PER_PAGE', 'ONE_PER_PAGE', 'SINGLE']).optional(),
 });
 
 export type UpdateAppSettingsDTO = z.infer<typeof updateAppSettingsSchema>;

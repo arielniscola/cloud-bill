@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { Recibo, ReciboWithRelations, CreateReciboInput } from '../entities/Recibo';
+import { ReciboWithRelations, CreateReciboInput } from '../entities/Recibo';
 import { PaginationParams, PaginatedResult } from '../../shared/types';
 
 export interface ReciboFilters {

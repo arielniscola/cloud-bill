@@ -9,6 +9,10 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default('7d'),
+  // Cantidad de proxies inversos delante del backend (nginx, balanceador).
+  // Con 0, Express toma como IP del cliente la del proxy y el límite de
+  // intentos de login pasa a ser uno solo para toda la instalación.
+  TRUST_PROXY: z.string().regex(/^\d+$/).default('1').transform(Number),
 
   // ── Storage de archivos (módulo "imagenes") ──────────────────────
   // 'local' = disco del servidor (desarrollo / on-premise).

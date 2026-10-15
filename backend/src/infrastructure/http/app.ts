@@ -3,6 +3,8 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { errorMiddleware } from './middlewares/errorMiddleware';
+import { requestLogger } from './middlewares/requestLogger';
+import { env } from '../config/env';
 import { authRoutes } from './routes/authRoutes';
 import { customerRoutes } from './routes/customerRoutes';
 import { productRoutes } from './routes/productRoutes';
@@ -52,8 +54,28 @@ import { chequeRoutes } from './routes/chequeRoutes';
 import { exchangeRateRoutes } from './routes/exchangeRateRoutes';
 import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
 
+const LARGE_BODY_PATH = /\/(import|send-email|bulk[^/]*)$/;
+
+/**
+ * El navegador manda `Origin` también en los POST al mismo sitio. En la
+ * instalación local la app se abre desde otras PC de la red por IP o por nombre
+ * de máquina y nginx reenvía el Host original: si coincide con el del Origin,
+ * el pedido no es cross-origin y no hay nada que autorizar.
+ */
+function isSameOrigin(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export function createApp(): Application {
   const app = express();
+
+  // IP real del cliente detrás del proxy (la usa el rate limit del login).
+  app.set('trust proxy', env.TRUST_PROXY);
 
   // Security headers
   app.use(helmet());
@@ -64,19 +86,24 @@ export function createApp(): Application {
     : ['*'];
 
   app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, Postman, server-to-server)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        callback(new Error(`CORS: origin ${origin} not allowed`));
-      },
-      credentials: true,
+    cors((req, callback) => {
+      const origin = req.headers.origin;
+      // Allow requests with no origin (mobile apps, Postman, server-to-server)
+      if (!origin || allowedOrigins.includes(origin) || isSameOrigin(origin, req.headers.host)) {
+        return callback(null, { origin: true, credentials: true });
+      }
+      callback(new Error(`CORS: origin ${origin} not allowed`));
     })
   );
-  // 20mb: las importaciones masivas (CSV de miles de productos) superan el default de 100kb
-  app.use(express.json({ limit: '20mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+  app.use(requestLogger);
+
+  // El body se parsea antes de autenticar, así que el tope general es chico.
+  // Solo las rutas que de verdad mandan mucho aceptan 20mb: importaciones y
+  // actualizaciones masivas (miles de filas) y los envíos por mail (PDF en base64).
+  const smallJson = express.json({ limit: '1mb' });
+  const largeJson = express.json({ limit: '20mb' });
+  app.use((req, res, next) => (LARGE_BODY_PATH.test(req.path) ? largeJson : smallJson)(req, res, next));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use(fiscalModeMiddleware);
 
   // Health check

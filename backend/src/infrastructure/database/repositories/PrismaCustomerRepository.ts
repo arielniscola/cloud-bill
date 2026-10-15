@@ -7,6 +7,7 @@ import {
 import { Customer, CreateCustomerInput, UpdateCustomerInput } from '../../../domain/entities/Customer';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { attachCustomerExtra, attachCustomerExtras, assignCustomerCode, writeCustomerGrossIncome } from '../partyExtras';
 
 type RawSaleCondition = { id: string; saleCondition: string };
 
@@ -31,7 +32,7 @@ export class PrismaCustomerRepository implements ICustomerRepository {
     });
     if (!customer) return null;
     const saleCondition = await this.getSaleCondition(id);
-    return { ...(customer as any), saleCondition } as Customer;
+    return attachCustomerExtra({ ...(customer as any), saleCondition } as Customer);
   }
 
   async findByTaxId(taxId: string, companyId?: string): Promise<Customer | null> {
@@ -107,7 +108,9 @@ export class PrismaCustomerRepository implements ICustomerRepository {
     }
 
     return {
-      data: (data as any[]).map(c => ({ ...c, saleCondition: scMap.get(c.id) ?? 'CONTADO' })) as Customer[],
+      data: await attachCustomerExtras(
+        (data as any[]).map(c => ({ ...c, saleCondition: scMap.get(c.id) ?? 'CONTADO' })) as Customer[],
+      ),
       total,
       page,
       limit,
@@ -116,26 +119,30 @@ export class PrismaCustomerRepository implements ICustomerRepository {
   }
 
   async create(data: CreateCustomerInput): Promise<Customer> {
-    const { saleCondition = 'CONTADO', companyId, ...rest } = data as any;
+    const { saleCondition = 'CONTADO', companyId, grossIncome, code: _code, ...rest } = data as any;
     const created = await this.prisma.customer.create({ data: rest });
     const resolvedCompanyId = companyId;
     await this.prisma.$executeRaw(
       Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition}, "companyId" = ${resolvedCompanyId} WHERE id = ${created.id}`
     );
-    return { ...(created as any), saleCondition, companyId: resolvedCompanyId } as Customer;
+    await writeCustomerGrossIncome(created.id, grossIncome);
+    const code = await assignCustomerCode(created.id, resolvedCompanyId);
+    return { ...(created as any), saleCondition, companyId: resolvedCompanyId, code, grossIncome: grossIncome || null } as Customer;
   }
 
   async update(id: string, data: UpdateCustomerInput): Promise<Customer> {
-    const { saleCondition, ...rest } = data as any;
+    // `code` no se edita: lo asigna la secuencia al dar de alta.
+    const { saleCondition, grossIncome, code: _code, ...rest } = data as any;
     const updated = await this.prisma.customer.update({ where: { id }, data: rest });
+    await writeCustomerGrossIncome(id, grossIncome);
     if (saleCondition !== undefined) {
       await this.prisma.$executeRaw(
         Prisma.sql`UPDATE customers SET "saleCondition" = ${saleCondition} WHERE id = ${id}`
       );
-      return { ...(updated as any), saleCondition } as Customer;
+      return attachCustomerExtra({ ...(updated as any), saleCondition } as Customer);
     }
     const currentSC = await this.getSaleCondition(id);
-    return { ...(updated as any), saleCondition: currentSC } as Customer;
+    return attachCustomerExtra({ ...(updated as any), saleCondition: currentSC } as Customer);
   }
 
   async delete(id: string): Promise<void> {

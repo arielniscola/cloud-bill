@@ -2,17 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
-import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
 import { IOrdenPedidoRepository } from '../../../domain/repositories/IOrdenPedidoRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
-import { IStockRepository, IWarehouseRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
 import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
-import { resolveSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import prisma from '../../database/prisma';
+import { recalcInvoiceStatus, reverseReciboMovements } from '../../services/CustomerSettlementService';
 
 export class ReciboController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -104,6 +102,7 @@ export class ReciboController {
           reference:  (recibo as any).reference || recibo.number,
           direction:  enteringBounced ? 'DEBIT' : 'CREDIT',
           companyId:  req.companyId!,
+          userId:     req.user!.userId,
           fiscalMode: req.fiscalMode,
         });
       }
@@ -200,8 +199,6 @@ export class ReciboController {
   async cancel(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
-      const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
-      const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
       const budgetRepo = container.resolve<IBudgetRepository>('BudgetRepository');
       const opRepo = container.resolve<IOrdenPedidoRepository>('OrdenPedidoRepository');
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
@@ -213,72 +210,56 @@ export class ReciboController {
         throw new AppError('El recibo ya está cancelado', 400);
       }
 
-      // Lecturas previas (no necesitan la transacción)
-      const accountMovement = await prisma.accountMovement.findFirst({
-        where: { reciboId: recibo.id },
-        include: { currentAccount: true },
-      });
-
-      // Si es la devolución de una Nota de Crédito que estaba totalmente devuelta,
-      // la mercadería ya había reingresado al stock (RETURN al llegar a PAID).
-      // Al anular la devolución hay que sacar nuevamente ese stock.
-      let ncInvoice: Awaited<ReturnType<IInvoiceRepository['findById']>> = null;
-      let ncWarehouse: { id: string } | null = null;
-      if (recibo.invoiceId) {
-        const invoice = await invoiceRepo.findById(recibo.invoiceId);
-        if (invoice && invoice.type.startsWith('NOTA_CREDITO') && invoice.status === 'PAID') {
-          ncInvoice = invoice;
-          // Mismo depósito al que reingresó la devolución (el de la factura de origen).
-          ncWarehouse = await resolveSaleWarehouse(
-            'invoices',
-            (invoice as any).originInvoiceId ?? invoice.id,
-            (invoice as any).companyId
-          );
-        }
+      // Un pago a cuenta que ya se aplicó a facturas (recibos de compensación)
+      // no se puede anular: esas facturas quedarían cobradas con plata que no entró.
+      const [usedAsCredit] = await prisma.$queryRaw<{ n: number }[]>`
+        SELECT COUNT(*)::int AS n FROM "recibos" rc
+        JOIN "account_movements" m ON m.id = rc."creditMovementId"
+        WHERE m."reciboId" = ${recibo.id} AND rc.status = 'EMITTED'
+      `;
+      if (usedAsCredit && usedAsCredit.n > 0) {
+        throw new AppError('Este pago a cuenta ya se aplicó a facturas. Anulá primero los recibos de compensación que lo usan.', 400);
       }
 
-      // Reversa de cuenta corriente + stock + estado del recibo: todo o nada.
-      // Los recálculos de estados (factura/presupuesto/orden) van después del
-      // commit porque releen los recibos ya confirmados.
+      const [extra] = await prisma.$queryRaw<{ creditInvoiceId: string | null }[]>`
+        SELECT "creditInvoiceId" FROM "recibos" WHERE id = ${recibo.id}
+      `;
+      const bankMovements = await prisma.$queryRaw<{ id: string; bankAccountId: string; type: string; amount: any; description: string | null }[]>`
+        SELECT id, "bankAccountId", type::text AS type, amount, description FROM "bank_movements" WHERE "reciboId" = ${recibo.id}
+      `;
+
+      // Reversa de cuenta corriente (cobro + descuento/recargo) + banco + estado
+      // del recibo + estados de lo que tocaba (factura, NC aplicada/devuelta y su
+      // stock): todo o nada.
       let cancelled!: Awaited<ReturnType<IReciboRepository['cancel']>>;
       await prisma.$transaction(async (tx) => {
-        // Reverse the AccountMovement linked to this recibo
-        if (accountMovement) {
-          await currentAccountRepo.addMovement({
-            currentAccountId: accountMovement.currentAccount.id,
-            type: accountMovement.type === 'CREDIT' ? 'DEBIT' : 'CREDIT',
-            amount: Number(accountMovement.amount),
-            description: `Anulación recibo ${recibo.number}`,
-            invoiceId: recibo.invoiceId ?? undefined,
-            cashRegisterId: recibo.cashRegisterId ?? undefined,
-          }, tx);
+        await reverseReciboMovements(recibo, tx);
+
+        // La transferencia había movido la cuenta bancaria: vuelve.
+        for (const bm of bankMovements) {
+          const reverseType = bm.type === 'CREDIT' ? 'DEBIT' : 'CREDIT';
+          await (tx as any).bankMovement.create({
+            data: {
+              bankAccountId: bm.bankAccountId,
+              type: reverseType,
+              amount: Number(bm.amount),
+              description: `Anulación recibo ${recibo.number}${bm.description ? ` - ${bm.description}` : ''}`,
+              companyId: req.companyId,
+            },
+          });
+          const signed = bm.type === 'CREDIT' ? -Number(bm.amount) : Number(bm.amount);
+          await tx.$executeRaw`
+            UPDATE "bank_accounts" SET balance = balance + ${signed}, "updatedAt" = NOW() WHERE id = ${bm.bankAccountId}
+          `;
         }
 
-        if (ncInvoice && ncWarehouse) {
-          const stockRepo = container.resolve<IStockRepository>('StockRepository');
-          for (const item of ncInvoice.items) {
-            if (!item.productId) continue;
-            await stockRepo.addMovement({
-              productId: item.productId,
-              variantId: (item as any).variantId ?? null,
-              warehouseId: ncWarehouse.id,
-              type: 'ADJUSTMENT_OUT',
-              quantity: item.quantity.toNumber(),
-              reason: `Anulación devolución NC ${ncInvoice.number}`,
-              referenceId: ncInvoice.id,
-              userId: req.user!.userId,
-            }, tx);
-          }
-        }
-
-        // Cancel the recibo
         cancelled = await reciboRepo.cancel(recibo.id, tx);
-      }, { timeout: 30000 });
 
-      // Recalculate invoice status
-      if (recibo.invoiceId) {
-        await this._recalculateInvoiceStatus(recibo.invoiceId, invoiceRepo);
-      }
+        // Factura cobrada (o NC devuelta: la mercadería vuelve a salir si la NC
+        // deja de estar totalmente consumida) y NC aplicada por compensación.
+        if (recibo.invoiceId) await recalcInvoiceStatus(recibo.invoiceId, tx, req.user!.userId);
+        if (extra?.creditInvoiceId) await recalcInvoiceStatus(extra.creditInvoiceId, tx, req.user!.userId);
+      }, { timeout: 30000 });
 
       // Recalculate budget status
       if (recibo.budgetId) {
@@ -302,38 +283,6 @@ export class ReciboController {
     } catch (error) {
       next(error);
     }
-  }
-
-  private async _recalculateInvoiceStatus(
-    invoiceId: string,
-    invoiceRepo: IInvoiceRepository
-  ): Promise<void> {
-    const invoice = await invoiceRepo.findById(invoiceId);
-    if (!invoice || invoice.status === 'CANCELLED') return;
-
-    const activeRecibos = await prisma.recibo.findMany({
-      where: { invoiceId, status: 'EMITTED' },
-    });
-
-    const paidAmount = activeRecibos.reduce(
-      (sum: number, r: any) => sum + Number(r.amount),
-      0
-    );
-    const total = Number(invoice.total);
-
-    let newStatus: string;
-    if (paidAmount >= total) {
-      newStatus = 'PAID';
-    } else if (paidAmount > 0) {
-      newStatus = 'PARTIALLY_PAID';
-    } else {
-      // Reverting to a non-paid state: AUTHORIZED if the invoice has CAE (FORMAL), else ISSUED.
-      newStatus = invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID'
-        ? ((invoice as any).cae ? 'AUTHORIZED' : 'ISSUED')
-        : invoice.status;
-    }
-
-    await invoiceRepo.update(invoiceId, { status: newStatus as any });
   }
 
   private async _recalculateOrdenPedidoStatus(

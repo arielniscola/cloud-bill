@@ -1,18 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { v4: uuidv4 } = require('uuid');
+import { randomUUID as uuidv4 } from 'crypto';
 import { z } from 'zod';
 import { IAppSettingsRepository } from '../../../domain/repositories/IAppSettingsRepository';
 import { IReciboRepository } from '../../../domain/repositories/IReciboRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
-import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { MercadoPagoService } from '../../services/MercadoPagoService';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
+import { invoicePending, recalcInvoiceStatus } from '../../services/CustomerSettlementService';
 
 const createPreferenceSchema = z.object({
   invoiceId:      z.string().optional(),
@@ -30,6 +29,41 @@ const linkPaymentSchema = z.object({
   cashRegisterId: z.string().uuid().optional().nullable(),
   notes:          z.string().optional().nullable(),
 });
+
+const DEFAULT_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * URL a la que MP avisa el pago. Lleva la empresa porque el webhook no tiene
+ * sesión: sin ella no sabría con qué credenciales consultar el pago.
+ */
+function notificationUrlFor(companyId: string): string {
+  const base = process.env.BASE_URL ?? 'http://localhost:3000';
+  return `${base}/api/mercadopago/webhook?companyId=${encodeURIComponent(companyId)}`;
+}
+
+/**
+ * Serializa el procesamiento de un mismo pago de MP. MP reintenta y suele
+ * mandar el mismo aviso en paralelo: sin esto, dos entregas pasaban juntas el
+ * chequeo "¿ya hay recibo?" y generaban dos. El lock vive lo que dura la
+ * transacción que lo toma; `fn` trabaja con sus propias conexiones.
+ */
+async function withPaymentLock<T>(paymentId: string, fn: () => Promise<T>): Promise<T> {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`mp-payment:${paymentId}`})::bigint)`;
+      return fn();
+    },
+    { timeout: 30_000, maxWait: 10_000 }
+  );
+}
+
+async function paymentAlreadyRegistered(paymentId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "recibos" WHERE "mpPaymentId" = ${paymentId} LIMIT 1
+  `;
+  return rows.length > 0;
+}
 
 export class MercadoPagoController {
   /** GET /api/mercadopago/status — check if MP is configured */
@@ -77,29 +111,27 @@ export class MercadoPagoController {
       let type       = 'INVOICE';
 
       if (body.invoiceId) {
-        const invoice = await invoiceRepo.findById(body.invoiceId);
+        const invoice = await invoiceRepo.findById(body.invoiceId, companyId);
         if (!invoice) throw new NotFoundError('Factura');
         if (invoice.status === 'PAID')      throw new AppError('La factura ya está pagada', 400);
         if (invoice.status === 'CANCELLED') throw new AppError('La factura está cancelada', 400);
-        const activeRecibos = await prisma.recibo.findMany({ where: { invoiceId: invoice.id, status: 'EMITTED' } });
-        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
-        amount     = Number(invoice.total) - paid;
+        amount     = await invoicePending(invoice);
         title      = `Factura ${invoice.number}`;
         externalRef = invoice.id;
         customerId  = invoice.customerId;
         type        = 'INVOICE';
       } else if (body.budgetId) {
-        const budget = await (budgetRepo as any).findById(body.budgetId);
+        const budget = await budgetRepo.findById(body.budgetId, companyId);
         if (!budget) throw new NotFoundError('Presupuesto');
         const activeRecibos = await prisma.recibo.findMany({ where: { budgetId: budget.id, status: 'EMITTED' } });
         const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
         amount     = Number(budget.total) - paid;
         title      = `Presupuesto ${budget.number}`;
         externalRef = budget.id;
-        customerId  = budget.customerId;
+        customerId  = budget.customerId ?? '';
         type        = 'BUDGET';
       } else if (body.ordenPedidoId) {
-        const op = await prisma.ordenPedido.findUnique({ where: { id: body.ordenPedidoId } });
+        const op = await prisma.ordenPedido.findFirst({ where: { id: body.ordenPedidoId, companyId } });
         if (!op) throw new NotFoundError('Orden de Pedido');
         const activeRecibos = await prisma.recibo.findMany({ where: { ordenPedidoId: op.id, status: 'EMITTED' } });
         const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
@@ -112,7 +144,7 @@ export class MercadoPagoController {
 
       if (amount <= 0) throw new AppError('El saldo pendiente es 0', 400);
 
-      const notificationUrl = `${process.env.BASE_URL ?? 'http://localhost:3000'}/api/mercadopago/webhook`;
+      const notificationUrl = notificationUrlFor(companyId);
       const mpService = new MercadoPagoService(settings.mpAccessToken);
       const preference = await mpService.createPreference({
         externalReference: externalRef,
@@ -179,29 +211,27 @@ export class MercadoPagoController {
       let type = 'INVOICE';
 
       if (body.invoiceId) {
-        const invoice = await invoiceRepo.findById(body.invoiceId);
+        const invoice = await invoiceRepo.findById(body.invoiceId, companyId);
         if (!invoice) throw new NotFoundError('Factura');
         if (invoice.status === 'PAID')      throw new AppError('La factura ya está pagada', 400);
         if (invoice.status === 'CANCELLED') throw new AppError('La factura está cancelada', 400);
-        const activeRecibos = await prisma.recibo.findMany({ where: { invoiceId: invoice.id, status: 'EMITTED' } });
-        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
-        amount = Number(invoice.total) - paid;
+        amount = await invoicePending(invoice);
         title = `Factura ${invoice.number}`;
         externalRef = invoice.id;
         customerId = invoice.customerId;
         type = 'INVOICE';
       } else if (body.budgetId) {
-        const budget = await (budgetRepo as any).findById(body.budgetId);
+        const budget = await budgetRepo.findById(body.budgetId, companyId);
         if (!budget) throw new NotFoundError('Presupuesto');
         const activeRecibos = await prisma.recibo.findMany({ where: { budgetId: budget.id, status: 'EMITTED' } });
         const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
         amount = Number(budget.total) - paid;
         title = `Presupuesto ${budget.number}`;
         externalRef = budget.id;
-        customerId = budget.customerId;
+        customerId = budget.customerId ?? '';
         type = 'BUDGET';
       } else if (body.ordenPedidoId) {
-        const op = await prisma.ordenPedido.findUnique({ where: { id: body.ordenPedidoId } });
+        const op = await prisma.ordenPedido.findFirst({ where: { id: body.ordenPedidoId, companyId } });
         if (!op) throw new NotFoundError('Orden de Pedido');
         const activeRecibos = await prisma.recibo.findMany({ where: { ordenPedidoId: op.id, status: 'EMITTED' } });
         const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
@@ -214,7 +244,7 @@ export class MercadoPagoController {
 
       if (amount <= 0) throw new AppError('El saldo pendiente es 0', 400);
 
-      const notificationUrl = `${process.env.BASE_URL ?? 'http://localhost:3000'}/api/mercadopago/webhook`;
+      const notificationUrl = notificationUrlFor(companyId);
       const mpService = new MercadoPagoService(settings.mpAccessToken);
       const qr = await mpService.createQrOrder({
         posId:             settings.mpPosId,
@@ -252,7 +282,7 @@ export class MercadoPagoController {
   }
 
   /** POST /api/mercadopago/webhook — receives MP IPN notifications (no auth) */
-  async webhook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async webhook(req: Request, res: Response, _next: NextFunction): Promise<void> {
     try {
       // Always respond 200 quickly so MP doesn't retry
       res.status(200).json({ status: 'ok' });
@@ -262,19 +292,22 @@ export class MercadoPagoController {
         return;
       }
 
-      // Determine companyId — try from query or use default (single-tenant for now)
-      const companyId = (req.query.companyId as string) ?? '00000000-0000-0000-0000-000000000001';
+      // La empresa viaja en la URL de notificación (ver notificationUrlFor). Las
+      // preferencias creadas antes de eso no la traen: caen a la empresa por defecto.
+      const queryCompany = typeof req.query.companyId === 'string' ? req.query.companyId : '';
+      const companyId = UUID.test(queryCompany) ? queryCompany : DEFAULT_COMPANY_ID;
       const settingsRepo = container.resolve<IAppSettingsRepository>('AppSettingsRepository');
       const settings = await (settingsRepo as any).get(companyId);
       if (!settings?.mpAccessToken) return;
 
-      // Optionally verify signature
-      const xSig = req.headers['x-signature'] as string | undefined;
-      const xReq = req.headers['x-request-id'] as string | undefined;
-      if (xSig && xReq && settings.mpWebhookSecret) {
-        const valid = MercadoPagoService.verifySignature(xSig, xReq, String(data.id), settings.mpWebhookSecret);
-        if (!valid) {
-          console.warn('[MP Webhook] Invalid signature — ignored');
+      // Con el secret configurado la firma es obligatoria: un aviso sin firma o
+      // con firma inválida se descarta. MP firma el `data.id` del query string.
+      if (settings.mpWebhookSecret) {
+        const xSig = req.headers['x-signature'] as string | undefined;
+        const xReq = req.headers['x-request-id'] as string | undefined;
+        const signedId = typeof req.query['data.id'] === 'string' ? req.query['data.id'] : String(data.id);
+        if (!xSig || !xReq || !MercadoPagoService.verifySignature(xSig, xReq, signedId, settings.mpWebhookSecret)) {
+          console.warn('[MP Webhook] Firma ausente o inválida — aviso descartado');
           return;
         }
       }
@@ -283,6 +316,18 @@ export class MercadoPagoController {
       const payment = await mpService.getPayment(data.id);
 
       if (payment.status !== 'approved') return;
+
+      await withPaymentLock(String(payment.id), () =>
+        MercadoPagoController._registerWebhookPayment(payment, companyId)
+      );
+    } catch (err) {
+      console.error('[MP Webhook] Error:', err);
+    }
+  }
+
+  /** Registra el recibo de un pago aprobado. Se llama con el lock del pago tomado. */
+  private static async _registerWebhookPayment(payment: any, companyId: string): Promise<void> {
+      if (await paymentAlreadyRegistered(String(payment.id))) return; // idempotente
 
       // Find the pending preference
       const prefs = await prisma.$queryRaw<any[]>`
@@ -294,12 +339,6 @@ export class MercadoPagoController {
       `;
       if (!prefs.length) return;
       const pref = prefs[0];
-
-      // Check if this payment was already registered
-      const existingRecibo = await prisma.$queryRaw<any[]>`
-        SELECT id FROM "recibos" WHERE "mpPaymentId" = ${String(payment.id)} LIMIT 1
-      `;
-      if (existingRecibo.length) return; // idempotent
 
       // Create the Recibo
       const reciboRepo = container.resolve<IReciboRepository>('ReciboRepository');
@@ -336,7 +375,7 @@ export class MercadoPagoController {
       } else if (pref.type === 'BUDGET') {
         await MercadoPagoController._recalcBudget(pref.externalReference, recibo, companyId);
       } else if (pref.type === 'ORDEN_PEDIDO') {
-        await MercadoPagoController._recalcOrdenPedido(pref.externalReference, recibo);
+        await MercadoPagoController._recalcOrdenPedido(pref.externalReference, companyId);
       }
 
       // Mark preference as completed
@@ -345,17 +384,14 @@ export class MercadoPagoController {
         WHERE "id" = ${pref.id}
       `;
 
-      await (activityRepo as any).create({
-        entityType: 'RECIBO',
+      await activityRepo.create({
+        entity:     'Recibo',
         entityId:   recibo.id,
-        action:     'PAYMENT_RECEIVED_MP',
+        action:     'PAYMENT',
         description: `Pago MP aprobado #${payment.id} — $${amount}`,
         userId:     pref.userId,
         companyId,
       }).catch(() => {});
-    } catch (err) {
-      console.error('[MP Webhook] Error:', err);
-    }
   }
 
   /** GET /api/mercadopago/balance */
@@ -388,7 +424,9 @@ export class MercadoPagoController {
       let linkedIds: string[] = [];
       if (paymentIds.length) {
         const rows = await prisma.$queryRaw<any[]>`
-          SELECT "mpPaymentId" FROM "recibos" WHERE "mpPaymentId" = ANY(${paymentIds})
+          SELECT "mpPaymentId" FROM "recibos"
+          WHERE "mpPaymentId" = ANY(${paymentIds})
+            AND "companyId" = ${req.companyId ?? DEFAULT_COMPANY_ID}
         `;
         linkedIds = rows.map((r: any) => r.mpPaymentId);
       }
@@ -410,15 +448,11 @@ export class MercadoPagoController {
       const settings    = await MercadoPagoController._getSettings(req);
       const companyId   = req.companyId ?? '00000000-0000-0000-0000-000000000001';
       const body        = linkPaymentSchema.parse(req.body);
+      if (!body.invoiceId && !body.budgetId && !body.ordenPedidoId) {
+        throw new AppError('Debe especificar invoiceId, budgetId o ordenPedidoId', 400);
+      }
       const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
-      const reciboRepo  = container.resolve<IReciboRepository>('ReciboRepository');
-      const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
-
-      // Check not already linked
-      const existing = await prisma.$queryRaw<any[]>`
-        SELECT id FROM "recibos" WHERE "mpPaymentId" = ${body.mpPaymentId} LIMIT 1
-      `;
-      if (existing.length) throw new AppError('Este pago de MercadoPago ya fue vinculado', 400);
+      const budgetRepo  = container.resolve<IBudgetRepository>('BudgetRepository');
 
       const mpService = new MercadoPagoService(settings.mpAccessToken);
       const payment   = await mpService.getPayment(body.mpPaymentId);
@@ -426,22 +460,50 @@ export class MercadoPagoController {
         throw new AppError(`El pago MP no está aprobado (estado: ${payment.status})`, 400);
       }
 
-      let amount     = payment.amount;
+      const recibo = await withPaymentLock(body.mpPaymentId, () =>
+        MercadoPagoController._linkPayment(req, body, payment.amount, companyId, invoiceRepo, budgetRepo)
+      );
+
+      res.json({ status: 'success', data: recibo });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /** Crea el recibo de un pago vinculado a mano. Se llama con el lock del pago tomado. */
+  private static async _linkPayment(
+    req: Request,
+    body: z.infer<typeof linkPaymentSchema>,
+    paymentAmount: number,
+    companyId: string,
+    invoiceRepo: IInvoiceRepository,
+    budgetRepo: IBudgetRepository
+  ): Promise<any> {
+      const reciboRepo  = container.resolve<IReciboRepository>('ReciboRepository');
+      const currentAccountRepo = container.resolve<ICurrentAccountRepository>('CurrentAccountRepository');
+
+      if (await paymentAlreadyRegistered(body.mpPaymentId)) {
+        throw new AppError('Este pago de MercadoPago ya fue vinculado', 400);
+      }
+
+      let amount     = paymentAmount;
       let customerId = '';
 
       if (body.invoiceId) {
-        const invoice = await invoiceRepo.findById(body.invoiceId);
+        const invoice = await invoiceRepo.findById(body.invoiceId, companyId);
         if (!invoice) throw new NotFoundError('Factura');
-        const activeRecibos = await prisma.recibo.findMany({ where: { invoiceId: invoice.id, status: 'EMITTED' } });
-        const paid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
-        const remaining = Number(invoice.total) - paid;
+        const remaining = await invoicePending(invoice);
         if (remaining <= 0) throw new AppError('La factura ya está pagada', 400);
         amount = Math.min(amount, remaining);
         customerId = invoice.customerId;
       } else if (body.budgetId) {
-        const budget = await (container.resolve<IBudgetRepository>('BudgetRepository') as any).findById(body.budgetId);
+        const budget = await budgetRepo.findById(body.budgetId, companyId);
         if (!budget) throw new NotFoundError('Presupuesto');
-        customerId = budget.customerId;
+        customerId = budget.customerId ?? '';
+      } else if (body.ordenPedidoId) {
+        const op = await prisma.ordenPedido.findFirst({ where: { id: body.ordenPedidoId, companyId } });
+        if (!op) throw new NotFoundError('Orden de Pedido');
+        customerId = op.customerId ?? '';
       }
 
       const recibo = await (reciboRepo as any).create({
@@ -467,12 +529,11 @@ export class MercadoPagoController {
         await MercadoPagoController._recalcInvoice(body.invoiceId, invoiceRepo, currentAccountRepo, recibo, companyId);
       } else if (body.budgetId) {
         await MercadoPagoController._recalcBudget(body.budgetId, recibo, companyId);
+      } else if (body.ordenPedidoId) {
+        await MercadoPagoController._recalcOrdenPedido(body.ordenPedidoId, companyId);
       }
 
-      res.json({ status: 'success', data: recibo });
-    } catch (err) {
-      next(err);
-    }
+      return recibo;
   }
 
   // ── Private helpers ──────────────────────────────────────────────
@@ -494,13 +555,9 @@ export class MercadoPagoController {
     recibo: any,
     companyId: string
   ) {
-    const invoice = await invoiceRepo.findById(invoiceId);
+    const invoice = await invoiceRepo.findById(invoiceId, companyId);
     if (!invoice) return;
-    const activeRecibos = await prisma.recibo.findMany({ where: { invoiceId, status: 'EMITTED' } });
-    const totalPaid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
-    const total = Number(invoice.total);
-    const newStatus = totalPaid >= total - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-    await (invoiceRepo as any).updateStatus(invoiceId, newStatus);
+    await recalcInvoiceStatus(invoiceId, prisma);
 
     if ((invoice as any).saleCondition === 'CUENTA_CORRIENTE') {
       try {
@@ -515,13 +572,16 @@ export class MercadoPagoController {
           companyId,
         });
         await prisma.$executeRaw`UPDATE "account_movements" SET "reciboId" = ${recibo.id} WHERE id = ${movement.id}`;
-      } catch {}
+      } catch (err) {
+        // El cobro ya quedó registrado; que al menos se vea si la cuenta corriente no se acreditó.
+        console.error(`[MP] No se pudo acreditar en cuenta corriente el recibo ${recibo.number}:`, err);
+      }
     }
   }
 
   private static async _recalcBudget(budgetId: string, recibo: any, companyId: string) {
     const activeRecibos = await prisma.recibo.findMany({ where: { budgetId, status: 'EMITTED' } });
-    const budget = await prisma.$queryRaw<any[]>`SELECT * FROM "budgets" WHERE id = ${budgetId} LIMIT 1`;
+    const budget = await prisma.$queryRaw<any[]>`SELECT * FROM "budgets" WHERE id = ${budgetId} AND "companyId" = ${companyId} LIMIT 1`;
     if (!budget.length) return;
     const totalPaid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
     const total = Number(budget[0].total);
@@ -529,9 +589,11 @@ export class MercadoPagoController {
     await prisma.$executeRaw`UPDATE "budgets" SET "status" = ${newStatus}::"BudgetStatus", "updatedAt" = NOW() WHERE id = ${budgetId}`;
   }
 
-  private static async _recalcOrdenPedido(ordenPedidoId: string, recibo: any) {
+  private static async _recalcOrdenPedido(ordenPedidoId: string, companyId: string) {
     const activeRecibos = await prisma.recibo.findMany({ where: { ordenPedidoId, status: 'EMITTED' } });
-    const op = await prisma.$queryRaw<any[]>`SELECT * FROM "orden_pedidos" WHERE id = ${ordenPedidoId} LIMIT 1`;
+    const op = await prisma.$queryRaw<any[]>`
+      SELECT * FROM "orden_pedidos" WHERE id = ${ordenPedidoId} AND "companyId" = ${companyId} LIMIT 1
+    `;
     if (!op.length) return;
     const totalPaid = activeRecibos.reduce((s: number, r: any) => s + Number(r.amount), 0);
     const total = Number(op[0].total);

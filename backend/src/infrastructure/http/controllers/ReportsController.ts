@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
+import { round2 } from '../../../shared/utils/money';
+import { startOfDay as dayStart, endOfDay as dayEnd, startOfUtcDay, endOfUtcDay } from '../../../shared/utils/dateRange';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../../database/prisma';
@@ -9,7 +11,6 @@ import {
 } from '../../../shared/helpers/debtors';
 import { exchangeRateService } from '../../services/ExchangeRateService';
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export class ReportsController {
 
@@ -198,12 +199,10 @@ export class ReportsController {
       if (req.fiscalMode) conditions.push(Prisma.sql`pi."fiscalMode" = ${req.fiscalMode}`);
       if (supplierId)     conditions.push(Prisma.sql`pi."supplierId" = ${supplierId}`);
       if (status)         conditions.push(Prisma.sql`pi.status = ${status}`);
-      if (dateFrom)       conditions.push(Prisma.sql`pi.date >= ${new Date(dateFrom)}`);
-      if (dateTo) {
-        const to = new Date(dateTo);
-        to.setHours(23, 59, 59, 999);
-        conditions.push(Prisma.sql`pi.date <= ${to}`);
-      }
+      const from = dateFrom ? startOfUtcDay(dateFrom) : undefined;
+      const to   = dateTo ? endOfUtcDay(dateTo) : undefined;
+      if (from) conditions.push(Prisma.sql`pi.date >= ${from}`);
+      if (to)   conditions.push(Prisma.sql`pi.date <= ${to}`);
       const where = Prisma.join(conditions, ' AND ');
 
       // Una NOTA DE CRÉDITO devuelve mercadería/plata: RESTA de lo comprado.
@@ -432,8 +431,10 @@ export class ReportsController {
       if (supplierId)     { conditions.push(`pi."supplierId" = $${i++}`);   params.push(supplierId); }
       if (status)         { conditions.push(`pi.status = $${i++}`);          params.push(status); }
       if (paymentMethod)  { conditions.push(`pi."paymentMethod" = $${i++}`); params.push(paymentMethod); }
-      if (dateFrom)       { conditions.push(`${dateColumn} >= $${i++}`);     params.push(new Date(dateFrom)); }
-      if (dateTo)         { conditions.push(`${dateColumn} <= $${i++}`);     params.push(new Date(dateTo + 'T23:59:59')); }
+      const from = dateFrom ? startOfUtcDay(dateFrom) : undefined;
+      const to   = dateTo ? endOfUtcDay(dateTo) : undefined;
+      if (from)           { conditions.push(`${dateColumn} >= $${i++}`);     params.push(from); }
+      if (to)             { conditions.push(`${dateColumn} <= $${i++}`);     params.push(to); }
 
       const where = conditions.join(' AND ');
 
@@ -521,8 +522,10 @@ export class ReportsController {
       if (req.fiscalMode) conditions.push(Prisma.sql`op."fiscalMode" = ${req.fiscalMode}`);
       if (supplierId)     conditions.push(Prisma.sql`op."supplierId" = ${supplierId}`);
       if (type)           conditions.push(Prisma.sql`ret.type = ${type}`);
-      if (dateFrom)       conditions.push(Prisma.sql`op.date >= ${new Date(dateFrom)}`);
-      if (dateTo)         conditions.push(Prisma.sql`op.date <= ${new Date(dateTo + 'T23:59:59')}`);
+      const from = dateFrom ? startOfUtcDay(dateFrom) : undefined;
+      const to   = dateTo ? endOfUtcDay(dateTo) : undefined;
+      if (from)           conditions.push(Prisma.sql`op.date >= ${from}`);
+      if (to)             conditions.push(Prisma.sql`op.date <= ${to}`);
 
       // Los códigos ARCA se congelan al practicar la retención. Si quedaron
       // vacíos (config incompleta en ese momento), se completan con la config
@@ -595,12 +598,16 @@ export class ReportsController {
       const companyId = req.user!.companyId!;
       const { dateFrom, dateTo, cashRegisterId } = req.query as Record<string, string>;
 
-      const where: Record<string, unknown> = { companyId, status: 'EMITTED', ...(req.fiscalMode && { fiscalMode: req.fiscalMode }) };
+      const where: Record<string, unknown> = {
+        companyId, status: 'EMITTED', paymentMethod: { not: 'COMPENSACION' },
+        ...(req.fiscalMode && { fiscalMode: req.fiscalMode }),
+      };
       if (cashRegisterId) where.cashRegisterId = cashRegisterId;
       if (dateFrom || dateTo) {
         where.date = {
-          ...(dateFrom && { gte: new Date(dateFrom) }),
-          ...(dateTo   && { lte: new Date(dateTo + 'T23:59:59') }),
+          // `recibo.date` es el instante del cobro: bordes del día argentino.
+          ...(dateFrom && { gte: dayStart(dateFrom) }),
+          ...(dateTo   && { lte: dayEnd(dateTo) }),
         };
       }
 

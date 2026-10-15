@@ -1,4 +1,6 @@
 import { injectable } from 'tsyringe';
+
+import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ICurrentAccountRepository, MovementFilters } from '../../../domain/repositories/ICurrentAccountRepository';
@@ -117,6 +119,8 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
         invoiceId: data.invoiceId,
         budgetId: data.budgetId,
         cashRegisterId: data.cashRegisterId,
+        ordenPedidoId: data.ordenPedidoId,
+        reciboId: data.reciboId,
       },
     } as any);
   }
@@ -144,12 +148,10 @@ export class PrismaCurrentAccountRepository implements ICurrentAccountRepository
     // así el paginador no cuenta filas que la lista no muestra.
     const conds: Prisma.Sql[] = [Prisma.sql`m."currentAccountId" ${idsWhere}`];
     if (filters.type) conds.push(Prisma.sql`m.type::text = ${filters.type}`);
-    if (filters.startDate) conds.push(Prisma.sql`m."createdAt" >= ${new Date(filters.startDate)}`);
-    if (filters.endDate) {
-      const end = new Date(filters.endDate);
-      end.setHours(23, 59, 59, 999);
-      conds.push(Prisma.sql`m."createdAt" <= ${end}`);
-    }
+    const from = filters.startDate ? startOfDay(String(filters.startDate)) : undefined;
+    const to   = filters.endDate ? endOfDay(String(filters.endDate)) : undefined;
+    if (from) conds.push(Prisma.sql`m."createdAt" >= ${from}`);
+    if (to)   conds.push(Prisma.sql`m."createdAt" <= ${to}`);
     if (filters.search) {
       const like = `%${filters.search}%`;
       conds.push(Prisma.sql`(m.description ILIKE ${like} OR i.number ILIKE ${like} OR b.number ILIKE ${like})`);

@@ -14,6 +14,8 @@ export const createRemitoSchema = z.object({
   // (invoice/budget/ordenPedido) or defaults to DISCOUNT for standalone remitos.
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).optional(),
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
+  // Transporte (texto libre). Si falta y el remito sale de una factura, se hereda de ella.
+  transport: z.string().max(200).optional().nullable(),
   invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   ordenPedidoId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),

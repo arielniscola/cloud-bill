@@ -2,10 +2,17 @@ import { z } from 'zod';
 
 const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 
+// Pago a cuenta del cliente: genera un recibo sin factura.
 export const createPaymentSchema = z.object({
-  amount: z.number().positive('Amount must be positive'),
-  description: z.string().optional().default('Payment'),
+  amount: z.number().positive('El monto debe ser mayor a 0'),
+  description: z.string().optional().nullable(),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'MERCADO_PAGO']).default('CASH'),
+  cashRegisterId: z.string().uuid().optional().nullable(),
+  bankAccountId: z.string().uuid().optional().nullable(),
+  reference: z.string().optional().nullable(),
+  bank: z.string().optional().nullable(),
+  checkDueDate: z.string().optional().nullable(),
 });
 
 export const setCreditLimitSchema = z.object({

@@ -1,4 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
+import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
@@ -67,12 +68,10 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};
       if (filters.startDate) {
-        (where.createdAt as Prisma.DateTimeFilter).gte = new Date(filters.startDate);
+        (where.createdAt as Prisma.DateTimeFilter).gte = startOfDay(String(filters.startDate));
       }
       if (filters.endDate) {
-        const endDate = new Date(filters.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        (where.createdAt as Prisma.DateTimeFilter).lte = endDate;
+        (where.createdAt as Prisma.DateTimeFilter).lte = endOfDay(String(filters.endDate));
       }
     }
 
@@ -97,14 +96,10 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       if (filters.fiscalMode) {
         opConditions.push(Prisma.sql`op."fiscalMode" = ${filters.fiscalMode}`);
       }
-      if (filters.startDate) {
-        opConditions.push(Prisma.sql`op."createdAt" >= ${new Date(filters.startDate)}`);
-      }
-      if (filters.endDate) {
-        const endDate = new Date(filters.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        opConditions.push(Prisma.sql`op."createdAt" <= ${endDate}`);
-      }
+      const opFrom = filters.startDate ? startOfDay(String(filters.startDate)) : undefined;
+      const opTo   = filters.endDate ? endOfDay(String(filters.endDate)) : undefined;
+      if (opFrom) opConditions.push(Prisma.sql`op."createdAt" >= ${opFrom}`);
+      if (opTo)   opConditions.push(Prisma.sql`op."createdAt" <= ${opTo}`);
       const opWhere = Prisma.join(opConditions, ' AND ');
       // El egreso de caja es el NETO: `amount` es el bruto imputado a las
       // facturas y `retentionAmount` no sale de la caja (queda a depositar).
@@ -187,12 +182,8 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     if (opts.startDate || opts.endDate || opts.fromDate) {
       const createdAt: Prisma.DateTimeFilter = {};
       if (opts.fromDate) createdAt.gt = opts.fromDate;
-      if (opts.startDate) createdAt.gte = new Date(opts.startDate);
-      if (opts.endDate) {
-        const end = new Date(opts.endDate);
-        end.setHours(23, 59, 59, 999);
-        createdAt.lte = end;
-      }
+      if (opts.startDate) createdAt.gte = startOfDay(String(opts.startDate));
+      if (opts.endDate) createdAt.lte = endOfDay(String(opts.endDate));
       where.createdAt = createdAt;
     }
     return where;

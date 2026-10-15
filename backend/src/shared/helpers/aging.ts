@@ -1,6 +1,6 @@
 import prisma from '../../infrastructure/database/prisma';
+import { round2 } from '../utils/money';
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type AgingRow = {
   entityId: string;
@@ -91,7 +91,7 @@ export async function customerAgingRows(
     FROM "invoices" i
     JOIN "customers" c ON c.id = i."customerId"
     LEFT JOIN (
-      SELECT "invoiceId", SUM(amount) AS paid
+      SELECT "invoiceId", SUM(amount + "discountAmount" - "interestAmount") AS paid
       FROM "recibos" WHERE status = 'EMITTED' GROUP BY "invoiceId"
     ) p ON p."invoiceId" = i.id
     WHERE i."companyId" = ${companyId}

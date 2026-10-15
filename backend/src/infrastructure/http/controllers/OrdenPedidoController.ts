@@ -24,6 +24,7 @@ import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import { resolveSaleWarehouse, setSaleWarehouse, getSaleWarehouseId } from '../../../shared/utils/saleWarehouse';
 import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
 import prisma from '../../database/prisma';
+import { recalcInvoiceStatus } from '../../services/CustomerSettlementService';
 
 /**
  * Busca una orden ya creada a partir del UUID que generó el cliente.
@@ -519,10 +520,6 @@ export class OrdenPedidoController {
       });
 
       if (opRecibos.length > 0) {
-        const totalPaid = opRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
-        const invoiceTotal = Number(invoice.total);
-        const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-
         // Link each recibo to the invoice
         for (const recibo of opRecibos) {
           await (prisma as any).recibo.update({
@@ -531,8 +528,9 @@ export class OrdenPedidoController {
           });
         }
 
-        await invoiceRepo.update(invoice.id, { status: newStatus });
-        invoice.status = newStatus as any;
+        // La factura nace emitida y su estado sale de los cobros heredados.
+        await invoiceRepo.update(invoice.id, { status: 'ISSUED' });
+        invoice.status = (await recalcInvoiceStatus(invoice.id, prisma, req.user!.userId) ?? invoice.status) as any;
       } else {
         // Sin cobros previos la factura nace EMITIDA, no en borrador: el alta de
         // la orden ya aplicó stock y cuenta corriente, y un borrador habilitaría
@@ -694,7 +692,7 @@ export class OrdenPedidoController {
         }
 
         await tx.$executeRaw`
-          UPDATE "orden_pedidos" SET status = ${newStatus}::"OrdenPedidoStatus", "updatedAt" = NOW()
+          UPDATE "orden_pedidos" SET status = ${newStatus}, "updatedAt" = NOW()
           WHERE id = ${req.params.id}
         `;
       });

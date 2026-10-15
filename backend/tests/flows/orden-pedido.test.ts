@@ -89,6 +89,45 @@ describe('Flujo crítico: orden de pedido → factura', () => {
     expectStatus(again, 400);
   });
 
+  it('cobrar una OP deja el estado PARTIALLY_PAID / PAID (no falla con 500)', async () => {
+    const created = await api
+      .post('/api/orden-pedidos')
+      .set(auth(A))
+      .send({
+        customerId,
+        saleCondition: 'CONTADO',
+        stockBehavior: 'DISCOUNT',
+        items: [
+          {
+            productId,
+            description: 'Producto OP (test)',
+            quantity: 1,
+            unitPrice: 800,
+            taxRate: 21,
+            subtotal: 800,
+            taxAmount: 168,
+            total: 968,
+          },
+        ],
+      });
+    expectStatus(created, 201);
+    const id = created.body.data.id;
+    if (created.body.data.status === 'DRAFT') {
+      const confirmed = await api.patch(`/api/orden-pedidos/${id}/status`).set(auth(A)).send({ status: 'CONFIRMED' });
+      expectStatus(confirmed, 200);
+    }
+
+    const partial = await api.post(`/api/orden-pedidos/${id}/pay`).set(auth(A)).send({ amount: 400, paymentMethod: 'CASH' });
+    expect([200, 201]).toContain(partial.status);
+    let op = await api.get(`/api/orden-pedidos/${id}`).set(auth(A));
+    expect(op.body.data.status).toBe('PARTIALLY_PAID');
+
+    const rest = await api.post(`/api/orden-pedidos/${id}/pay`).set(auth(A)).send({ amount: 568, paymentMethod: 'CASH' });
+    expect([200, 201]).toContain(rest.status);
+    op = await api.get(`/api/orden-pedidos/${id}`).set(auth(A));
+    expect(op.body.data.status).toBe('PAID');
+  });
+
   it('cancelar una OP devuelve el stock descontado', async () => {
     const stockBefore = await getStockQty(A, productId, warehouseId);
 

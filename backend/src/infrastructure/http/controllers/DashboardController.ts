@@ -123,7 +123,7 @@ export class DashboardController {
                    * (CASE WHEN i.currency::text = 'ARS' THEN 1 ELSE COALESCE(NULLIF(i."exchangeRate", 0), 1) END) AS pending
             FROM "invoices" i
             LEFT JOIN (
-              SELECT "invoiceId", SUM(amount) AS paid
+              SELECT "invoiceId", SUM(amount + "discountAmount" - "interestAmount") AS paid
               FROM "recibos" WHERE status = 'EMITTED' GROUP BY "invoiceId"
             ) p ON p."invoiceId" = i.id
             WHERE i.status IN ('ISSUED', 'AUTHORIZED', 'PARTIALLY_PAID')
@@ -139,6 +139,7 @@ export class DashboardController {
           SELECT COALESCE(SUM(${ARS_AMOUNT}), 0) AS total, COUNT(*) AS count
           FROM "recibos"
           WHERE status = 'EMITTED'
+            AND "paymentMethod" <> 'COMPENSACION'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${monthStart} AND date <= ${monthEnd}
@@ -426,6 +427,7 @@ export class DashboardController {
         prisma.$queryRaw<{ date: Date; amount: any }[]>`
           SELECT date, ${ARS_AMOUNT} AS amount FROM "recibos"
           WHERE status = 'EMITTED'
+            AND "paymentMethod" <> 'COMPENSACION'
             AND "companyId" = ${companyId}
             ${fmFilter}
             AND date >= ${months[0].start} AND date <= ${months[11].end}

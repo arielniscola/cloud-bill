@@ -5,7 +5,28 @@ import { IReciboRepository, ReciboFilters, CheckFilters } from '../../../domain/
 import { ReciboWithRelations, CreateReciboInput } from '../../../domain/entities/Recibo';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
+import { attachCustomerExtra } from '../partyExtras';
 import { allocateDocumentNumber } from '../DocumentSequence';
+
+// Detalle: datos completos del cliente y del comprobante cobrado (impresión).
+const includeDetail = {
+  customer: {
+    select: {
+      id: true, name: true, taxId: true, taxCondition: true, address: true, city: true,
+      province: true, postalCode: true, phone: true, email: true,
+    },
+  },
+  invoice: {
+    select: {
+      id: true, number: true, type: true, date: true, total: true, currency: true,
+      afipPtVenta: true, afipCbtNum: true,
+    },
+  },
+  budget: { select: { id: true, number: true, date: true, total: true } },
+  ordenPedido: { select: { id: true, number: true, date: true, total: true } },
+  cashRegister: { select: { id: true, name: true } },
+  user: { select: { id: true, name: true } },
+};
 
 const includeRelations = {
   customer: { select: { id: true, name: true } },
@@ -59,11 +80,12 @@ export class PrismaReciboRepository implements IReciboRepository {
   async findById(id: string, companyId?: string): Promise<ReciboWithRelations | null> {
     const recibo = await prisma.recibo.findFirst({
       where: { id, ...(companyId ? ({ companyId } as any) : {}) },
-      include: includeRelations,
+      include: includeDetail as any,
     });
     if (!recibo) return null;
     await enrichWithCardData([recibo]);
-    return recibo as unknown as ReciboWithRelations;
+    const customer = await attachCustomerExtra((recibo as any).customer);
+    return { ...recibo, customer } as unknown as ReciboWithRelations;
   }
 
   async findAll(

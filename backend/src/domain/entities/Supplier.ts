@@ -2,6 +2,8 @@ import { TaxCondition } from '../../shared/types';
 
 export interface Supplier {
   id: string;
+  /** Código visible correlativo por empresa (lo asigna el alta; no se edita). */
+  code?: number | null;
   name: string;
   cuit: string | null;
   taxCondition: TaxCondition;

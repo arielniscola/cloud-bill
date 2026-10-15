@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AccountingController } from '../controllers/AccountingController';
-import { authMiddleware } from '../middlewares/authMiddleware';
+import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { requireFeature } from '../middlewares/featureMiddleware';
 
 const router = Router();
@@ -9,8 +9,12 @@ const ctrl = new AccountingController();
 router.use(authMiddleware);
 router.use(requireFeature('accounting'));
 
-// Plan de Cuentas
+// El plan de cuentas lo lee cualquier rol (se elige una cuenta al cargar una
+// orden de pago); el resto de la contabilidad es de administración y finanzas.
 router.get('/accounts', ctrl.getAccounts.bind(ctrl));
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'));
+
+// Plan de Cuentas
 router.post('/accounts/seed', ctrl.seedAccounts.bind(ctrl));
 
 // Asientos Contables

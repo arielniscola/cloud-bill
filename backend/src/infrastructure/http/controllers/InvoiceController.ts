@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
@@ -20,8 +21,15 @@ import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { resolveSaleWarehouse, setSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
-import { createReciboSchema } from '../../../application/dtos/recibo.dto';
+import { payInvoiceSchema } from '../../../application/dtos/invoice.dto';
+import { round2 } from '../../../shared/utils/money';
+import {
+  invoicePending, requireCustomerCredit, createCompensationRecibo, recalcInvoiceStatus,
+  applyCreditNoteToOrigin, cancelCompensationsFromCreditNote,
+} from '../../services/CustomerSettlementService';
+import { addCustomerMovement } from '../../services/customerAccountMovements';
 import prisma from '../../database/prisma';
+import { writeTransport } from '../../database/partyExtras';
 import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
 
 type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 'INFORMAL' };
@@ -132,7 +140,7 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
     // movió arriba (SALE), así que el remito vinculado no mueve stock.
     if (isFactura && stockBehavior === 'DISCOUNT' && invoice.customerId) {
       const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
-      await remitoRepository.create({
+      const remito = await remitoRepository.create({
         customerId: invoice.customerId,
         userId: ctx.userId,
         stockBehavior: 'DISCOUNT',
@@ -146,7 +154,13 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
           variantId: (item as any).variantId ?? null,
         })),
       } as any, tx);
+      await writeTransport('remitos', remito.id, (invoice as any).transport ?? undefined, tx);
     }
+
+    // NC con factura de origen: se aplica a lo que esa factura tenga pendiente
+    // (recibo de compensación). Si la factura ya estaba cobrada, la NC queda con
+    // saldo para devolver o aplicar a otra factura.
+    await applyCreditNoteToOrigin(invoice, { userId: ctx.userId, companyId: ctx.companyId }, tx);
 
     return true;
   }, { timeout: 30000 });
@@ -234,6 +248,8 @@ export class InvoiceController {
       // Depósito elegido para el stock (raw SQL: el cliente Prisma puede no
       // conocer la columna todavía).
       await setSaleWarehouse('invoices', invoice.id, req.body.warehouseId ?? null);
+      await writeTransport('invoices', invoice.id, req.body.transport);
+      (invoice as any).transport = req.body.transport ?? null;
 
       // NOTA: la factura nace en BORRADOR (DRAFT). Mientras esté en borrador NO
       // genera movimientos (cuenta corriente, stock, remito, asiento contable) —
@@ -300,9 +316,28 @@ export class InvoiceController {
 
       const deliveryStatus = await computeDeliveryStatus('invoiceId', invoice.id, invoice.items);
 
+      // Cobrado/aplicado y pendiente (para la NC: lo que falta devolver o
+      // aplicar), y las NC que se aplicaron a esta factura.
+      const isNC = invoice.type.startsWith('NOTA_CREDITO');
+      const pendingAmount = ['DRAFT', 'CANCELLED'].includes(invoice.status) ? 0 : await invoicePending(invoice);
+      const paidAmount = round2(Number(invoice.total) - pendingAmount);
+      const creditNotes = isNC ? [] : await prisma.$queryRaw<{ id: string; number: string; type: string; total: number; status: string; applied: number }[]>`
+        SELECT nc.id, nc.number, nc.type::text AS type, nc.total::float8 AS total, nc.status::text AS status,
+               COALESCE((
+                 SELECT SUM(r.amount) FROM "recibos" r
+                 WHERE r."creditInvoiceId" = nc.id AND r."invoiceId" = ${invoice.id} AND r.status = 'EMITTED'
+               ), 0)::float8 AS applied
+        FROM "invoices" nc
+        WHERE nc.type::text LIKE 'NOTA_CREDITO%' AND nc.status::text NOT IN ('DRAFT', 'CANCELLED')
+          AND (nc."originInvoiceId" = ${invoice.id} OR nc.id IN (
+            SELECT "creditInvoiceId" FROM "recibos" WHERE "invoiceId" = ${invoice.id} AND status = 'EMITTED' AND "creditInvoiceId" IS NOT NULL
+          ))
+        ORDER BY nc.date ASC
+      `;
+
       res.json({
         status: 'success',
-        data: { ...invoice, deliveryStatus },
+        data: { ...invoice, deliveryStatus, paidAmount, pendingAmount, creditNotes },
       });
     } catch (error) {
       next(error);
@@ -395,22 +430,32 @@ export class InvoiceController {
 
       // Cobrado por factura, para que el listado pueda mostrar el saldo sin
       // que el front tenga que abrir cada comprobante.
+      // Lo aplicado incluye descuentos cedidos, recargos y compensaciones (NC o
+      // saldo a favor aplicado). `creditNotesTotal` marca las facturas con NC.
       const paidByInvoice = new Map<string, number>();
+      const ncByInvoice = new Map<string, number>();
       if (ids.length > 0) {
-        const grouped = await (prisma as any).recibo.groupBy({
-          by: ['invoiceId'],
-          where: { status: 'EMITTED', invoiceId: { in: ids } },
-          _sum: { amount: true },
-        });
-        for (const row of grouped as Array<{ invoiceId: string; _sum: { amount: unknown } }>) {
-          paidByInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
-        }
+        const grouped = await prisma.$queryRaw<{ invoiceId: string; paid: number }[]>`
+          SELECT r."invoiceId", SUM(r.amount + r."discountAmount" - r."interestAmount")::float8 AS paid
+          FROM "recibos" r
+          WHERE r.status = 'EMITTED' AND r."invoiceId" IN (${Prisma.join(ids)})
+          GROUP BY r."invoiceId"
+        `;
+        for (const row of grouped) paidByInvoice.set(row.invoiceId, Number(row.paid ?? 0));
+        const ncs = await prisma.$queryRaw<{ originInvoiceId: string; total: number }[]>`
+          SELECT "originInvoiceId", SUM(total)::float8 AS total FROM "invoices"
+          WHERE "originInvoiceId" IN (${Prisma.join(ids)})
+            AND type::text LIKE 'NOTA_CREDITO%' AND status::text NOT IN ('DRAFT', 'CANCELLED')
+          GROUP BY "originInvoiceId"
+        `;
+        for (const row of ncs) ncByInvoice.set(row.originInvoiceId, Number(row.total ?? 0));
       }
 
       const data = result.data.map((i: any) => ({
         ...i,
         deliveryStatus: deliveryStatuses[i.id],
         paidAmount: paidByInvoice.get(i.id) ?? 0,
+        creditNotesTotal: ncByInvoice.get(i.id) ?? 0,
       }));
 
       res.json({
@@ -456,6 +501,7 @@ export class InvoiceController {
       });
 
       await setSaleWarehouse('invoices', req.params.id, req.body.warehouseId ?? null);
+      await writeTransport('invoices', req.params.id, req.body.transport);
 
       res.json({
         status: 'success',
@@ -528,9 +574,6 @@ export class InvoiceController {
   async pay(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const invoiceRepository = container.resolve<IInvoiceRepository>('InvoiceRepository');
-      const currentAccountRepository = container.resolve<ICurrentAccountRepository>(
-        'CurrentAccountRepository'
-      );
       const cashRegisterRepository = container.resolve<ICashRegisterRepository>(
         'CashRegisterRepository'
       );
@@ -559,148 +602,164 @@ export class InvoiceController {
         fiscalMode: req.fiscalMode,
       });
 
-      const paymentData = createReciboSchema.parse(req.body);
+      const paymentData = payInvoiceSchema.parse(req.body);
+      const isCompensation = paymentData.paymentMethod === 'COMPENSACION';
+      const discountAmount = round2(paymentData.discountAmount ?? 0);
+      const interestAmount = round2(paymentData.interestAmount ?? 0);
+
+      if (isCreditNote && (isCompensation || discountAmount > 0 || interestAmount > 0)) {
+        throw new AppError('La devolución de una nota de crédito no admite descuentos, recargos ni compensaciones', 400);
+      }
 
       // Validate cash register if provided
       let cashRegisterName = '';
-      if (paymentData.cashRegisterId) {
+      if (paymentData.cashRegisterId && !isCompensation) {
         const cashRegister = await cashRegisterRepository.findById(paymentData.cashRegisterId);
         if (!cashRegister) throw new AppError('Caja no encontrada', 400);
         if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
         cashRegisterName = cashRegister.name;
       }
 
-      // Calculate remaining balance
-      const activeRecibos = await prisma.recibo.findMany({
-        where: { invoiceId: invoice.id, status: 'EMITTED' },
-      });
-      const alreadyPaid = activeRecibos.reduce(
-        (sum: number, r: any) => sum + Number(r.amount),
-        0
-      );
-      const total = Number(invoice.total);
-      const remaining = total - alreadyPaid;
-
-      if (paymentData.amount > remaining + 0.001) {
+      // Lo que este cobro aplica a la factura (plata + descuento cedido − recargo)
+      // contra lo que la factura tiene pendiente (recibos, compensaciones y NC
+      // ya aplicadas). En una NC, lo pendiente es lo que falta devolver/aplicar.
+      const remaining = await invoicePending(invoice);
+      const applied = round2(paymentData.amount + discountAmount - interestAmount);
+      if (applied <= 0) {
+        throw new AppError('El recargo no puede ser mayor que lo cobrado', 400);
+      }
+      if (applied > remaining + 0.001) {
         throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
       }
 
       // CHECK, BANK_TRANSFER y MERCADO_PAGO no impactan en caja física —
-      // tienen su propio canal (banco / cuenta MP).
+      // tienen su propio canal (banco / cuenta MP). La compensación no mueve plata.
       const isCheck = paymentData.paymentMethod === 'CHECK';
       const isBankTransfer = paymentData.paymentMethod === 'BANK_TRANSFER';
       const isMercadoPago = paymentData.paymentMethod === 'MERCADO_PAGO';
-      const usesCaja = !isCheck && !isBankTransfer && !isMercadoPago;
+      const usesCaja = !isCheck && !isBankTransfer && !isMercadoPago && !isCompensation;
 
-      // Estado resultante del cobro (calculable de antemano)
-      const newPaid = alreadyPaid + paymentData.amount;
-      const newStatus: 'PAID' | 'PARTIALLY_PAID' = newPaid >= total - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-
-      // Lecturas previas (no necesitan la transacción)
       const usesCC = effectiveSaleCondition((invoice as any).saleCondition, (invoice as any).paymentTerms) === 'CUENTA_CORRIENTE';
-      const currentAccount = usesCC
-        ? await currentAccountRepository.findByCustomerId(
-            invoice.customerId,
-            invoice.currency,
-            ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL'
-          )
-        : null;
-      // La mercadería devuelta reingresa al depósito de la factura de origen
-      // (o al por defecto si la NC no tiene depósito propio).
-      const returnWarehouse = isCreditNote && newStatus === 'PAID'
-        ? await resolveSaleWarehouse('invoices', (invoice as any).originInvoiceId ?? invoice.id, req.companyId)
+      const fiscalMode = ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
+
+      // Saldo a favor a aplicar: se valida contra lo disponible HOY del cliente.
+      const credit = isCompensation
+        ? await requireCustomerCredit(invoice.customerId, {
+            creditInvoiceId: paymentData.creditInvoiceId,
+            creditMovementId: paymentData.creditMovementId,
+          }, paymentData.amount, { companyId: req.companyId, currency: invoice.currency })
         : null;
 
       // Recibo + banco + cuenta corriente + estado + reingreso de stock (NC):
       // se confirman o revierten juntos — un cobro a medias es una caja que no cierra.
       let recibo: any;
       await prisma.$transaction(async (tx) => {
-        recibo = await reciboRepository.create({
-          invoiceId: invoice.id,
-          customerId: invoice.customerId,
-          userId: req.user!.userId,
-          cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
-          bankAccountId: isBankTransfer ? ((paymentData as any).bankAccountId ?? null) : null,
-          amount: paymentData.amount,
-          currency: invoice.currency,
-          paymentMethod: paymentData.paymentMethod,
-          reference: paymentData.reference ?? null,
-          bank: paymentData.bank ?? null,
-          checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
-          installments: paymentData.installments ?? null,
-          notes: paymentData.notes ?? null,
-          companyId: req.companyId,
-          fiscalMode: ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL',
-        } as any, tx);
-
-        // For BANK_TRANSFER with a bankAccountId, create a bank movement.
-        // NC → es una devolución: DEBIT (sale plata) y baja el saldo del banco.
-        if (isBankTransfer && (paymentData as any).bankAccountId) {
-          const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
-          const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
-          const customerName = (invoice as any).customer?.name ?? '';
-          const bankDescription = `${isCreditNote ? 'Devolución' : 'Cobro'} ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
-          await (tx as any).bankMovement.create({
-            data: {
-              bankAccountId: (paymentData as any).bankAccountId,
-              type: isCreditNote ? 'DEBIT' : 'CREDIT',
-              amount: amountARS,
-              description: bankDescription,
-              reciboId: recibo.id,
-              companyId: req.companyId,
-            },
-          });
-          // Update bank account balance (+ cobro / − devolución)
-          const signedAmount = isCreditNote ? -amountARS : amountARS;
-          await tx.$executeRaw`
-            UPDATE "bank_accounts" SET balance = balance + ${signedAmount}, "updatedAt" = NOW()
-            WHERE id = ${(paymentData as any).bankAccountId}
-          `;
-        }
-
-        // Record payment in current account only for cuenta corriente (incl. pago a X días)
-        if (currentAccount) {
-          const movement = await currentAccountRepository.addMovement({
-            currentAccountId: currentAccount.id,
-            type: isCreditNote ? 'DEBIT' : 'CREDIT',
+        if (credit) {
+          recibo = await createCompensationRecibo({
+            invoice: invoice as any,
             amount: paymentData.amount,
-            description: `${isCreditNote ? 'Devolución' : 'Pago'} ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
-            invoiceId: invoice.id,
-            cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? undefined) : undefined,
+            creditInvoiceId: credit.creditInvoiceId ?? null,
+            creditMovementId: credit.creditMovementId ?? null,
+            sourceInCurrentAccount: credit.inCurrentAccount,
+            invoiceInCurrentAccount: usesCC,
+            notes: paymentData.notes ?? `Aplicación de ${credit.number}`,
+            userId: req.user!.userId,
+            companyId: req.companyId!,
           }, tx);
-          // Link movement to recibo
-          if (movement?.id) {
-            await tx.accountMovement.update({
-              where: { id: movement.id },
-              data: { reciboId: recibo.id },
+          if (credit.creditInvoiceId) await recalcInvoiceStatus(credit.creditInvoiceId, tx, req.user!.userId);
+        } else {
+          recibo = await reciboRepository.create({
+            invoiceId: invoice.id,
+            customerId: invoice.customerId,
+            userId: req.user!.userId,
+            cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
+            bankAccountId: isBankTransfer ? (paymentData.bankAccountId ?? null) : null,
+            amount: paymentData.amount,
+            currency: invoice.currency,
+            paymentMethod: paymentData.paymentMethod,
+            reference: paymentData.reference ?? null,
+            bank: paymentData.bank ?? null,
+            checkDueDate: paymentData.checkDueDate ? new Date(paymentData.checkDueDate) : null,
+            installments: paymentData.installments ?? null,
+            notes: paymentData.notes ?? null,
+            cardId: paymentData.cardId ?? null,
+            surchargePercent: paymentData.surchargePercent ?? null,
+            surchargeAmount: paymentData.surchargeAmount ?? null,
+            companyId: req.companyId,
+            fiscalMode,
+          } as any, tx);
+
+          // For BANK_TRANSFER with a bankAccountId, create a bank movement.
+          // NC → es una devolución: DEBIT (sale plata) y baja el saldo del banco.
+          if (isBankTransfer && paymentData.bankAccountId) {
+            const exchangeRate = Number((invoice as any).exchangeRate ?? 1);
+            const amountARS = invoice.currency !== 'ARS' ? paymentData.amount * exchangeRate : paymentData.amount;
+            const customerName = (invoice as any).customer?.name ?? '';
+            const bankDescription = `${isCreditNote ? 'Devolución' : 'Cobro'} ${invoice.type} ${invoice.number}${customerName ? ` - ${customerName}` : ''} (${recibo.number})`;
+            await (tx as any).bankMovement.create({
+              data: {
+                bankAccountId: paymentData.bankAccountId,
+                type: isCreditNote ? 'DEBIT' : 'CREDIT',
+                amount: amountARS,
+                description: bankDescription,
+                reciboId: recibo.id,
+                companyId: req.companyId,
+              },
             });
+            // Update bank account balance (+ cobro / − devolución)
+            const signedAmount = isCreditNote ? -amountARS : amountARS;
+            await tx.$executeRaw`
+              UPDATE "bank_accounts" SET balance = balance + ${signedAmount}, "updatedAt" = NOW()
+              WHERE id = ${paymentData.bankAccountId}
+            `;
           }
-        }
 
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: { status: newStatus },
-        });
-
-        // Reingreso de mercadería devuelta: cuando la NC queda totalmente devuelta,
-        // los ítems con producto vuelven al stock (movimiento RETURN). Se hace una
-        // sola vez (al llegar a PAID) para no duplicar ante devoluciones parciales.
-        if (returnWarehouse) {
-          const stockRepository = container.resolve<IStockRepository>('StockRepository');
-          for (const item of invoice.items) {
-            if (!item.productId) continue;
-            await stockRepository.addMovement({
-              productId: item.productId,
-              variantId: (item as any).variantId ?? null,
-              warehouseId: returnWarehouse.id,
-              type: 'RETURN',
-              quantity: item.quantity.toNumber(),
-              reason: `Devolución NC ${invoice.number}`,
-              referenceId: invoice.id,
-              userId: req.user!.userId,
+          // Record payment in current account only for cuenta corriente (incl. pago a X días)
+          if (usesCC) {
+            await addCustomerMovement({
+              customerId: invoice.customerId,
+              currency: invoice.currency,
+              fiscalMode,
+              type: isCreditNote ? 'DEBIT' : 'CREDIT',
+              amount: paymentData.amount,
+              description: `${isCreditNote ? 'Devolución' : 'Pago'} ${cashRegisterName || paymentData.paymentMethod} - ${invoice.type} ${invoice.number} (${recibo.number})`,
+              invoiceId: invoice.id,
+              reciboId: recibo.id,
+              cashRegisterId: usesCaja ? (paymentData.cashRegisterId ?? null) : null,
             }, tx);
           }
         }
+
+        // Ajustes del cobro: van como movimientos propios para que el extracto
+        // muestre qué se cobró y qué se descontó/recargó.
+        if (discountAmount > 0 || interestAmount > 0) {
+          await tx.$executeRaw`
+            UPDATE "recibos" SET "discountAmount" = ${discountAmount}, "interestAmount" = ${interestAmount}
+            WHERE id = ${recibo.id}
+          `;
+          if (usesCC) {
+            if (discountAmount > 0) {
+              await addCustomerMovement({
+                customerId: invoice.customerId, currency: invoice.currency, fiscalMode,
+                type: 'CREDIT', amount: discountAmount,
+                description: `Descuento cedido - ${invoice.type} ${invoice.number} (${recibo.number})`,
+                invoiceId: invoice.id, sourceReciboId: recibo.id,
+              }, tx);
+            }
+            if (interestAmount > 0) {
+              await addCustomerMovement({
+                customerId: invoice.customerId, currency: invoice.currency, fiscalMode,
+                type: 'DEBIT', amount: interestAmount,
+                description: `Recargo/interés - ${invoice.type} ${invoice.number} (${recibo.number})`,
+                invoiceId: invoice.id, sourceReciboId: recibo.id,
+              }, tx);
+            }
+          }
+        }
+
+        // Estado de la factura (y de la NC devuelta: reingreso de stock al quedar
+        // totalmente consumida).
+        await recalcInvoiceStatus(invoice.id, tx, req.user!.userId);
       }, { timeout: 30000 });
 
       const updated = await invoiceRepository.findById(req.params.id, req.companyId);
@@ -715,9 +774,10 @@ export class InvoiceController {
           : `Pago ${recibo.number} registrado en factura ${invoice.number}`,
       });
 
-      // Auto-generate journal entry (cobro de factura / devolución de NC)
+      // Auto-generate journal entry (cobro de factura / devolución de NC).
+      // La compensación no mueve plata: no hay asiento de cobro.
       const recordEntry = isCreditNote ? recordRefundPaid : recordPaymentReceived;
-      await recordEntry({
+      if (!isCompensation) await recordEntry({
         id: recibo.id,
         number: recibo.number,
         amount: paymentData.amount,
@@ -912,6 +972,13 @@ export class InvoiceController {
         // Toda la reversa (CC + stock + remitos + estado) se confirma o
         // revierte junta: una anulación a medias es peor que ninguna.
         await prisma.$transaction(async (tx) => {
+          // Una NC aplicada a facturas: esas aplicaciones se deshacen primero
+          // (las facturas vuelven a quedar con saldo y la mercadería, si había
+          // reingresado, vuelve a salir).
+          if (existingInvoice.type.startsWith('NOTA_CREDITO')) {
+            await cancelCompensationsFromCreditNote(existingInvoice.id, tx, req.user!.userId);
+          }
+
           // Reverse current account movement only for cuenta corriente (incl. pago a X días)
           if (currentAccount) {
             const wasCredit = existingInvoice.type.startsWith('NOTA_CREDITO');

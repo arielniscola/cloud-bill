@@ -193,4 +193,22 @@ describe('Excedente de orden de pago → crédito interno', () => {
     expectStatus(detail, 200);
     expect(Number(detail.body.data.onAccountAmount)).toBeCloseTo(2500, 2);
   });
+
+  it('el residuo de un ajuste manual de CC no queda como crédito disponible', async () => {
+    const inv = await api.post('/api/purchase-invoices').set(auth(A)).send(invoiceBody('0008-00000007', 1210));
+    expectStatus(inv, 201);
+    const before = (await credits()).filter((c) => c.source === 'MOVEMENT').length;
+
+    // Cierra la factura entera con un ajuste manual: ese CREDIT ya se consumió.
+    const adj = await api.post(`/api/orden-pagos/supplier/${supplierId}/adjustments`).set(auth(A)).send({
+      currency: 'ARS',
+      debits: [{ purchaseInvoiceId: inv.body.data.id, amount: 1210 }],
+      manualAmount: 1210,
+    });
+    expectStatus(adj, 201);
+
+    const detail = await api.get(`/api/purchase-invoices/${inv.body.data.id}`).set(auth(A));
+    expect(detail.body.data.status).toBe('PAID');
+    expect((await credits()).filter((c) => c.source === 'MOVEMENT').length).toBe(before);
+  });
 });

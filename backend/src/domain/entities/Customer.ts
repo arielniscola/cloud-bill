@@ -2,6 +2,8 @@ import { TaxCondition } from '../../shared/types';
 
 export interface Customer {
   id: string;
+  /** Código visible correlativo por empresa (lo asigna el alta; no se edita). */
+  code?: number | null;
   name: string;
   taxId: string | null;
   taxCondition: TaxCondition;
@@ -10,6 +12,7 @@ export interface Customer {
   city: string | null;
   province: string | null;
   postalCode: string | null;
+  grossIncome?: string | null;
   phone: string | null;
   email: string | null;
   notes: string | null;

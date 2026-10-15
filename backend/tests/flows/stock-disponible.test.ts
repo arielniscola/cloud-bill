@@ -39,6 +39,18 @@ describe('Stock — la API devuelve lo reservado junto a la cantidad', () => {
     expect(Number(quantity) - Number(reservedQuantity)).toBe(109);
   });
 
+  it('un producto creado con trackStock=false se guarda como no inventariado (y se puede editar)', async () => {
+    const created = await api.post('/api/products').set(auth(ADMIN_A)).send({
+      sku: `SRV-${Date.now()}`, name: 'Servicio (test)', cost: 0, price: 100, taxRate: 21, trackStock: false,
+    });
+    expectStatus(created, 201);
+    expect(created.body.data.trackStock).toBe(false);
+
+    const updated = await api.put(`/api/products/${created.body.data.id}`).set(auth(ADMIN_A)).send({ trackStock: true });
+    expectStatus(updated, 200);
+    expect(updated.body.data.trackStock).toBe(true);
+  });
+
   it('GET /stock/product/:productId también lo trae en cada fila', async () => {
     const res = await api.get(`/api/stock/product/${productId}`).set(auth(ADMIN_A));
     expectStatus(res, 200);

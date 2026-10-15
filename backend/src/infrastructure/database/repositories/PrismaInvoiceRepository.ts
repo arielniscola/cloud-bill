@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { startOfDay, todayIso } from '../../../shared/utils/dateRange';
 import { injectable } from 'tsyringe';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -16,6 +17,7 @@ import {
 } from '../../../domain/entities/Invoice';
 import { PaginationParams, PaginatedResult, InvoiceType } from '../../../shared/types';
 import prisma from '../prisma';
+import { attachCustomerExtra, readTransport } from '../partyExtras';
 import { allocateDocumentNumber, INVOICE_DOC_TYPE } from '../DocumentSequence';
 
 @injectable()
@@ -29,7 +31,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   async findById(id: string, companyId?: string): Promise<InvoiceWithItems | null> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, ...(companyId ? ({ companyId } as any) : {}) },
-      include: { customer: true, user: true },
+      include: { customer: true, user: { select: { id: true, name: true, email: true } } },
     });
     if (!invoice) return null;
     const items = await this._fetchItemsRaw(id);
@@ -43,7 +45,11 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       warehouseId = extra[0]?.warehouseId ?? null;
     } catch { /* migración 20260713 pendiente */ }
 
-    return { ...invoice, items, warehouseId } as unknown as InvoiceWithItems;
+    const [customer, transport] = await Promise.all([
+      attachCustomerExtra(invoice.customer),
+      readTransport('invoices', id),
+    ]);
+    return { ...invoice, customer, items, warehouseId, transport } as unknown as InvoiceWithItems;
   }
 
   async findByNumber(number: string, companyId: string): Promise<Invoice | null> {
@@ -209,8 +215,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       }
     }
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = startOfDay(todayIso())!;
 
     const byCurrency = new Map<string, InvoiceCurrencyStats>();
     const tramo = (currency: string): InvoiceCurrencyStats => {

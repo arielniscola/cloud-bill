@@ -140,6 +140,7 @@ model User {
 model Customer {
   id            String       @id @default(uuid())
   name          String
+  code          Int? // Código correlativo visible, único por empresa (migr. 20261006120000)
   taxId         String? // CUIT/CUIL — único POR EMPRESA (ver @@unique abajo)
   taxCondition  TaxCondition @default(CONSUMIDOR_FINAL)
   saleCondition String       @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
@@ -147,6 +148,7 @@ model Customer {
   city          String?
   province      String?
   postalCode    String?
+  grossIncome   String? // N° de Ingresos Brutos del cliente (impresión)
   phone         String?
   email         String?
   notes         String?
@@ -166,6 +168,7 @@ model Customer {
   // Un mismo CUIT puede ser cliente de varias empresas del sistema: la
   // unicidad es por empresa, no global (igual que el SKU de productos).
   @@unique([companyId, taxId], map: "customers_company_taxid_key")
+  @@unique([companyId, code], map: "customers_company_code_key")
   @@index([companyId, name], map: "idx_customers_company_name")
   @@map("customers")
 }
@@ -338,6 +341,7 @@ model Invoice {
   status             InvoiceStatus @default(DRAFT)
   notes              String?
   paymentTerms       String?
+  transport          String? // Transporte (texto libre, se imprime)
   saleCondition      String        @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
   stockBehavior      String        @default("DISCOUNT") // DISCOUNT | RESERVE
   originInvoiceId    String? // FK to origin invoice (for NC/ND)
@@ -484,6 +488,7 @@ model AccountMovement {
   ordenPedidoId    String?
   cashRegisterId   String? // Only for payment movements
   reciboId         String?      @unique
+  sourceReciboId   String? // movimientos accesorios de un recibo (descuento cedido / recargo)
   createdAt        DateTime     @default(now())
 
   currentAccount CurrentAccount @relation(fields: [currentAccountId], references: [id])
@@ -626,6 +631,7 @@ model Remito {
   status        RemitoStatus  @default(PENDING)
   stockBehavior StockBehavior
   notes         String?
+  transport     String? // Transporte (texto libre, se imprime)
   companyId     String        @default("00000000-0000-0000-0000-000000000001")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -706,6 +712,7 @@ model AfipConfig {
 model Supplier {
   id           String       @id @default(uuid())
   name         String
+  code         Int? // Código correlativo visible, único por empresa (migr. 20261006120000)
   cuit         String? // único POR EMPRESA (ver @@unique abajo)
   taxCondition TaxCondition @default(RESPONSABLE_INSCRIPTO)
   address      String?
@@ -733,6 +740,7 @@ model Supplier {
 
   // Un mismo proveedor le vende a varias empresas: unicidad por empresa.
   @@unique([companyId, cuit], map: "suppliers_company_cuit_key")
+  @@unique([companyId, code], map: "suppliers_company_code_key")
   @@index([companyId, name], map: "idx_suppliers_company_name")
   @@map("suppliers")
 }
@@ -892,6 +900,13 @@ model AppSettings {
   timeSurchargePct     Decimal @default(0) @db.Decimal(6, 2)
   // Tipo de factura preseleccionado: AUTO | FACTURA_A | FACTURA_B | FACTURA_C (migr. 20261001120000)
   defaultInvoiceType   String  @default("AUTO")
+  // Datos de impresión de comprobantes (migr. 20261006120000)
+  printWebsite         String?
+  printEstablishment   String? // N° de establecimiento (IIBB)
+  remitoCai            String? // CAI del talonario de remitos R (cód. 091)
+  remitoCaiExpiry      String? // 'YYYY-MM-DD'
+  // Copias del remito A4: TWO_PER_PAGE | ONE_PER_PAGE | SINGLE (migr. 20261012120000)
+  remitoCopies         String  @default("TWO_PER_PAGE")
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
@@ -998,6 +1013,10 @@ model Recibo {
   card             Card?    @relation(fields: [cardId], references: [id])
   surchargePercent Decimal? @db.Decimal(5, 2)
   surchargeAmount  Decimal? @db.Decimal(12, 2)
+  discountAmount   Decimal  @default(0) @db.Decimal(12, 2) // descuento cedido al cobrar
+  interestAmount   Decimal  @default(0) @db.Decimal(12, 2) // recargo / interés al cobrar
+  creditInvoiceId  String? // compensación: NC que se aplica
+  creditMovementId String? // compensación: movimiento CREDIT de CC (NC interna / pago a cuenta)
 
   notes       String?
   status      String  @default("EMITTED") // EMITTED | CANCELLED
@@ -1264,6 +1283,7 @@ model SupplierAccountMovement {
   ordenPagoId       String? // no @unique: una OP puede generar más de un movimiento (uno por moneda, ver pay())
   purchaseId        String?
   purchaseInvoiceId String? // set for retenciones/percepciones movements from a supplier invoice
+  ordenPagoAjusteId String? // movimiento propio de un ajuste de OP (descuento obtenido / interés)
   type              String // DEBIT | CREDIT
   amount            Decimal  @db.Decimal(12, 2)
   currency          String   @default("ARS")

@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import { Request, Response, NextFunction } from 'express';
+import { startOfUtcDay, endOfUtcDay } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
@@ -43,10 +45,6 @@ const querySchema = z.object({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getNextNumber(companyId: string): Promise<string> {
-  return allocateDocumentNumber('PURCHASE_REMITO', companyId);
-}
-
 async function fetchFull(id: string) {
   const rows = await prisma.$queryRaw<any[]>`
     SELECT r.*, s.name AS "supplierName", s.cuit AS "supplierCuit",
@@ -89,26 +87,29 @@ export class PurchaseRemitoController {
       const q = querySchema.parse(req.query);
       const offset = (q.page - 1) * q.limit;
 
-      const conds: any[] = [`r."companyId" = '${req.companyId}'`];
-      if (q.supplierId)  conds.push(`r."supplierId" = '${q.supplierId}'`);
-      if (q.warehouseId) conds.push(`r."warehouseId" = '${q.warehouseId}'`);
-      if (q.status)      conds.push(`r.status = '${q.status}'`);
-      if (q.dateFrom)    conds.push(`r.date >= '${new Date(q.dateFrom).toISOString()}'`);
-      if (q.dateTo) {
-        const to = new Date(q.dateTo);
-        to.setHours(23, 59, 59, 999);
-        conds.push(`r.date <= '${to.toISOString()}'`);
-      }
+      // Parametrizada: ningún filtro se concatena al SQL.
+      const conds: Prisma.Sql[] = [Prisma.sql`r."companyId" = ${req.companyId}`];
+      if (q.supplierId)  conds.push(Prisma.sql`r."supplierId" = ${q.supplierId}`);
+      if (q.warehouseId) conds.push(Prisma.sql`r."warehouseId" = ${q.warehouseId}`);
+      if (q.status)      conds.push(Prisma.sql`r.status = ${q.status}`);
+      const from = q.dateFrom ? startOfUtcDay(q.dateFrom) : undefined;
+      const to   = q.dateTo ? endOfUtcDay(q.dateTo) : undefined;
+      if (from) conds.push(Prisma.sql`r.date >= ${from}`);
+      if (to)   conds.push(Prisma.sql`r.date <= ${to}`);
       if (q.search) {
-        const term = q.search.replace(/'/g, "''");
-        conds.push(`(r.number ILIKE '%${term}%' OR s.name ILIKE '%${term}%')`);
+        const term = `%${q.search}%`;
+        conds.push(Prisma.sql`(r.number ILIKE ${term} OR s.name ILIKE ${term})`);
       }
-      if (req.fiscalMode) conds.push(`r."fiscalMode" = '${req.fiscalMode}'`);
-      const where = conds.join(' AND ');
+      if (req.fiscalMode) conds.push(Prisma.sql`r."fiscalMode" = ${req.fiscalMode}`);
+      const where = Prisma.join(conds, ' AND ');
 
       const [countRows, rows] = await Promise.all([
-        prisma.$queryRawUnsafe<{ c: bigint }[]>(`SELECT COUNT(*) AS c FROM "purchase_remitos" r LEFT JOIN "suppliers" s ON s.id = r."supplierId" WHERE ${where}`),
-        prisma.$queryRawUnsafe<any[]>(`
+        prisma.$queryRaw<{ c: bigint }[]>`
+          SELECT COUNT(*) AS c FROM "purchase_remitos" r
+          LEFT JOIN "suppliers" s ON s.id = r."supplierId"
+          WHERE ${where}
+        `,
+        prisma.$queryRaw<any[]>`
           SELECT r.*, s.name AS "supplierName", w.name AS "warehouseName",
                  p.number AS "purchaseNumber",
                  (SELECT COUNT(*) FROM "purchase_remito_items" ri WHERE ri."remitoId" = r.id) AS "itemCount"
@@ -119,7 +120,7 @@ export class PurchaseRemitoController {
           WHERE ${where}
           ORDER BY r."createdAt" DESC
           LIMIT ${q.limit} OFFSET ${offset}
-        `),
+        `,
       ]);
 
       const total = Number(countRows[0]?.c ?? 0);

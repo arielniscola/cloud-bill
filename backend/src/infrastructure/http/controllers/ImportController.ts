@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
+import { assignCustomerCode, assignSupplierCode } from '../../database/partyExtras';
 
 import { parseCsv, pick, parseNumber } from '../utils/csvImport';
 
@@ -264,7 +265,7 @@ export class ImportController {
             `;
           } else {
             // Create — use raw to include saleCondition (stale Prisma client workaround)
-            await prisma.$executeRaw`
+            const [row] = await prisma.$queryRaw<{ id: string }[]>`
               INSERT INTO customers (id, name, "taxId", "taxCondition", "saleCondition", address, city, province, "postalCode", phone, email, notes, "isActive", "companyId", "createdAt", "updatedAt")
               VALUES (
                 gen_random_uuid(),
@@ -283,7 +284,9 @@ export class ImportController {
                 ${companyId},
                 NOW(), NOW()
               )
+              RETURNING id
             `;
+            await assignCustomerCode(row.id, companyId);
           }
           imported++;
         } catch (err: any) {
@@ -373,7 +376,7 @@ export class ImportController {
               WHERE id = ${existingId}
             `;
           } else {
-            await prisma.$executeRaw`
+            const [row] = await prisma.$queryRaw<{ id: string }[]>`
               INSERT INTO suppliers (id, name, cuit, "taxCondition", address, city, phone, email, notes, "isActive", "companyId", "createdAt", "updatedAt")
               VALUES (
                 gen_random_uuid(),
@@ -389,7 +392,9 @@ export class ImportController {
                 ${companyId},
                 NOW(), NOW()
               )
+              RETURNING id
             `;
+            await assignSupplierCode(row.id, companyId);
           }
           imported++;
         } catch (err: any) {

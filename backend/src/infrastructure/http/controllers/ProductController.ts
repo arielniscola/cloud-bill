@@ -58,8 +58,9 @@ export class ProductController {
         price: new Decimal(req.body.price),
         salePriceUSD: req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null,
         taxRate: new Decimal(req.body.taxRate ?? 21),
+        trackStock: req.body.trackStock ?? true,
         isActive: req.body.isActive ?? true,
-      });
+      } as any);
 
       const customFields = parseCustomFieldsPayload(req.body);
       if (customFields && customFields.length > 0 && req.companyId) {
@@ -162,6 +163,7 @@ export class ProductController {
       if (req.body.price !== undefined) updateData.price = new Decimal(req.body.price);
       if (req.body.salePriceUSD !== undefined) updateData.salePriceUSD = req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null;
       if (req.body.taxRate !== undefined) updateData.taxRate = new Decimal(req.body.taxRate);
+      if (req.body.trackStock !== undefined) updateData.trackStock = req.body.trackStock;
       if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
 
       const product = await productRepository.update(req.params.id, updateData);

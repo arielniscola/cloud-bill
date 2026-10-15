@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { round2 } from '../../shared/utils/money';
 import prisma from '../database/prisma';
 import { AccountType, CreateAccountInput } from '../../domain/entities/Accounting';
 import { companyHasFeature } from '../http/middlewares/featureMiddleware';
@@ -268,9 +269,9 @@ export async function recordInvoiceCreated(invoice: {
 
     if (!isFact && !isNC && !isND) return;
 
-    const net  = Math.round(invoice.subtotal  * 100) / 100;
-    const iva  = Math.round(invoice.taxAmount * 100) / 100;
-    const total = Math.round(invoice.total    * 100) / 100;
+    const net  = round2(invoice.subtotal);
+    const iva  = round2(invoice.taxAmount);
+    const total = round2(invoice.total);
 
     let lines: { code: string; debit: number; credit: number; description?: string }[];
 
@@ -321,7 +322,7 @@ export async function recordPaymentReceived(recibo: {
 }): Promise<void> {
   try {
     if (!(await companyHasFeature(recibo.companyId, 'accounting'))) return;
-    const amount = Math.round(recibo.amount * 100) / 100;
+    const amount = round2(recibo.amount);
 
     const cashAccount =
       recibo.paymentMethod === 'BANK_TRANSFER' ? ACCOUNT_CODES.BANCOS :
@@ -365,7 +366,7 @@ export async function recordRefundPaid(recibo: {
 }): Promise<void> {
   try {
     if (!(await companyHasFeature(recibo.companyId, 'accounting'))) return;
-    const amount = Math.round(recibo.amount * 100) / 100;
+    const amount = round2(recibo.amount);
 
     const cashAccount =
       recibo.paymentMethod === 'BANK_TRANSFER' ? ACCOUNT_CODES.BANCOS :
@@ -409,9 +410,9 @@ export async function recordPurchaseCreated(purchase: {
 }): Promise<void> {
   try {
     if (!(await companyHasFeature(purchase.companyId, 'accounting'))) return;
-    const net   = Math.round(purchase.subtotal  * 100) / 100;
-    const iva   = Math.round(purchase.taxAmount * 100) / 100;
-    const total = Math.round(purchase.total     * 100) / 100;
+    const net   = round2(purchase.subtotal);
+    const iva   = round2(purchase.taxAmount);
+    const total = round2(purchase.total);
 
     await createEntry(
       `Compra ${purchase.number}`,
@@ -457,7 +458,7 @@ export async function recordSupplierPayment(payment: {
   try {
     if (!(await companyHasFeature(payment.companyId, 'accounting'))) return;
 
-    const cash = Math.round(payment.amount * 100) / 100;
+    const cash = round2(payment.amount);
     if (cash <= 0 && (!payment.retenciones || payment.retenciones.length === 0)) return;
 
     const cashAccount =
@@ -494,7 +495,7 @@ export async function recordSupplierPayment(payment: {
     }
     for (const [type, amt] of retencionTotals.entries()) {
       const acc = RETENCION_ACCOUNT_BY_TYPE[type];
-      const rounded = Math.round(amt * 100) / 100;
+      const rounded = round2(amt);
       if (rounded <= 0) continue;
       lines.push({ code: acc.code, debit: 0, credit: rounded, description: `${desc} – Retenc. ${type}` });
     }

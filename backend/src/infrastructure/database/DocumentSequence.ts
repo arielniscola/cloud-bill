@@ -59,6 +59,10 @@ export const DOC_SEQUENCES = {
   PURCHASE_NDC:    { prefix: 'NDC',  pad: 4 },
   // Compra generada al convertir una Orden de Compra: prefijo con guion adentro.
   ORDEN_COMPRA_CONV: { prefix: 'OC-CONV', pad: 4 },
+  // Códigos visibles de cliente/proveedor: se usan con allocateSequenceValue y
+  // year = 0 (no se reinician por año); el prefijo no se imprime.
+  CUSTOMER_CODE:   { prefix: 'CLI',  pad: 5 },
+  SUPPLIER_CODE:   { prefix: 'PRV',  pad: 5 },
 } as const;
 
 export type DocType = keyof typeof DOC_SEQUENCES;

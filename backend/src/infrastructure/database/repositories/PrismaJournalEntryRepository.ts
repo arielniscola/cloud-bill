@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import prisma from '../prisma';
 import {
   IJournalEntryRepository,
@@ -126,22 +127,24 @@ export class PrismaJournalEntryRepository implements IJournalEntryRepository {
     const { page, limit } = pagination;
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [`je."companyId" = '${filters.companyId}'`];
-    if (filters.referenceType) conditions.push(`je."referenceType" = '${filters.referenceType}'`);
-    if (filters.referenceId)   conditions.push(`je."referenceId" = '${filters.referenceId}'`);
-    if (filters.dateFrom)      conditions.push(`je."date" >= '${filters.dateFrom.toISOString()}'`);
-    if (filters.dateTo)        conditions.push(`je."date" <= '${filters.dateTo.toISOString()}'`);
+    // Parametrizada: los filtros llegan del query string y nunca se interpolan en el SQL.
+    const conditions: Prisma.Sql[] = [Prisma.sql`je."companyId" = ${filters.companyId}`];
+    if (filters.referenceType) conditions.push(Prisma.sql`je."referenceType" = ${filters.referenceType}`);
+    if (filters.referenceId)   conditions.push(Prisma.sql`je."referenceId" = ${filters.referenceId}`);
+    if (filters.dateFrom)      conditions.push(Prisma.sql`je."date" >= ${filters.dateFrom}`);
+    if (filters.dateTo)        conditions.push(Prisma.sql`je."date" <= ${filters.dateTo}`);
 
-    const where = conditions.join(' AND ');
+    const where = Prisma.join(conditions, ' AND ');
 
-    const countRows = await prisma.$queryRawUnsafe<{ c: bigint }[]>(
-      `SELECT COUNT(*) AS c FROM "journal_entries" je WHERE ${where}`
-    );
+    const countRows = await prisma.$queryRaw<{ c: bigint }[]>`
+      SELECT COUNT(*) AS c FROM "journal_entries" je WHERE ${where}
+    `;
     const total = Number(countRows[0]?.c ?? 0n);
 
-    const rows = await prisma.$queryRawUnsafe<RawEntry[]>(
-      `SELECT je.* FROM "journal_entries" je WHERE ${where} ORDER BY je."date" DESC, je."number" DESC LIMIT ${limit} OFFSET ${offset}`
-    );
+    const rows = await prisma.$queryRaw<RawEntry[]>`
+      SELECT je.* FROM "journal_entries" je WHERE ${where}
+      ORDER BY je."date" DESC, je."number" DESC LIMIT ${limit} OFFSET ${offset}
+    `;
 
     return { data: rows.map((r) => mapEntry(r)), total, page, limit };
   }
@@ -167,10 +170,11 @@ export class PrismaJournalEntryRepository implements IJournalEntryRepository {
     return mapEntry(rows[0], lineRows.map(mapLine));
   }
 
-  async findByReference(referenceType: string, referenceId: string): Promise<JournalEntry[]> {
+  async findByReference(referenceType: string, referenceId: string, companyId: string): Promise<JournalEntry[]> {
     const rows = await prisma.$queryRaw<RawEntry[]>`
       SELECT * FROM "journal_entries"
       WHERE "referenceType" = ${referenceType} AND "referenceId" = ${referenceId}
+        AND "companyId" = ${companyId}
       ORDER BY "createdAt" ASC
     `;
     return rows.map((r) => mapEntry(r));

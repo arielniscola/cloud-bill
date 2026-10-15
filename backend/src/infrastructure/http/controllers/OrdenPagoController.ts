@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
+import { endOfUtcDay } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
 import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRepository';
 import { SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
@@ -18,9 +19,7 @@ export class OrdenPagoController {
       // sin llevarlo al final del día, filtrar "hasta hoy" dejaba afuera todo lo
       // cargado hoy después de medianoche. El corte va en UTC, igual que
       // `dateFrom` (que se parsea como medianoche UTC).
-      const dateTo = query.dateTo
-        ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo) ? `${query.dateTo}T23:59:59.999Z` : query.dateTo)
-        : undefined;
+      const dateTo = query.dateTo ? endOfUtcDay(query.dateTo) : undefined;
 
       const filters = {
         supplierId:     query.supplierId,

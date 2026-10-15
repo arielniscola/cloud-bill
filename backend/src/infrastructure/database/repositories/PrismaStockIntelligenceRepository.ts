@@ -45,7 +45,7 @@ export class PrismaStockIntelligenceRepository implements IStockIntelligenceRepo
     const deadStockFrom   = new Date(Date.now() - deadStockDays * 24 * 60 * 60 * 1000);
 
     // ── 2. Load stock rows with product + warehouse ───────────────────────────
-    const stocks = (await (prisma.stock.findMany as Function)({
+    const stocks = (await (prisma.stock.findMany as (args: unknown) => Promise<unknown>)({
       where: {
         ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
         ...(companyId ? { warehouse: { companyId } } : {}),

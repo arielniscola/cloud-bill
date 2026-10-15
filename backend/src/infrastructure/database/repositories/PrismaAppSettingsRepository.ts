@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import { IAppSettingsRepository } from '../../../domain/repositories/IAppSettingsRepository';
 import { AppSettings, UpdateAppSettingsInput } from '../../../domain/entities/AppSettings';
 import prisma from '../prisma';
+import { columnExists } from '../columnExists';
 
 // Las columnas defaultRegisterPayment* llegan con la migración 20260918120000;
 // si todavía no se aplicó, la lectura cae en `false` y la escritura se saltea
@@ -46,12 +47,6 @@ async function defaultInvoiceTypeColumnExists(): Promise<boolean> {
   hasDefaultInvoiceTypeColumn = rows[0]?.exists ?? false;
   return hasDefaultInvoiceTypeColumn;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const INCLUDE = {
-  defaultBudgetCashRegister:  { select: { id: true, name: true } },
-  defaultInvoiceCashRegister: { select: { id: true, name: true } },
-} as any;
 
 @injectable()
 export class PrismaAppSettingsRepository implements IAppSettingsRepository {
@@ -100,6 +95,11 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       timeSurchargeTo:             r.timeSurchargeTo   ?? '23:59',
       timeSurchargePct:            r.timeSurchargePct != null ? Number(r.timeSurchargePct) : 0,
       defaultInvoiceType:          r.defaultInvoiceType ?? 'AUTO',
+      printWebsite:                r.printWebsite       ?? null,
+      printEstablishment:          r.printEstablishment ?? null,
+      remitoCai:                   r.remitoCai          ?? null,
+      remitoCaiExpiry:             r.remitoCaiExpiry    ?? null,
+      remitoCopies:                r.remitoCopies       ?? 'TWO_PER_PAGE',
       defaultBudgetCashRegisterId:  r.defaultBudgetCashRegisterId ?? null,
       defaultInvoiceCashRegisterId: r.defaultInvoiceCashRegisterId ?? null,
       defaultBudgetCashRegister:   r.budgetCashRegisterId  ? { id: r.budgetCashRegisterId,  name: r.budgetCashRegisterName  } : null,
@@ -215,6 +215,27 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
     if (data.defaultInvoiceType !== undefined && await defaultInvoiceTypeColumnExists()) {
       await prisma.$executeRaw`
         UPDATE "app_settings" SET "defaultInvoiceType" = ${data.defaultInvoiceType}
+        WHERE id = ${companyId}
+      `;
+    }
+
+    // Datos de impresión (migración 20261006120000).
+    if (await columnExists('app_settings', 'printWebsite')) {
+      const pick = (v: string | null | undefined, cur: string | null | undefined) =>
+        v !== undefined ? (v || null) : (cur ?? null);
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET
+          "printWebsite"       = ${pick(data.printWebsite, current?.printWebsite)},
+          "printEstablishment" = ${pick(data.printEstablishment, current?.printEstablishment)},
+          "remitoCai"          = ${pick(data.remitoCai, current?.remitoCai)},
+          "remitoCaiExpiry"    = ${pick(data.remitoCaiExpiry, current?.remitoCaiExpiry)}
+        WHERE id = ${companyId}
+      `;
+    }
+
+    if (data.remitoCopies !== undefined && await columnExists('app_settings', 'remitoCopies')) {
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET "remitoCopies" = ${data.remitoCopies}
         WHERE id = ${companyId}
       `;
     }

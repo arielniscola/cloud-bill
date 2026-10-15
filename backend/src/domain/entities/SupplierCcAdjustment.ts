@@ -28,8 +28,12 @@ export interface SupplierCcAdjustment {
 }
 
 // Débito abierto: factura o ND pendiente/parcial (deuda al proveedor).
+// Débito pendiente: FC/ND de compra, o nota de débito interna (`source: 'MOVEMENT'`,
+// se imputa por `movementId`).
 export interface OpenDebitItem {
-  purchaseInvoiceId: string;
+  source: 'INVOICE' | 'MOVEMENT';
+  purchaseInvoiceId?: string;
+  movementId?: string;
   number: string;
   type: string;
   currency: string;
@@ -60,7 +64,7 @@ export interface CreateSupplierCcAdjustmentInput {
   currency: string;
   userId: string;
   description?: string;
-  debits: { purchaseInvoiceId: string; amount: number }[];
+  debits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   credits: { purchaseInvoiceId?: string; movementId?: string; amount: number }[];
   manualAmount?: number;
   /**

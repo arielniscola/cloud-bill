@@ -10,6 +10,7 @@ import {
 } from '../../../domain/entities/Remito';
 import { PaginationParams, PaginatedResult, RemitoStatus } from '../../../shared/types';
 import prisma from '../prisma';
+import { attachCustomerExtra, readTransport } from '../partyExtras';
 import { allocateDocumentNumber } from '../DocumentSequence';
 
 @injectable()
@@ -21,18 +22,29 @@ export class PrismaRemitoRepository implements IRemitoRepository {
   }
 
   async findById(id: string, companyId?: string): Promise<RemitoWithItems | null> {
-    return this.prisma.remito.findFirst({
+    const remito = await this.prisma.remito.findFirst({
       where: { id, ...(companyId ? ({ companyId } as any) : {}) },
       include: {
         items: {
           include: { product: true },
         },
         customer: true,
-        user: true,
-        invoice: { select: { id: true, number: true, type: true } },
+        user: { select: { id: true, name: true, email: true } },
+        invoice: {
+          select: {
+            id: true, number: true, type: true, afipPtVenta: true, afipCbtNum: true,
+            saleCondition: true, paymentTerms: true,
+          },
+        },
         budget: { select: { id: true, number: true } },
       },
     });
+    if (!remito) return null;
+    const [customer, transport] = await Promise.all([
+      attachCustomerExtra(remito.customer),
+      readTransport('remitos', id),
+    ]);
+    return { ...remito, customer, transport } as unknown as RemitoWithItems;
   }
 
   async findAll(

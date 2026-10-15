@@ -33,6 +33,8 @@ export const createInvoiceSchema = z.object({
   // movimiento en la cuenta corriente del cliente al crear la factura.
   saleCondition: z.enum(['CONTADO', 'CUENTA_CORRIENTE']).default('CONTADO'),
   paymentTerms: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  // Transporte (texto libre, se imprime en el comprobante)
+  transport: z.string().max(200).optional().nullable(),
   originInvoiceId: z.string().uuid().optional().nullable(),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   // Depósito del que descontar/reservar stock (null = depósito por defecto)
@@ -46,7 +48,9 @@ export const updateInvoiceStatusSchema = z.object({
 
 export const payInvoiceSchema = z.object({
   amount: z.number().positive('El monto debe ser mayor a 0'),
-  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD']),
+  // COMPENSACION = aplicar saldo a favor del cliente (NC, NC interna o pago a
+  // cuenta): no mueve caja ni banco. Requiere creditInvoiceId o creditMovementId.
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'MERCADO_PAGO', 'CHECK', 'CARD', 'COMPENSACION']),
   cashRegisterId: z.string().uuid().optional().nullable(),
   // Transferencia: cuenta donde entra la plata. Sin declararlo acá Zod lo
   // descartaba y el cobro no generaba el movimiento bancario.
@@ -56,7 +60,22 @@ export const payInvoiceSchema = z.object({
   checkDueDate: z.string().optional().nullable(),
   installments: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
-});
+  // Tarjeta: recargo por cuotas (informativo, `amount` es la base). Mismo
+  // problema que bankAccountId: sin declararlos se perdían.
+  cardId: z.string().optional().nullable(),
+  surchargePercent: z.number().min(0).optional().nullable(),
+  surchargeAmount: z.number().min(0).optional().nullable(),
+  // Ajustes del cobro: descuento cedido (baja lo que se cobra) y recargo/interés
+  // (deuda nueva que este cobro cubre). Lo aplicado a la factura es
+  // amount + discountAmount − interestAmount.
+  discountAmount: z.number().min(0).optional().default(0),
+  interestAmount: z.number().min(0).optional().default(0),
+  creditInvoiceId: z.string().uuid().optional().nullable(),
+  creditMovementId: z.string().uuid().optional().nullable(),
+}).refine(
+  (d) => d.paymentMethod !== 'COMPENSACION' || (!!d.creditInvoiceId !== !!d.creditMovementId),
+  { message: 'Elegí el saldo a favor a aplicar', path: ['creditMovementId'] },
+);
 
 export const invoiceQuerySchema = z.object({
   page: z.string().transform(Number).optional(),

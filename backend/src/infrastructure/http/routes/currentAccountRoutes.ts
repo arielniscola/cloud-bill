@@ -20,6 +20,7 @@ router.get('/stats', currentAccountController.getStats);
 router.get('/customer/:customerId', currentAccountController.findByCustomerId);
 router.get('/customer/:customerId/summary', currentAccountController.getSummary);
 router.get('/customer/:customerId/balance', currentAccountController.getBalance);
+router.get('/customer/:customerId/credits', currentAccountController.getCredits);
 router.get(
   '/customer/:customerId/movements',
   validate({ query: movementQuerySchema }),

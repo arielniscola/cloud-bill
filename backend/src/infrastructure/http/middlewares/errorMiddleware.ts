@@ -37,6 +37,17 @@ export function errorMiddleware(
     return;
   }
 
+  // Errores del parser de body: sin esto salían como 500.
+  const bodyError = (error as { type?: string }).type;
+  if (bodyError === 'entity.too.large') {
+    res.status(413).json({ status: 'error', message: 'El contenido enviado es demasiado grande' });
+    return;
+  }
+  if (bodyError === 'entity.parse.failed') {
+    res.status(400).json({ status: 'error', message: 'El contenido enviado no es un JSON válido' });
+    return;
+  }
+
   // Violación de un índice único de Postgres que no atajó el caso de uso. Sin
   // esto, Prisma respondía 500 con su mensaje crudo: la consulta, la ruta
   // absoluta del repositorio en el servidor y el fragmento de código.

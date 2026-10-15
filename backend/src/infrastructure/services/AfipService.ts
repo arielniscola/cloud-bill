@@ -1,4 +1,5 @@
 import * as forge from 'node-forge';
+import { round2 } from '../../shared/utils/money';
 import { createAfipSoapClient } from './afipSoapClient';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -49,7 +50,6 @@ const IVA_ALICUOTA_IDS: Record<string, number> = {
   '27': 6,
 };
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 interface AlicIva {
   Id: number;

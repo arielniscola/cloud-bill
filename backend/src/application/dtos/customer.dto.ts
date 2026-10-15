@@ -10,6 +10,7 @@ export const createCustomerSchema = z.object({
   city: z.string().optional().nullable(),
   province: z.string().optional().nullable(),
   postalCode: z.string().optional().nullable(),
+  grossIncome: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
   notes: z.string().optional().nullable(),

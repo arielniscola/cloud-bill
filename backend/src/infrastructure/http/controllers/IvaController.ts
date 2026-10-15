@@ -61,7 +61,7 @@ export class IvaController {
 
       // Fetch items for all invoices in a single query
       const invoiceIds = filtered.map((inv: any) => inv.id);
-      let itemsMap = new Map<string, any[]>();
+      const itemsMap = new Map<string, any[]>();
       if (invoiceIds.length > 0) {
         const allItems = await prisma.$queryRaw<any[]>`
           SELECT ii."invoiceId", COALESCE(p.name, '') AS description,

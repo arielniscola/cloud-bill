@@ -95,8 +95,11 @@ export type OrdenPagoQueryDTO  = z.infer<typeof ordenPagoQuerySchema>;
 // Imputación manual de cuenta corriente (fuera del flujo de OP): cierra
 // facturas/ND pendientes contra NC o pagos a cuenta sueltos del proveedor.
 export const supplierCcAdjustmentDebitSchema = z.object({
-  purchaseInvoiceId: z.string().min(1),
+  purchaseInvoiceId: z.string().optional(),
+  movementId:        z.string().optional(),   // nota de débito interna
   amount:            z.number().positive('El monto debe ser mayor a 0'),
+}).refine((d) => !!d.purchaseInvoiceId || !!d.movementId, {
+  message: 'Cada débito debe referenciar una factura/ND o una nota de débito interna',
 });
 
 export const supplierCcAdjustmentCreditSchema = z.object({
