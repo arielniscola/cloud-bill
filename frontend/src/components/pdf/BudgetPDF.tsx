@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Budget } from '../../types/budget.types';
 import type { AfipConfigSummary } from '../../types/afip.types';
 
@@ -230,9 +230,11 @@ function fmtCuit(cuit: string): string {
 interface BudgetPDFProps {
   budget: Budget;
   afipConfig: AfipConfigSummary | null;
+  /** Logo de la empresa (data URL PNG/JPG, ver loadPrintContext). */
+  logoDataUrl?: string | null;
 }
 
-export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
+export default function BudgetPDF({ budget, afipConfig, logoDataUrl }: BudgetPDFProps) {
   const issuerName = afipConfig?.businessName ?? '';
   const issuerAddress = afipConfig?.businessAddress ?? '';
   const issuerCuit = afipConfig?.cuit ? fmtCuit(afipConfig.cuit) : '';
@@ -259,6 +261,9 @@ export default function BudgetPDF({ budget, afipConfig }: BudgetPDFProps) {
         <View style={s.header}>
           {/* Left: issuer */}
           <View style={s.headerLeft}>
+            {logoDataUrl ? (
+              <Image src={logoDataUrl} style={{ maxWidth: 160, maxHeight: 55, objectFit: 'contain', marginBottom: 6 }} />
+            ) : null}
             {issuerName ? <Text style={s.companyName}>{issuerName}</Text> : null}
             {issuerAddress ? (
               <View style={s.row}>

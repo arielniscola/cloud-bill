@@ -330,10 +330,10 @@ export default function InvoiceDetailPage() {
   const generateInvoicePdfBlob = async (): Promise<Blob> => {
     // Informal (sin CAE, sin validez fiscal): modelo "presupuesto", 2 copias
     // por hoja A4 — no lleva datos del emisor, QR/CAE ni desglose de IVA.
-    if (invoice!.fiscalMode === 'INFORMAL') {
-      return pdf(<InformalInvoicePDF invoice={invoice!} />).toBlob();
-    }
     const ctx = await loadPrintContext();
+    if (invoice!.fiscalMode === 'INFORMAL') {
+      return pdf(<InformalInvoicePDF invoice={invoice!} logoDataUrl={ctx.issuer.logoDataUrl} />).toBlob();
+    }
     let qrCodeDataUrl: string | undefined;
     const qrUrl = buildAfipQrUrl(invoice!, ctx.afipConfig?.cuit, ctx.afipConfig?.salePoint);
     if (qrUrl) {

@@ -10,6 +10,7 @@ import { budgetsService, afipService, ordenPedidosService } from '../../services
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { BUDGET_STATUSES, INVOICE_TYPES, ORDEN_PEDIDO_STATUSES } from '../../utils/constants';
 import type { Budget, OrdenPedido } from '../../types';
+import { loadPrintContext } from '../../utils/printContext';
 import BudgetPDF from '../../components/pdf/BudgetPDF';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
@@ -74,8 +75,8 @@ export default function BudgetDetailPage() {
   const [generatedOps, setGeneratedOps] = useState<OrdenPedido[]>([]);
 
   const generateBudgetPdfBlob = async (): Promise<Blob> => {
-    const afipConfig = await afipService.getConfig();
-    return pdf(<BudgetPDF budget={budget!} afipConfig={afipConfig} />).toBlob();
+    const [afipConfig, ctx] = await Promise.all([afipService.getConfig(), loadPrintContext()]);
+    return pdf(<BudgetPDF budget={budget!} afipConfig={afipConfig} logoDataUrl={ctx.issuer.logoDataUrl} />).toBlob();
   };
 
   const handleDownloadPDF = async () => {

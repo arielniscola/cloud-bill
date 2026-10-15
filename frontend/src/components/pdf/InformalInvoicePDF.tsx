@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import type { Invoice } from '../../types/invoice.types';
 import { KV } from './pdfShared';
 import {
@@ -7,7 +7,8 @@ import {
 
 // Comprobante NO fiscal (fiscalMode = INFORMAL), según el modelo "FAC NN" y con
 // la línea "Clásico refinado": se titula PRESUPUESTO, no lleva datos del emisor
-// ni CAE/IVA, y se imprime dos veces en la misma hoja A4 para cortar.
+// ni CAE/IVA, y se imprime dos veces en la misma hoja A4 para cortar. Si la
+// empresa tiene logo, va arriba a la izquierda (más chico: son dos por hoja).
 
 const s = StyleSheet.create({
   page: { ...ps.page, paddingTop: 22, paddingBottom: 16 },
@@ -18,6 +19,7 @@ const s = StyleSheet.create({
   cQty: { width: 42, textAlign: 'right' },
   cPrice: { width: 75, textAlign: 'right' },
   cTotal: { width: 80, textAlign: 'right' },
+  logo: { maxWidth: 130, maxHeight: 42, objectFit: 'contain', marginRight: 12 },
 });
 
 /** Unitario a precio final: total de la línea / cantidad (incluye IVA y bonificación). */
@@ -26,16 +28,19 @@ function finalUnitPrice(total: number, quantity: number): number {
   return q ? Number(total) / q : 0;
 }
 
-function Slip({ invoice }: { invoice: Invoice }) {
+function Slip({ invoice, logoDataUrl }: { invoice: Invoice; logoDataUrl?: string | null }) {
   const c = invoice.customer;
   const currency = invoice.currency;
   const locality = [c?.city, c?.province].filter(Boolean).join(', ') + (c?.postalCode ? ` · CP ${c.postalCode}` : '');
   return (
     <View style={s.slip}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <View>
-          <Text style={ps.docTitle}>PRESUPUESTO</Text>
-          <Text style={ps.docNumber}>Nº {invoice.number}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+          {logoDataUrl ? <Image src={logoDataUrl} style={s.logo} /> : null}
+          <View>
+            <Text style={ps.docTitle}>PRESUPUESTO</Text>
+            <Text style={ps.docNumber}>Nº {invoice.number}</Text>
+          </View>
         </View>
         <Text style={{ fontSize: 9.75 }}>Fecha <Text style={{ fontWeight: 600 }}>{fmtDate(invoice.date)}</Text></Text>
       </View>
@@ -106,13 +111,13 @@ function Slip({ invoice }: { invoice: Invoice }) {
   );
 }
 
-export default function InformalInvoicePDF({ invoice }: { invoice: Invoice }) {
+export default function InformalInvoicePDF({ invoice, logoDataUrl }: { invoice: Invoice; logoDataUrl?: string | null }) {
   return (
     <Document title={`Presupuesto ${invoice.number}`} author="Cloud-Bill">
       <Page size="A4" style={s.page}>
-        <Slip invoice={invoice} />
+        <Slip invoice={invoice} logoDataUrl={logoDataUrl} />
         <View style={s.cut} />
-        <Slip invoice={invoice} />
+        <Slip invoice={invoice} logoDataUrl={logoDataUrl} />
       </Page>
     </Document>
   );
