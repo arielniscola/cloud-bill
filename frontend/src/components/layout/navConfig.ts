@@ -1,11 +1,11 @@
 import type React from "react";
-import {
+import { CalendarClock,
   Home, Users, Package, FolderTree, Tag, Layers, Warehouse, PackageSearch,
   FileText, ClipboardList, ClipboardCheck, CreditCard, Landmark, Settings,
   ArrowRightLeft, BarChart2, TrendingUp, History, BookOpen, Truck, ShoppingCart,
   Calculator, Brain, Receipt, ShoppingBag, Store, Banknote, Building2,
   Smartphone, FileEdit, BookMarked, Sliders, Crown, Repeat, Percent, Coins,
-  Wallet, PieChart, ClipboardX, CloudOff,
+  Wallet, PieChart, ClipboardX, CloudOff, MapPin, MapPinned,
 } from "lucide-react";
 
 /**
@@ -109,6 +109,7 @@ export const navModules: NavModule[] = [
       { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock" },
       { name: "Transferencias",        href: "/stock/transfer",          icon: ArrowRightLeft,section: "Stock", featureKey: "multi_warehouse" },
       { name: "Conteo físico",         href: "/stock/physical-count",    icon: ClipboardCheck,section: "Stock" },
+      { name: "Lotes y vencimientos",  href: "/stock/lots",              icon: CalendarClock, section: "Stock" },
       { name: "Almacenes",             href: "/warehouses",              icon: Warehouse,     section: "Stock" },
       { name: "Inteligente",           href: "/stock/intelligence",      icon: Brain,         section: "Stock", featureKey: "stock_intelligence" },
     ],
@@ -168,6 +169,8 @@ export const navModules: NavModule[] = [
     requiredRoles: ["ADMIN"] as const,
     items: [
       { name: "General",   href: "/settings", icon: Settings },
+      { name: "Provincias", href: "/provincias", icon: MapPin },
+      { name: "Localidades", href: "/localidades", icon: MapPinned },
       { name: "Historial", href: "/activity", icon: History, featureKey: "activity_log" },
     ],
   },

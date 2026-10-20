@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUrlFilters } from '../../hooks/useUrlFilters';
-import { Plus, X, Receipt, Search, Check, ExternalLink } from 'lucide-react';
+import { Plus, X, Receipt, Search, Check, ExternalLink, CloudOff, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, CustomerSearchSelect } from '../../components/shared';
@@ -22,6 +22,10 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';
 import type { Invoice, InvoiceStatus, InvoiceType, Customer, InvoiceStats, InvoiceCurrencyStats } from '../../types';
+import ArcaBatchModal from './ArcaBatchModal';
+
+/** Tope del lote de emisión ante ARCA (lo valida también el backend). */
+const ARCA_BATCH_MAX = 100;
 
 // ── Type chip config ─────────────────────────────────────────────
 const TYPE_CHIP: Record<string, { label: string; cls: string }> = {
@@ -183,6 +187,7 @@ export default function InvoicesPage() {
     saleCondition: '',
     dateFrom: '',
     dateTo: '',
+    pendingArca: '',
     page: '1',
     limit: String(DEFAULT_PAGE_SIZE),
   });
@@ -192,6 +197,7 @@ export default function InvoicesPage() {
   const typeFilter = values.type;
   const customerFilter = values.customer;
   const saleConditionFilter = values.saleCondition;
+  const pendingArca = values.pendingArca === '1';
   const page = Number(values.page) || 1;
   const limit = Number(values.limit) || DEFAULT_PAGE_SIZE;
 
@@ -203,6 +209,10 @@ export default function InvoicesPage() {
   const setSaleConditionFilter = (v: string) => setValues({ saleCondition: v, page: '1' });
   const setDateFrom = (v: string) => setValues({ dateFrom: v, page: '1' });
   const setDateTo = (v: string) => setValues({ dateTo: v, page: '1' });
+  const togglePendingArca = () => {
+    setSelected(new Map());
+    setValues({ pendingArca: pendingArca ? '' : '1', page: '1' });
+  };
   const setPage = (p: number) => setValues({ page: String(p) });
   const setLimit = (l: number) => setValues({ limit: String(l), page: '1' });
 
@@ -230,7 +240,8 @@ export default function InvoicesPage() {
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
     search: debouncedSearch || undefined,
-  }), [statusFilter, typeFilter, customerFilter, saleConditionFilter, dateFrom, dateTo, debouncedSearch]);
+    pendingArca: pendingArca || undefined,
+  }), [statusFilter, typeFilter, customerFilter, saleConditionFilter, dateFrom, dateTo, debouncedSearch, pendingArca]);
 
   const fetchInvoices = useCallback(async () => {
     setIsLoading(true);
@@ -248,6 +259,46 @@ export default function InvoicesPage() {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
+  // Facturas formales sin CAE (p. ej. ventas hechas con ARCA caído): se
+  // muestran como acceso al filtro y se emiten en lote.
+  const [pendingArcaCount, setPendingArcaCount] = useState(0);
+  const refreshPendingArca = useCallback(() => {
+    invoicesService.countPendingArca().then(setPendingArcaCount).catch(() => {});
+  }, []);
+  useEffect(() => { refreshPendingArca(); }, [refreshPendingArca, fiscalMode]);
+
+  // Selección para el lote: se guarda la factura (no solo el id) para que
+  // sobreviva al cambio de página.
+  const [selected, setSelected] = useState<Map<string, Invoice>>(new Map());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const toggleSelected = (inv: Invoice) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(inv.id)) next.delete(inv.id);
+      else if (next.size < ARCA_BATCH_MAX) next.set(inv.id, inv);
+      else toast.error(`Hasta ${ARCA_BATCH_MAX} facturas por lote`);
+      return next;
+    });
+  };
+  const pageAllSelected = invoices.length > 0 && invoices.every((i) => selected.has(i.id));
+  const togglePage = () => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (pageAllSelected) invoices.forEach((i) => next.delete(i.id));
+      else invoices.forEach((i) => { if (next.size < ARCA_BATCH_MAX) next.set(i.id, i); });
+      return next;
+    });
+  };
+  const selectAllPending = async () => {
+    try {
+      const res = await invoicesService.getAll({ ...filters, page: 1, limit: ARCA_BATCH_MAX });
+      setSelected(new Map(res.data.map((i) => [i.id, i])));
+      if (res.total > ARCA_BATCH_MAX) toast(`Se seleccionaron las primeras ${ARCA_BATCH_MAX} de ${res.total}`);
+    } catch {
+      toast.error('No se pudieron cargar las pendientes');
+    }
+  };
+
   // Los totales salen del conjunto filtrado completo, no de la página: sumar
   // las 25 filas visibles y rotularlo "Total" era el número que engañaba.
   const [stats, setStats] = useState<InvoiceStats | null>(null);
@@ -263,8 +314,9 @@ export default function InvoicesPage() {
   const pendingCount = stats?.byCurrency.reduce((acc, t) => acc + t.pendingCount, 0) ?? 0;
   const overdueCount = stats?.byCurrency.reduce((acc, t) => acc + t.overdueCount, 0) ?? 0;
 
-  const hasFilters = !!(statusFilter || typeFilter || customerFilter || saleConditionFilter || dateFrom || dateTo || debouncedSearch);
-  const clearFilters = () => reset(['limit']);
+  const hasFilters = !!(statusFilter || typeFilter || customerFilter || saleConditionFilter || dateFrom || dateTo || debouncedSearch || pendingArca);
+  const clearFilters = () => { setSelected(new Map()); reset(['limit']); };
+  const showPendingArcaToggle = fiscalMode !== 'INFORMAL' && (pendingArcaCount > 0 || pendingArca);
 
   const showSkeleton = isFirstLoad && isLoading;
   const showEmpty = !isLoading && !isFirstLoad && invoices.length === 0;
@@ -405,6 +457,22 @@ export default function InvoicesPage() {
               />
             </div>
 
+            {showPendingArcaToggle && (
+              <button
+                onClick={togglePendingArca}
+                title="Facturas formales sin CAE que todavía se pueden emitir ante ARCA"
+                className={`h-[34px] inline-flex items-center gap-1.5 px-2.5 text-xs font-semibold rounded-lg border transition-all ${
+                  pendingArca
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+                    : 'bg-white dark:bg-slate-700 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                }`}
+              >
+                <CloudOff className="w-3.5 h-3.5" />
+                Pendientes de ARCA
+                <span className="tabular-nums px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 leading-none">{pendingArcaCount}</span>
+              </button>
+            )}
+
             {hasFilters && (
               <button
                 onClick={clearFilters}
@@ -433,6 +501,33 @@ export default function InvoicesPage() {
             )}
           </div>
         </div>
+
+        {/* ── Barra del lote ARCA ── */}
+        {pendingArca && invoices.length > 0 && (
+          <div className="px-4 py-2.5 border-b border-amber-100 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-900/10 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-amber-900 dark:text-amber-200">
+              {selected.size > 0
+                ? <><strong className="tabular-nums">{selected.size}</strong> {selected.size === 1 ? 'seleccionada' : 'seleccionadas'}</>
+                : 'Seleccioná las facturas a emitir ante ARCA'}
+            </span>
+            {total > invoices.length && (
+              <button onClick={selectAllPending} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                Seleccionar todas ({Math.min(total, ARCA_BATCH_MAX)})
+              </button>
+            )}
+            {selected.size > 0 && (
+              <button onClick={() => setSelected(new Map())} className="text-xs text-gray-500 dark:text-slate-400 hover:underline">
+                Quitar selección
+              </button>
+            )}
+            <div className="ml-auto">
+              <Button size="sm" disabled={selected.size === 0} onClick={() => setBatchOpen(true)}>
+                <Zap className="w-3.5 h-3.5 mr-1.5" />
+                Emitir ante ARCA{selected.size > 0 ? ` (${selected.size})` : ''}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Skeleton ── */}
         {showSkeleton && (
@@ -476,6 +571,17 @@ export default function InvoicesPage() {
               <table className="w-full text-sm" style={{ minWidth: '820px' }}>
                 <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                   <tr>
+                    {pendingArca && (
+                      <th className="pl-4 py-2.5 w-8">
+                        <input
+                          type="checkbox"
+                          checked={pageAllSelected}
+                          onChange={togglePage}
+                          aria-label="Seleccionar las de esta página"
+                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Comprobante</th>
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider w-full">Cliente</th>
@@ -517,6 +623,17 @@ export default function InvoicesPage() {
                         }`}
                         onClick={() => navigate(`/invoices/${inv.id}`)}
                       >
+                        {pendingArca && (
+                          <td className="pl-4 py-3.5 align-top" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selected.has(inv.id)}
+                              onChange={() => toggleSelected(inv)}
+                              aria-label={`Seleccionar ${formatInvoiceNumber(inv)}`}
+                              className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                            />
+                          </td>
+                        )}
                         {/* Fecha — con el vencimiento solo cuando dice algo */}
                         <td className="px-4 py-3.5 whitespace-nowrap align-top">
                           <p className="text-sm font-medium text-gray-800 dark:text-slate-200 leading-none tabular-nums">
@@ -652,6 +769,17 @@ export default function InvoicesPage() {
           </div>
         )}
       </Card>
+
+      <ArcaBatchModal
+        isOpen={batchOpen}
+        invoices={[...selected.values()]}
+        onClose={() => setBatchOpen(false)}
+        onDone={() => {
+          setSelected(new Map());
+          fetchInvoices();
+          refreshPendingArca();
+        }}
+      />
     </div>
   );
 }

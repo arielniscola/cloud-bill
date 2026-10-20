@@ -77,6 +77,10 @@ export interface InvoiceFastLayoutProps {
   itemsError?: string;
   findProduct: (productId: string) => Product | undefined;
   variantsByProduct: Record<string, ProductVariant[]>;
+  /** Selector de lote de la línea (productos con lotes), o null. */
+  renderLotPicker?: (index: number) => ReactNode;
+  /** Detalle libre de la línea (servicios), o null. */
+  renderItemDetail?: (index: number) => ReactNode;
   stockFor: (productId: string, variantId: string | null) =>
     { state: 'loading' | 'error' } | { state: 'ok'; available: number };
   calcItemAmounts: (index: number) => { base: number; discount: number; net: number; tax: number; total: number };
@@ -125,7 +129,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
     warehouses, warehouseId, effectiveWarehouseId, onWarehouseChange,
     needsCustomerId, cashIdThreshold, dateAdvanceWarning, advanceDaysLimit,
     register, products, fields, items, itemErrors, itemsError,
-    findProduct, variantsByProduct, stockFor, calcItemAmounts, itemDiscountPct,
+    findProduct, variantsByProduct, stockFor, renderLotPicker, renderItemDetail, calcItemAmounts, itemDiscountPct,
     onProductChange, onVariantChange, onAddProduct, onQuantityChange,
     onItemDiscountChange, onRemoveItem, onOpenCatalog, onOpenImport, barcodeSlot,
     discountType, discountValue, hasPerItemDiscount, onGlobalDiscountChange,
@@ -377,6 +381,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
               placeholder="Buscar producto y agregar…"
               serverSearch
               searchParams={{ isActive: true }}
+              stockWarehouseId={effectiveWarehouseId || undefined}
             />
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -438,7 +443,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                 <div
                   key={field.id}
                   id={`invoice-item-${index}`}
-                  className={`grid grid-cols-1 ${isTypeC ? 'md:grid-cols-[3fr_72px_104px_72px_104px_32px]' : 'md:grid-cols-[3fr_72px_104px_60px_72px_104px_32px]'} gap-3 items-center py-3`}
+                  className={`grid grid-cols-1 ${isTypeC ? 'md:grid-cols-[3fr_72px_104px_72px_104px_32px]' : 'md:grid-cols-[3fr_72px_104px_60px_72px_104px_32px]'} gap-3 items-start py-3`}
                 >
                   <div className="min-w-0">
                     <ProductSearchSelect
@@ -447,8 +452,11 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                       onChange={(value, picked) => onProductChange(index, value, picked)}
                       error={itemErrors[index]?.productId?.message}
                       serverSearch
+                      stockWarehouseId={effectiveWarehouseId || undefined}
                     />
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">{renderStockBadge(index)}</div>
+                    {renderLotPicker?.(index)}
+                    {renderItemDetail?.(index)}
                   </div>
                   <Input type="number" step="1" min="1" {...register(`items.${index}.quantity`)} error={itemErrors[index]?.quantity?.message} />
                   <Input type="number" step="0.01" min="0" {...register(`items.${index}.unitPrice`)} error={itemErrors[index]?.unitPrice?.message} />
@@ -461,10 +469,10 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                     value={itemDiscountPct(index)}
                     onChange={(e) => onItemDiscountChange(index, Number(e.target.value) || 0)}
                   />
-                  <div className="text-right text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                  <div className="text-right md:pt-[9px] text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(calcItemAmounts(index).total, 'ARS')}
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end md:pt-1.5">
                     {fields.length > 1 && (
                       <button
                         type="button"
@@ -502,6 +510,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                           error={itemErrors[index]?.productId?.message}
                           placeholder="Elegí un producto para esta línea…"
                           serverSearch
+                          stockWarehouseId={effectiveWarehouseId || undefined}
                         />
                       </div>
                       {fields.length > 1 && (
@@ -543,6 +552,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                         {itemDiscountPct(index) > 0 ? ` · -${formatNumber(itemDiscountPct(index), 2)}%` : ''}
                       </p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">{renderStockBadge(index)}</div>
+                      {renderLotPicker?.(index)}
                     </button>
 
                     <div className="flex items-center border border-gray-300 dark:border-slate-600 rounded-lg overflow-hidden shrink-0">
@@ -595,6 +605,11 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                       </button>
                     )}
                   </div>
+
+                  {(() => {
+                    const detail = renderItemDetail?.(index);
+                    return detail ? <div className="px-4 pb-3 -mt-2">{detail}</div> : null;
+                  })()}
 
                   {isOpen && (
                     <div className="px-4 pb-4 pt-1 border-t border-dashed border-indigo-200 dark:border-indigo-900">

@@ -90,6 +90,7 @@ function Slip({ invoice, logoDataUrl }: { invoice: Invoice; logoDataUrl?: string
           <Text style={s.cDesc}>
             {(item.description || item.product?.name || 'Producto').toUpperCase()}
             {item.variant?.name ? ` - ${item.variant.name.toUpperCase()}` : ''}
+            {item.detail ? <Text style={{ fontSize: 7.5, color: LABEL }}>{'\n'}{item.detail}</Text> : null}
           </Text>
           <Text style={s.cQty}>{fmtQty(item.quantity)}</Text>
           <Text style={s.cPrice}>{fmtNum(finalUnitPrice(item.total, item.quantity))}</Text>

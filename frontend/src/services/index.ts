@@ -35,6 +35,8 @@ export type { ByProductRow, SalesReportFilters } from './reports.service';
 export { default as mercadoPagoService } from './mercadopago.service';
 export { default as cardsService } from './cards.service';
 export { default as bancosService } from './bancos.service';
+export { default as provinciasService } from './provincias.service';
+export { default as localidadesService } from './localidades.service';
 export { default as categoriesService } from './categories.service';
 export { default as productVariantsService } from './product-variants.service';
 export { default as productCustomFieldsService } from './product-custom-fields.service';

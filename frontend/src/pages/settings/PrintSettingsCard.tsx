@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Save, FileText, Receipt, ClipboardList, Calculator, ShoppingBag } from 'lucide-react';
+import { Save, FileText, Receipt, ClipboardList, Calculator, ShoppingBag, Wallet } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button, Input } from '../../components/ui';
 import { appSettingsService } from '../../services';
@@ -14,7 +14,7 @@ const FORMAT_LABEL: Record<Format, string> = {
 };
 
 interface DocTypeRow {
-  key: 'printFormatInvoice' | 'printFormatBudget' | 'printFormatOrdenPedido' | 'printFormatRemito' | 'printFormatRecibo';
+  key: 'printFormatInvoice' | 'printFormatBudget' | 'printFormatOrdenPedido' | 'printFormatRemito' | 'printFormatRecibo' | 'printFormatCashMovement';
   label: string;
   description: string;
   icon: React.ElementType;
@@ -63,6 +63,14 @@ const DOC_TYPES: DocTypeRow[] = [
     available: { A4: true, THERMAL_80MM: false },
     defaultFormat: 'A4',
   },
+  {
+    key: 'printFormatCashMovement',
+    label: 'Retiros / Ingresos de caja',
+    description: 'Comprobante interno de movimientos manuales de caja',
+    icon: Wallet,
+    available: { A4: true, THERMAL_80MM: true },
+    defaultFormat: 'A4',
+  },
 ];
 
 type FormatsState = Record<DocTypeRow['key'], Format>;
@@ -80,6 +88,7 @@ export default function PrintSettingsCard() {
     printFormatOrdenPedido: 'THERMAL_80MM',
     printFormatRemito: 'A4',
     printFormatRecibo: 'A4',
+    printFormatCashMovement: 'A4',
   });
   // Datos que se imprimen en los comprobantes (encabezado de factura/remito).
   const [printData, setPrintData] = useState({
@@ -98,6 +107,7 @@ export default function PrintSettingsCard() {
           printFormatOrdenPedido: (s.printFormatOrdenPedido ?? s.printFormat ?? 'THERMAL_80MM') as Format,
           printFormatRemito:      (s.printFormatRemito      ?? s.printFormat ?? 'A4') as Format,
           printFormatRecibo:      (s.printFormatRecibo      ?? s.printFormat ?? 'A4') as Format,
+          printFormatCashMovement: (s.printFormatCashMovement ?? 'A4') as Format,
         });
         setPrintData({
           printWebsite:       s.printWebsite ?? '',

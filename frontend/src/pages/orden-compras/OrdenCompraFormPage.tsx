@@ -207,7 +207,7 @@ export default function OrdenCompraFormPage() {
                   {items.map((item, index) => {
                     const { total } = calcItem(item);
                     return (
-                      <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 items-center py-3">
+                      <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 items-start py-3">
                         <div>
                           <label className="block md:hidden text-xs text-gray-400 mb-1">Producto</label>
                           <ProductSearchSelect
@@ -262,13 +262,13 @@ export default function OrdenCompraFormPage() {
                             onChange={(e) => updateItem(index, 'taxRate', parseFloat(e.target.value) || 0)}
                           />
                         </div>
-                        <div className="text-right">
+                        <div className="text-right md:pt-[9px]">
                           <label className="block md:hidden text-xs text-gray-400 mb-1">Total</label>
                           <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                             {formatCurrency(total, currency)}
                           </span>
                         </div>
-                        <div className="flex justify-end">
+                        <div className="flex justify-end md:pt-1.5">
                           {items.length > 1 && (
                             <button
                               type="button"

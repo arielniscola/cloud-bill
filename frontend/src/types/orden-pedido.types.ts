@@ -1,5 +1,6 @@
 import type { Currency } from './invoice.types';
 import type { Customer } from './customer.types';
+import type { ItemLotDTO } from './stock.types';
 
 export type OrdenPedidoStatus = 'DRAFT' | 'CONFIRMED' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED' | 'CONVERTED';
 
@@ -10,6 +11,8 @@ export interface OrdenPedidoItem {
   variantId?: string | null;
   description: string;
   quantity: number;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   unitPrice: number;
   discountPct: number;
   taxRate: number;
@@ -57,12 +60,15 @@ export interface CreateOrdenPedidoItemDTO {
   variantId?: string | null;
   description: string;
   quantity: number;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   unitPrice: number;
   discountPct?: number;
   taxRate: number;
   subtotal: number;
   taxAmount: number;
   total: number;
+  lots?: ItemLotDTO[];
 }
 
 export interface CreateOrdenPedidoDTO {

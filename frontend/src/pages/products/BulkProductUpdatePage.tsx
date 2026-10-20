@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { clsx } from 'clsx';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { Save, RefreshCw, CheckSquare, Square, ChevronDown, X, Wand2, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
@@ -45,6 +46,14 @@ function FilterSearchSelect({ placeholder, value, onChange, options }: {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+  const select = (v: string) => { onChange(v); setOpen(false); setQuery(''); };
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav({
+    count: filtered.length,
+    isOpen: open,
+    resetKey: query,
+    onSelect: (idx) => { if (filtered[idx]) select(filtered[idx].value); },
+    onEscape: () => { setOpen(false); setQuery(''); },
+  });
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)}
@@ -59,16 +68,17 @@ function FilterSearchSelect({ placeholder, value, onChange, options }: {
       {open && (
         <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg w-56 overflow-hidden">
           <div className="p-2 border-b border-gray-100 dark:border-slate-700">
-            <input autoFocus type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar…"
+            <input autoFocus type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown} placeholder="Buscar…"
               className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
           </div>
-          <div className="max-h-52 overflow-y-auto py-1">
+          <div ref={listRef} role="listbox" className="max-h-52 overflow-y-auto py-1">
             {filtered.length === 0 ? <p className="px-3 py-2 text-xs text-gray-400">Sin resultados</p>
-              : filtered.map((o) => (
-                <button key={o.value} type="button" onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+              : filtered.map((o, idx) => (
+                <button key={o.value} type="button" {...optionProps(idx)} onClick={() => select(o.value)}
                   className={clsx('w-full text-left px-3 py-2 text-xs transition-colors',
                     o.value === value ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
-                                      : 'text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700')}>
+                                      : 'text-gray-700 dark:text-slate-300',
+                    idx === activeIndex && (o.value === value ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-gray-100 dark:bg-slate-700'))}>
                   {o.label}
                 </button>
               ))}

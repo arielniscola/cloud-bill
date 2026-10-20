@@ -10,6 +10,8 @@ export interface BudgetItem {
   variantId?: string | null;
   description: string;
   quantity: number;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   unitPrice: number;
   discountPct?: number;
   taxRate: number;
@@ -51,6 +53,8 @@ export interface CreateBudgetItemDTO {
   variantId?: string | null;
   description: string;
   quantity: number;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   unitPrice: number;
   taxRate: number;
   subtotal: number;

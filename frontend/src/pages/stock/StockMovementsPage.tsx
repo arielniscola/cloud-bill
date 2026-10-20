@@ -10,7 +10,8 @@ import type { Column } from '../../components/shared/DataTable';
 import { stockService, productsService, warehousesService } from '../../services';
 import { formatNumber } from '../../utils/formatters';
 import { STOCK_MOVEMENT_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
-import type { StockMovement, Product, Warehouse, StockMovementType } from '../../types';
+import type { StockMovement, Product, Warehouse, StockMovementType, ItemLotDTO } from '../../types';
+import LotPicker from '../../components/shared/LotPicker';
 
 // ── Movement type config ─────────────────────────────────────────
 type MovementCfg = { label: string; sign: '+' | '−'; className: string };
@@ -87,6 +88,13 @@ export default function StockMovementsPage() {
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
 
+  // Movimiento de un producto con lotes: lote que entra o lotes de los que sale.
+  const [movProduct, setMovProduct] = useState<Product | null>(null);
+  const [lotNumber,  setLotNumber]  = useState('');
+  const [lotExpires, setLotExpires] = useState('');
+  const [outLots,    setOutLots]    = useState<ItemLotDTO[] | undefined>(undefined);
+  const resetLots = () => { setLotNumber(''); setLotExpires(''); setOutLots(undefined); };
+
   const [filterProduct,   setFilterProduct]   = useState('');
   const [filterWarehouse, setFilterWarehouse] = useState('');
   const [filterType,      setFilterType]      = useState('');
@@ -142,13 +150,21 @@ export default function StockMovementsPage() {
 
   const hasActiveFilters = !!(filterProduct || filterWarehouse || filterType || filterStartDate || filterEndDate);
 
-  const openModal  = () => { reset({ type: 'PURCHASE' }); setIsModalOpen(true); };
-  const closeModal = () => { setIsModalOpen(false); reset(); };
+  const openModal  = () => { reset({ type: 'PURCHASE' }); setMovProduct(null); resetLots(); setIsModalOpen(true); };
+  const closeModal = () => { setIsModalOpen(false); reset(); setMovProduct(null); resetLots(); };
+
+  const movTracksLots = movProduct?.id === productId && movProduct.trackLots === true;
+  const movIsIn = !!IS_IN[type as StockMovementType];
 
   const onSubmit = async (data: MovementFormData) => {
     setIsSaving(true);
     try {
-      await stockService.addMovement(data);
+      const lots = !movTracksLots
+        ? undefined
+        : movIsIn
+          ? (lotNumber.trim() ? [{ lotNumber: lotNumber.trim(), expiresAt: lotExpires || null, quantity: Number(data.quantity) }] : undefined)
+          : outLots;
+      await stockService.addMovement({ ...data, ...(lots ? { lots } : {}) });
       toast.success('Movimiento registrado');
       closeModal();
       fetchMovements();
@@ -360,7 +376,7 @@ export default function StockMovementsPage() {
             <ProductSearchSelect
               products={products}
               value={productId}
-              onChange={(v) => setValue('productId', v)}
+              onChange={(v, picked) => { setValue('productId', v); setMovProduct(picked ?? products.find((p) => p.id === v) ?? null); resetLots(); }}
               error={errors.productId?.message}
               serverSearch
             />
@@ -401,6 +417,36 @@ export default function StockMovementsPage() {
             {...register('quantity')}
             error={errors.quantity?.message}
           />
+
+          {movTracksLots && movIsIn && (
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Lote"
+                placeholder="N° de lote (vacío = S/L)"
+                value={lotNumber}
+                onChange={(e) => setLotNumber(e.target.value)}
+                maxLength={60}
+              />
+              <Input
+                label="Vencimiento"
+                type="date"
+                value={lotExpires}
+                onChange={(e) => setLotExpires(e.target.value)}
+              />
+            </div>
+          )}
+          {movTracksLots && !movIsIn && warehouseId && (
+            <div>
+              <span className="block text-sm font-medium text-gray-700 dark:text-slate-300">Lote</span>
+              <LotPicker
+                productId={productId}
+                warehouseId={warehouseId}
+                quantity={Number(watch('quantity')) || 0}
+                value={outLots}
+                onChange={setOutLots}
+              />
+            </div>
+          )}
 
           <Input
             label="Motivo"

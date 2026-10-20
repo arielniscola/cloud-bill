@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Receipt, Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Package } from 'lucide-react';
 import { Button } from '../ui';
 import ProductPickerModal from './ProductPickerModal';
+import ProvinciaSelect from './ProvinciaSelect';
 import { formatCurrency } from '../../utils/formatters';
 import { purchaseInvoicesService, productsService } from '../../services';
 import type {
@@ -56,14 +57,6 @@ const TRIBUTO_TYPE_OPTIONS: { value: TributoType; label: string }[] = [
   { value: 'PERCEPCION_IIBB',   label: 'Percepción IIBB' },
   { value: 'IMPUESTOS_INTERNOS', label: 'Imp. internos' },
   { value: 'OTRO',              label: 'Otro tributo' },
-];
-
-const AR_PROVINCES = [
-  'Buenos Aires', 'CABA', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba',
-  'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa', 'La Rioja',
-  'Mendoza', 'Misiones', 'Neuquén', 'Río Negro', 'Salta', 'San Juan',
-  'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero',
-  'Tierra del Fuego', 'Tucumán',
 ];
 
 // ── Empty state ───────────────────────────────────────────────────────────────
@@ -1104,11 +1097,9 @@ export function AddPurchaseInvoiceModal({
                       {TRIBUTO_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                     {trib.type === 'PERCEPCION_IIBB' ? (
-                      <select className={tinyInput} value={trib.jurisdiction ?? ''}
-                        onChange={(e) => setTrib(i, 'jurisdiction', e.target.value || null)}>
-                        <option value="">Jurisdicción</option>
-                        {AR_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
+                      <ProvinciaSelect className={tinyInput} value={trib.jurisdiction}
+                        placeholder="Jurisdicción"
+                        onChange={(v) => setTrib(i, 'jurisdiction', v)} />
                     ) : (
                       <input className={tinyInput} placeholder="—"
                         value={trib.jurisdiction ?? ''}

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown, Layers } from 'lucide-react';
 import type { Account } from '../../types/accounting.types';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 
 export interface AccountSearchSelectProps {
   accounts: Account[];
@@ -60,7 +61,9 @@ export default function AccountSearchSelect({
   useEffect(() => {
     if (isOpen) {
       updatePosition();
-      inputRef.current?.focus();
+      // preventScroll: el desplegable todavía no tiene su posición fija; sin
+      // esto el navegador scrollea la página hasta él y eso lo cierra.
+      inputRef.current?.focus({ preventScroll: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -83,10 +86,15 @@ export default function AccountSearchSelect({
   useEffect(() => {
     if (!isOpen) return;
     const close = () => { setIsOpen(false); setQuery(''); };
-    window.addEventListener('scroll', close, true);
+    // El scroll DENTRO del propio desplegable (rueda o flechas) no lo cierra.
+    const onScroll = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [isOpen]);
@@ -107,6 +115,14 @@ export default function AccountSearchSelect({
     setQuery('');
   };
 
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav({
+    count: filtered.length,
+    isOpen,
+    resetKey: query,
+    onSelect: (idx) => { if (filtered[idx]) handleSelect(filtered[idx]); },
+    onEscape: () => { setIsOpen(false); setQuery(''); },
+  });
+
   const dropdown = isOpen
     ? createPortal(
         <div
@@ -114,7 +130,7 @@ export default function AccountSearchSelect({
           style={dropdownStyle}
           className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden"
         >
-          <div className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
+          <div ref={listRef} role="listbox" className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center">
                 <Layers className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
@@ -123,16 +139,20 @@ export default function AccountSearchSelect({
                 </p>
               </div>
             ) : (
-              filtered.map((a) => {
+              filtered.map((a, idx) => {
                 const isSelected = a.id === value;
+                const isActive = idx === activeIndex;
                 return (
                   <button
                     key={a.id}
                     type="button"
+                    {...optionProps(idx)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelect(a)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 ${
-                      isSelected ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                      isSelected
+                        ? isActive ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-indigo-50 dark:bg-indigo-900/30'
+                        : isActive ? 'bg-gray-100 dark:bg-slate-700' : ''
                     }`}
                   >
                     <span className="font-mono text-[10px] font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded flex-shrink-0">
@@ -199,6 +219,7 @@ export default function AccountSearchSelect({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
             placeholder="Buscar por código o nombre…"
             className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
           />

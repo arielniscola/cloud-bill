@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { DocumentLotsLine } from '../../components/shared/DocumentLots';
+import { useDocumentLots, lotsFor } from '../../hooks/useDocumentLots';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail, PackageCheck, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -66,6 +68,7 @@ export default function OrdenPedidoDetailPage() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [recibos, setRecibos] = useState<Recibo[]>([]);
   const [remitos, setRemitos] = useState<Remito[]>([]);
+  const docLots = useDocumentLots([op?.id, ...remitos.map((r) => r.id)]);
   const [showPayModal, setShowPayModal] = useState(false);
   const [showMpModal, setShowMpModal] = useState(false);
   const [isPayLoading, setIsPayLoading] = useState(false);
@@ -503,12 +506,16 @@ export default function OrdenPedidoDetailPage() {
                     <tr key={item.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors duration-100">
                       <td className="px-5 py-3.5">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{item.description}</p>
+                        {item.detail && (
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-0.5 whitespace-pre-line">{item.detail}</p>
+                        )}
                         {item.variant && (
                           <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">{item.variant.name}</p>
                         )}
                         {(item.variant?.sku ?? item.product?.sku) && (
                           <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                         )}
+                        <DocumentLotsLine lots={lotsFor(docLots, item.productId, item.variantId)} />
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">{Number(item.quantity)}</td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">

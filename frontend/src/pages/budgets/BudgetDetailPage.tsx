@@ -328,6 +328,9 @@ export default function BudgetDetailPage() {
                     <tr key={item.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors duration-100">
                       <td className="px-5 py-3.5">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{item.description}</p>
+                        {item.detail && (
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-0.5 whitespace-pre-line">{item.detail}</p>
+                        )}
                         {item.variant && (
                           <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">{item.variant.name}</p>
                         )}

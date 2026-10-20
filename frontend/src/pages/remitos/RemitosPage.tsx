@@ -330,6 +330,14 @@ export default function RemitosPage() {
                         <td className="px-4 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">
                           {rem.number}
                           <FiscalModeBadge mode={(rem as any).fiscalMode} className="ml-1.5" />
+                          {rem.billedInvoice && (
+                            <span
+                              title={`Facturado en ${rem.billedInvoice.number}`}
+                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                            >
+                              Facturado
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ring-1 ring-inset ${chip.cls}`}>

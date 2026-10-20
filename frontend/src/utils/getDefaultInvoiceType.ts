@@ -15,8 +15,8 @@ export function getDefaultInvoiceType(
   if (configured && configured !== 'AUTO') return configured;
   if (companyTaxCondition === 'MONOTRIBUTISTA') return 'FACTURA_C';
   if (companyTaxCondition === 'EXENTO') return 'FACTURA_B';
-  // empresa RI
-  if (customerTaxCondition === 'RESPONSABLE_INSCRIPTO') return 'FACTURA_A';
+  // empresa RI: desde la RG 5003 el monotributista también recibe A
+  if (customerTaxCondition === 'RESPONSABLE_INSCRIPTO' || customerTaxCondition === 'MONOTRIBUTISTA') return 'FACTURA_A';
   return 'FACTURA_B';
 }
 

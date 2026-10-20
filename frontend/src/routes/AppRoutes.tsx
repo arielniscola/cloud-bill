@@ -23,6 +23,7 @@ import StockPage from '../pages/stock/StockPage';
 import StockMovementsPage from '../pages/stock/StockMovementsPage';
 import StockTransferPage from '../pages/stock/StockTransferPage';
 import StockPhysicalCountPage from '../pages/stock/StockPhysicalCountPage';
+import StockLotsPage from '../pages/stock/StockLotsPage';
 import StockIntelligencePage from '../pages/stock/StockIntelligencePage';
 import InvoicesPage from '../pages/invoices/InvoicesPage';
 import RecurringInvoicesPage from '../pages/recurring-invoices/RecurringInvoicesPage';
@@ -71,6 +72,7 @@ import PurchaseRetentionsPage from '../pages/purchase-retentions/PurchaseRetenti
 import BancoCheques from '../pages/banco-cheques/BancoCheques';
 import ThermalInvoicePrintPage from '../pages/print/ThermalInvoicePrintPage';
 import ThermalOrdenPedidoPrintPage from '../pages/print/ThermalOrdenPedidoPrintPage';
+import ThermalCashMovementPrintPage from '../pages/print/ThermalCashMovementPrintPage';
 import CompaniesPage from '../pages/companies/CompaniesPage';
 import CompanyFormPage from '../pages/companies/CompanyFormPage';
 import CompanyDetailPage from '../pages/companies/CompanyDetailPage';
@@ -86,6 +88,8 @@ import BankAccountDetailPage from '../pages/banks/BankAccountDetailPage';
 import MercadoPagoPage from '../pages/mercadopago/MercadoPagoPage';
 import CardsPage from '../pages/cards/CardsPage';
 import BancosPage from '../pages/bancos/BancosPage';
+import ProvinciasPage from '../pages/provincias/ProvinciasPage';
+import LocalidadesPage from '../pages/localidades/LocalidadesPage';
 import CategoriesPage from '../pages/categories/CategoriesPage';
 import ProductCustomFieldsPage from '../pages/product-custom-fields/ProductCustomFieldsPage';
 import PlansPage from '../pages/plans/PlansPage';
@@ -104,6 +108,7 @@ export default function AppRoutes() {
       {/* Print routes — authenticated, no layout */}
       <Route path="/print/invoice/:id" element={<ProtectedRoute><ThermalInvoicePrintPage /></ProtectedRoute>} />
       <Route path="/print/orden-pedido/:id" element={<ProtectedRoute><ThermalOrdenPedidoPrintPage /></ProtectedRoute>} />
+      <Route path="/print/cash-movement/:registerId/:movementId" element={<ProtectedRoute><ThermalCashMovementPrintPage /></ProtectedRoute>} />
 
       {/* Protected routes */}
       <Route
@@ -149,6 +154,7 @@ export default function AppRoutes() {
           <Route path="/stock/transfer" element={<StockTransferPage />} />
         </Route>
         <Route path="/stock/physical-count" element={<StockPhysicalCountPage />} />
+        <Route path="/stock/lots" element={<StockLotsPage />} />
         <Route element={<FeatureRouteGuard feature="stock_intelligence" />}>
           <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
         </Route>
@@ -186,6 +192,9 @@ export default function AppRoutes() {
           <Route path="/cash-registers/:id/edit" element={<CashRegisterFormPage />} />
           <Route path="/cash-registers/:id" element={<CashRegisterDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* Catálogo de provincias (parametrización) */}
+          <Route path="/provincias" element={<ProvinciasPage />} />
+          <Route path="/localidades" element={<LocalidadesPage />} />
           <Route element={<FeatureRouteGuard feature="activity_log" />}>
             <Route path="/activity" element={<ActivityPage />} />
           </Route>

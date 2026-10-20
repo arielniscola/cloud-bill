@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Plus, Trash2, Calculator, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ItemDetailInput } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { budgetsService, customersService, productsService, appSettingsService, productVariantsService } from '../../services';
@@ -21,6 +21,8 @@ const budgetItemSchema = z.object({
   productId: z.string().optional().nullable(),
   variantId: z.string().nullable().optional(),
   description: z.string().min(1, 'Requerida'),
+  // Detalle libre (solo productos no inventariados / servicios).
+  detail: z.string().nullable().optional(),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
   taxRate: z.coerce.number().min(0).max(100),
@@ -79,6 +81,8 @@ export default function BudgetFormPage() {
   const [isFetching, setIsFetching] = useState(isEditing);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  // Productos elegidos por búsqueda server-side (pueden no estar en la precarga).
+  const [pickedProducts, setPickedProducts] = useState<Record<string, Product>>({});
 
   const {
     register, control, handleSubmit, setValue, watch, reset, getValues,
@@ -192,6 +196,7 @@ export default function BudgetFormPage() {
             productId: item.productId,
             variantId: item.variantId ?? null,
             description: item.description,
+            detail: item.detail ?? null,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
             taxRate: Number(item.taxRate),
@@ -222,9 +227,11 @@ export default function BudgetFormPage() {
   const handleProductChange = (index: number, productId: string, picked?: Product) => {
     const product = picked ?? products.find((p) => p.id === productId);
     if (product) {
+      setPickedProducts((prev) => ({ ...prev, [product.id]: product }));
       setValue(`items.${index}.productId`, productId);
       (setValue as any)(`items.${index}.variantId`, null);
       setValue(`items.${index}.description`, product.name);
+      setValue(`items.${index}.detail`, null);
       setValue(`items.${index}.unitPrice`, currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price);
       setValue(`items.${index}.taxRate`, product.taxRate);
       void loadVariantsFor(productId);
@@ -262,6 +269,7 @@ export default function BudgetFormPage() {
   }, [itemProductIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBarcodeAdd = (product: Product, qty: number = 1) => {
+    setPickedProducts((prev) => ({ ...prev, [product.id]: product }));
     const existingIndex = items.findIndex((item) => item.productId === product.id);
     if (existingIndex >= 0) {
       setValue(`items.${existingIndex}.quantity`, Number(items[existingIndex].quantity) + qty);
@@ -312,7 +320,7 @@ export default function BudgetFormPage() {
   const buildItemDTO = (item: typeof items[0]) => {
     const subtotal = item.quantity * item.unitPrice;
     const taxAmount = isTypeC ? 0 : subtotal * (item.taxRate / 100);
-    return { productId: item.productId || null, description: item.description, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: isTypeC ? 0 : item.taxRate, subtotal, taxAmount, total: subtotal + taxAmount };
+    return { productId: item.productId || null, description: item.description, detail: item.detail?.trim() || null, quantity: item.quantity, unitPrice: item.unitPrice, taxRate: isTypeC ? 0 : item.taxRate, subtotal, taxAmount, total: subtotal + taxAmount };
   };
 
   const onSubmit = async (data: BudgetFormData) => {
@@ -394,7 +402,7 @@ export default function BudgetFormPage() {
                   {fields.map((field, index) => (
                     <div
                       key={field.id}
-                      className={`grid ${itemGridCols} gap-3 items-center py-3`}
+                      className={`grid ${itemGridCols} gap-3 items-start py-3`}
                     >
                       {/* Product */}
                       <div>
@@ -430,6 +438,19 @@ export default function BudgetFormPage() {
                           {...register(`items.${index}.description`)}
                           error={errors.items?.[index]?.description?.message}
                         />
+                        {(() => {
+                          const pid = items[index]?.productId;
+                          const product = pid ? pickedProducts[pid] ?? products.find((p) => p.id === pid) : undefined;
+                          // Detalle libre: solo productos no inventariados (servicios).
+                          // Si ya tiene uno (edición) se muestra aunque el producto no esté en memoria.
+                          if (!pid || (product?.trackStock !== false && !items[index]?.detail)) return null;
+                          return (
+                            <ItemDetailInput
+                              value={items[index]?.detail}
+                              onChange={(value) => setValue(`items.${index}.detail`, value)}
+                            />
+                          );
+                        })()}
                       </div>
 
                       {/* Quantity */}
@@ -479,7 +500,7 @@ export default function BudgetFormPage() {
                       )}
 
                       {/* Total */}
-                      <div className="text-right">
+                      <div className="text-right md:pt-[9px]">
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(
@@ -490,7 +511,7 @@ export default function BudgetFormPage() {
                       </div>
 
                       {/* Remove */}
-                      <div className="flex justify-end">
+                      <div className="flex justify-end md:pt-1.5">
                         {fields.length > 1 && (
                           <button
                             type="button"

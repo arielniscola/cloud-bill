@@ -1,6 +1,7 @@
 import type { Customer } from './customer.types';
 import type { Product } from './product.types';
 import type { User } from './auth.types';
+import type { ItemLotDTO } from './stock.types';
 
 export type RemitoStatus = 'PENDING' | 'PARTIALLY_DELIVERED' | 'DELIVERED' | 'CANCELLED';
 export type StockBehavior = 'DISCOUNT' | 'RESERVE';
@@ -32,6 +33,8 @@ export interface Remito {
     saleCondition?: string; paymentTerms?: string | null;
   } | null;
   budget?: { id: string; number: string } | null;
+  /** Factura vigente que facturó este remito libre (null = pendiente de facturar). */
+  billedInvoice?: { id: string; number: string; type: string; status: string } | null;
   date: string;
   status: RemitoStatus;
   stockBehavior: StockBehavior;
@@ -49,11 +52,13 @@ export interface CreateRemitoDTO {
   transport?: string | null;
   invoiceId?: string;
   budgetId?: string;
-  items: { productId: string; variantId?: string | null; quantity: number }[];
+  // Solo remito libre: depósito del que sale la mercadería (vacío = por defecto).
+  warehouseId?: string;
+  items: { productId: string; variantId?: string | null; quantity: number; lots?: ItemLotDTO[] }[];
 }
 
 export interface DeliverRemitoDTO {
-  items: { remitoItemId: string; quantity: number }[];
+  items: { remitoItemId: string; quantity: number; lots?: ItemLotDTO[] }[];
 }
 
 export interface RemitoFilters {

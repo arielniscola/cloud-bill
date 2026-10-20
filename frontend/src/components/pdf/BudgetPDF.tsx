@@ -372,6 +372,9 @@ export default function BudgetPDF({ budget, afipConfig, logoDataUrl }: BudgetPDF
             <View key={item.id} style={[s.tableRow, idx % 2 === 1 ? s.tableRowAlt : {}]}>
               <View style={s.colDesc}>
                 <Text style={s.tdCell}>{item.description}</Text>
+                {item.detail ? (
+                  <Text style={[s.tdCell, { fontSize: 7, color: GRAY }]}>{item.detail}</Text>
+                ) : null}
                 {item.product?.sku ? (
                   <Text style={[s.tdCell, { fontSize: 6.5, color: GRAY }]}>{item.product.sku}</Text>
                 ) : null}

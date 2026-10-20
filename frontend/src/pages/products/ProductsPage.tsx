@@ -13,6 +13,7 @@ import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Product, Rubro, Brand, Supplier, Stock, StockStateFilter, ProductSortKey } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function margin(cost: number, price: number) {
@@ -117,6 +118,15 @@ function BrandSearchSelect({
   const selectedLabel = options.find((o) => o.value === value)?.label;
   const isActive = !!value;
 
+  const select = (v: string) => { onChange(v); setOpen(false); setQuery(''); };
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav<HTMLUListElement>({
+    count: filtered.length,
+    isOpen: open,
+    resetKey: query,
+    onSelect: (idx) => { if (filtered[idx]) select(filtered[idx].value); },
+    onEscape: () => { setOpen(false); setQuery(''); },
+  });
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -148,6 +158,7 @@ function BrandSearchSelect({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
               placeholder="Buscar marca…"
               className="flex-1 text-xs bg-transparent outline-none text-gray-700 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500"
             />
@@ -157,19 +168,20 @@ function BrandSearchSelect({
               </button>
             )}
           </div>
-          <ul className="max-h-52 overflow-y-auto py-1 [scrollbar-width:thin]">
+          <ul ref={listRef} role="listbox" className="max-h-52 overflow-y-auto py-1 [scrollbar-width:thin]">
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-xs text-center text-gray-400 dark:text-slate-500">Sin resultados</li>
             ) : (
-              filtered.map((o) => (
+              filtered.map((o, idx) => (
                 <li key={o.value}>
                   <button
                     type="button"
-                    onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+                    {...optionProps(idx)}
+                    onClick={() => select(o.value)}
                     className={`w-full text-left px-3 py-2 text-xs transition-colors duration-100 ${
                       o.value === value
-                        ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-semibold'
-                        : 'text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'
+                        ? `${idx === activeIndex ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-indigo-50 dark:bg-indigo-900/30'} text-indigo-700 dark:text-indigo-400 font-semibold`
+                        : `${idx === activeIndex ? 'bg-gray-100 dark:bg-slate-700' : ''} text-gray-700 dark:text-slate-300`
                     }`}
                   >
                     {o.label}

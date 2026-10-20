@@ -17,6 +17,12 @@ export const remitosService = {
     return response.data;
   },
 
+  /** Remitos libres del cliente pendientes de facturar. */
+  async getUnbilled(customerId: string): Promise<Remito[]> {
+    const response = await api.get<ApiResponse<Remito[]>>('/remitos/unbilled', { params: { customerId } });
+    return response.data.data;
+  },
+
   async getById(id: string): Promise<Remito> {
     const response = await api.get<ApiResponse<Remito>>(`/remitos/${id}`);
     return response.data.data;

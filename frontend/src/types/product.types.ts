@@ -24,6 +24,8 @@ export interface Product {
   salePriceUSD: number | null;
   taxRate: number;
   trackStock: boolean;
+  /** El stock se lleva por lote + vencimiento (solo si trackStock). */
+  trackLots?: boolean;
   /** URL pública de la imagen — módulo "imagenes". null si no tiene. */
   imageUrl?: string | null;
   priceUpdatedAt: string | null;
@@ -54,6 +56,7 @@ export interface CreateProductDTO {
   salePriceUSD?: number | null;
   taxRate?: number;
   trackStock?: boolean;
+  trackLots?: boolean;
   isActive?: boolean;
   customFields?: ProductCustomFieldValueDTO[];
 }
@@ -72,6 +75,8 @@ export interface ProductFilters {
   minPrice?: number;
   maxPrice?: number;
   stockState?: StockStateFilter;
+  /** El stock que viene en cada producto pasa a ser el de ese depósito. */
+  stockWarehouseId?: string;
   sortBy?: ProductSortKey;
   sortOrder?: 'asc' | 'desc';
 }

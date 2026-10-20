@@ -24,6 +24,21 @@ export interface ProductSearchSelectProps {
   serverSearch?: boolean;
   // Filtros extra para la búsqueda remota (p.ej. { isActive: true }).
   searchParams?: ProductFilters;
+  // Muestra el disponible (cantidad - reservado) de cada resultado.
+  showStock?: boolean;
+  // Con serverSearch, el disponible se calcula sobre este depósito; sin él es
+  // la suma de todos los depósitos.
+  stockWarehouseId?: string;
+}
+
+/** Disponible del producto, o null si no aplica (no inventariado o sin dato, p.ej. offline). */
+function availableOf(p: Product): number | null {
+  if (p.trackStock === false || p.stockQuantity === undefined) return null;
+  return (p.stockQuantity ?? 0) - (p.stockReserved ?? 0);
+}
+
+function fmtStock(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
 }
 
 export default function ProductSearchSelect({
@@ -36,6 +51,8 @@ export default function ProductSearchSelect({
   disabled = false,
   serverSearch = false,
   searchParams,
+  showStock = true,
+  stockWarehouseId,
 }: ProductSearchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -113,7 +130,9 @@ export default function ProductSearchSelect({
   useEffect(() => {
     if (isOpen) {
       updatePosition();
-      inputRef.current?.focus();
+      // preventScroll: el desplegable todavía no tiene su posición fija; sin
+      // esto el navegador scrollea la página hasta él y eso lo cierra.
+      inputRef.current?.focus({ preventScroll: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -157,7 +176,10 @@ export default function ProductSearchSelect({
   useEffect(() => {
     if (!serverSearch) return;
     const q = query.trim();
-    if (!q) { setRemoteResults(null); setIsSearching(false); return; }
+    // Lo precargado trae el stock sumado de todos los depósitos: si se pide el
+    // de un depósito, la lista inicial también se trae del backend.
+    const byWarehouse = showStock && !!stockWarehouseId && !isOffline();
+    if (!q && !(byWarehouse && isOpen)) { setRemoteResults(null); setIsSearching(false); return; }
 
     let cancelled = false;
     setIsSearching(true);
@@ -183,7 +205,12 @@ export default function ProductSearchSelect({
       }
 
       try {
-        const res = await productsService.getAll({ ...searchParams, search: q, limit: 50 });
+        const res = await productsService.getAll({
+          ...searchParams,
+          ...(q ? { search: q } : {}),
+          ...(byWarehouse ? { stockWarehouseId } : {}),
+          limit: 50,
+        });
         if (cancelled) return;
         setRemoteResults(res.data);
         setFetchedById((prev) => {
@@ -203,17 +230,17 @@ export default function ProductSearchSelect({
       } finally {
         if (!cancelled) setIsSearching(false);
       }
-    }, 250);
+    }, q ? 250 : 0);
 
     return () => { cancelled = true; clearTimeout(timer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, serverSearch]);
+  }, [query, serverSearch, isOpen, stockWarehouseId, showStock]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (serverSearch) {
-      // Sin texto: mostramos lo precargado. Con texto: resultados del backend.
-      if (!q) return products.slice(0, 50);
+      // Sin texto: lo precargado (o lo traído por depósito). Con texto: resultados del backend.
+      if (!q) return (remoteResults ?? products).slice(0, 50);
       return (remoteResults ?? []).slice(0, 50);
     }
     if (!q) return products.slice(0, 50);
@@ -384,6 +411,22 @@ export default function ProductSearchSelect({
                         </p>
                       )}
                     </div>
+                    {showStock && (() => {
+                      const avail = availableOf(p);
+                      if (avail === null) return null;
+                      return (
+                        <span
+                          title={stockWarehouseId ? 'Disponible en el depósito' : 'Disponible (todos los depósitos)'}
+                          className={`text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded flex-shrink-0 ${
+                            avail > 0
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                              : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300'
+                          }`}
+                        >
+                          {avail > 0 ? `Disp. ${fmtStock(avail)}` : 'Sin stock'}
+                        </span>
+                      );
+                    })()}
                     {isSelected && (
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />
                     )}

@@ -10,6 +10,9 @@ export interface PurchaseRemitoItem {
   quantity:    number;
   unitPrice:   number;
   productName?: string | null;
+  lotNumber?:  string | null;
+  /** 'YYYY-MM-DD' o null. */
+  expiresAt?:  string | null;
 }
 
 export interface PurchaseRemito {
@@ -40,6 +43,11 @@ export interface CreatePurchaseRemitoItemDTO {
   description:  string;
   quantity:     number;
   unitPrice?:   number;
+  /** Productos con lotes: lote y vencimiento de lo que entra (sin lote → S/L). */
+  lotNumber?:   string | null;
+  expiresAt?:   string | null;
+  /** Solo de la pantalla: el producto maneja lotes. No viaja al backend. */
+  trackLots?:   boolean;
 }
 
 export interface CreatePurchaseRemitoDTO {

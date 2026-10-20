@@ -1,18 +1,28 @@
 import { useState, useEffect } from 'react';
+import { DocumentLotsLine } from '../../components/shared/DocumentLots';
+import { useDocumentLots, lotsFor } from '../../hooks/useDocumentLots';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  XCircle, Truck, CheckCircle, ArrowRight, FileText, Calculator, FileDown, Mail,
+  XCircle, Truck, CheckCircle, ArrowRight, FileText, Calculator, FileDown, Mail, Receipt, Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
 import { remitosService } from '../../services';
-import { loadPrintContext, downloadBlob } from '../../utils/printContext';
+import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
 import { formatDate, formatCuit } from '../../utils/formatters';
 import { REMITO_STATUSES } from '../../utils/constants';
 import type { Remito } from '../../types';
-import RemitoPDF from '../../components/pdf/RemitoPDF';
+import RemitoPDF, { type RemitoPrintMode } from '../../components/pdf/RemitoPDF';
+import BillRemitosModal from './BillRemitosModal';
+
+const PRINT_MODES: { value: RemitoPrintMode; label: string; description: string }[] = [
+  { value: 'REMITO', label: 'Remito', description: 'Con las copias de la configuración de impresión' },
+  { value: 'ORDEN_CARGA', label: 'Orden de carga', description: 'El mismo comprobante titulado "Orden de carga"' },
+  { value: 'BOTH_ONE_PAGE', label: 'Remito + Orden de carga en 1 hoja', description: 'Mitad y mitad, con línea de corte' },
+  { value: 'BOTH_TWO_PAGES', label: 'Remito + Orden de carga en 2 hojas', description: 'Una hoja para cada uno' },
+];
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -56,25 +66,37 @@ export default function RemitoDetailPage() {
   const [showDeliverModal, setShowDeliverModal] = useState(false);
   const [isDelivering, setIsDelivering] = useState(false);
   const [deliverQuantities, setDeliverQuantities] = useState<Record<string, number>>({});
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [pdfAction, setPdfAction] = useState<'download' | 'print' | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showBillModal, setShowBillModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printMode, setPrintMode] = useState<RemitoPrintMode>('REMITO');
+  // Lotes entregados: los del remito, o los de su documento de origen cuando el
+  // stock salió por él (factura u orden que descuentan).
+  const docLots = useDocumentLots([remito?.id, remito?.invoiceId, remito?.ordenPedidoId]);
 
-  const generateRemitoPdfBlob = async (r: Remito): Promise<Blob> => {
+  const generateRemitoPdfBlob = async (r: Remito, mode: RemitoPrintMode = 'REMITO'): Promise<Blob> => {
     const ctx = await loadPrintContext();
-    return pdf(<RemitoPDF remito={r} ctx={ctx} />).toBlob();
+    return pdf(<RemitoPDF remito={r} ctx={ctx} lots={docLots} mode={mode} />).toBlob();
   };
 
-  const handleDownloadPDF = async () => {
+  const handlePdf = async (action: 'download' | 'print') => {
     if (!remito) return;
-    setIsGeneratingPDF(true);
+    setPdfAction(action);
     try {
-      const blob = await generateRemitoPdfBlob(remito);
-      downloadBlob(blob, `remito-${remito.number}.pdf`);
+      const blob = await generateRemitoPdfBlob(remito, printMode);
+      if (action === 'print') {
+        printBlob(blob);
+      } else {
+        const prefix = printMode === 'ORDEN_CARGA' ? 'orden-de-carga' : printMode === 'REMITO' ? 'remito' : 'remito-y-orden-de-carga';
+        downloadBlob(blob, `${prefix}-${remito.number}.pdf`);
+      }
+      setShowPrintModal(false);
     } catch (error: unknown) {
       const err = error as { message?: string };
       toast.error(err.message || 'Error al generar PDF');
     } finally {
-      setIsGeneratingPDF(false);
+      setPdfAction(null);
     }
   };
 
@@ -150,6 +172,10 @@ export default function RemitoDetailPage() {
   const canCancel = remito.status !== 'CANCELLED' && remito.status !== 'DELIVERED';
   const isCancelled = remito.status === 'CANCELLED';
   const isReserve = remito.stockBehavior === 'RESERVE';
+  // Solo el remito libre se factura después; el que salió de una factura,
+  // presupuesto u orden ya está cubierto por su documento de origen.
+  const isStandalone = !remito.invoiceId && !remito.budgetId && !remito.ordenPedidoId;
+  const canBill = isStandalone && !isCancelled && !remito.billedInvoice;
 
   const pendingItems = remito.items.filter(
     (item) => Number(item.quantity) - Number(item.deliveredQuantity) > 0
@@ -162,21 +188,27 @@ export default function RemitoDetailPage() {
         backTo="/remitos"
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={handleDownloadPDF} isLoading={isGeneratingPDF}>
-              <FileDown className="w-4 h-4 mr-2" />
-              PDF
+            <Button variant="outline" onClick={() => setShowPrintModal(true)}>
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir / PDF
             </Button>
             <Button variant="outline" onClick={() => setShowEmailModal(true)}>
               <Mail className="w-4 h-4 mr-2" />
               Enviar
             </Button>
+            {canBill && (
+              <Button onClick={() => setShowBillModal(true)}>
+                <Receipt className="w-4 h-4 mr-2" />
+                Facturar
+              </Button>
+            )}
             {canDeliver && (
               <Button onClick={openDeliverModal}>
                 <Truck className="w-4 h-4 mr-2" />
                 Registrar entrega
               </Button>
             )}
-            {canCancel && (
+            {canCancel && !remito.billedInvoice && (
               <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
                 <XCircle className="w-4 h-4 mr-2" />
                 Cancelar
@@ -231,6 +263,23 @@ export default function RemitoDetailPage() {
         <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-800 dark:text-red-400">
           <XCircle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" />
           Este remito fue cancelado.
+        </div>
+      )}
+
+      {/* Factura que facturó este remito libre */}
+      {remito.billedInvoice && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-sm text-emerald-800 dark:text-emerald-300">
+          <Receipt className="w-4 h-4 text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
+          <span>
+            Facturado en{' '}
+            <button
+              onClick={() => navigate(`/invoices/${remito.billedInvoice!.id}`)}
+              className="font-semibold underline hover:no-underline transition-all duration-150"
+            >
+              {remito.billedInvoice.number}
+            </button>
+            {remito.billedInvoice.status === 'DRAFT' && ' (borrador)'}
+          </span>
         </div>
       )}
 
@@ -303,6 +352,7 @@ export default function RemitoDetailPage() {
                           {(item.variant?.sku ?? item.product?.sku) && (
                             <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                           )}
+                          <DocumentLotsLine lots={lotsFor(docLots, item.productId, item.variantId)} />
                         </td>
                         <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">
                           {Number(item.quantity)}
@@ -437,6 +487,50 @@ export default function RemitoDetailPage() {
         </div>
       </Modal>
 
+      {/* Print Modal */}
+      <Modal
+        isOpen={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        title="Imprimir / PDF"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            {PRINT_MODES.map((opt) => {
+              const active = printMode === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPrintMode(opt.value)}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-colors duration-150 ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-400'
+                      : 'border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50'
+                  }`}
+                >
+                  <p className={`text-sm font-medium ${active ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-900 dark:text-white'}`}>{opt.label}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{opt.description}</p>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button variant="outline" onClick={() => setShowPrintModal(false)} disabled={pdfAction !== null}>
+              Cancelar
+            </Button>
+            <Button variant="outline" onClick={() => handlePdf('download')} isLoading={pdfAction === 'download'} disabled={pdfAction === 'print'}>
+              <FileDown className="w-4 h-4 mr-2" />
+              Descargar
+            </Button>
+            <Button onClick={() => handlePdf('print')} isLoading={pdfAction === 'print'} disabled={pdfAction === 'download'}>
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <ConfirmDialog
         isOpen={showCancelDialog}
         onClose={() => setShowCancelDialog(false)}
@@ -458,6 +552,12 @@ export default function RemitoDetailPage() {
           await remitosService.sendEmail(remito!.id, to, blob);
           toast.success('Correo enviado correctamente');
         }}
+      />
+      <BillRemitosModal
+        isOpen={showBillModal}
+        onClose={() => setShowBillModal(false)}
+        customerId={remito.customerId}
+        initialRemitoId={remito.id}
       />
     </div>
   );

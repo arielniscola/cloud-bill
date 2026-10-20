@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { TrendingUp, TrendingDown, Save, RefreshCw, CheckSquare, Square, ChevronDown, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
@@ -100,6 +101,14 @@ function FilterSearchSelect({
     setQuery('');
   };
 
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav({
+    count: filtered.length,
+    isOpen: open,
+    resetKey: query,
+    onSelect: (idx) => { if (filtered[idx]) handleSelect(filtered[idx].value); },
+    onEscape: () => { setOpen(false); setQuery(''); },
+  });
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -137,25 +146,28 @@ function FilterSearchSelect({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
               placeholder="Buscar…"
               className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-gray-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
           {/* Options */}
-          <div className="max-h-52 overflow-y-auto py-1">
+          <div ref={listRef} role="listbox" className="max-h-52 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-gray-400 dark:text-slate-500">Sin resultados</p>
             ) : (
-              filtered.map((o) => (
+              filtered.map((o, idx) => (
                 <button
                   key={o.value}
                   type="button"
+                  {...optionProps(idx)}
                   onClick={() => handleSelect(o.value)}
                   className={clsx(
                     'w-full text-left px-3 py-2 text-xs transition-colors duration-100',
                     o.value === value
                       ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium'
-                      : 'text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'
+                      : 'text-gray-700 dark:text-slate-300',
+                    idx === activeIndex && (o.value === value ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-gray-100 dark:bg-slate-700')
                   )}
                 >
                   {o.label}

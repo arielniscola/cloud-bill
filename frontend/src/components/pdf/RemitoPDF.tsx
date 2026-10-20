@@ -3,7 +3,8 @@ import type { Remito } from '../../types/remito.types';
 import type { PrintContext } from '../../utils/printContext';
 import { afipInvoiceNumber, invoiceLetter, invoiceTypeName } from '../../utils/afipFiscal';
 import type { InvoiceType } from '../../types/invoice.types';
-import { DocHeader, KV } from './pdfShared';
+import { DocHeader, KV, lotText } from './pdfShared';
+import type { DocumentLot } from '../../types';
 import {
   ps, INK, LABEL, SOFT, fmtDate, fmtCuit, fmtQty, taxConditionTitle, saleConditionTitle, unitText,
 } from './pdfFormat';
@@ -13,6 +14,8 @@ import {
 // Las copias salen según `ctx.remitoCopies`: original y duplicado en la misma
 // hoja A4, una hoja por copia, o una sola copia. Si la empresa cargó el CAI del
 // talonario de remitos en la configuración, se imprime con su vencimiento.
+// La "Orden de carga" es el mismo comprobante con otro título: sale sola o junto
+// al remito, en la misma hoja (mitad y mitad) o en dos hojas.
 
 const s = StyleSheet.create({
   page: { ...ps.page, paddingTop: 20, paddingBottom: 14 },
@@ -26,12 +29,23 @@ const s = StyleSheet.create({
   sign: { position: 'absolute', right: 12, bottom: 8, width: 150, borderTopWidth: 0.75, borderTopColor: INK, paddingTop: 3, alignItems: 'center' },
 });
 
+/**
+ * - REMITO: el remito con las copias configuradas (`ctx.remitoCopies`).
+ * - ORDEN_CARGA: solo la orden de carga, hoja completa.
+ * - BOTH_ONE_PAGE: remito arriba y orden de carga abajo, en la misma hoja.
+ * - BOTH_TWO_PAGES: remito en una hoja y orden de carga en otra.
+ */
+export type RemitoPrintMode = 'REMITO' | 'ORDEN_CARGA' | 'BOTH_ONE_PAGE' | 'BOTH_TWO_PAGES';
+
 interface RemitoPDFProps {
   remito: Remito;
   ctx: PrintContext;
+  /** Lotes entregados (productos con lotes). */
+  lots?: DocumentLot[];
+  mode?: RemitoPrintMode;
 }
 
-function Copy({ remito, ctx, label, full }: RemitoPDFProps & { label?: string; full?: boolean }) {
+function Copy({ remito, ctx, lots, label, full, title = 'REMITO' }: Omit<RemitoPDFProps, 'mode'> & { label?: string; full?: boolean; title?: string }) {
   const { issuer } = ctx;
   const c = remito.customer;
   const inv = remito.invoice;
@@ -54,7 +68,7 @@ function Copy({ remito, ctx, label, full }: RemitoPDFProps & { label?: string; f
         stem={false}
         letter="R"
         letterCaption="COD. 091"
-        title="REMITO"
+        title={title}
         titleAside={label}
         number={remito.number}
         rows={[
@@ -110,6 +124,9 @@ function Copy({ remito, ctx, label, full }: RemitoPDFProps & { label?: string; f
           <Text style={s.cDesc}>
             {(item.product?.name ?? '-').toUpperCase()}
             {item.variant?.name ? ` - ${item.variant.name.toUpperCase()}` : ''}
+            {lotText(lots, item.productId, item.variantId) ? (
+              <Text style={{ fontSize: 7.5, color: LABEL }}>{'\n'}{lotText(lots, item.productId, item.variantId)}</Text>
+            ) : null}
           </Text>
           <Text style={s.cUnit}>{unitText((item.product as { unit?: string } | undefined)?.unit)}</Text>
           <Text style={[s.cQty, { fontWeight: 600 }]}>{qty(item.quantity)}</Text>
@@ -130,25 +147,42 @@ function Copy({ remito, ctx, label, full }: RemitoPDFProps & { label?: string; f
   );
 }
 
-export default function RemitoPDF({ remito, ctx }: RemitoPDFProps) {
+export default function RemitoPDF({ remito, ctx, lots, mode = 'REMITO' }: RemitoPDFProps) {
   const copies = ctx.remitoCopies;
+  const docTitle = mode === 'ORDEN_CARGA' ? `Orden de carga ${remito.number}` : `Remito ${remito.number}`;
   return (
-    <Document title={`Remito ${remito.number}`} author={ctx.issuer.name || 'Cloud-Bill'}>
-      {copies === 'SINGLE' ? (
+    <Document title={docTitle} author={ctx.issuer.name || 'Cloud-Bill'}>
+      {mode === 'ORDEN_CARGA' ? (
         <Page size="A4" style={s.page}>
-          <Copy remito={remito} ctx={ctx} full />
+          <Copy remito={remito} ctx={ctx} lots={lots} title="ORDEN DE CARGA" full />
+        </Page>
+      ) : mode === 'BOTH_ONE_PAGE' ? (
+        <Page size="A4" style={s.page}>
+          <Copy remito={remito} ctx={ctx} lots={lots} />
+          <View style={s.cut} />
+          <Copy remito={remito} ctx={ctx} lots={lots} title="ORDEN DE CARGA" />
+        </Page>
+      ) : mode === 'BOTH_TWO_PAGES' ? (
+        ['REMITO', 'ORDEN DE CARGA'].map((title) => (
+          <Page key={title} size="A4" style={s.page}>
+            <Copy remito={remito} ctx={ctx} lots={lots} title={title} full />
+          </Page>
+        ))
+      ) : copies === 'SINGLE' ? (
+        <Page size="A4" style={s.page}>
+          <Copy remito={remito} ctx={ctx} lots={lots} full />
         </Page>
       ) : copies === 'ONE_PER_PAGE' ? (
         ['ORIGINAL', 'DUPLICADO'].map((label) => (
           <Page key={label} size="A4" style={s.page}>
-            <Copy remito={remito} ctx={ctx} label={label} full />
+            <Copy remito={remito} ctx={ctx} lots={lots} label={label} full />
           </Page>
         ))
       ) : (
         <Page size="A4" style={s.page}>
-          <Copy remito={remito} ctx={ctx} label="ORIGINAL" />
+          <Copy remito={remito} ctx={ctx} lots={lots} label="ORIGINAL" />
           <View style={s.cut} />
-          <Copy remito={remito} ctx={ctx} label="DUPLICADO" />
+          <Copy remito={remito} ctx={ctx} lots={lots} label="DUPLICADO" />
         </Page>
       )}
     </Document>

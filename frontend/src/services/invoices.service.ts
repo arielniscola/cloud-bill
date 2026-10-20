@@ -7,6 +7,7 @@ import type {
   PayInvoiceDTO,
   InvoiceFilters,
   InvoiceStats,
+  ArcaBatchResult,
   ApiResponse,
   PaginatedResponse,
   AfipError,
@@ -31,6 +32,24 @@ export const invoicesService = {
     delete params.limit;
     const response = await api.get<ApiResponse<InvoiceStats>>('/invoices/stats', { params });
     return response.data.data;
+  },
+
+  /**
+   * Emite ante ARCA varias facturas pendientes, una por vez y en orden de
+   * fecha. `redateToToday` pasa a hoy las de días anteriores (ARCA no acepta
+   * fechas de más de 5 días atrás ni anteriores al último autorizado).
+   */
+  async emitBatch(ids: string[], redateToToday: boolean): Promise<ArcaBatchResult[]> {
+    const response = await api.post<ApiResponse<ArcaBatchResult[]>>('/invoices/emit-batch', { ids, redateToToday });
+    return response.data.data;
+  },
+
+  /** Cantidad de facturas formales sin CAE que se pueden emitir ante ARCA. */
+  async countPendingArca(): Promise<number> {
+    const response = await api.get<PaginatedResponse<Invoice>>('/invoices', {
+      params: { pendingArca: true, limit: 1 },
+    });
+    return response.data.total;
   },
 
   async getById(id: string): Promise<Invoice> {

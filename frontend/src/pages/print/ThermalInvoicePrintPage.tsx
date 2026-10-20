@@ -126,6 +126,7 @@ export default function ThermalInvoicePrintPage() {
         .items .price { width: 52px; text-align: right; }
         .items .sub   { width: 58px; text-align: right; }
         .items .desc  { word-break: break-word; padding-right: 3px; }
+        .items .desc .detail { font-size: 0.9em; white-space: pre-wrap; }
         .fiscal-box { border: 1px solid #000; padding: 4px; margin: 4px 0; }
       `}</style>
 
@@ -190,7 +191,10 @@ export default function ThermalInvoicePrintPage() {
           {(invoice.items ?? []).map((item, i) => (
             <tr key={i}>
               <td className="qty">{fmt(item.quantity)}</td>
-              <td className="desc">{item.description ?? item.product?.name ?? ''}</td>
+              <td className="desc">
+                {item.description ?? item.product?.name ?? ''}
+                {item.detail ? <div className="detail">{item.detail}</div> : null}
+              </td>
               <td className="price">{fmt(item.unitPrice)}</td>
               <td className="sub">{fmt(item.subtotal)}</td>
             </tr>

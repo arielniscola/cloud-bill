@@ -7,7 +7,7 @@ import { clsx } from 'clsx';
 import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus, Search, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal, ItemDetailInput } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService, warehousesService, productVariantsService } from '../../services';
@@ -17,6 +17,7 @@ import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { useTimeSurcharge } from '../../hooks/useTimeSurcharge';
 import { applyTimeSurcharge } from '../../utils/timeSurcharge';
 import { isOffline } from '../../stores/offline.store';
+import LotPicker from '../../components/shared/LotPicker';
 import { checkStockOffline, queueSaleOffline } from '../../lib/offline/offlineSale';
 import {
   getAppSettingsOffline,
@@ -31,10 +32,14 @@ const ordenPedidoItemSchema = z.object({
   productId: z.string().optional().nullable(),
   variantId: z.string().nullable().optional(),
   description: z.string().min(1, 'Requerida'),
+  // Detalle libre (solo productos no inventariados / servicios).
+  detail: z.string().nullable().optional(),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
   discountPct: z.coerce.number().min(0).max(100).default(0),
   taxRate: z.coerce.number().min(0).max(100),
+  // Lotes elegidos (productos con lotes); vacío = se reparten por vencimiento.
+  lots: z.array(z.object({ lotId: z.string(), quantity: z.number() })).optional(),
 });
 
 const ordenPedidoSchema = z.object({
@@ -92,6 +97,8 @@ export default function OrdenPedidoFormPage() {
   // El cliente elegido con búsqueda server-side no está en `customers`: se
   // cachea para poder resolverlo en la autoselección por cliente.
   const [customerCache, setCustomerCache] = useState<Record<string, Customer>>({});
+  // Productos elegidos por búsqueda remota (pueden no estar en la precarga).
+  const [pickedProducts, setPickedProducts] = useState<Record<string, Product>>({});
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [resolvedWarehouseId, setResolvedWarehouseId] = useState<string | null>(null);
@@ -277,6 +284,7 @@ export default function OrdenPedidoFormPage() {
             items: fromBudget.items.map((item) => ({
               productId: item.productId,
               description: item.description,
+              detail: item.detail ?? null,
               quantity: Number(item.quantity),
               unitPrice: Number(item.unitPrice),
               discountPct: Number(item.discountPct) || 0,
@@ -299,6 +307,7 @@ export default function OrdenPedidoFormPage() {
             items: fromOrdenPedido.items.map((item) => ({
               productId: item.productId,
               description: item.description,
+              detail: item.detail ?? null,
               quantity: Number(item.quantity),
               unitPrice: Number(item.unitPrice),
               discountPct: Number(item.discountPct) || 0,
@@ -337,6 +346,7 @@ export default function OrdenPedidoFormPage() {
             productId: item.productId,
             variantId: item.variantId ?? null,
             description: item.description,
+            detail: item.detail ?? null,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
             discountPct: Number(item.discountPct) || 0,
@@ -369,10 +379,13 @@ export default function OrdenPedidoFormPage() {
 
   const handleProductChange = (index: number, productId: string, picked?: Product) => {
     const product = picked ?? products.find((p) => p.id === productId);
+    setValue(`items.${index}.lots`, undefined);
     if (product) {
+      if (picked) setPickedProducts((prev) => ({ ...prev, [picked.id]: picked }));
       setValue(`items.${index}.productId`, productId);
       (setValue as any)(`items.${index}.variantId`, null);
       setValue(`items.${index}.description`, product.name);
+      setValue(`items.${index}.detail`, null);
       setValue(`items.${index}.unitPrice`, salePrice(currency === 'USD' ? (product.salePriceUSD ?? 0) : product.price));
       setValue(`items.${index}.taxRate`, product.taxRate);
       void loadVariantsFor(productId);
@@ -493,6 +506,7 @@ export default function OrdenPedidoFormPage() {
     return {
       productId: item.productId || null,
       description: item.description,
+      detail: item.detail?.trim() || null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       discountPct,
@@ -500,6 +514,7 @@ export default function OrdenPedidoFormPage() {
       subtotal,
       taxAmount,
       total: subtotal + taxAmount,
+      ...(item.lots?.length ? { lots: item.lots } : {}),
     };
   };
 
@@ -706,7 +721,7 @@ export default function OrdenPedidoFormPage() {
                     return (
                     <div
                       key={field.id}
-                      className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 items-center py-3"
+                      className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_104px_60px_88px_32px] gap-3 items-start py-3"
                     >
                       {/* Product */}
                       <div>
@@ -718,6 +733,21 @@ export default function OrdenPedidoFormPage() {
                           optional
                           serverSearch
                         />
+                        {(() => {
+                          const pid = items[index]?.productId;
+                          const product = pid ? pickedProducts[pid] ?? products.find((p) => p.id === pid) : undefined;
+                          // Offline no se eligen lotes: se reparten al subir la venta.
+                          if (!pid || !product?.trackLots || stockBehavior !== 'DISCOUNT' || !resolvedWarehouseId || isOffline()) return null;
+                          return (
+                            <LotPicker
+                              productId={pid}
+                              warehouseId={resolvedWarehouseId}
+                              quantity={Number(items[index]?.quantity) || 0}
+                              value={items[index]?.lots}
+                              onChange={(lots) => setValue(`items.${index}.lots`, lots)}
+                            />
+                          );
+                        })()}
                         {items[index]?.productId && (variantsByProduct[items[index].productId!]?.length ?? 0) > 0 && (
                           <select
                             className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
@@ -742,6 +772,19 @@ export default function OrdenPedidoFormPage() {
                           {...register(`items.${index}.description`)}
                           error={errors.items?.[index]?.description?.message}
                         />
+                        {(() => {
+                          const pid = items[index]?.productId;
+                          const product = pid ? pickedProducts[pid] ?? products.find((p) => p.id === pid) : undefined;
+                          // Detalle libre: solo productos no inventariados (servicios).
+                          // Si ya tiene uno (edición) se muestra aunque el producto no esté en memoria.
+                          if (!pid || (product?.trackStock !== false && !items[index]?.detail)) return null;
+                          return (
+                            <ItemDetailInput
+                              value={items[index]?.detail}
+                              onChange={(value) => setValue(`items.${index}.detail`, value)}
+                            />
+                          );
+                        })()}
                       </div>
 
                       {/* Quantity */}
@@ -807,7 +850,7 @@ export default function OrdenPedidoFormPage() {
                       </div>
 
                       {/* Total — ya neto del descuento, para que cierre con el resumen */}
-                      <div className="text-right">
+                      <div className="text-right md:pt-[9px]">
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(calcItemAmounts(index).total, currency)}
@@ -820,7 +863,7 @@ export default function OrdenPedidoFormPage() {
                       </div>
 
                       {/* Remove */}
-                      <div className="flex justify-end">
+                      <div className="flex justify-end md:pt-1.5">
                         {fields.length > 1 && (
                           <button
                             type="button"

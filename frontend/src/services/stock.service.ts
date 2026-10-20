@@ -7,11 +7,38 @@ import type {
   SetMinQuantityDTO,
   StockMovementFilters,
   BulkAdjustDTO,
+  StockLot,
+  StockLotFilters,
+  StockLotTrace,
+  DocumentLot,
   ApiResponse,
   PaginatedResponse,
 } from '../types';
 
 export const stockService = {
+  /** Lotes de la empresa (por defecto solo los que tienen stock). */
+  async getLots(filters: StockLotFilters = {}): Promise<StockLot[]> {
+    const { withStock, ...rest } = filters;
+    const response = await api.get<ApiResponse<StockLot[]>>('/stock/lots', {
+      params: { ...rest, ...(withStock === false ? { withStock: 'false' } : {}) },
+    });
+    return response.data.data;
+  },
+
+  async getLotTrace(lotId: string): Promise<StockLotTrace> {
+    const response = await api.get<ApiResponse<StockLotTrace>>(`/stock/lots/${lotId}/trace`);
+    return response.data.data;
+  },
+
+  /** Lotes que entregaron esos comprobantes (neto), para detalle e impresión. */
+  async getLotsByReference(ids: string[]): Promise<DocumentLot[]> {
+    if (ids.length === 0) return [];
+    const response = await api.get<ApiResponse<DocumentLot[]>>('/stock/lots/by-reference', {
+      params: { ids: ids.join(',') },
+    });
+    return response.data.data;
+  },
+
   async getStock(productId: string, warehouseId: string): Promise<Stock> {
     const response = await api.get<ApiResponse<Stock>>(
       `/stock/${productId}/${warehouseId}`

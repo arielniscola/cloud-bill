@@ -56,6 +56,8 @@ interface Props {
   variantsByProduct: Record<string, ProductVariant[]>;
   stockFor: (productId: string, variantId: string | null) =>
     { state: 'loading' | 'error' } | { state: 'ok'; available: number };
+  /** Detalle libre de la línea (servicios), o null. */
+  renderItemDetail?: (index: number) => ReactNode;
   calcItemAmounts: (index: number) => { total: number };
   onAddProduct: (product: Product, qty?: number) => void;
   onQuantityChange: (index: number, quantity: number) => void;
@@ -138,7 +140,7 @@ export default function InvoiceCounterLayout(props: Props) {
     customers, customerId, selectedCustomer, onCustomerChange, customerError,
     type, typeOptions, onTypeChange, isTypeC, warehouses, effectiveWarehouseId, onWarehouseChange,
     saleCondition, onSaleConditionChange, needsCustomerId, cashIdThreshold,
-    products, fields, items, itemsError, findProduct, variantsByProduct, stockFor, calcItemAmounts,
+    products, fields, items, itemsError, findProduct, variantsByProduct, stockFor, renderItemDetail, calcItemAmounts,
     onAddProduct, onQuantityChange, onVariantChange, onRemoveItem, onOpenCatalog,
     totals, grandTotal, discountType, discountValue, onDiscountChange,
     payment, onPaymentChange, cashRegisters, bankAccounts,
@@ -520,6 +522,7 @@ export default function InvoiceCounterLayout(props: Props) {
                           {variants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                         </select>
                       )}
+                      {renderItemDetail?.(index)}
                     </div>
 
                     <span className="hidden md:block text-right text-sm tabular-nums text-gray-600 dark:text-slate-300">

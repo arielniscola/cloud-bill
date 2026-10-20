@@ -60,6 +60,7 @@ const productSchema = z.object({
   salePriceUSD: z.coerce.number().min(0).optional().nullable(),
   taxRate: z.coerce.number().min(0).max(100).default(21),
   trackStock: z.boolean(),
+  trackLots: z.boolean().optional(),
   isActive: z.boolean(),
 });
 
@@ -242,6 +243,39 @@ function TrackStockToggle({ checked, onChange }: { checked: boolean; onChange: (
   );
 }
 
+function TrackLotsToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all duration-150 select-none ${
+      checked ? 'bg-indigo-50/70 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+    }`}>
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-150 ${
+        checked ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500'
+      }`}>
+        <Layers className="w-4 h-4" />
+      </div>
+      <div className="flex-1">
+        <p className={`text-sm font-medium leading-none ${checked ? 'text-indigo-800 dark:text-indigo-300' : 'text-gray-600 dark:text-slate-300'}`}>
+          Maneja lotes y vencimientos
+        </p>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5 leading-snug">
+          {checked
+            ? 'Cada ingreso lleva lote y vencimiento; al vender se elige de qué lote sale.'
+            : 'El stock se lleva como una sola cantidad, sin lotes.'}
+        </p>
+      </div>
+      <div
+        className={`relative flex-shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-slate-600'}`}
+        style={{ width: 40, height: 22 }}
+      >
+        <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${
+          checked ? 'translate-x-[19px]' : 'translate-x-[3px]'
+        }`} />
+      </div>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
+    </label>
+  );
+}
+
 // ── Skeleton ─────────────────────────────────────────────────────
 function FormSkeleton() {
   return (
@@ -305,7 +339,7 @@ export default function ProductFormPage() {
     formState: { errors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema) as any,
-    defaultValues: { taxRate: 21, trackStock: true, isActive: true },
+    defaultValues: { taxRate: 21, trackStock: true, trackLots: false, isActive: true },
   });
 
   const rubroId = watch('rubroId') || '';
@@ -318,6 +352,7 @@ export default function ProductFormPage() {
   const price      = watch('price')       ?? 0;
   const isActiveVal = watch('isActive');
   const trackStockVal = watch('trackStock');
+  const trackLotsVal = watch('trackLots');
 
   // Derived margin state — not saved, just a calculation helper
   const [marginPct, setMarginPct] = useState<string>('');
@@ -373,6 +408,7 @@ export default function ProductFormPage() {
         setValue('salePriceUSD',  p.salePriceUSD ?? null);
         setValue('taxRate',       p.taxRate);
         setValue('trackStock',    p.trackStock ?? true);
+        setValue('trackLots',     p.trackLots === true);
         setValue('isActive',      p.isActive);
         setImageUrl(p.imageUrl ?? null);
         if (p.customFieldValues && p.customFieldValues.length > 0) {
@@ -424,6 +460,8 @@ export default function ProductFormPage() {
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
         salePriceUSD:  data.salePriceUSD  != null && data.salePriceUSD > 0 ? data.salePriceUSD : null,
+        // Sin inventario no hay lotes.
+        trackLots:     data.trackStock ? data.trackLots === true : false,
         customFields:  customFieldsPayload,
       };
       if (isEditing) {
@@ -556,7 +594,7 @@ export default function ProductFormPage() {
               {/* ── Clasificación ── */}
               <div className="space-y-4">
                 <SectionHeader icon={<Layers className="w-3.5 h-3.5" />} label="Clasificación" />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Select
                     label="Rubro"
                     options={rubroOptions}
@@ -718,6 +756,12 @@ export default function ProductFormPage() {
                 checked={trackStockVal}
                 onChange={(v) => setValue('trackStock', v)}
               />
+              {trackStockVal && (
+                <TrackLotsToggle
+                  checked={trackLotsVal === true}
+                  onChange={(v) => setValue('trackLots', v)}
+                />
+              )}
 
               {/* ── Estado ── */}
               <ActiveToggle

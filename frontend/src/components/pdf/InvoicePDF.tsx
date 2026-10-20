@@ -7,7 +7,7 @@ import {
 } from '../../utils/afipFiscal';
 import { amountToWords } from '../../utils/numberToWords';
 import { formatChequeNumber } from '../../utils/chequeNumber';
-import { DocHeader, KV } from './pdfShared';
+import { DocHeader, KV, lotText } from './pdfShared';
 import {
   ps, INK, LABEL, SOFT, HAIR, PLACEHOLDER, fmtMoney, fmtNum, fmtQty, fmtDate, fmtCuit, fmtCode,
   taxConditionTitle, saleConditionTitle,
@@ -51,6 +51,8 @@ interface InvoicePDFProps {
   payments?: Recibo[];
   /** Remitos vinculados. */
   remitos?: { number: string }[];
+  /** Lotes entregados (productos con lotes). */
+  lots?: { productId: string; variantId: string | null; lotNumber: string; expiresAt: string | null; quantity: number }[];
 }
 
 function itemCode(item: InvoiceItem): string {
@@ -109,7 +111,7 @@ function paymentRows(payments: Recibo[]) {
   });
 }
 
-export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [], remitos = [] }: InvoicePDFProps) {
+export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [], remitos = [], lots }: InvoicePDFProps) {
   const { issuer } = ctx;
   const letter = invoiceLetter(invoice.type);
   const isTypeA = letter === 'A';
@@ -214,7 +216,13 @@ export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [],
         {items.map((item) => (
           <View key={item.id} style={ps.tableRow} wrap={false}>
             <Text style={[ps.mono, s.colCode]}>{itemCode(item)}</Text>
-            <Text style={s.colDesc}>{itemDescription(item).toUpperCase()}</Text>
+            <Text style={s.colDesc}>
+              {itemDescription(item).toUpperCase()}
+              {lotText(lots, item.productId, item.variantId) ? (
+                <Text style={{ fontSize: 7.5, color: LABEL }}>{'\n'}{lotText(lots, item.productId, item.variantId)}</Text>
+              ) : null}
+              {item.detail ? <Text style={{ fontSize: 7.5, color: LABEL }}>{'\n'}{item.detail}</Text> : null}
+            </Text>
             <Text style={s.colQty}>{fmtQty(item.quantity)}</Text>
             <Text style={s.colPrice}>{fmtNum(grossUnitPrice(item))}</Text>
             <Text style={s.colBonif}>{Number(item.discountPct) > 0 ? `${Number(item.discountPct).toLocaleString('es-AR')}%` : ''}</Text>

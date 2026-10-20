@@ -41,14 +41,14 @@ export const TAX_LABELS: Record<TaxCondition, string> = {
 
 export const TAX_OPTIONS: OptionCard<TaxCondition>[] = [
   { value: 'RESPONSABLE_INSCRIPTO', label: 'Resp. Inscripto', desc: 'IVA discriminado · Factura A' },
-  { value: 'MONOTRIBUTISTA', label: 'Monotributista', desc: 'Sin discriminar · Factura B/C' },
+  { value: 'MONOTRIBUTISTA', label: 'Monotributista', desc: 'Factura A (de un RI) o C' },
   { value: 'EXENTO', label: 'Exento', desc: 'Exento de IVA · Factura B' },
   { value: 'CONSUMIDOR_FINAL', label: 'Cons. Final', desc: 'Sin CUIT requerido · B/C' },
 ];
 
 export const COMPROBANTE_BY_TAX: Record<TaxCondition, string> = {
   RESPONSABLE_INSCRIPTO: 'Factura A',
-  MONOTRIBUTISTA: 'Factura B / C',
+  MONOTRIBUTISTA: 'Factura A / C',
   EXENTO: 'Factura B',
   CONSUMIDOR_FINAL: 'Factura B / C',
 };

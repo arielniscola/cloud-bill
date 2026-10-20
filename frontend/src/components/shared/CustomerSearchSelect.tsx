@@ -6,6 +6,7 @@ import { isNetworkError } from '../../services/api';
 import { isOffline } from '../../stores/offline.store';
 import { searchCustomersOffline, toCustomer } from '../../lib/offline/adapters';
 import { getCustomerLocal } from '../../lib/offline/catalogCache';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import type { Customer, CustomerFilters } from '../../types';
 
 export interface CustomerSearchSelectProps {
@@ -48,7 +49,7 @@ export default function CustomerSearchSelect({
   const [fetchedById, setFetchedById] = useState<Record<string, Customer>>({});
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
@@ -107,7 +108,9 @@ export default function CustomerSearchSelect({
   useEffect(() => {
     if (isOpen) {
       updatePosition();
-      inputRef.current?.focus();
+      // preventScroll: el desplegable todavía no tiene su posición fija; sin
+      // esto el navegador scrollea la página hasta él y eso lo cierra.
+      inputRef.current?.focus({ preventScroll: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -128,10 +131,15 @@ export default function CustomerSearchSelect({
   useEffect(() => {
     if (!isOpen) return;
     const close = () => { setIsOpen(false); setQuery(''); };
-    window.addEventListener('scroll', close, true);
+    // El scroll DENTRO del propio desplegable (rueda o flechas) no lo cierra.
+    const onScroll = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [isOpen]);
@@ -208,17 +216,33 @@ export default function CustomerSearchSelect({
     setQuery('');
   };
 
-  const handleClear = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClear = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     onChange('');
     setIsOpen(false);
     setQuery('');
   };
 
+  // La opción "limpiar" (si hay) ocupa el índice 0 de la navegación.
+  const clearOffset = clearLabel ? 1 : 0;
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav({
+    count: filtered.length + clearOffset,
+    isOpen,
+    resetKey: `${query}|${remoteResults?.length ?? ''}`,
+    onSelect: (idx) => {
+      // Con la búsqueda remota en vuelo la lista todavía es la anterior.
+      if (isSearching) return;
+      if (clearOffset && idx === 0) return handleClear();
+      const customer = filtered[idx - clearOffset];
+      if (customer) handleSelect(customer);
+    },
+    onEscape: () => { setIsOpen(false); setQuery(''); },
+  });
+
   const dropdown = isOpen
     ? createPortal(
         <div
-          ref={dropdownRef}
+          ref={(el) => { dropdownRef.current = el; listRef.current = el; }}
           style={dropdownStyle}
           className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden"
         >
@@ -231,6 +255,7 @@ export default function CustomerSearchSelect({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onKeyDown}
                 placeholder="Buscar por nombre o CUIT…"
                 className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
               />
@@ -251,11 +276,12 @@ export default function CustomerSearchSelect({
           {clearLabel && (
             <button
               type="button"
+              {...optionProps(0)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleClear}
               className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm border-b border-gray-100 dark:border-slate-700 transition-colors ${
-                !value ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium' : 'text-gray-400 dark:text-slate-500 hover:bg-gray-50 dark:hover:bg-slate-700'
-              }`}
+                !value ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium' : 'text-gray-400 dark:text-slate-500'
+              } ${activeIndex === 0 ? 'ring-1 ring-inset ring-indigo-300 dark:ring-indigo-700' : ''}`}
             >
               <X className="w-3.5 h-3.5 flex-shrink-0" />
               {clearLabel}
@@ -276,16 +302,21 @@ export default function CustomerSearchSelect({
                 </p>
               </div>
             ) : (
-              filtered.map((c) => {
+              filtered.map((c, i) => {
                 const isSelected = c.id === value;
+                const idx = i + clearOffset;
+                const isActive = idx === activeIndex;
                 return (
                   <button
                     key={c.id}
                     type="button"
+                    {...optionProps(idx)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelect(c)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 ${
-                      isSelected ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                      isSelected
+                        ? isActive ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-indigo-50 dark:bg-indigo-900/30'
+                        : isActive ? 'bg-gray-100 dark:bg-slate-700' : ''
                     }`}
                   >
                     <div className="flex-1 min-w-0">

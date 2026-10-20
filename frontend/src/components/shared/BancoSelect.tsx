@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown, Landmark } from 'lucide-react';
 import type { Banco } from '../../types';
 import { useBancos, findBancoByName } from './bancosCatalog';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 
 interface Props {
   value: string | null | undefined;
@@ -51,7 +52,8 @@ export function BancoSelect({
   };
 
   useEffect(() => {
-    if (isOpen) { updatePosition(); inputRef.current?.focus(); }
+    // preventScroll: sin posición fija todavía, el scroll de la página lo cerraría.
+    if (isOpen) { updatePosition(); inputRef.current?.focus({ preventScroll: true }); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -70,10 +72,15 @@ export function BancoSelect({
   useEffect(() => {
     if (!isOpen) return;
     const close = () => { setIsOpen(false); setQuery(''); };
-    window.addEventListener('scroll', close, true);
+    // El scroll DENTRO del propio desplegable (rueda o flechas) no lo cierra.
+    const onScroll = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [isOpen]);
@@ -95,6 +102,14 @@ export function BancoSelect({
     setQuery('');
   };
 
+  const { activeIndex, listRef, onKeyDown, optionProps } = useListKeyboardNav({
+    count: filtered.length,
+    isOpen,
+    resetKey: query,
+    onSelect: (idx) => { if (filtered[idx]) handleSelect(filtered[idx]); },
+    onEscape: () => { setIsOpen(false); setQuery(''); },
+  });
+
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange('');
@@ -108,7 +123,7 @@ export function BancoSelect({
           style={dropdownStyle}
           className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden"
         >
-          <div className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
+          <div ref={listRef} role="listbox" className="max-h-64 overflow-y-auto [scrollbar-width:thin]">
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center">
                 <Landmark className="w-6 h-6 text-gray-300 dark:text-slate-600 mx-auto mb-2" />
@@ -118,16 +133,20 @@ export function BancoSelect({
                 <a href="/bancos" className="text-xs text-indigo-500 underline">Configurar bancos</a>
               </div>
             ) : (
-              filtered.map((b) => {
+              filtered.map((b, idx) => {
                 const isSelected = selected?.id === b.id;
+                const isActive = idx === activeIndex;
                 return (
                   <button
                     key={b.id}
                     type="button"
+                    {...optionProps(idx)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelect(b)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 ${
-                      isSelected ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-slate-700'
+                      isSelected
+                        ? isActive ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'bg-indigo-50 dark:bg-indigo-900/30'
+                        : isActive ? 'bg-gray-100 dark:bg-slate-700' : ''
                     }`}
                   >
                     {b.code && (
@@ -211,6 +230,7 @@ export function BancoSelect({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
               placeholder="Buscar banco…"
               className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 dark:placeholder-slate-500 dark:text-slate-200 min-w-0"
             />

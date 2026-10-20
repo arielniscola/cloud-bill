@@ -20,6 +20,10 @@ import {
   cuitIssueMessage,
   TAX_OPTIONS,
   COMPROBANTE_BY_TAX,
+  ProvinciaSelect,
+  useProvincias,
+  matchPadronProvincia,
+  LocalidadSelect,
 } from '../../components/shared';
 import type { OptionCard, PadronState } from '../../components/shared';
 import { customersService } from '../../services';
@@ -122,6 +126,7 @@ export default function CustomerFormPage() {
   const saleCondition = watch('saleCondition');
   const isActiveVal = watch('isActive');
   const taxIdVal = watch('taxId');
+  const provincias = useProvincias();
 
   const cuitRequired = requiresCuit(taxCondition);
   const isPadronLoading = padronState === 'loading';
@@ -246,7 +251,9 @@ export default function CustomerFormPage() {
                   setValue('taxCondition', p.taxCondition);
                   if (p.address) setValue('address', p.address);
                   if (p.city) setValue('city', p.city);
-                  if (p.province) setValue('province', p.province);
+                  if (p.province || p.provinceCode != null) {
+                    setValue('province', matchPadronProvincia(provincias, p.provinceCode, p.province)?.name ?? p.province);
+                  }
                   if (p.postalCode) setValue('postalCode', p.postalCode);
                   clearErrors('taxId');
                 }}
@@ -366,22 +373,26 @@ export default function CustomerFormPage() {
                 />
               </div>
               <div className="md:col-span-3">
-                <FieldLabel>Ciudad</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="CABA"
+                <FieldLabel>Localidad</FieldLabel>
+                <LocalidadSelect
+                  value={watch('city')}
+                  provincia={watch('province')}
+                  onChange={(v) => setValue('city', v, { shouldDirty: true })}
+                  onSelectLocalidad={(l) => {
+                    // La localidad del catálogo completa provincia y C.P. si faltan.
+                    if (l?.provinciaName && !watch('province')) setValue('province', l.provinciaName, { shouldDirty: true });
+                    if (l?.postalCode && !watch('postalCode')) setValue('postalCode', l.postalCode, { shouldDirty: true });
+                  }}
                   disabled={isPadronLoading}
-                  {...register('city')}
                   className={fieldClass()}
                 />
               </div>
               <div className="md:col-span-3">
                 <FieldLabel>Provincia</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="Buenos Aires"
+                <ProvinciaSelect
+                  value={watch('province')}
+                  onChange={(v) => setValue('province', v, { shouldDirty: true })}
                   disabled={isPadronLoading}
-                  {...register('province')}
                   className={fieldClass()}
                 />
               </div>

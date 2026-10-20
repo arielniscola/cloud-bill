@@ -10,6 +10,8 @@ export interface PadronData {
   address: string | null;
   city: string | null;
   province: string | null;
+  /** idProvincia de ARCA: con él se elige la provincia del catálogo. */
+  provinceCode?: number | null;
   postalCode: string | null;
   personType: string | null;
   estado: string | null;

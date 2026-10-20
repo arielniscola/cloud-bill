@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { DocumentLotsLine } from '../../components/shared/DocumentLots';
+import { useDocumentLots, lotsFor } from '../../hooks/useDocumentLots';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   XCircle, CheckCircle, Pencil, Send, Banknote, Zap, FileDown, ArrowRight, ClipboardList, RotateCcw, Printer, Mail, AlertTriangle, Smartphone, Trash2, ChevronDown, ArrowLeft,
@@ -184,6 +186,13 @@ export default function InvoiceDetailPage() {
   const [showMpModal,    setShowMpModal]    = useState(false);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [linkedRemitos, setLinkedRemitos] = useState<Remito[]>([]);
+  // Lotes entregados: los de la factura (si descontó al emitir), los de sus
+  // remitos (si reservó) y los de los remitos que factura.
+  const docLots = useDocumentLots([
+    invoice?.id,
+    ...linkedRemitos.map((r) => r.id),
+    ...(invoice?.billedRemitos ?? []).map((r) => r.id),
+  ]);
   const [sourceOp, setSourceOp] = useState<OrdenPedido | null>(null);
 
   const loadData = async () => {
@@ -346,6 +355,7 @@ export default function InvoiceDetailPage() {
         qrCodeDataUrl={qrCodeDataUrl}
         payments={recibos}
         remitos={linkedRemitos.filter((r) => r.status !== 'CANCELLED')}
+        lots={docLots}
       />
     ).toBlob();
   };
@@ -544,6 +554,14 @@ export default function InvoiceDetailPage() {
         label: r.number,
         to: `/remitos/${r.id}`,
         badge: r.status === 'DELIVERED' ? 'Entregado' : r.status === 'CANCELLED' ? 'Cancelado' : r.status === 'PARTIALLY_DELIVERED' ? 'Parcial' : 'Pendiente',
+        detail: formatDate(r.date),
+      })),
+    },
+    {
+      title: 'Remitos facturados',
+      docs: (invoice.billedRemitos ?? []).map((r) => ({
+        label: r.number,
+        to: `/remitos/${r.id}`,
         detail: formatDate(r.date),
       })),
     },
@@ -784,6 +802,9 @@ export default function InvoiceDetailPage() {
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {item.product?.name ?? <span className="text-gray-400 dark:text-slate-500 italic">Producto eliminado</span>}
                         </p>
+                        {item.detail && (
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-0.5 whitespace-pre-line">{item.detail}</p>
+                        )}
                         {item.variant && (
                           <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-0.5">
                             {item.variant.name}
@@ -792,6 +813,7 @@ export default function InvoiceDetailPage() {
                         {(item.variant?.sku ?? item.product?.sku) && (
                           <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{item.variant?.sku ?? item.product?.sku}</p>
                         )}
+                        <DocumentLotsLine lots={lotsFor(docLots, item.productId, item.variantId)} />
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">{Number(item.quantity)}</td>
                       <td className="px-5 py-3.5 text-sm text-gray-700 dark:text-slate-300 text-right tabular-nums">

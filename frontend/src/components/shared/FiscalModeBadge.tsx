@@ -21,8 +21,9 @@ export default function FiscalModeBadge({ mode, className }: Props) {
   return (
     <span className={clsx(
       'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide',
+      // `fiscal-badge-inf` además tiñe la fila que lo contiene en la vista "Todo" (index.css).
       isInformal
-        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+        ? 'fiscal-badge-inf bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
         : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
       className,
     )}>

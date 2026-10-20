@@ -116,3 +116,16 @@ export function DocHeader({
     </View>
   );
 }
+
+/** "Lote L-231 vto 12/05/2027 (6) · Lote L-240 (4)" para una línea impresa; '' si no tiene lotes. */
+export function lotText(
+  lots: { productId: string; variantId: string | null; lotNumber: string; expiresAt: string | null; quantity: number }[] | undefined,
+  productId: string | null | undefined,
+  variantId?: string | null,
+): string {
+  if (!lots?.length || !productId) return '';
+  return lots
+    .filter((l) => l.productId === productId && (l.variantId ?? null) === (variantId ?? null))
+    .map((l) => `Lote ${l.lotNumber}${l.expiresAt ? ` vto ${l.expiresAt.split('-').reverse().join('/')}` : ''} (${l.quantity.toLocaleString('es-AR')})`)
+    .join(' · ');
+}

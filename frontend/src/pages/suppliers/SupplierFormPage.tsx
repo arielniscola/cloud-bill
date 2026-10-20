@@ -20,6 +20,7 @@ import {
   cuitIssueMessage,
   TAX_OPTIONS,
   COMPROBANTE_BY_TAX,
+  LocalidadSelect,
 } from '../../components/shared';
 import type { PadronState } from '../../components/shared';
 import { suppliersService } from '../../services';
@@ -318,12 +319,11 @@ export default function SupplierFormPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <FieldLabel>Ciudad</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="Buenos Aires"
+                <FieldLabel>Localidad</FieldLabel>
+                <LocalidadSelect
+                  value={watch('city')}
+                  onChange={(v) => setValue('city', v, { shouldDirty: true })}
                   disabled={isPadronLoading}
-                  {...register('city')}
                   className={fieldClass()}
                 />
               </div>

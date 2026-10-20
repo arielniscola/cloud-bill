@@ -208,6 +208,12 @@ export default function PurchaseRemitoDetailPage() {
                   <td className="px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300">
                     {it.description}
                     {it.productName && <span className="text-xs text-gray-400 ml-1.5">({it.productName})</span>}
+                    {it.lotNumber && (
+                      <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                        Lote <span className="font-mono">{it.lotNumber}</span>
+                        {it.expiresAt && <> · vence {it.expiresAt.split('-').reverse().join('/')}</>}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right text-sm tabular-nums">{it.quantity}</td>
                   <td className="px-4 py-2.5 text-right text-sm tabular-nums">{formatCurrency(it.unitPrice, 'ARS')}</td>

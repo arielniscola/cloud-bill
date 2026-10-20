@@ -19,7 +19,7 @@ export default function MainLayout() {
 
   if (menuType === 'navbar') {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <div className="fiscal-workspace min-h-screen bg-slate-50 dark:bg-slate-950">
         <FiscalModeTopBorder />
         <OfflineBanner />
         <Navbar />
@@ -33,7 +33,7 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="fiscal-workspace min-h-screen bg-slate-50 dark:bg-slate-950">
       <FiscalModeTopBorder />
       <OfflineBanner />
       {/* ── Mobile top bar (hidden on md+) ── */}

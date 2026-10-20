@@ -114,6 +114,7 @@ export default function ThermalOrdenPedidoPrintPage() {
       {(op.items ?? []).map((item, i) => (
         <div key={i} style={{ marginBottom: 3 }}>
           <p className="item-desc">{item.description}</p>
+          {item.detail ? <p className="item-desc sm" style={{ whiteSpace: 'pre-wrap' }}>{item.detail}</p> : null}
           <div className="item-detail sm">
             <span>{Number(item.quantity)} x ${fmt(Number(item.unitPrice))}</span>
             <span>${fmt(Number(item.subtotal))}</span>

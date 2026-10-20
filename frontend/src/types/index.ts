@@ -28,6 +28,8 @@ export * from './bank.types';
 export * from './mercadopago.types';
 export * from './card.types';
 export * from './banco.types';
+export * from './provincia.types';
+export * from './localidad.types';
 export * from './category.types';
 export * from './product-custom-field.types';
 export * from './internal-note.types';

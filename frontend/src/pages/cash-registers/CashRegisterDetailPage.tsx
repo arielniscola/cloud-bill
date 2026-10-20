@@ -2,22 +2,30 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Edit, Lock, TrendingUp, Activity,
-  ArrowUpCircle, ArrowDownCircle,
+  ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Printer, XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button, Modal, Input } from '../../components/ui';
-import { PageHeader, DataTable } from '../../components/shared';
+import { pdf } from '@react-pdf/renderer';
+import { Button, Modal, Input, Select } from '../../components/ui';
+import { PageHeader, DataTable, ConfirmDialog } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
-import { cashRegistersService } from '../../services';
+import { cashRegistersService, bankService, appSettingsService } from '../../services';
+import { useAuthStore } from '../../stores';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { loadPrintContext, printBlob } from '../../utils/printContext';
+import { CASH_CONCEPT_LABELS, CASH_CONCEPTS_BY_TYPE, isBankConcept } from '../../utils/cashMovements';
+import CashMovementPDF from '../../components/pdf/CashMovementPDF';
 import type {
   CashRegister,
   CashRegisterMovement,
   CashRegisterMovementType,
   CashRegisterClose,
   CashRegisterClosePreview,
+  CashMovementConcept,
+  CashMovementDirection,
 } from '../../types';
+import type { BankAccount } from '../../types/bank.types';
 
 // ── Filter components ────────────────────────────────────────────────────────
 function CompactDateInput({ label, value, onChange }: {
@@ -140,6 +148,30 @@ export default function CashRegisterDetailPage() {
   const [closeNotes, setCloseNotes] = useState('');
   const [isClosing, setIsClosing]   = useState(false);
 
+  // Modal retiro / ingreso manual
+  const { user } = useAuthStore();
+  const canCancelManual = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const [isCashModalOpen, setIsCashModalOpen] = useState(false);
+  const [cashType, setCashType]               = useState<CashMovementDirection>('OUT');
+  const [cashConcept, setCashConcept]         = useState<CashMovementConcept>('RETIRO');
+  const [cashAmount, setCashAmount]           = useState('');
+  const [cashPerson, setCashPerson]           = useState('');
+  const [cashNotes, setCashNotes]             = useState('');
+  const [cashBankId, setCashBankId]           = useState('');
+  const [printAfterSave, setPrintAfterSave]   = useState(true);
+  const [isSavingCash, setIsSavingCash]       = useState(false);
+  const [bankAccounts, setBankAccounts]       = useState<BankAccount[]>([]);
+  const [cancelTarget, setCancelTarget]       = useState<CashRegisterMovement | null>(null);
+  const [isCancellingCash, setIsCancellingCash] = useState(false);
+  const [printingId, setPrintingId]           = useState<string | null>(null);
+  const [printFormat, setPrintFormat]         = useState<'A4' | 'THERMAL_80MM'>('A4');
+
+  useEffect(() => {
+    appSettingsService.get()
+      .then((s) => setPrintFormat(s.printFormatCashMovement === 'THERMAL_80MM' ? 'THERMAL_80MM' : 'A4'))
+      .catch(() => {});
+  }, []);
+
   // Load caja
   useEffect(() => {
     if (!id) return;
@@ -207,6 +239,113 @@ export default function CashRegisterDetailPage() {
 
   const hasActiveFilters = !!(filterType || filterStartDate || filterEndDate);
 
+  const refreshPreview = () => {
+    if (!id) return;
+    setIsLoadingPreview(true);
+    cashRegistersService.getClosePreview(id)
+      .then(setPreview)
+      .catch(() => {})
+      .finally(() => setIsLoadingPreview(false));
+  };
+
+  // ── Retiro / ingreso manual ──────────────────────────────────────────────
+  const openCashModal = (type: CashMovementDirection = 'OUT') => {
+    setCashType(type);
+    setCashConcept(CASH_CONCEPTS_BY_TYPE[type][0]);
+    setCashAmount('');
+    setCashPerson('');
+    setCashNotes('');
+    setCashBankId('');
+    setIsCashModalOpen(true);
+    if (bankAccounts.length === 0) {
+      bankService.getAll()
+        .then((all) => setBankAccounts(all.filter((b) => b.isActive && b.currency === 'ARS')))
+        .catch(() => {});
+    }
+  };
+
+  const changeCashType = (type: CashMovementDirection) => {
+    setCashType(type);
+    setCashConcept(CASH_CONCEPTS_BY_TYPE[type][0]);
+    setCashBankId('');
+  };
+
+  const thermalUrl = (movementId: string) => `/print/cash-movement/${id}/${movementId}`;
+  const THERMAL_WINDOW = 'width=420,height=700,scrollbars=yes';
+
+  const printCashMovement = async (movementId: string) => {
+    if (!id) return;
+    if (printFormat === 'THERMAL_80MM') {
+      window.open(thermalUrl(movementId), '_blank', THERMAL_WINDOW);
+      return;
+    }
+    setPrintingId(movementId);
+    try {
+      const [movement, ctx] = await Promise.all([
+        cashRegistersService.getCashMovement(id, movementId),
+        loadPrintContext(),
+      ]);
+      const blob = await pdf(<CashMovementPDF movement={movement} ctx={ctx} />).toBlob();
+      printBlob(blob);
+    } catch {
+      toast.error('Error al generar el comprobante');
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
+  const handleSaveCash = async () => {
+    if (!id) return;
+    const amount = Number(cashAmount.replace(',', '.'));
+    if (!amount || amount <= 0) { toast.error('Ingresá un importe mayor a 0'); return; }
+    if (isBankConcept(cashConcept) && !cashBankId) { toast.error('Elegí la cuenta bancaria'); return; }
+    // El ticket se abre en una ventana nueva: hay que abrirla durante el click
+    // (antes del await) o el navegador la bloquea como popup.
+    const ticketWin = printAfterSave && printFormat === 'THERMAL_80MM'
+      ? window.open('', '_blank', THERMAL_WINDOW)
+      : null;
+    setIsSavingCash(true);
+    try {
+      const movement = await cashRegistersService.createCashMovement(id, {
+        type: cashType,
+        concept: cashConcept,
+        amount,
+        personName: cashPerson.trim() || undefined,
+        notes: cashNotes.trim() || undefined,
+        bankAccountId: isBankConcept(cashConcept) ? cashBankId : undefined,
+      });
+      toast.success(`${cashType === 'OUT' ? 'Retiro' : 'Ingreso'} ${movement.number} registrado`);
+      setIsCashModalOpen(false);
+      fetchMovements();
+      refreshPreview();
+      if (ticketWin) ticketWin.location.href = thermalUrl(movement.id);
+      else if (printAfterSave) printCashMovement(movement.id);
+    } catch (error: unknown) {
+      ticketWin?.close();
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al registrar el movimiento');
+    } finally {
+      setIsSavingCash(false);
+    }
+  };
+
+  const handleCancelCash = async () => {
+    if (!id || !cancelTarget?.cashMovement) return;
+    setIsCancellingCash(true);
+    try {
+      await cashRegistersService.cancelCashMovement(id, cancelTarget.cashMovement.id);
+      toast.success(`Movimiento ${cancelTarget.cashMovement.number} anulado`);
+      setCancelTarget(null);
+      fetchMovements();
+      refreshPreview();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Error al anular el movimiento');
+    } finally {
+      setIsCancellingCash(false);
+    }
+  };
+
   // Open close modal
   const openCloseModal = async () => {
     if (!id) return;
@@ -234,12 +373,7 @@ export default function CashRegisterDetailPage() {
       setIsCloseModalOpen(false);
       fetchMovements();
       fetchCloses();
-      // Refresh stat cards
-      setIsLoadingPreview(true);
-      cashRegistersService.getClosePreview(id)
-        .then(setPreview)
-        .catch(() => {})
-        .finally(() => setIsLoadingPreview(false));
+      refreshPreview();
     } catch {
       toast.error('Error al registrar el cierre');
     } finally {
@@ -284,9 +418,9 @@ export default function CashRegisterDetailPage() {
       key: 'invoice',
       header: 'Comprobante',
       render: (mov) =>
-        mov.invoice ? (
+        mov.invoice || mov.cashMovement ? (
           <span className="text-xs font-mono font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 px-2 py-0.5 rounded-md">
-            {mov.invoice.number}
+            {mov.invoice?.number ?? mov.cashMovement?.number}
           </span>
         ) : (
           <span className="text-gray-300 dark:text-slate-600">—</span>
@@ -295,7 +429,11 @@ export default function CashRegisterDetailPage() {
     {
       key: 'type',
       header: 'Tipo',
-      render: (mov) => (
+      render: (mov) => mov.cashMovement?.status === 'CANCELLED' ? (
+        <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full border text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-700 border-gray-200 dark:border-slate-600">
+          Anulado
+        </span>
+      ) : (
         <span
           className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
             mov.type === 'CREDIT'
@@ -313,13 +451,43 @@ export default function CashRegisterDetailPage() {
       render: (mov) => (
         <span
           className={`text-sm font-semibold tabular-nums ${
-            mov.type === 'CREDIT' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+            mov.cashMovement?.status === 'CANCELLED'
+              ? 'line-through text-gray-400 dark:text-slate-500'
+              : mov.type === 'CREDIT' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
           }`}
         >
           {mov.type === 'CREDIT' ? '+' : '−'}
           {formatCurrency(mov.amount, mov.currentAccount?.currency ?? 'ARS')}
         </span>
       ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (mov) =>
+        mov.cashMovement ? (
+          <div className="flex items-center justify-end gap-1">
+            <button
+              type="button"
+              title="Imprimir comprobante"
+              onClick={() => printCashMovement(mov.cashMovement!.id)}
+              disabled={printingId === mov.cashMovement.id}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:text-slate-500 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+            {canCancelManual && mov.cashMovement.status === 'ACTIVE' && (
+              <button
+                type="button"
+                title="Anular"
+                onClick={() => setCancelTarget(mov)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:text-slate-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        ) : null,
     },
   ];
 
@@ -438,6 +606,10 @@ export default function CashRegisterDetailPage() {
             <Button variant="outline" onClick={() => navigate(`/cash-registers/${id}/edit`)}>
               <Edit className="w-4 h-4 mr-2" />
               Editar
+            </Button>
+            <Button variant="outline" onClick={() => openCashModal('OUT')}>
+              <ArrowLeftRight className="w-4 h-4 mr-2" />
+              Retiro / Ingreso
             </Button>
             <Button onClick={openCloseModal}>
               <Lock className="w-4 h-4 mr-2" />
@@ -561,6 +733,109 @@ export default function CashRegisterDetailPage() {
           }}
         />
       </div>
+
+      {/* Modal retiro / ingreso manual */}
+      <Modal
+        isOpen={isCashModalOpen}
+        onClose={() => setIsCashModalOpen(false)}
+        title="Retiro / Ingreso de caja"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {(['OUT', 'IN'] as const).map((t) => {
+              const active = cashType === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => changeCashType(t)}
+                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                    active
+                      ? t === 'OUT'
+                        ? 'border-red-400 bg-red-50 text-red-700 dark:bg-red-900/30 dark:border-red-500 dark:text-red-300'
+                        : 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-500 dark:text-emerald-300'
+                      : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50'
+                  }`}
+                >
+                  {t === 'OUT' ? <ArrowDownCircle className="w-4 h-4" /> : <ArrowUpCircle className="w-4 h-4" />}
+                  {t === 'OUT' ? 'Retiro (egreso)' : 'Ingreso'}
+                </button>
+              );
+            })}
+          </div>
+
+          <Select
+            label="Concepto"
+            value={cashConcept}
+            onChange={(v) => { setCashConcept(v as CashMovementConcept); setCashBankId(''); }}
+            options={CASH_CONCEPTS_BY_TYPE[cashType].map((c) => ({ value: c, label: CASH_CONCEPT_LABELS[c] }))}
+          />
+
+          {isBankConcept(cashConcept) && (
+            <Select
+              label={cashConcept === 'DEPOSITO_BANCARIO' ? 'Cuenta donde se deposita' : 'Cuenta de la que se extrae'}
+              value={cashBankId}
+              onChange={setCashBankId}
+              placeholder={bankAccounts.length ? 'Seleccionar cuenta...' : 'No hay cuentas bancarias en ARS'}
+              options={bankAccounts.map((b) => ({ value: b.id, label: `${b.bank} · ${b.name}${b.accountNumber ? ` (${b.accountNumber})` : ''}` }))}
+            />
+          )}
+
+          <Input
+            label="Importe"
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="0,00"
+            value={cashAmount}
+            onChange={(e) => setCashAmount(e.target.value)}
+          />
+
+          <Input
+            label={cashType === 'OUT' ? 'Retirado por (opcional)' : 'Entregado por (opcional)'}
+            placeholder="Nombre de quien se lleva / trae la plata"
+            value={cashPerson}
+            onChange={(e) => setCashPerson(e.target.value)}
+          />
+
+          <Input
+            label="Observaciones (opcional)"
+            placeholder="Motivo, detalle..."
+            value={cashNotes}
+            onChange={(e) => setCashNotes(e.target.value)}
+          />
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={printAfterSave}
+              onChange={(e) => setPrintAfterSave(e.target.checked)}
+              className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+            />
+            Imprimir comprobante al guardar ({printFormat === 'THERMAL_80MM' ? 'ticket 80mm' : 'A4'})
+          </label>
+
+          <div className="flex gap-3 pt-1">
+            <Button onClick={handleSaveCash} isLoading={isSavingCash}>
+              {cashType === 'OUT' ? 'Registrar retiro' : 'Registrar ingreso'}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsCashModalOpen(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={handleCancelCash}
+        title="Anular movimiento de caja"
+        message={`¿Anular ${cancelTarget?.cashMovement?.number ?? ''} por ${cancelTarget ? formatCurrency(cancelTarget.amount) : ''}? Deja de contar en la caja${cancelTarget?.cashMovement && isBankConcept(cancelTarget.cashMovement.concept) ? ' y se revierte el movimiento bancario' : ''}.`}
+        confirmText="Anular"
+        isLoading={isCancellingCash}
+      />
 
       {/* Modal cierre de caja */}
       <Modal

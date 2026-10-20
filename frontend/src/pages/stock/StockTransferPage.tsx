@@ -7,9 +7,10 @@ import toast from 'react-hot-toast';
 import { ArrowRight, AlertTriangle, CheckCircle2, Building2 } from 'lucide-react';
 import { Button, Input, Select } from '../../components/ui';
 import { PageHeader, ProductSearchSelect } from '../../components/shared';
+import LotPicker from '../../components/shared/LotPicker';
 import { stockService, productsService, warehousesService } from '../../services';
 import { formatNumber } from '../../utils/formatters';
-import type { Product, Warehouse } from '../../types';
+import type { Product, Warehouse, ItemLotDTO } from '../../types';
 
 const transferSchema = z.object({
   productId:       z.string().min(1, 'Seleccioná un producto'),
@@ -38,6 +39,8 @@ export default function StockTransferPage() {
   const [products,       setProducts]       = useState<Product[]>([]);
   // Producto elegido en el buscador server-side, que puede no estar precargado.
   const [pickedProduct,  setPickedProduct]  = useState<Product | null>(null);
+  // Lotes que se mueven (productos con lotes); vacío = el que vence antes.
+  const [lots,           setLots]           = useState<ItemLotDTO[] | undefined>(undefined);
   const [warehouses,     setWarehouses]     = useState<Warehouse[]>([]);
   const [isLoading,      setIsLoading]      = useState(false);
   const [currentStock,   setCurrentStock]   = useState<number | null>(null);
@@ -78,7 +81,7 @@ export default function StockTransferPage() {
   const onSubmit = async (data: TransferFormData) => {
     setIsLoading(true);
     try {
-      await stockService.transfer(data);
+      await stockService.transfer({ ...data, ...(lots?.length ? { lots } : {}) });
       toast.success('Transferencia realizada');
       navigate('/stock/movements');
     } catch (err: unknown) {
@@ -119,7 +122,7 @@ export default function StockTransferPage() {
             <ProductSearchSelect
               products={products}
               value={productId}
-              onChange={(v, picked) => { setPickedProduct(picked ?? null); setValue('productId', v); }}
+              onChange={(v, picked) => { setPickedProduct(picked ?? null); setValue('productId', v); setLots(undefined); }}
               error={errors.productId?.message}
               serverSearch
             />
@@ -135,7 +138,7 @@ export default function StockTransferPage() {
                   label="Origen *"
                   options={[{ value: '', label: 'Seleccionar…' }, ...warehouseOptions]}
                   value={fromWarehouseId}
-                  onChange={(v) => setValue('fromWarehouseId', v)}
+                  onChange={(v) => { setValue('fromWarehouseId', v); setLots(undefined); }}
                   error={errors.fromWarehouseId?.message}
                 />
 
@@ -217,6 +220,15 @@ export default function StockTransferPage() {
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                     Stock insuficiente · disponibles: {formatNumber(currentStock!, 0)} unidades
                   </p>
+                )}
+                {pickedProduct?.id === productId && pickedProduct.trackLots && fromWarehouseId && (
+                  <LotPicker
+                    productId={productId}
+                    warehouseId={fromWarehouseId}
+                    quantity={quantity}
+                    value={lots}
+                    onChange={setLots}
+                  />
                 )}
               </div>
 

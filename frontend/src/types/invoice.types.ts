@@ -1,6 +1,7 @@
 import type { Customer } from './customer.types';
 import type { Product } from './product.types';
 import type { User } from './auth.types';
+import type { ItemLotDTO, LotSelection } from './stock.types';
 
 export type InvoiceType =
   | 'FACTURA_A'
@@ -29,6 +30,8 @@ export interface InvoiceItem {
   productId: string;
   variantId?: string | null;
   description?: string;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   product?: Product;
   variant?: { id: string; name: string; sku: string; attributes: Record<string, string> } | null;
   quantity: number;
@@ -95,6 +98,10 @@ export interface Invoice {
   items: InvoiceItem[];
   _count?: { items: number };
   deliveryStatus?: DeliveryStatus;
+  /** Remitos libres que factura (detalle): sus cantidades no se editan y la factura no mueve stock. */
+  billedRemitos?: { id: string; number: string; date: string; status: string }[];
+  /** Lotes elegidos en el borrador (se usan al emitir). */
+  lotSelections?: LotSelection[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,10 +109,13 @@ export interface Invoice {
 export interface CreateInvoiceItemDTO {
   productId: string;
   variantId?: string | null;
+  /** Detalle libre de la línea (servicios / productos no inventariados). */
+  detail?: string | null;
   quantity: number;
   unitPrice: number;
   taxRate?: number;
   discountPct?: number;
+  lots?: ItemLotDTO[];
 }
 
 export interface CreateInvoiceDTO {
@@ -122,6 +132,8 @@ export interface CreateInvoiceDTO {
   warehouseId?: string | null;
   currency?: Currency;
   exchangeRate?: number;
+  /** Remitos libres a facturar (solo al crear). */
+  remitoIds?: string[];
   items: CreateInvoiceItemDTO[];
 }
 
@@ -153,6 +165,21 @@ export interface InvoiceFilters {
   dateTo?: string;
   /** Número de comprobante, razón social o CUIT del cliente. */
   search?: string;
+  /** Formales sin CAE en un estado que todavía se puede emitir ante ARCA. */
+  pendingArca?: boolean;
+}
+
+/** Resultado por factura de `POST /invoices/emit-batch`. */
+export interface ArcaBatchResult {
+  id: string;
+  number: string | null;
+  outcome: 'AUTHORIZED' | 'ERROR' | 'SKIPPED' | 'NOT_PROCESSED';
+  message?: string;
+  cae?: string;
+  afipPtVenta?: number;
+  afipCbtNum?: number;
+  /** La fecha se pasó a hoy para que ARCA la acepte. */
+  redated?: boolean;
 }
 
 /** Totales de una moneda dentro del conjunto filtrado. */

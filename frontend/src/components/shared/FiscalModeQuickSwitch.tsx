@@ -23,7 +23,7 @@ const OPTIONS: Option[] = [
     label: 'Informal',
     description: 'Operaciones no informadas',
     icon: ShieldOff,
-    accent: 'text-amber-500',
+    accent: 'text-rose-500',
   },
   {
     value: 'ALL',

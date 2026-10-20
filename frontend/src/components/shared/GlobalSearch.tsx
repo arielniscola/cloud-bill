@@ -115,6 +115,12 @@ export function GlobalSearch() {
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // La opción resaltada con las flechas se lleva a la vista.
+  useEffect(() => {
+    resultsRef.current?.querySelector(`[data-idx="${activeIdx}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeIdx]);
   const navigate = useNavigate();
 
   // Global Cmd+K / Ctrl+K listener
@@ -161,10 +167,11 @@ export function GlobalSearch() {
 
   // Keyboard navigation inside modal
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, results.length - 1)); }
+    // Se navega en el orden en que se muestran (agrupados por rubro), no en el de `results`.
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, flat.length - 1)); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
-    if (e.key === 'Enter' && results[activeIdx]) {
-      navigate(results[activeIdx].href);
+    if (e.key === 'Enter' && flat[activeIdx]) {
+      navigate(flat[activeIdx].href);
       setOpen(false);
     }
   };
@@ -223,7 +230,7 @@ export function GlobalSearch() {
           </div>
 
           {/* Results */}
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div ref={resultsRef} className="max-h-[60vh] overflow-y-auto">
             {query.length >= 2 && !loading && results.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-slate-500">
                 Sin resultados para <strong className="text-gray-600 dark:text-slate-300">"{query}"</strong>
@@ -248,6 +255,7 @@ export function GlobalSearch() {
                         <button
                           key={item.id}
                           onClick={() => goTo(item.href)}
+                          data-idx={idx}
                           onMouseEnter={() => setActiveIdx(idx)}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                             isActive

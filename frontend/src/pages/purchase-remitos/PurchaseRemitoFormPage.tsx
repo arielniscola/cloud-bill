@@ -100,6 +100,7 @@ export default function PurchaseRemitoFormPage() {
                 description: lim.description,
                 quantity: pending,
                 unitPrice: Number(invItem?.unitPrice ?? 0),
+                trackLots: match?.trackLots === true,
               };
             })
             .filter((it) => it.quantity > 0);
@@ -125,8 +126,8 @@ export default function PurchaseRemitoFormPage() {
       prev.map((item, i) =>
         i === index
           ? product
-            ? { ...item, productId, description: product.name, unitPrice: product.cost }
-            : { ...item, productId: null }
+            ? { ...item, productId, description: product.name, unitPrice: product.cost, trackLots: product.trackLots === true, lotNumber: null, expiresAt: null }
+            : { ...item, productId: null, trackLots: false, lotNumber: null, expiresAt: null }
           : item
       )
     );
@@ -176,7 +177,13 @@ export default function PurchaseRemitoFormPage() {
 
     setIsSaving(true);
     try {
-      const remito = await purchaseRemitosService.create({ ...form, items });
+      const remito = await purchaseRemitosService.create({
+        ...form,
+        items: items.map(({ trackLots, lotNumber, expiresAt, ...rest }) => ({
+          ...rest,
+          ...(trackLots && lotNumber?.trim() ? { lotNumber: lotNumber.trim(), expiresAt: expiresAt || null } : {}),
+        })),
+      });
       // Si viene de una factura, vincular el remito a esa factura (trazabilidad)
       if (fromInvoice) {
         const remitoIds = [...(fromInvoice.remitos?.map((r) => r.id) ?? []), remito.id];
@@ -253,15 +260,46 @@ export default function PurchaseRemitoFormPage() {
                 </div>
                 <div className="divide-y divide-gray-100 dark:divide-slate-700">
                   {items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_120px_100px_32px] gap-3 items-center py-3">
-                      <ProductSearchSelect
-                        products={products}
-                        value={item.productId ?? ''}
-                        onChange={(pid, picked) => handleProductSelect(index, pid, picked)}
-                        optional
-                        serverSearch
-                        searchParams={{ isActive: true }}
-                      />
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_120px_100px_32px] gap-3 items-start py-3">
+                      <div>
+                        <ProductSearchSelect
+                          products={products}
+                          value={item.productId ?? ''}
+                          onChange={(pid, picked) => handleProductSelect(index, pid, picked)}
+                          optional
+                          serverSearch
+                          searchParams={{ isActive: true }}
+                        />
+                        {item.trackLots && (
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <div>
+                              <label htmlFor={`lot-${index}`} className="block text-[11px] font-medium text-gray-500 dark:text-slate-400 mb-0.5">Lote</label>
+                              <input
+                                id={`lot-${index}`}
+                                type="text"
+                                maxLength={60}
+                                placeholder="N° de lote"
+                                value={item.lotNumber ?? ''}
+                                onChange={(e) => updateItem(index, 'lotNumber', e.target.value)}
+                                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1 text-sm font-mono bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={`exp-${index}`} className="block text-[11px] font-medium text-gray-500 dark:text-slate-400 mb-0.5">Vencimiento</label>
+                              <input
+                                id={`exp-${index}`}
+                                type="date"
+                                value={item.expiresAt ?? ''}
+                                onChange={(e) => updateItem(index, 'expiresAt', e.target.value || null)}
+                                className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </div>
+                            {!item.lotNumber?.trim() && (
+                              <p className="col-span-2 text-[11px] text-amber-600 dark:text-amber-400">Sin lote: entra al stock como «S/L».</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <input
                         type="text"
                         className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"

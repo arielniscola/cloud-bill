@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search, ChevronDown, FileText, Send, Zap, RotateCcw, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal, ItemDetailInput } from '../../components/shared';
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
@@ -22,9 +22,11 @@ import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { INVOICE_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS, CASH_ID_THRESHOLD, DEFERRED_PAYMENT_DAYS } from '../../utils/constants';
 import { getDefaultInvoiceType, getConsumidorFinalInvoiceType } from '../../utils/getDefaultInvoiceType';
 import type { DefaultInvoiceType } from '../../types/app-settings.types';
-import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse, Stock, CashRegister } from '../../types';
+import type { Customer, Product, InvoiceType, Invoice, CreateReciboDTO, Warehouse, Stock, CashRegister, Remito } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
 import { INVOICE_TYPES } from '../../utils/constants';
+import LotPicker from '../../components/shared/LotPicker';
+import type { ItemLotDTO, LotSelection } from '../../types';
 import InvoiceFastLayout from './InvoiceFastLayout';
 import InvoiceCounterLayout from './InvoiceCounterLayout';
 import { COUNTER_INLINE_METHODS, parseAmount } from './invoiceCounter';
@@ -120,13 +122,41 @@ function errorMessage(error: unknown): string | undefined {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
 }
 
+/** Reparte los lotes guardados en el borrador (por producto + variante) entre sus líneas. */
+function withStoredLots<T extends { productId: string; variantId?: string | null; quantity: number }>(
+  items: T[],
+  selections: LotSelection[] | null | undefined,
+): (T & { lots?: ItemLotDTO[] })[] {
+  if (!selections?.length) return items;
+  const pool = selections.map((s) => ({ ...s, lots: s.lots.map((l) => ({ ...l })) }));
+  return items.map((it) => {
+    const sel = pool.find((s) => s.productId === it.productId && (s.variantId ?? null) === (it.variantId ?? null));
+    if (!sel) return it;
+    const lots: ItemLotDTO[] = [];
+    let left = it.quantity;
+    for (const l of sel.lots) {
+      if (left <= 0) break;
+      const q = Math.min(l.quantity, left);
+      if (q <= 0) continue;
+      lots.push({ lotId: l.lotId, quantity: q });
+      l.quantity -= q;
+      left -= q;
+    }
+    return lots.length ? { ...it, lots } : it;
+  });
+}
+
 const invoiceItemSchema = z.object({
   productId: z.string().min(1, 'Seleccioná un producto'),
   variantId: z.string().nullable().optional(),
+  // Detalle libre (solo productos no inventariados / servicios).
+  detail: z.string().nullable().optional(),
   quantity: z.coerce.number().positive('> 0'),
   unitPrice: z.coerce.number().min(0, '>= 0'),
   discountPct: z.coerce.number().min(0).max(100).default(0),
   taxRate: z.coerce.number().min(0).max(100),
+  // Lotes elegidos (productos con lotes); vacío = se reparten por vencimiento al emitir.
+  lots: z.array(z.object({ lotId: z.string(), quantity: z.number() })).optional(),
 });
 
 const invoiceSchema = z.object({
@@ -302,6 +332,8 @@ export default function InvoiceFormPage() {
   const isEditing = !!id;
   const creditNoteFrom = (location.state as { creditNoteFrom?: Invoice; debitNoteFrom?: Invoice } | null)?.creditNoteFrom;
   const debitNoteFrom = (location.state as { creditNoteFrom?: Invoice; debitNoteFrom?: Invoice } | null)?.debitNoteFrom;
+  // Facturación de remitos libres (desde el detalle del remito).
+  const fromRemitos = (location.state as { fromRemitos?: Remito[] } | null)?.fromRemitos;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [originInvoices, setOriginInvoices] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -353,6 +385,14 @@ export default function InvoiceFormPage() {
   const counterDataLoadedRef = useRef(false);
   const [priceEditMode, setPriceEditMode] = useState(() => localStorage.getItem(PRICE_EDIT_KEY) === '1');
   const timeSurcharge = useTimeSurcharge();
+  // Remitos que factura este comprobante: al crear vienen del detalle del
+  // remito; al editar el borrador, del backend. Mientras haya, las líneas son
+  // las de los remitos (sin agregar, quitar ni cambiar cantidades) y la
+  // factura no mueve stock: ya lo descontaron los remitos.
+  const [billingRemitos, setBillingRemitos] = useState<Array<{ id: string; number: string }>>(
+    () => (fromRemitos ?? []).map((r) => ({ id: r.id, number: r.number }))
+  );
+  const remitoLock = billingRemitos.length > 0;
 
   const chooseLayout = (next: FormLayout) => {
     setLayout(next);
@@ -372,7 +412,7 @@ export default function InvoiceFormPage() {
   // Se lee de forma sincrónica en el primer render: el auto-guardado no debe
   // pisar el borrador antes de que el usuario decida si lo restaura.
   const [pendingDraft, setPendingDraft] = useState<LocalDraft | null>(
-    () => (isEditing || creditNoteFrom || debitNoteFrom ? null : readLocalDraft(draftKey))
+    () => (isEditing || creditNoteFrom || debitNoteFrom || fromRemitos ? null : readLocalDraft(draftKey))
   );
 
   const {
@@ -407,14 +447,14 @@ export default function InvoiceFormPage() {
 
   useFormKeyboardShortcuts({
     onSubmit: () => (effectiveLayout === 'counter' ? submitCounter() : runSubmit(effectiveAction)),
-    onAddItem: appendItem,
+    onAddItem: () => { if (!remitoLock) appendItem(); },
     onCancel: () => setShowExitConfirm(true),
     onDuplicateLastItem: () => {
-      if (items.length === 0) return;
+      if (items.length === 0 || remitoLock) return;
       append({ ...items[items.length - 1] });
     },
     onDeleteLastItem: () => {
-      if (fields.length > 1) remove(fields.length - 1);
+      if (fields.length > 1 && !remitoLock) remove(fields.length - 1);
     },
     onFocusBarcode: () => barcodeRef.current?.focus(),
   });
@@ -429,7 +469,8 @@ export default function InvoiceFormPage() {
   const originInvoiceId = watch('originInvoiceId');
   const isNcNd = type.startsWith('NOTA_CREDITO_') || type.startsWith('NOTA_DEBITO_');
   // El mostrador cobra: no aplica a NC/ND (eso es una devolución).
-  const effectiveLayout: FormLayout = layout === 'counter' && isNcNd ? 'classic' : layout;
+  // La factura de remitos va siempre en el clásico: es el que bloquea las líneas.
+  const effectiveLayout: FormLayout = remitoLock || (layout === 'counter' && isNcNd) ? 'classic' : layout;
   // Recargo por horario: los precios de lista entran recargados mientras la
   // franja configurada esté vigente. No aplica a NC/ND, que copian el precio
   // del comprobante de origen.
@@ -459,6 +500,34 @@ export default function InvoiceFormPage() {
 
   const findProduct = (productId: string) =>
     productCache[productId] ?? products.find((p) => p.id === productId);
+  // El lote se elige solo cuando esta factura descuenta stock al emitirse.
+  const canPickLots = type.startsWith('FACTURA_') && stockBehavior === 'DISCOUNT' && !remitoLock;
+  const renderLotPicker = (index: number) => {
+    const item = items[index];
+    if (!canPickLots || !item?.productId || !findProduct(item.productId)?.trackLots) return null;
+    return (
+      <LotPicker
+        productId={item.productId}
+        variantId={(item as any)?.variantId ?? null}
+        warehouseId={effectiveWarehouseId}
+        quantity={Number(item.quantity) || 0}
+        value={item.lots}
+        onChange={(lots) => setValue(`items.${index}.lots`, lots)}
+      />
+    );
+  };
+
+  // Detalle libre de la línea: solo para productos no inventariados (servicios).
+  const renderItemDetail = (index: number) => {
+    const item = items[index];
+    if (!item?.productId || findProduct(item.productId)?.trackStock !== false) return null;
+    return (
+      <ItemDetailInput
+        value={item.detail}
+        onChange={(value) => setValue(`items.${index}.detail`, value)}
+      />
+    );
+  };
 
   // El cliente elegido por búsqueda server-side puede no estar en `customers`.
   const findCustomer = useCallback(
@@ -487,6 +556,7 @@ export default function InvoiceFormPage() {
       items: origin.items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId ?? null,
+        detail: item.detail ?? null,
         quantity: Number(item.quantity),
         unitPrice: Number(item.unitPrice),
         discountPct: Number(item.discountPct) || 0,
@@ -497,6 +567,35 @@ export default function InvoiceFormPage() {
     syncDiscountFromItems(origin.items);
     if (origin.customer) setCustomerCache((prev) => ({ ...prev, [origin.customerId]: origin.customer! }));
   }, [products]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill from remitos: una línea por producto/variante con la cantidad
+  // total de los remitos y el precio de lista vigente.
+  useEffect(() => {
+    if (!fromRemitos?.length || isEditing) return;
+    const first = fromRemitos[0];
+    const lines = new Map<string, { productId: string; variantId: string | null; quantity: number; product?: Product }>();
+    for (const remito of fromRemitos) {
+      for (const item of remito.items) {
+        const variantId = item.variantId ?? null;
+        const key = `${item.productId}|${variantId ?? ''}`;
+        const line = lines.get(key);
+        if (line) line.quantity += Number(item.quantity);
+        else lines.set(key, { productId: item.productId, variantId, quantity: Number(item.quantity), product: item.product });
+      }
+    }
+    if (first.customer) setCustomerCache((prev) => ({ ...prev, [first.customerId]: first.customer! }));
+    cacheProducts([...lines.values()].map((l) => ({ productId: l.productId, product: l.product })));
+    setValue('customerId', first.customerId);
+    setValue('notes', `Remito${fromRemitos.length > 1 ? 's' : ''} ${fromRemitos.map((r) => r.number).join(', ')}`);
+    setValue('items', [...lines.values()].map((l) => ({
+      productId: l.productId,
+      variantId: l.variantId,
+      quantity: l.quantity,
+      unitPrice: l.product ? salePrice(Number(l.product.price)) : 0,
+      discountPct: 0,
+      taxRate: l.product ? Number(l.product.taxRate) : 21,
+    })));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load facturas available as origin for NC/ND
   useEffect(() => {
@@ -584,6 +683,7 @@ export default function InvoiceFormPage() {
           return;
         }
         if ((invoice as any).warehouseId) setWarehouseId((invoice as any).warehouseId);
+        setBillingRemitos((invoice.billedRemitos ?? []).map((r) => ({ id: r.id, number: r.number })));
         reset({
           type: invoice.type,
           customerId: invoice.customerId,
@@ -596,14 +696,15 @@ export default function InvoiceFormPage() {
           paymentTerms: invoice.paymentTerms,
           saleCondition: invoice.saleCondition ?? 'CONTADO',
           originInvoiceId: invoice.originInvoiceId ?? null,
-          items: invoice.items.map((item) => ({
+          items: withStoredLots(invoice.items.map((item) => ({
             productId: item.productId,
             variantId: item.variantId ?? null,
+            detail: item.detail ?? null,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
             discountPct: Number(item.discountPct) || 0,
             taxRate: Number(item.taxRate),
-          })),
+          })), invoice.lotSelections),
         });
         cacheProducts(invoice.items);
         syncDiscountFromItems(invoice.items);
@@ -646,7 +747,7 @@ export default function InvoiceFormPage() {
   // ── Borrador local ──────────────────────────────────────────────────────
   // Red de seguridad ante el cierre accidental de la pestaña. No reemplaza al
   // borrador del servidor: ese recién existe cuando se guarda la factura.
-  const isLocalDraftMode = !isEditing && !creditNoteFrom && !debitNoteFrom;
+  const isLocalDraftMode = !isEditing && !creditNoteFrom && !debitNoteFrom && !fromRemitos;
   const draftSnapshot = JSON.stringify({
     values: watch(), discountType, discountValue, hasPerItemDiscount, warehouseId,
   });
@@ -746,6 +847,8 @@ export default function InvoiceFormPage() {
     if (product) {
       setValue(`items.${index}.productId`, productId);
       setValue(`items.${index}.variantId`, null);
+      setValue(`items.${index}.lots`, undefined);
+      setValue(`items.${index}.detail`, null);
       setValue(`items.${index}.unitPrice`, salePrice(product.price));
       setValue(`items.${index}.taxRate`, product.taxRate);
       setProductCache((prev) => ({ ...prev, [productId]: product }));
@@ -790,6 +893,7 @@ export default function InvoiceFormPage() {
     if (!item?.productId) return;
     const variant = (variantsByProduct[item.productId] ?? []).find((v) => v.id === variantId);
     setValue(`items.${index}.variantId`, variantId || null);
+    setValue(`items.${index}.lots`, undefined); // los lotes son por variante
     if (variant && variant.priceOverride !== null && variant.priceOverride !== undefined) {
       setValue(`items.${index}.unitPrice`, salePrice(Number(variant.priceOverride)));
     }
@@ -967,7 +1071,8 @@ export default function InvoiceFormPage() {
 
   const onSubmit = async (data: InvoiceFormData) => {
     const isNcOrNd = data.type.startsWith('NOTA_CREDITO_') || data.type.startsWith('NOTA_DEBITO_');
-    if (data.stockBehavior === 'DISCOUNT' && !isNcOrNd) {
+    // La factura de remitos no descuenta stock: ya salió con los remitos.
+    if (data.stockBehavior === 'DISCOUNT' && !isNcOrNd && !remitoLock) {
       // El backend descuenta del depósito del comprobante y lleva el stock
       // separado por variante: hay que mirar exactamente ese bucket, no el
       // total del producto en todos los depósitos.
@@ -1022,6 +1127,7 @@ export default function InvoiceFormPage() {
     try {
       const itemsWithDiscount = data.items.map((item) => ({
         ...item,
+        detail: item.detail?.trim() || null,
         discountPct: hasPerItemDiscount ? Number(item.discountPct) || 0 : globalDiscountPct,
       }));
       const payload = {
@@ -1034,6 +1140,7 @@ export default function InvoiceFormPage() {
         date: data.date,
         originInvoiceId: data.originInvoiceId ?? null,
         warehouseId: warehouseId || null,
+        ...(!isEditing && remitoLock ? { remitoIds: billingRemitos.map((r) => r.id) } : {}),
       };
 
       let invoiceId = id ?? '';
@@ -1057,6 +1164,7 @@ export default function InvoiceFormPage() {
       // La emisión va después de guardar. Si falla, la factura ya quedó
       // persistida como borrador: se avisa y se navega al detalle para
       // reintentar desde ahí, sin perder la carga.
+      let pendingArca = false;
       if (action === 'draft') {
         toast.success(isEditing ? 'Borrador actualizado' : 'Borrador guardado');
       } else {
@@ -1071,12 +1179,36 @@ export default function InvoiceFormPage() {
             toast.success('Factura emitida');
           }
         } catch (error: unknown) {
-          toast.error(
-            `${errorMessage(error) || 'Error al emitir'} — la factura quedó guardada como borrador`,
-            { duration: 8000 }
-          );
-          navigate(`/invoices/${invoiceId}`);
-          return;
+          // Mostrador con ARCA caído (503): la venta no se frena. Se emite sin
+          // CAE —mueve stock y cuenta corriente, se puede cobrar— y queda en
+          // Facturas → "Pendientes de ARCA" para emitirla en lote después.
+          const arcaDown = (error as { response?: { status?: number } }).response?.status === 503;
+          if (arcaDown && effectiveLayout === 'counter' && !isEditing) {
+            pendingArca = true;
+            try {
+              await invoicesService.updateStatus(invoiceId, { status: 'ISSUED' });
+            } catch {
+              // Un vendedor no puede emitir a mano; en contado el cobro de
+              // abajo igual saca la factura de borrador. En cuenta corriente
+              // no hay cobro: queda borrador y hay que seguir desde el detalle.
+              if (data.saleCondition === 'CUENTA_CORRIENTE') {
+                toast.error('ARCA no responde y la venta quedó como borrador: emitila desde el detalle', { duration: 8000 });
+                navigate(`/invoices/${invoiceId}`);
+                return;
+              }
+            }
+            toast('ARCA no responde: la venta siguió SIN CAE. Emitila después desde Facturas → Pendientes de ARCA.', {
+              icon: '⚠️',
+              duration: 10000,
+            });
+          } else {
+            toast.error(
+              `${errorMessage(error) || 'Error al emitir'} — la factura quedó guardada como borrador`,
+              { duration: 8000 }
+            );
+            navigate(`/invoices/${invoiceId}`);
+            return;
+          }
         }
       }
 
@@ -1084,7 +1216,7 @@ export default function InvoiceFormPage() {
         const total = round2(grandTotal);
         const sale: CounterLastSale = {
           id: invoiceId,
-          label: `${INVOICE_TYPES[data.type] ?? 'Factura'} ${invoiceNumber}`.trim(),
+          label: `${INVOICE_TYPES[data.type] ?? 'Factura'} ${invoiceNumber}${pendingArca ? ' · sin CAE' : ''}`.trim(),
           total,
           change: 0,
           paid: false,
@@ -1280,6 +1412,7 @@ export default function InvoiceFormPage() {
   const pageTitle = isEditing ? 'Editar Factura'
     : creditNoteFrom ? 'Nueva Nota de Crédito'
     : debitNoteFrom ? 'Nueva Nota de Débito'
+    : fromRemitos ? 'Facturar remitos'
     : 'Nueva Factura';
 
   if (isFetching) return (
@@ -1378,7 +1511,7 @@ export default function InvoiceFormPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-end mb-3">{layoutSwitch}</div>
+      {!remitoLock && <div className="flex items-center justify-end mb-3">{layoutSwitch}</div>}
 
       <form onSubmit={(e) => { e.preventDefault(); runSubmit(effectiveAction); }}>
         {timeSurcharge.active && !isNcNd && (
@@ -1415,6 +1548,7 @@ export default function InvoiceFormPage() {
             findProduct={findProduct}
             variantsByProduct={variantsByProduct}
             stockFor={stockFor}
+            renderItemDetail={renderItemDetail}
             calcItemAmounts={calcItemAmounts}
             onAddProduct={handleBarcodeAdd}
             onQuantityChange={handleQuantityChange}
@@ -1485,6 +1619,8 @@ export default function InvoiceFormPage() {
             findProduct={findProduct}
             variantsByProduct={variantsByProduct}
             stockFor={stockFor}
+            renderLotPicker={renderLotPicker}
+            renderItemDetail={renderItemDetail}
             calcItemAmounts={calcItemAmounts}
             itemDiscountPct={itemDiscountPct}
             onProductChange={handleProductChange}
@@ -1515,6 +1651,7 @@ export default function InvoiceFormPage() {
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Ítems</h2>
+                {!remitoLock && (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1536,7 +1673,19 @@ export default function InvoiceFormPage() {
                   )}
                   <BarcodeProductInput ref={barcodeRef} products={products} onAdd={handleBarcodeAdd} />
                 </div>
+                )}
               </div>
+
+              {remitoLock && (
+                <div className="mx-5 mt-4 flex items-start gap-2 px-3 py-2.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 text-xs text-indigo-800 dark:text-indigo-300">
+                  <Info className="w-4 h-4 flex-shrink-0 mt-px" />
+                  <span>
+                    Factura de {billingRemitos.length === 1 ? 'remito' : 'remitos'}{' '}
+                    <strong>{billingRemitos.map((r) => r.number).join(', ')}</strong>: las cantidades son las entregadas
+                    y no se pueden cambiar. Podés ajustar precios, IVA y descuentos. La factura no mueve stock.
+                  </span>
+                </div>
+              )}
 
               <div className="px-5 py-3">
                 {/* Column headers */}
@@ -1552,7 +1701,7 @@ export default function InvoiceFormPage() {
                     <div
                       key={field.id}
                       id={`invoice-item-${index}`}
-                      className={`grid ${itemGridCols} gap-3 items-center py-3`}
+                      className={`grid ${itemGridCols} gap-3 items-start py-3`}
                     >
                       {/* Product */}
                       <div>
@@ -1563,11 +1712,13 @@ export default function InvoiceFormPage() {
                           onChange={(value, picked) => handleProductChange(index, value, picked)}
                           error={errors.items?.[index]?.productId?.message}
                           serverSearch
+                          stockWarehouseId={effectiveWarehouseId || undefined}
+                          disabled={remitoLock}
                         />
                         {/* Disponible en el depósito y variante de la fila, antes
                             de guardar: el aviso de faltante ya no llega recién
                             al confirmar el comprobante. */}
-                        {!isNcNd && items[index]?.productId && findProduct(items[index].productId)?.trackStock !== false && (() => {
+                        {!isNcNd && !remitoLock && items[index]?.productId && findProduct(items[index].productId)?.trackStock !== false && (() => {
                           const stock = stockFor(items[index].productId, items[index].variantId ?? null);
                           if (stock.state !== 'ok') {
                             return (
@@ -1599,9 +1750,10 @@ export default function InvoiceFormPage() {
                         })()}
                         {items[index]?.productId && (variantsByProduct[items[index].productId]?.length ?? 0) > 0 && (
                           <select
-                            className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            className="mt-1 w-full border border-violet-200 dark:border-violet-700 rounded-lg px-2 py-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
                             value={(items[index] as any)?.variantId ?? ''}
                             onChange={(e) => handleVariantChange(index, e.target.value)}
+                            disabled={remitoLock}
                           >
                             <option value="">— Sin variante —</option>
                             {(variantsByProduct[items[index].productId] ?? []).map((v) => (
@@ -1611,6 +1763,17 @@ export default function InvoiceFormPage() {
                             ))}
                           </select>
                         )}
+                        {canPickLots && items[index]?.productId && findProduct(items[index].productId)?.trackLots && (
+                          <LotPicker
+                            productId={items[index].productId}
+                            variantId={(items[index] as any)?.variantId ?? null}
+                            warehouseId={effectiveWarehouseId}
+                            quantity={Number(items[index]?.quantity) || 0}
+                            value={items[index]?.lots}
+                            onChange={(lots) => setValue(`items.${index}.lots`, lots)}
+                          />
+                        )}
+                        {renderItemDetail(index)}
                       </div>
 
                       {/* Quantity */}
@@ -1622,8 +1785,11 @@ export default function InvoiceFormPage() {
                           min="1"
                           placeholder="1"
                           {...register(`items.${index}.quantity`)}
+                          readOnly={remitoLock}
+                          title={remitoLock ? 'Cantidad de los remitos: no se puede cambiar' : undefined}
+                          className={remitoLock ? 'bg-gray-50 dark:bg-slate-800 cursor-not-allowed text-gray-500 dark:text-slate-400' : undefined}
                           error={errors.items?.[index]?.quantity?.message}
-                          onKeyDown={index === fields.length - 1 ? (e) => {
+                          onKeyDown={index === fields.length - 1 && !remitoLock ? (e) => {
                             if (e.key === 'Tab' && !e.shiftKey) {
                               e.preventDefault();
                               appendItem();
@@ -1660,7 +1826,7 @@ export default function InvoiceFormPage() {
                       )}
 
                       {/* Total — ya neto del descuento, para que cierre con el resumen */}
-                      <div className="text-right">
+                      <div className="text-right md:pt-[9px]">
                         <label className="block md:hidden text-xs text-gray-400 dark:text-slate-500 mb-1">Total</label>
                         <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(calcItemAmounts(index).total, 'ARS')}
@@ -1673,8 +1839,8 @@ export default function InvoiceFormPage() {
                       </div>
 
                       {/* Remove */}
-                      <div className="flex justify-end">
-                        {fields.length > 1 && (
+                      <div className="flex justify-end md:pt-1.5">
+                        {fields.length > 1 && !remitoLock && (
                           <button
                             type="button"
                             onClick={() => remove(index)}
@@ -1690,6 +1856,7 @@ export default function InvoiceFormPage() {
 
                 {/* Add item */}
                 <div className="pt-3 border-t border-gray-100 dark:border-slate-700 mt-2">
+                  {!remitoLock && (
                   <button
                     type="button"
                     onClick={appendItem}
@@ -1699,6 +1866,7 @@ export default function InvoiceFormPage() {
                     Agregar ítem
                     <kbd className="ml-1 text-[10px] font-mono font-normal text-indigo-400 dark:text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1 py-0.5 rounded border border-indigo-100 dark:border-indigo-800 leading-none">Alt+A</kbd>
                   </button>
+                  )}
                   {errors.items?.message && (
                     <p className="text-xs text-red-500 mt-1">{errors.items.message}</p>
                   )}
@@ -1792,11 +1960,12 @@ export default function InvoiceFormPage() {
                 error={errors.customerId?.message}
                 serverSearch
                 searchParams={{ isActive: true }}
+                disabled={remitoLock}
               />
 
               <Select
                 label="Tipo de comprobante"
-                options={INVOICE_TYPE_OPTIONS}
+                options={remitoLock ? INVOICE_TYPE_OPTIONS.filter((o) => o.value.startsWith('FACTURA_')) : INVOICE_TYPE_OPTIONS}
                 value={type}
                 onChange={(value) => setValue('type', value as InvoiceType)}
                 error={errors.type?.message}
@@ -1892,8 +2061,8 @@ export default function InvoiceFormPage() {
                 </span>
               </label>
 
-              {/* Stock behavior — only for FACTURA types */}
-              {!isNcNd && (
+              {/* Stock behavior — only for FACTURA types (la de remitos no mueve stock) */}
+              {!isNcNd && !remitoLock && (
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1909,7 +2078,7 @@ export default function InvoiceFormPage() {
               )}
 
               {/* Depósito de stock — visible cuando hay más de uno */}
-              {!isNcNd && warehouses.length > 1 && (
+              {!isNcNd && !remitoLock && warehouses.length > 1 && (
                 <Select
                   label="Depósito de stock"
                   options={warehouses.map((w) => ({ value: w.id, label: w.isDefault ? `${w.name} (por defecto)` : w.name }))}
