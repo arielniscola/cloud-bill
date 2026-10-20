@@ -20,6 +20,8 @@ export interface InvoiceFilters {
   fiscalMode?: string;
   /** Número de comprobante, razón social o CUIT del cliente. */
   search?: string;
+  /** Formales sin CAE en un estado que todavía se puede emitir ante ARCA. */
+  pendingArca?: boolean;
 }
 
 /** Totales de una moneda dentro del conjunto filtrado. */

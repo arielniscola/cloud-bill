@@ -1,7 +1,11 @@
 import { randomUUID } from 'crypto';
-import { createAfipSoapClient } from './afipSoapClient';
+import { createAfipSoapClient, AFIP_SOAP_TIMEOUT_MS } from './afipSoapClient';
 import prisma from '../database/prisma';
 import { AfipConfig } from '../../domain/entities/AfipConfig';
+import { AppError } from '../../shared/errors/AppError';
+
+const LOCK_WAIT_MS = 20_000;
+const LOCK_POLL_MS = 250;
 
 const WSFE_WSDL = {
   prod: 'https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL',
@@ -112,9 +116,16 @@ export class PdvService {
    *
    * El lock se mantiene durante todo el callback (sync + numeración + SOAP CAE)
    * y se libera al cerrar la transacción. Otras emisiones del MISMO (pdv, type)
-   * bloquean en `pg_advisory_xact_lock`; otras empresas / pdv / tipo siguen libres.
+   * esperan su turno; otras empresas / pdv / tipo siguen libres.
    *
-   * Timeout extendido a 60s porque el SOAP a ARCA suele tardar 1–3s.
+   * La espera por el lock tiene su propio límite (LOCK_WAIT_MS) y NO consume el
+   * timeout de la transacción: con una cola de emisiones y ARCA lento, ese
+   * timeout podía vencer justo después de otorgado el CAE. Si la espera se
+   * agota se corta ANTES de numerar, con un error reintentable.
+   *
+   * El callback debe persistir el CAE con el cliente global (autocommit), no
+   * con la tx: así queda guardado aunque la tx del lock cierre con error, y la
+   * próxima emisión que tome el lock ya lo ve.
    */
   async runWithPdvLock<T>(
     pdvId: string,
@@ -124,10 +135,24 @@ export class PdvService {
     const lockKey = `${pdvId}:${invoiceType}`;
     return prisma.$transaction(
       async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
+        const deadline = Date.now() + LOCK_WAIT_MS;
+        for (;;) {
+          const [row] = await tx.$queryRaw<{ locked: boolean }[]>`
+            SELECT pg_try_advisory_xact_lock(hashtext(${lockKey})::bigint) AS locked
+          `;
+          if (row?.locked) break;
+          if (Date.now() >= deadline) {
+            throw new AppError(
+              'Hay otra emisión a ARCA en curso para este punto de venta y tipo de comprobante. Reintentá en unos segundos.',
+              409
+            );
+          }
+          await new Promise((r) => setTimeout(r, LOCK_POLL_MS));
+        }
         return fn();
       },
-      { timeout: 60_000, maxWait: 30_000 }
+      // Cubre la espera del lock + último número + CAE + eventual FECompConsultar.
+      { timeout: LOCK_WAIT_MS + 3 * AFIP_SOAP_TIMEOUT_MS + 10_000, maxWait: 30_000 }
     );
   }
 

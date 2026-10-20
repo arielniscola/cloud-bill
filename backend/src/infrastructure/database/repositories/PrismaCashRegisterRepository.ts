@@ -1,4 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
+
 import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -11,9 +12,23 @@ import {
   CreateCashRegisterInput,
   UpdateCashRegisterInput,
   CreateCashRegisterCloseInput,
+  CashMovement,
+  CreateCashMovementInput,
 } from '../../../domain/entities/CashRegister';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
+import { AppError } from '../../../shared/errors/AppError';
+import { allocateDocumentNumber } from '../DocumentSequence';
 import prisma from '../prisma';
+
+export const CASH_CONCEPT_LABELS: Record<string, string> = {
+  RETIRO: 'Retiro de efectivo',
+  DEPOSITO_BANCARIO: 'Depósito bancario',
+  GASTO: 'Gasto',
+  APORTE: 'Aporte',
+  FONDO_CAMBIO: 'Fondo de cambio',
+  EXTRACCION_BANCARIA: 'Extracción bancaria',
+  OTRO: 'Otro',
+};
 
 @injectable()
 export class PrismaCashRegisterRepository implements ICashRegisterRepository {
@@ -129,11 +144,15 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     // Recibos contado en caja física (cobros = ingreso, devoluciones NC = egreso)
     const reciboMovements = await this._getReciboCashMovements(cashRegisterId, filters);
 
+    // Retiros / ingresos manuales
+    const manualMovements = await this._getManualCashMovements(cashRegisterId, filters);
+
     // Merge and sort by createdAt desc, then paginate
     const all = [
       ...(accountMovements as unknown as CashRegisterMovement[]),
       ...opMovements,
       ...reciboMovements,
+      ...manualMovements,
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const total = all.length;
@@ -240,6 +259,191 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     return { totalIn, totalOut, count: recibos.length };
   }
 
+  /**
+   * Movimientos manuales (cash_movements). En el listado van también los
+   * anulados, marcados, para que quede el rastro; en los totales del cierre no.
+   */
+  private async _getManualCashMovements(
+    cashRegisterId: string,
+    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string }
+  ): Promise<CashRegisterMovement[]> {
+    const conditions: Prisma.Sql[] = [Prisma.sql`cm."cashRegisterId" = ${cashRegisterId}`];
+    if (filters.type === 'CREDIT') conditions.push(Prisma.sql`cm.type = 'IN'`);
+    if (filters.type === 'DEBIT') conditions.push(Prisma.sql`cm.type = 'OUT'`);
+    if (filters.fiscalMode) conditions.push(Prisma.sql`cm."fiscalMode" = ${filters.fiscalMode}`);
+    if (filters.startDate) conditions.push(Prisma.sql`cm."createdAt" >= ${startOfDay(String(filters.startDate))}`);
+    if (filters.endDate) conditions.push(Prisma.sql`cm."createdAt" <= ${endOfDay(String(filters.endDate))}`);
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT cm.id, cm.number, cm.type, cm.concept, cm.amount, cm."personName", cm.notes,
+             cm.status, cm."cashRegisterId", cm."createdAt", ba.name AS "bankName"
+      FROM "cash_movements" cm
+      LEFT JOIN "bank_accounts" ba ON ba.id = cm."bankAccountId"
+      WHERE ${Prisma.join(conditions, ' AND ')}
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      currentAccountId: null,
+      type: (r.type === 'IN' ? 'CREDIT' : 'DEBIT') as 'DEBIT' | 'CREDIT',
+      amount: r.amount,
+      balance: new Decimal(0),
+      description: [
+        CASH_CONCEPT_LABELS[r.concept] ?? r.concept,
+        r.bankName,
+        r.personName,
+        r.notes,
+      ].filter(Boolean).join(' — '),
+      invoiceId: null,
+      cashRegisterId: r.cashRegisterId,
+      createdAt: r.createdAt,
+      currentAccount: undefined,
+      invoice: undefined,
+      cashMovement: { id: r.id, number: r.number, concept: r.concept, status: r.status },
+    }));
+  }
+
+  private async _getManualCashTotals(
+    cashRegisterId: string,
+    fromDate: Date | null,
+    fiscalMode?: string
+  ): Promise<{ totalIn: number; totalOut: number; count: number }> {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`"cashRegisterId" = ${cashRegisterId}`,
+      Prisma.sql`status = 'ACTIVE'`,
+    ];
+    if (fromDate) conditions.push(Prisma.sql`"createdAt" > ${fromDate}`);
+    if (fiscalMode) conditions.push(Prisma.sql`"fiscalMode" = ${fiscalMode}`);
+    const rows = await prisma.$queryRaw<{ totalIn: any; totalOut: any; count: bigint }[]>`
+      SELECT COALESCE(SUM(amount) FILTER (WHERE type = 'IN'), 0)  AS "totalIn",
+             COALESCE(SUM(amount) FILTER (WHERE type = 'OUT'), 0) AS "totalOut",
+             COUNT(*) AS count
+      FROM "cash_movements"
+      WHERE ${Prisma.join(conditions, ' AND ')}
+    `;
+    return {
+      totalIn: Number(rows[0]?.totalIn ?? 0),
+      totalOut: Number(rows[0]?.totalOut ?? 0),
+      count: Number(rows[0]?.count ?? 0),
+    };
+  }
+
+  async findCashMovement(id: string, cashRegisterId: string, companyId?: string): Promise<CashMovement | null> {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT cm.*,
+             json_build_object('id', cr.id, 'name', cr.name) AS "cashRegister",
+             CASE WHEN ba.id IS NULL THEN NULL ELSE json_build_object('id', ba.id, 'name', ba.name, 'bank', ba.bank, 'accountNumber', ba."accountNumber") END AS "bankAccount",
+             CASE WHEN u.id IS NULL THEN NULL ELSE json_build_object('id', u.id, 'name', u.name) END AS "user"
+      FROM "cash_movements" cm
+      JOIN "cash_registers" cr ON cr.id = cm."cashRegisterId"
+      LEFT JOIN "bank_accounts" ba ON ba.id = cm."bankAccountId"
+      LEFT JOIN "users" u ON u.id = cm."userId"
+      WHERE cm.id = ${id} AND cm."cashRegisterId" = ${cashRegisterId}
+        AND (${companyId ?? null}::text IS NULL OR cm."companyId" = ${companyId ?? null})
+    `;
+    return (rows[0] as CashMovement) ?? null;
+  }
+
+  /** Alta del movimiento + su contraparte bancaria (depósito / extracción), todo o nada. */
+  async createCashMovement(data: CreateCashMovementInput): Promise<CashMovement> {
+    const id = await this.prisma.$transaction(async (tx) => {
+      if (data.bankAccountId) {
+        const [bank] = await tx.$queryRaw<{ currency: string; isActive: boolean }[]>`
+          SELECT currency, "isActive" FROM "bank_accounts"
+          WHERE id = ${data.bankAccountId} AND "companyId" = ${data.companyId}
+        `;
+        if (!bank) throw new AppError('Cuenta bancaria no encontrada', 404);
+        if (!bank.isActive) throw new AppError('La cuenta bancaria está inactiva', 400);
+        if (bank.currency !== 'ARS') throw new AppError('La caja maneja pesos: elegí una cuenta bancaria en ARS', 400);
+      }
+
+      const number = await allocateDocumentNumber('CASH_MOVEMENT', data.companyId, { tx });
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
+        INSERT INTO "cash_movements" (
+          id, "companyId", "cashRegisterId", number, type, concept, amount,
+          "personName", notes, "bankAccountId", status, "userId", "fiscalMode", "createdAt", "updatedAt"
+        ) VALUES (
+          gen_random_uuid()::text, ${data.companyId}, ${data.cashRegisterId}, ${number}, ${data.type},
+          ${data.concept}, ${new Decimal(data.amount)}, ${data.personName ?? null}, ${data.notes ?? null},
+          ${data.bankAccountId ?? null}, 'ACTIVE', ${data.userId ?? null}, ${data.fiscalMode}, NOW(), NOW()
+        )
+        RETURNING id
+      `;
+
+      if (data.bankAccountId) {
+        // Depósito: sale de la caja y entra al banco. Extracción: al revés.
+        await this._addBankMovement(tx, {
+          bankAccountId: data.bankAccountId,
+          type: data.type === 'OUT' ? 'CREDIT' : 'DEBIT',
+          amount: data.amount,
+          description: `${CASH_CONCEPT_LABELS[data.concept] ?? data.concept} (${number})`,
+          companyId: data.companyId,
+          fiscalMode: data.fiscalMode,
+        });
+      }
+      return row.id;
+    });
+
+    return (await this.findCashMovement(id, data.cashRegisterId, data.companyId))!;
+  }
+
+  /**
+   * Anula un movimiento manual. No se puede si ya entró en un cierre de caja
+   * (el cierre guarda los totales y quedaría descuadrado). Revierte el banco.
+   */
+  async cancelCashMovement(movement: CashMovement): Promise<CashMovement> {
+    await this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<{ status: string; createdAt: Date }[]>`
+        SELECT status, "createdAt" FROM "cash_movements" WHERE id = ${movement.id} FOR UPDATE
+      `;
+      if (!locked || locked.status !== 'ACTIVE') throw new AppError('El movimiento ya está anulado', 400);
+
+      const [lastClose] = await tx.$queryRaw<{ closedAt: Date }[]>`
+        SELECT "closedAt" FROM "cash_register_closes"
+        WHERE "cashRegisterId" = ${movement.cashRegisterId}
+        ORDER BY "closedAt" DESC LIMIT 1
+      `;
+      if (lastClose && new Date(lastClose.closedAt) >= new Date(locked.createdAt)) {
+        throw new AppError('El movimiento ya está incluido en un cierre de caja y no se puede anular', 400);
+      }
+
+      await tx.$executeRaw`
+        UPDATE "cash_movements" SET status = 'CANCELLED', "cancelledAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = ${movement.id}
+      `;
+
+      if (movement.bankAccountId) {
+        await this._addBankMovement(tx, {
+          bankAccountId: movement.bankAccountId,
+          type: movement.type === 'OUT' ? 'DEBIT' : 'CREDIT',
+          amount: Number(movement.amount),
+          description: `Anulación ${(CASH_CONCEPT_LABELS[movement.concept] ?? movement.concept).toLowerCase()} (${movement.number})`,
+          companyId: movement.companyId,
+          fiscalMode: movement.fiscalMode,
+        });
+      }
+    });
+
+    return (await this.findCashMovement(movement.id, movement.cashRegisterId, movement.companyId))!;
+  }
+
+  private async _addBankMovement(
+    tx: Prisma.TransactionClient,
+    m: { bankAccountId: string; type: 'CREDIT' | 'DEBIT'; amount: number; description: string; companyId: string; fiscalMode: string }
+  ): Promise<void> {
+    await tx.$executeRaw`
+      INSERT INTO "bank_movements" (
+        id, "bankAccountId", type, amount, description, date, "companyId", "fiscalMode", "createdAt", "updatedAt"
+      ) VALUES (
+        gen_random_uuid()::text, ${m.bankAccountId}, ${m.type}, ${new Decimal(m.amount)},
+        ${m.description}, NOW(), ${m.companyId}, ${m.fiscalMode}, NOW(), NOW()
+      )
+    `;
+    const delta = m.type === 'CREDIT' ? m.amount : -m.amount;
+    await tx.$executeRaw`
+      UPDATE "bank_accounts" SET balance = balance + ${new Decimal(delta)}, "updatedAt" = NOW()
+      WHERE id = ${m.bankAccountId}
+    `;
+  }
+
   private async buildClosePeriodWhere(cashRegisterId: string, fiscalMode?: string): Promise<{
     where: Prisma.AccountMovementWhereInput;
     fromDate: Date | null;
@@ -262,23 +466,24 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
   async getClosePreview(cashRegisterId: string, fiscalMode?: string): Promise<CashRegisterClosePreview> {
     const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
-    const [movements, opOutflows, reciboTotals] = await Promise.all([
+    const [movements, opOutflows, reciboTotals, manualTotals] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
       this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
       this._getReciboCashTotals(cashRegisterId, fromDate, fiscalMode),
+      this._getManualCashTotals(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements
       .filter((m) => m.type === 'CREDIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn + manualTotals.totalIn;
 
     const totalOut = movements
       .filter((m) => m.type === 'DEBIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut + manualTotals.totalOut;
 
     return {
       fromDate,
-      movementsCount: movements.length + opOutflows.count + reciboTotals.count,
+      movementsCount: movements.length + opOutflows.count + reciboTotals.count + manualTotals.count,
       totalIn,
       totalOut,
       netTotal: totalIn - totalOut,
@@ -292,19 +497,20 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
   ): Promise<CashRegisterClose> {
     const { where, fromDate } = await this.buildClosePeriodWhere(cashRegisterId, fiscalMode);
 
-    const [movements, opOutflows, reciboTotals] = await Promise.all([
+    const [movements, opOutflows, reciboTotals, manualTotals] = await Promise.all([
       this.prisma.accountMovement.findMany({ where, select: { type: true, amount: true } }),
       this._getOrdenPagoOutflows(cashRegisterId, fromDate, fiscalMode),
       this._getReciboCashTotals(cashRegisterId, fromDate, fiscalMode),
+      this._getManualCashTotals(cashRegisterId, fromDate, fiscalMode),
     ]);
 
     const totalIn = movements
       .filter((m) => m.type === 'CREDIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + reciboTotals.totalIn + manualTotals.totalIn;
 
     const totalOut = movements
       .filter((m) => m.type === 'DEBIT')
-      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut;
+      .reduce((sum, m) => sum + m.amount.toNumber(), 0) + opOutflows.total + reciboTotals.totalOut + manualTotals.totalOut;
 
     const result = await (this.prisma as any).cashRegisterClose.create({
       data: {
@@ -313,7 +519,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
         totalIn: new Decimal(totalIn),
         totalOut: new Decimal(totalOut),
         netTotal: new Decimal(totalIn - totalOut),
-        movementsCount: movements.length + opOutflows.count + reciboTotals.count,
+        movementsCount: movements.length + opOutflows.count + reciboTotals.count + manualTotals.count,
         notes: data.notes,
         userId: data.userId,
       },

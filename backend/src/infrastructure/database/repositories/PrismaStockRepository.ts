@@ -8,6 +8,7 @@ import { Stock, StockMovement, CreateStockMovementInput } from '../../../domain/
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import { InsufficientStockError } from '../../../shared/errors/AppError';
 import prisma from '../prisma';
+import { applyLotMovement, tracksLots, LotAllocation } from './stockLots';
 
 // Variant-aware queries use raw SQL since:
 //   1) Stock no longer has a single composite unique (it's split by variantId IS NULL/NOT NULL)
@@ -275,11 +276,15 @@ export class PrismaStockRepository implements IStockRepository {
 
     const isOutgoing = ['SALE', 'ADJUSTMENT_OUT', 'TRANSFER_OUT', 'REMITO_OUT'].includes(data.type);
 
+    const productNameOf = async () => {
+      const rows = await tx.$queryRaw<{ name: string }[]>`SELECT name FROM "products" WHERE id = ${data.productId} LIMIT 1`;
+      return rows[0]?.name ?? data.productId;
+    };
+
     if (isOutgoing) {
       newQuantity = previousQuantity.minus(quantity);
       if (newQuantity.lessThan(0)) {
-        const productRow = await tx.product.findUnique({ where: { id: data.productId } });
-        const productName = productRow?.name ?? data.productId;
+        const productName = await productNameOf();
         throw new InsufficientStockError(
           productName,
           previousQuantity.toNumber(),
@@ -319,6 +324,22 @@ export class PrismaStockRepository implements IStockRepository {
       )
     `;
 
+    // Producto con lotes: el movimiento se reparte entre lotes (mismo lock).
+    let lotAllocations: LotAllocation[] | undefined;
+    if (await tracksLots(tx, data.productId)) {
+      lotAllocations = await applyLotMovement(tx, {
+        movementId: movId,
+        productId: data.productId,
+        variantId: v,
+        warehouseId: data.warehouseId,
+        type: data.type,
+        quantity,
+        referenceId: data.referenceId ?? null,
+        lots: data.lots ?? null,
+        productName: await productNameOf(),
+      });
+    }
+
     return {
       id: movId,
       productId: data.productId,
@@ -333,6 +354,7 @@ export class PrismaStockRepository implements IStockRepository {
       userId: data.userId ?? null,
       relatedWarehouseId: data.relatedWarehouseId ?? null,
       createdAt: new Date(),
+      lotAllocations,
     };
   }
 
@@ -556,11 +578,12 @@ export class PrismaStockRepository implements IStockRepository {
     toWarehouseId: string,
     quantity: number,
     userId?: string,
-    variantId?: string | null
+    variantId?: string | null,
+    lots?: CreateStockMovementInput['lots']
   ): Promise<void> {
     const v = variantId ?? null;
     await this.prisma.$transaction(async (tx) => {
-      await this._addMovementWithTx(tx, {
+      const out = await this._addMovementWithTx(tx, {
         productId,
         variantId: v,
         warehouseId: fromWarehouseId,
@@ -569,6 +592,7 @@ export class PrismaStockRepository implements IStockRepository {
         reason: 'Transfer to warehouse',
         userId,
         relatedWarehouseId: toWarehouseId,
+        lots,
       });
 
       await this._addMovementWithTx(tx, {
@@ -580,6 +604,8 @@ export class PrismaStockRepository implements IStockRepository {
         reason: 'Transfer from warehouse',
         userId,
         relatedWarehouseId: fromWarehouseId,
+        // Los lotes viajan con la mercadería: mismo número y vencimiento en destino.
+        lots: out.lotAllocations?.map((a) => ({ lotNumber: a.lotNumber, expiresAt: a.expiresAt, quantity: a.quantity })),
       });
     });
   }

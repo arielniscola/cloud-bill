@@ -24,6 +24,8 @@ export interface Product {
   /** Key del objeto en el bucket, para poder borrarlo al reemplazar/eliminar. */
   imageKey?: string | null;
   trackStock?: boolean;
+  /** Stock por lote + vencimiento (solo si trackStock). */
+  trackLots?: boolean;
   priceUpdatedAt?: Date | null;
   isActive: boolean;
   createdAt: Date;

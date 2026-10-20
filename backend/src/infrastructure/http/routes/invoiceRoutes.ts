@@ -7,6 +7,7 @@ import {
   updateInvoiceStatusSchema,
   payInvoiceSchema,
   invoiceQuerySchema,
+  emitBatchSchema,
 } from '../../../application/dtos/invoice.dto';
 
 const router = Router();
@@ -23,6 +24,13 @@ router.post(
 router.get('/', validate({ query: invoiceQuerySchema }), invoiceController.findAll);
 // Antes de '/:id' para que "stats" no se lea como un id.
 router.get('/stats', validate({ query: invoiceQuerySchema }), invoiceController.stats);
+// Antes de '/:id/...' por claridad: no colisiona, pero es una ruta de colección.
+router.post(
+  '/emit-batch',
+  requireRoles('ADMIN', 'SELLER'),
+  validate({ body: emitBatchSchema }),
+  invoiceController.emitBatch
+);
 router.get('/:id', invoiceController.findById);
 router.put(
   '/:id',

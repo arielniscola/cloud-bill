@@ -1,14 +1,19 @@
 import { z } from 'zod';
+import { itemLotsSchema } from './stock.dto';
 
 const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 
 const invoiceItemSchema = z.object({
   productId: z.string().uuid(),
   variantId: z.string().uuid().optional().nullable(),
+  // Detalle libre de la línea (servicios / productos no inventariados).
+  detail: z.string().max(2000).optional().nullable(),
   quantity: z.number().positive('Quantity must be positive'),
   unitPrice: z.number().min(0, 'Unit price must be positive'),
   discountPct: z.number().min(0).max(100).default(0),
   taxRate: z.number().min(0).max(100).default(21),
+  // Lotes elegidos (productos con lotes); se usan al emitir, cuando sale el stock.
+  lots: itemLotsSchema,
 });
 
 export const createInvoiceSchema = z.object({
@@ -39,6 +44,9 @@ export const createInvoiceSchema = z.object({
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
   // Depósito del que descontar/reservar stock (null = depósito por defecto)
   warehouseId: z.string().uuid().optional().nullable(),
+  // Remitos libres que factura (solo al crear): sus cantidades se facturan tal
+  // cual y la factura no mueve stock, porque ya lo descontaron los remitos.
+  remitoIds: z.array(z.string().uuid()).optional(),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
 });
 
@@ -105,6 +113,14 @@ export const invoiceQuerySchema = z.object({
   // llegaba, así que el filtro de condición de venta no hacía nada.
   saleCondition: z.preprocess(emptyToUndefined, z.enum(['CONTADO', 'CUENTA_CORRIENTE']).optional()),
   search: z.preprocess(emptyToUndefined, z.string().max(120).optional()),
+  // 'true' = formales sin CAE en un estado emitible (para emitirlas en lote).
+  pendingArca: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).optional()),
+});
+
+/** Lote de emisión ante ARCA (ver InvoiceController.emitBatch). */
+export const emitBatchSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  redateToToday: z.boolean().optional().default(false),
 });
 
 export type CreateInvoiceDTO = z.infer<typeof createInvoiceSchema>;

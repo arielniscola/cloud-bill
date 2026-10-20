@@ -4,9 +4,10 @@ import prisma from '../../infrastructure/database/prisma';
 import { IWarehouseRepository } from '../../domain/repositories/IWarehouseRepository';
 import { Warehouse } from '../../domain/entities/Stock';
 
-type SaleTable = 'invoices' | 'orden_pedidos';
+type SaleTable = 'invoices' | 'orden_pedidos' | 'remitos';
 
-// La columna warehouseId llega con la migración 20260713120000_add_sale_warehouse;
+// La columna warehouseId llega con la migración 20260713120000_add_sale_warehouse
+// (remitos: 20261017120000_remito_warehouse);
 // como las migraciones de este proyecto pueden estar pendientes de aplicar, se
 // verifica su existencia una sola vez por tabla (mismo patrón que discountPct).
 const columnCache = new Map<SaleTable, boolean>();
@@ -26,7 +27,9 @@ async function hasWarehouseColumn(table: SaleTable): Promise<boolean> {
 }
 
 function tableSql(table: SaleTable): Prisma.Sql {
-  return table === 'invoices' ? Prisma.sql`"invoices"` : Prisma.sql`"orden_pedidos"`;
+  if (table === 'invoices') return Prisma.sql`"invoices"`;
+  if (table === 'remitos') return Prisma.sql`"remitos"`;
+  return Prisma.sql`"orden_pedidos"`;
 }
 
 /**
@@ -66,11 +69,12 @@ export async function getSaleWarehouseId(table: SaleTable, docId: string): Promi
 export async function setSaleWarehouse(
   table: SaleTable,
   docId: string,
-  warehouseId: string | null | undefined
+  warehouseId: string | null | undefined,
+  tx?: Prisma.TransactionClient
 ): Promise<void> {
   if (warehouseId === undefined) return;
   if (!(await hasWarehouseColumn(table))) return;
-  await prisma.$executeRaw`
+  await (tx ?? prisma).$executeRaw`
     UPDATE ${tableSql(table)} SET "warehouseId" = ${warehouseId ?? null} WHERE id = ${docId}
   `;
 }

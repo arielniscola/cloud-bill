@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { itemLotsSchema } from './stock.dto';
 
 const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 
@@ -6,6 +7,7 @@ const remitoItemSchema = z.object({
   productId: z.string().uuid(),
   variantId: z.string().uuid().optional().nullable(),
   quantity: z.number().positive('Quantity must be positive'),
+  lots: itemLotsSchema,
 });
 
 export const createRemitoSchema = z.object({
@@ -19,12 +21,16 @@ export const createRemitoSchema = z.object({
   invoiceId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   budgetId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   ordenPedidoId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  // Depósito del que sale la mercadería. Solo aplica al remito libre: el vinculado
+  // opera sobre el depósito de su documento de origen. Vacío = depósito por defecto.
+  warehouseId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   items: z.array(remitoItemSchema).min(1, 'At least one item is required'),
 });
 
 const deliverItemSchema = z.object({
   remitoItemId: z.string().uuid(),
   quantity: z.number().positive('Quantity must be positive'),
+  lots: itemLotsSchema,
 });
 
 export const deliverRemitoSchema = z.object({

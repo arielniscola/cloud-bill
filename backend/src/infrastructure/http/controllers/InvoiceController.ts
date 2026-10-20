@@ -1,7 +1,9 @@
+import { LotPool, loadLotSelections, saveLotSelections, selectionsFromItems, stripItemLots } from '../../../shared/utils/lotSelections';
 import { Prisma } from '@prisma/client';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
+import { InvoiceWithItems } from '../../../domain/entities/Invoice';
 import { ICurrentAccountRepository } from '../../../domain/repositories/ICurrentAccountRepository';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
@@ -16,8 +18,9 @@ import { effectiveSaleCondition } from '../../../shared/utils/paymentTerms';
 import { startOfDay, endOfDay } from '../../../shared/utils/dateRange';
 import { afipService } from '../../services/AfipService';
 import { pdvService } from '../../services/PdvService';
+import { authorizeInvoiceWithArca, toArcaAppError } from '../../services/ArcaEmissionService';
+import { ARCA_MAX_DAYS_BACK, arcaDayOf, isBeforeToday, isTooOldForArca, sortForArcaBatch } from '../../../shared/utils/arcaBatch';
 import { sendInvoiceEmail } from '../../services/EmailService';
-import { saveAfipError } from '../../../shared/utils/saveAfipError';
 import { computeDeliveryStatus, computeDeliveryStatusBatch } from '../../../shared/utils/deliveryStatus';
 import { resolveSaleWarehouse, setSaleWarehouse } from '../../../shared/utils/saleWarehouse';
 import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
@@ -30,6 +33,14 @@ import {
 import { addCustomerMovement } from '../../services/customerAccountMovements';
 import prisma from '../../database/prisma';
 import { writeTransport } from '../../database/partyExtras';
+import {
+  assertItemsMatchRemitos,
+  assertRemitosBillable,
+  findBilledRemitos,
+  hasBilledRemitos,
+  linkRemitosToInvoice,
+  unlinkRemitosFromInvoice,
+} from '../../../shared/utils/billedRemitos';
 import { recordInvoiceCreated, recordPaymentReceived, recordRefundPaid } from '../../services/AccountingService';
 
 type IssuanceCtx = { userId: string; companyId: string; fiscalMode?: 'FORMAL' | 'INFORMAL' };
@@ -78,6 +89,10 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
   const existingAccount = usesCC
     ? await currentAccountRepository.findByCustomerId(invoice.customerId, currency, ctx.fiscalMode)
     : null;
+  // Factura de remitos libres: el stock ya salió con los remitos.
+  const billedRemitos = isFactura ? await findBilledRemitos(invoice.id) : [];
+  const fromRemitos = billedRemitos.length > 0;
+  if (fromRemitos) await assertItemsMatchRemitos(invoice.items, billedRemitos.map((r) => r.id));
 
   // El cambio de estado va DENTRO de la misma transacción que los efectos: si
   // algo falla (p.ej. stock insuficiente) la factura tiene que seguir siendo un
@@ -108,8 +123,8 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
       }, tx);
     }
 
-    // Stock (solo facturas)
-    if (isFactura && defaultWarehouse) {
+    // Stock (solo facturas; la de remitos ya lo movió con ellos)
+    if (isFactura && defaultWarehouse && !fromRemitos) {
       if (stockBehavior === 'RESERVE') {
         for (const item of invoice.items) {
           await stockRepository.incrementReserved(
@@ -121,6 +136,8 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
           );
         }
       } else {
+        // Lotes elegidos al cargar la factura; lo que falte se reparte por vencimiento.
+        const pool = new LotPool(await loadLotSelections('invoices', invoice.id, tx));
         for (const item of invoice.items) {
           await stockRepository.addMovement({
             productId: item.productId,
@@ -131,6 +148,7 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
             reason: `Invoice ${invoice.number}`,
             referenceId: invoice.id,
             userId: ctx.userId,
+            lots: pool.take(item.productId, (item as any).variantId ?? null, Number(item.quantity)),
           }, tx);
         }
       }
@@ -138,7 +156,7 @@ async function applyIssuanceEffects(invoice: any, ctx: IssuanceCtx, opts: Issuan
 
     // Remito auto-entregado para ventas con descuento inmediato. El stock ya se
     // movió arriba (SALE), así que el remito vinculado no mueve stock.
-    if (isFactura && stockBehavior === 'DISCOUNT' && invoice.customerId) {
+    if (isFactura && stockBehavior === 'DISCOUNT' && invoice.customerId && !fromRemitos) {
       const remitoRepository = container.resolve<IRemitoRepository>('RemitoRepository');
       const remito = await remitoRepository.create({
         customerId: invoice.customerId,
@@ -207,6 +225,206 @@ async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx, opts: Issuance
   return false;
 }
 
+const EMITTABLE_TO_ARCA = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'];
+
+/** Config ARCA activa + PdV del usuario: lo mismo para toda emisión del pedido. */
+async function resolveArcaContext(ctx: IssuanceCtx) {
+  const afipRepo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
+  const config = await afipRepo.getActive(ctx.companyId);
+  if (!config) {
+    throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
+  }
+  // getPdvForUser tira Error plano (salía como 500): es un problema de configuración.
+  const pdv = await pdvService.getPdvForUser(ctx.userId).catch((e: Error) => {
+    throw new AppError(e.message, 400);
+  });
+  return { config, pdv };
+}
+
+/** Pide el CAE de una factura y aplica los efectos de salir de borrador. */
+async function emitOneToArca(
+  invoiceId: string,
+  ctx: IssuanceCtx,
+  arcaCtx?: Awaited<ReturnType<typeof resolveArcaContext>>
+) {
+  const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
+  const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+
+  const invoice = await invoiceRepo.findById(invoiceId, ctx.companyId);
+  if (!invoice) throw new NotFoundError('Invoice');
+
+  if (!EMITTABLE_TO_ARCA.includes(invoice.status)) {
+    throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador, Emitida, Pagada o Parcialmente Pagada', 400);
+  }
+
+  if (invoice.cae || invoice.status === 'AUTHORIZED') {
+    throw new AppError('Esta factura ya está autorizada por ARCA', 400);
+  }
+
+  const { config, pdv } = arcaCtx ?? (await resolveArcaContext(ctx));
+
+  // Notas de Crédito/Débito necesitan el comprobante de origen (CbtesAsoc) para ARCA.
+  const isNotaCD = invoice.type.startsWith('NOTA_CREDITO') || invoice.type.startsWith('NOTA_DEBITO');
+  let originInvoice: Awaited<ReturnType<IInvoiceRepository['findById']>> = null;
+  if (isNotaCD) {
+    if (!invoice.originInvoiceId) {
+      throw new AppError('La nota de crédito/débito no tiene un comprobante de origen asociado.', 400);
+    }
+    originInvoice = await invoiceRepo.findById(invoice.originInvoiceId);
+    if (!originInvoice) throw new AppError('No se encontró el comprobante de origen asociado.', 400);
+    if (!originInvoice.cae || !originInvoice.afipPtVenta || !originInvoice.afipCbtNum) {
+      throw new AppError('El comprobante de origen debe estar autorizado por ARCA (con CAE) antes de emitir la nota.', 400);
+    }
+  }
+
+  // Numeración + emisión + guardado del CAE serializados por (pdv, tipo) —
+  // ARCA exige orden estricto ([10016]); ver authorizeInvoiceWithArca.
+  const { result, updated, previous } = await authorizeInvoiceWithArca({
+    invoiceId: invoice.id,
+    companyId: ctx.companyId,
+    userId: ctx.userId,
+    pdv,
+    config,
+    originInvoice,
+    // Promote DRAFT/ISSUED → AUTHORIZED (CAE granted by ARCA).
+    // Preserve PAID/PARTIALLY_PAID — payment workflow already moved past authorization step;
+    // the CAE is still saved alongside, so the "autorizada" facet is captured by the cae field.
+    nextStatus: (fresh) =>
+      fresh.status === 'DRAFT' || fresh.status === 'ISSUED' ? 'AUTHORIZED' : fresh.status,
+  });
+
+  // Emitir a ARCA desde borrador también genera los movimientos asociados.
+  // Acá el estado ya pasó a AUTHORIZED junto con el CAE —que no se puede
+  // perder una vez otorgado—, así que los efectos no vuelven a reclamar el
+  // borrador: `claimDraft: false`.
+  await leaveDraftIfNeeded(previous, ctx, { claimDraft: false });
+
+  await activityLogRepo.create({
+    userId: ctx.userId,
+    action: 'CREATE',
+    entity: 'AfipEmission',
+    entityId: invoice.id,
+    description: `CAE emitido para ${invoice.number}: ${result.cae}${result.observaciones ? ` | Obs: ${result.observaciones}` : ''}`,
+    metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum, observaciones: result.observaciones },
+  });
+
+  return { updated, result };
+}
+
+export interface ArcaBatchResult {
+  id: string;
+  number: string | null;
+  outcome: 'AUTHORIZED' | 'ERROR' | 'SKIPPED' | 'NOT_PROCESSED';
+  message?: string;
+  cae?: string;
+  afipPtVenta?: number;
+  afipCbtNum?: number;
+  /** La fecha se pasó a hoy para que ARCA la acepte. */
+  redated?: boolean;
+}
+
+/**
+ * Lote de emisión. Reglas de ARCA (ver arcaBatch.ts): orden por fecha y hasta
+ * 5 días hacia atrás. Con `redateToToday`, las de días anteriores pasan a la
+ * fecha de hoy (el vencimiento se corre igual); si la emisión falla, la fecha
+ * vuelve a la original.
+ */
+async function emitBatchToArca(ids: string[], redateToToday: boolean, ctx: IssuanceCtx): Promise<ArcaBatchResult[]> {
+  const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
+  const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+
+  // Config/PdV faltantes fallan el pedido entero, no N veces el mismo error.
+  const arcaCtx = await resolveArcaContext(ctx);
+
+  const uniqueIds = [...new Set(ids)];
+  const loaded = await Promise.all(uniqueIds.map((id) => invoiceRepo.findById(id, ctx.companyId)));
+
+  const results = new Map<string, ArcaBatchResult>();
+  const candidates: InvoiceWithItems[] = [];
+  loaded.forEach((inv, i) => {
+    const id = uniqueIds[i];
+    const skip = (message: string) =>
+      results.set(id, { id, number: inv?.number ?? null, outcome: 'SKIPPED', message });
+    if (!inv) return skip('Factura no encontrada');
+    if ((inv as any).fiscalMode === 'INFORMAL') return skip('Comprobante informal: no se emite ante ARCA');
+    if (inv.cae || inv.status === 'AUTHORIZED') return skip('Ya está autorizada por ARCA');
+    if (!EMITTABLE_TO_ARCA.includes(inv.status)) return skip(`En estado ${inv.status} no se emite ante ARCA`);
+    candidates.push(inv);
+  });
+
+  let abortReason: string | null = null;
+  for (const inv of sortForArcaBatch(candidates)) {
+    const base = { id: inv.id, number: inv.number };
+    if (abortReason) {
+      results.set(inv.id, { ...base, outcome: 'NOT_PROCESSED', message: abortReason });
+      continue;
+    }
+
+    const originalDate = new Date(inv.date);
+    const originalDue = inv.dueDate ? new Date(inv.dueDate) : null;
+    let redated = false;
+    if (isBeforeToday(originalDate)) {
+      if (redateToToday) {
+        const now = new Date();
+        const delta = now.getTime() - originalDate.getTime();
+        await invoiceRepo.update(inv.id, {
+          date: now,
+          ...(originalDue ? { dueDate: new Date(originalDue.getTime() + delta) } : {}),
+        } as any);
+        redated = true;
+      } else if (isTooOldForArca(originalDate)) {
+        results.set(inv.id, {
+          ...base,
+          outcome: 'SKIPPED',
+          message: `Fecha ${arcaDayOf(originalDate)}: ARCA acepta hasta ${ARCA_MAX_DAYS_BACK} días hacia atrás. Emitila pasándola a la fecha de hoy.`,
+        });
+        continue;
+      }
+    }
+
+    try {
+      const { result } = await emitOneToArca(inv.id, ctx, arcaCtx);
+      results.set(inv.id, {
+        ...base,
+        outcome: 'AUTHORIZED',
+        cae: result.cae,
+        afipPtVenta: result.afipPtVenta,
+        afipCbtNum: result.afipCbtNum,
+        redated,
+        ...(result.observaciones ? { message: result.observaciones } : {}),
+      });
+      if (redated) {
+        await activityLogRepo.create({
+          userId: ctx.userId,
+          action: 'UPDATE',
+          entity: 'Invoice',
+          entityId: inv.id,
+          description: `Fecha de ${inv.number} pasada de ${arcaDayOf(originalDate)} a hoy para emitirla ante ARCA`,
+          metadata: { previousDate: originalDate, previousDueDate: originalDue },
+        }).catch(() => {});
+      }
+    } catch (error) {
+      if (redated) {
+        await invoiceRepo.update(inv.id, { date: originalDate, dueDate: originalDue } as any).catch(() => {});
+      }
+      const appError = toArcaAppError(error);
+      let message = appError.message;
+      // Con el número siempre tomado de ARCA, un [10016] es la fecha: anterior
+      // a la del último comprobante autorizado de ese PdV y tipo.
+      if (message.includes('10016') && !redateToToday) {
+        message += ' — La fecha es anterior a la del último comprobante autorizado: emitila pasándola a la fecha de hoy.';
+      }
+      results.set(inv.id, { ...base, outcome: 'ERROR', message });
+      if (appError.statusCode === 503) {
+        abortReason = 'No se intentó: ARCA dejó de responder durante el lote. Reintentá más tarde.';
+      }
+    }
+  }
+
+  // Mismo orden en que se pidieron.
+  return uniqueIds.map((id) => results.get(id)!);
+}
+
 export class InvoiceController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -227,6 +445,18 @@ export class InvoiceController {
       }
       const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
 
+      const remitoIds: string[] = req.body.remitoIds ?? [];
+      if (remitoIds.length > 0) {
+        if (!String(req.body.type).startsWith('FACTURA')) {
+          throw new AppError('Solo una factura puede facturar remitos', 400);
+        }
+        if (!req.body.customerId) {
+          throw new AppError('Para facturar remitos elegí el cliente de los remitos', 400);
+        }
+        await assertRemitosBillable(remitoIds, { companyId: req.companyId!, customerId });
+        await assertItemsMatchRemitos(req.body.items, remitoIds);
+      }
+
       const invoice = await invoiceRepository.create({
         type: req.body.type,
         customerId,
@@ -242,14 +472,29 @@ export class InvoiceController {
         originInvoiceId: req.body.originInvoiceId ?? null,
         currency,
         exchangeRate,
-        items: req.body.items,
+        items: stripItemLots(req.body.items),
       } as any);
 
       // Depósito elegido para el stock (raw SQL: el cliente Prisma puede no
       // conocer la columna todavía).
       await setSaleWarehouse('invoices', invoice.id, req.body.warehouseId ?? null);
+      await saveLotSelections('invoices', invoice.id, selectionsFromItems(req.body.items));
       await writeTransport('invoices', invoice.id, req.body.transport);
       (invoice as any).transport = req.body.transport ?? null;
+
+      // Vincula los remitos bajo cerrojo: si otra factura los tomó entre la
+      // validación y el alta, este borrador se descarta.
+      if (remitoIds.length > 0) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            await assertRemitosBillable(remitoIds, { companyId: req.companyId!, customerId, invoiceId: invoice.id }, tx);
+            await linkRemitosToInvoice(invoice.id, remitoIds, tx);
+          });
+        } catch (linkError) {
+          await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${invoice.id}`; // invoice_items cascade
+          throw linkError;
+        }
+      }
 
       // NOTA: la factura nace en BORRADOR (DRAFT). Mientras esté en borrador NO
       // genera movimientos (cuenta corriente, stock, remito, asiento contable) —
@@ -335,9 +580,12 @@ export class InvoiceController {
         ORDER BY nc.date ASC
       `;
 
+      const billedRemitos = await findBilledRemitos(invoice.id);
+      const lotSelections = await loadLotSelections('invoices', invoice.id);
+
       res.json({
         status: 'success',
-        data: { ...invoice, deliveryStatus, paidAmount, pendingAmount, creditNotes },
+        data: { ...invoice, deliveryStatus, paidAmount, pendingAmount, creditNotes, billedRemitos, lotSelections },
       });
     } catch (error) {
       next(error);
@@ -395,6 +643,7 @@ export class InvoiceController {
           dateFrom: startOfDay(filters.dateFrom as string),
           dateTo: endOfDay(filters.dateTo as string),
           search: filters.search as string | undefined,
+          pendingArca: filters.pendingArca === 'true',
         }
       );
 
@@ -486,6 +735,18 @@ export class InvoiceController {
 
       const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
 
+      // Factura de remitos: cliente, tipo y cantidades quedan atados a ellos.
+      const billedRemitos = await findBilledRemitos(req.params.id);
+      if (billedRemitos.length > 0) {
+        if (!String(req.body.type).startsWith('FACTURA')) {
+          throw new AppError('Una factura de remitos no puede pasar a nota de crédito/débito', 400);
+        }
+        if (customerId !== existingInvoice.customerId) {
+          throw new AppError('El cliente tiene que ser el de los remitos facturados', 400);
+        }
+        await assertItemsMatchRemitos(req.body.items, billedRemitos.map((r) => r.id));
+      }
+
       const invoice = await invoiceRepository.updateWithItems(req.params.id, {
         type: req.body.type,
         customerId,
@@ -497,10 +758,11 @@ export class InvoiceController {
         originInvoiceId: req.body.originInvoiceId ?? null,
         currency,
         exchangeRate,
-        items: req.body.items,
+        items: stripItemLots(req.body.items),
       });
 
       await setSaleWarehouse('invoices', req.params.id, req.body.warehouseId ?? null);
+      await saveLotSelections('invoices', req.params.id, selectionsFromItems(req.body.items));
       await writeTransport('invoices', req.params.id, req.body.transport);
 
       res.json({
@@ -795,101 +1057,35 @@ export class InvoiceController {
 
   async emit(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const invoiceRepo = container.resolve<IInvoiceRepository>('InvoiceRepository');
-      const afipRepo = container.resolve<IAfipConfigRepository>('AfipConfigRepository');
-      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
-
-      const invoice = await invoiceRepo.findById(req.params.id, req.companyId);
-      if (!invoice) throw new NotFoundError('Invoice');
-
-      const emittableStatuses = ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'];
-      if (!emittableStatuses.includes(invoice.status)) {
-        throw new AppError('Solo se pueden emitir ante ARCA facturas en estado Borrador, Emitida, Pagada o Parcialmente Pagada', 400);
-      }
-
-      if (invoice.cae || invoice.status === 'AUTHORIZED') {
-        throw new AppError('Esta factura ya está autorizada por ARCA', 400);
-      }
-
-      const config = await afipRepo.getActive(req.companyId!);
-      if (!config) {
-        throw new AppError('No hay configuración AFIP activa. Configure ARCA en Configuración.', 400);
-      }
-
-      // Resolve the terminal (PdV) assigned to the user
-      const pdv = await pdvService.getPdvForUser(req.user!.userId);
-
-      // Notas de Crédito/Débito necesitan el comprobante de origen (CbtesAsoc) para ARCA.
-      const isNotaCD = invoice.type.startsWith('NOTA_CREDITO') || invoice.type.startsWith('NOTA_DEBITO');
-      let originInvoice: Awaited<ReturnType<IInvoiceRepository['findById']>> = null;
-      if (isNotaCD) {
-        if (!invoice.originInvoiceId) {
-          throw new AppError('La nota de crédito/débito no tiene un comprobante de origen asociado.', 400);
-        }
-        originInvoice = await invoiceRepo.findById(invoice.originInvoiceId);
-        if (!originInvoice) throw new AppError('No se encontró el comprobante de origen asociado.', 400);
-        if (!originInvoice.cae || !originInvoice.afipPtVenta || !originInvoice.afipCbtNum) {
-          throw new AppError('El comprobante de origen debe estar autorizado por ARCA (con CAE) antes de emitir la nota.', 400);
-        }
-      }
-
-      // Get TA outside getNextNumber to reuse the same token for both sync and emit
-      const ta = await afipService.getTokenAuth(config);
-
-      // Serializamos numeración + emisión por (pdv, tipo) con advisory lock —
-      // ARCA exige orden estricto; sin esto, dos emisiones concurrentes pueden
-      // llegar a ARCA invertidas y rechazarse con [10016].
-      const result = await pdvService.runWithPdvLock(pdv.id, invoice.type, async () => {
-        const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
-        try {
-          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro, originInvoice);
-        } catch (afipError) {
-          await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
-          throw afipError;
-        }
-      });
-
-      // Promote DRAFT/ISSUED → AUTHORIZED (CAE granted by ARCA).
-      // Preserve PAID/PARTIALLY_PAID — payment workflow already moved past authorization step;
-      // the CAE is still saved alongside, so the "autorizada" facet is captured by the cae field.
-      const newStatus =
-        invoice.status === 'DRAFT' || invoice.status === 'ISSUED'
-          ? 'AUTHORIZED'
-          : invoice.status;
-
-      const updated = await invoiceRepo.update(req.params.id, {
-        cae: result.cae,
-        caeExpiry: result.caeExpiry,
-        afipCbtNum: result.afipCbtNum,
-        afipPtVenta: result.afipPtVenta,
-        afipObservaciones: result.observaciones,
-        status: newStatus,
-      } as any);
-
-      // Emitir a ARCA desde borrador también genera los movimientos asociados.
-      // Acá el estado ya pasó a AUTHORIZED junto con el CAE —que no se puede
-      // perder una vez otorgado—, así que los efectos no vuelven a reclamar el
-      // borrador: `claimDraft: false`.
-      await leaveDraftIfNeeded(invoice, {
+      const { updated, result } = await emitOneToArca(req.params.id, {
         userId: req.user!.userId,
         companyId: req.companyId!,
         fiscalMode: req.fiscalMode,
-      }, { claimDraft: false });
-
-      await activityLogRepo.create({
-        userId: req.user!.userId,
-        action: 'CREATE',
-        entity: 'AfipEmission',
-        entityId: invoice.id,
-        description: `CAE emitido para ${invoice.number}: ${result.cae}${result.observaciones ? ` | Obs: ${result.observaciones}` : ''}`,
-        metadata: { cae: result.cae, caeExpiry: result.caeExpiry, afipCbtNum: result.afipCbtNum, observaciones: result.observaciones },
       });
-
       res.json({
         status: 'success',
         data: updated,
         ...(result.observaciones ? { warnings: result.observaciones } : {}),
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Emite ante ARCA varias facturas pendientes (p. ej. tras una caída de ARCA).
+   * Una por vez, en orden de fecha; si ARCA deja de responder corta y deja el
+   * resto sin procesar. Devuelve el resultado de cada una.
+   */
+  async emitBatch(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { ids, redateToToday } = req.body as { ids: string[]; redateToToday?: boolean };
+      const results = await emitBatchToArca(ids, !!redateToToday, {
+        userId: req.user!.userId,
+        companyId: req.companyId!,
+        fiscalMode: req.fiscalMode,
+      });
+      res.json({ status: 'success', data: results });
     } catch (error) {
       next(error);
     }
@@ -1069,6 +1265,9 @@ export class InvoiceController {
           for (const remito of activeRemitos) {
             await remitoRepository.updateStatus(remito.id, 'CANCELLED', tx);
           }
+          // Los remitos facturados siguen vigentes (la mercadería se entregó):
+          // vuelven a quedar pendientes de facturar.
+          await unlinkRemitosFromInvoice(existingInvoice.id, tx);
 
           await tx.invoice.update({
             where: { id: existingInvoice.id },
@@ -1077,6 +1276,7 @@ export class InvoiceController {
         }, { timeout: 30000 });
       } else {
         await invoiceRepository.update(req.params.id, { status: 'CANCELLED' });
+        await unlinkRemitosFromInvoice(existingInvoice.id);
       }
 
       const invoice = await invoiceRepository.findById(req.params.id, req.companyId);
@@ -1121,6 +1321,7 @@ export class InvoiceController {
       await prisma.$executeRaw`DELETE FROM "remito_items" WHERE "remitoId" IN (SELECT id FROM "remitos" WHERE "invoiceId" = ${id})`;
       await prisma.$executeRaw`DELETE FROM "remitos" WHERE "invoiceId" = ${id}`;
       await prisma.$executeRaw`DELETE FROM "stock_movements" WHERE "referenceId" = ${id}`;
+      await unlinkRemitosFromInvoice(id); // los remitos facturados vuelven a quedar pendientes
       await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${id}`; // invoice_items cascade
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');

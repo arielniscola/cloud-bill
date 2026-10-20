@@ -11,6 +11,7 @@ type RawProductInfo = {
   supplierName: string | null;
   imageUrl: string | null;
   imageKey: string | null;
+  trackLots: boolean | null;
 };
 
 type RawStockInfo = {
@@ -40,7 +41,7 @@ export class PrismaProductRepository implements IProductRepository {
   private async enrichRawColumns<T extends { id: string }>(items: T[]): Promise<T[]> {
     if (items.length === 0) return items;
     const rows = await this.prisma.$queryRaw<RawProductInfo[]>`
-      SELECT p.id, p."supplierId", p."imageUrl", p."imageKey", s.name AS "supplierName"
+      SELECT p.id, p."supplierId", p."imageUrl", p."imageKey", p."trackLots", s.name AS "supplierName"
       FROM products p
       LEFT JOIN suppliers s ON s.id = p."supplierId"
       WHERE p.id IN (${Prisma.join(items.map((i) => i.id))})
@@ -54,6 +55,7 @@ export class PrismaProductRepository implements IProductRepository {
         supplier: info?.supplierId ? { id: info.supplierId, name: info.supplierName ?? '' } : undefined,
         imageUrl: info?.imageUrl ?? null,
         imageKey: info?.imageKey ?? null,
+        trackLots: info?.trackLots === true,
       };
     });
   }
@@ -61,8 +63,9 @@ export class PrismaProductRepository implements IProductRepository {
   /**
    * Suma el stock de todos los depósitos en cada producto. Un producto sin filas
    * en `stocks` queda en 0, que es lo correcto: nunca entró mercadería.
+   * Con `warehouseId` cuenta solo ese depósito (buscadores de venta).
    */
-  private async enrichStock<T extends { id: string }>(items: T[]): Promise<T[]> {
+  private async enrichStock<T extends { id: string }>(items: T[], warehouseId?: string): Promise<T[]> {
     if (items.length === 0) return items;
     const rows = await this.prisma.$queryRaw<RawStockInfo[]>`
       SELECT "productId",
@@ -72,6 +75,7 @@ export class PrismaProductRepository implements IProductRepository {
              BOOL_OR("minQuantity" IS NOT NULL)      AS "hasMin"
       FROM stocks
       WHERE "productId" IN (${Prisma.join(items.map((i) => i.id))})
+        AND (${warehouseId ?? null}::text IS NULL OR "warehouseId" = ${warehouseId ?? null})
       GROUP BY "productId"
     `;
     const map = new Map(rows.map((r) => [r.productId, r]));
@@ -212,7 +216,7 @@ export class PrismaProductRepository implements IProductRepository {
       }),
       this.prisma.product.count({ where }),
     ]);
-    const data = await this.enrichStock(await this.enrichRawColumns(rawData));
+    const data = await this.enrichStock(await this.enrichRawColumns(rawData), filters.stockWarehouseId || undefined);
 
     return {
       data,
@@ -229,7 +233,7 @@ export class PrismaProductRepository implements IProductRepository {
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",
-        cost, price, "salePriceUSD", "taxRate", "trackStock", "isActive",
+        cost, price, "salePriceUSD", "taxRate", "trackStock", "trackLots", "isActive",
         "priceUpdatedAt", "rubroId", "brandId", "categoryId", "supplierId", "companyId",
         "createdAt", "updatedAt"
       ) VALUES (
@@ -237,7 +241,7 @@ export class PrismaProductRepository implements IProductRepository {
         ${d.sku}, ${d.name}, ${d.description ?? null}, ${d.barcode ?? null},
         ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
         ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
-        ${d.trackStock ?? true}, ${d.isActive ?? true}, NOW(),
+        ${d.trackStock ?? true}, ${d.trackStock !== false && d.trackLots === true}, ${d.isActive ?? true}, NOW(),
         ${d.rubroId ?? null}, ${d.brandId ?? null}, ${d.categoryId ?? null}, ${d.supplierId ?? null}, ${companyId},
         NOW(), NOW()
       )
@@ -262,6 +266,7 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.salePriceUSD  !== undefined) clauses.push(Prisma.sql`"salePriceUSD" = ${d.salePriceUSD}`);
     if (d.taxRate       !== undefined) clauses.push(Prisma.sql`"taxRate" = ${d.taxRate}`);
     if (d.trackStock    !== undefined) clauses.push(Prisma.sql`"trackStock" = ${d.trackStock}`);
+    if (d.trackLots     !== undefined) clauses.push(Prisma.sql`"trackLots" = ${d.trackLots}`);
     if (d.isActive      !== undefined) clauses.push(Prisma.sql`"isActive" = ${d.isActive}`);
     if (d.leadTimeDays  !== undefined) clauses.push(Prisma.sql`"leadTimeDays" = ${d.leadTimeDays}`);
     if (d.rubroId       !== undefined) clauses.push(Prisma.sql`"rubroId" = ${d.rubroId}`);

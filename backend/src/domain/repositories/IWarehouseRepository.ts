@@ -50,7 +50,8 @@ export interface IStockRepository {
     toWarehouseId: string,
     quantity: number,
     userId?: string,
-    variantId?: string | null
+    variantId?: string | null,
+    lots?: CreateStockMovementInput['lots']
   ): Promise<void>;
   adjustBulk(
     warehouseId: string,

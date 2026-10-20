@@ -5,8 +5,8 @@ import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceReposit
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { afipService } from '../../services/AfipService';
 import { pdvService } from '../../services/PdvService';
+import { authorizeInvoiceWithArca } from '../../services/ArcaEmissionService';
 import { AppError, NotFoundError } from '../../../shared/errors/AppError';
-import { saveAfipError } from '../../../shared/utils/saveAfipError';
 
 export class AfipController {
   async getConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -173,29 +173,16 @@ export class AfipController {
       // Resolve the terminal (PdV) assigned to the user
       const pdv = await pdvService.getPdvForUser(req.user!.userId);
 
-      // Get TA outside getNextNumber to reuse the same token for both sync and emit
-      const ta = await afipService.getTokenAuth(config);
-
-      // Serializamos numeración + emisión por (pdv, tipo) con advisory lock —
-      // ver comentario equivalente en InvoiceController.emit().
-      const result = await pdvService.runWithPdvLock(pdv.id, invoice.type, async () => {
-        const cbteNro = await pdvService.getNextNumber(pdv.id, pdv.number, invoice.type, config, ta);
-        try {
-          return await afipService.emitInvoice(invoice as any, config, pdv.number, cbteNro);
-        } catch (afipError) {
-          await saveAfipError(invoice.id, req.user!.userId, afipError).catch(() => {});
-          throw afipError;
-        }
+      // Numeración + emisión + guardado del CAE serializados por (pdv, tipo) —
+      // ver authorizeInvoiceWithArca.
+      const { result, updated } = await authorizeInvoiceWithArca({
+        invoiceId: invoice.id,
+        companyId: req.companyId,
+        userId: req.user!.userId,
+        pdv,
+        config,
+        nextStatus: () => 'AUTHORIZED',
       });
-
-      const updated = await invoiceRepo.update(req.params.id, {
-        cae: result.cae,
-        caeExpiry: result.caeExpiry,
-        afipCbtNum: result.afipCbtNum,
-        afipPtVenta: result.afipPtVenta,
-        afipObservaciones: result.observaciones,
-        status: 'AUTHORIZED',
-      } as any);
 
       await activityLogRepo.create({
         userId: req.user!.userId,

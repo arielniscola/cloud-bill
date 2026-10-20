@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { itemLotsSchema } from './stock.dto';
 
 export const ordenPedidoItemSchema = z.object({
   productId: z.string().uuid().optional().nullable(),
   variantId: z.string().uuid().optional().nullable(),
   description: z.string().min(1, 'La descripción es requerida'),
+  // Detalle libre de la línea (servicios / productos no inventariados).
+  detail: z.string().max(2000).optional().nullable(),
   quantity: z.number().positive('Cantidad debe ser mayor a 0'),
   unitPrice: z.number().min(0, 'Precio debe ser mayor o igual a 0'),
   discountPct: z.number().min(0).max(100).default(0),
@@ -11,6 +14,7 @@ export const ordenPedidoItemSchema = z.object({
   subtotal: z.number().min(0),
   taxAmount: z.number().min(0),
   total: z.number().min(0),
+  lots: itemLotsSchema,
 });
 
 export const createOrdenPedidoSchema = z.object({

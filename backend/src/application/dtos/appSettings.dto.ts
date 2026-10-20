@@ -14,6 +14,7 @@ export const updateAppSettingsSchema = z.object({
   printFormatOrdenPedido:       z.enum(['A4', 'THERMAL_80MM']).optional(),
   printFormatRemito:            z.enum(['A4', 'THERMAL_80MM']).optional(),
   printFormatRecibo:            z.enum(['A4', 'THERMAL_80MM']).optional(),
+  printFormatCashMovement:      z.enum(['A4', 'THERMAL_80MM']).optional(),
   smtpHost:                     z.string().optional().nullable(),
   smtpPort:                     z.number().int().min(1).max(65535).optional(),
   smtpUser:                     z.string().optional().nullable(),

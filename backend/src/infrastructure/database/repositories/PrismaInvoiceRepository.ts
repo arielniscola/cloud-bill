@@ -19,6 +19,7 @@ import { PaginationParams, PaginatedResult, InvoiceType } from '../../../shared/
 import prisma from '../prisma';
 import { attachCustomerExtra, readTransport } from '../partyExtras';
 import { allocateDocumentNumber, INVOICE_DOC_TYPE } from '../DocumentSequence';
+import { attachItemDetails, normalizeItemDetail, saveItemDetail } from '../itemDetail';
 
 @injectable()
 export class PrismaInvoiceRepository implements IInvoiceRepository {
@@ -98,6 +99,14 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
 
     if (filters.fiscalMode) {
       (where as any).fiscalMode = filters.fiscalMode;
+    }
+
+    if (filters.pendingArca) {
+      where.cae = null;
+      // Un filtro de estado explícito manda; si no, los que se pueden emitir.
+      if (!filters.status) where.status = { in: ['DRAFT', 'ISSUED', 'PAID', 'PARTIALLY_PAID'] as any };
+      // Con fiscalMode=INFORMAL explícito queda vacío, como corresponde.
+      if (!filters.fiscalMode) (where as any).fiscalMode = { not: 'INFORMAL' };
     }
 
     if (filters.dateFrom || filters.dateTo) {
@@ -291,7 +300,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       const effectiveTaxRate = isTypeC ? 0 : item.taxRate;
       const taxAmount = subtotal.times(effectiveTaxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, detail: normalizeItemDetail((item as any).detail), quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
@@ -346,7 +355,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       const effectiveTaxRate = isTypeC ? 0 : item.taxRate;
       const taxAmount = subtotal.times(effectiveTaxRate).dividedBy(100);
       const total = subtotal.plus(taxAmount);
-      return { productId: item.productId, variantId: (item as any).variantId ?? null, quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
+      return { productId: item.productId, variantId: (item as any).variantId ?? null, detail: normalizeItemDetail((item as any).detail), quantity: item.quantity, unitPrice: item.unitPrice, discountPct: Number(discountPct), taxRate: effectiveTaxRate, subtotal, taxAmount, total };
     });
 
     const subtotal = computedItems.reduce((acc, i) => acc.plus(i.subtotal), new Decimal(0));
@@ -413,7 +422,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
           LEFT JOIN "product_variants" v ON v.id = ii."variantId"
           WHERE ii."invoiceId" = ${invoiceId}
         `;
-    return rows.map((r) => ({
+    return attachItemDetails('invoice_items', rows.map((r) => ({
       id: r.id,
       invoiceId: r.invoiceId,
       productId: r.productId,
@@ -440,7 +449,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         sku: r.var_sku,
         attributes: r.var_attributes ?? {},
       } : null,
-    }));
+    })));
   }
 
   private async _insertItemsRaw(invoiceId: string, items: any[]): Promise<void> {
@@ -474,6 +483,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
              ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;
       }
+      await saveItemDetail('invoice_items', itemId, item.detail, this.prisma);
     }
   }
 

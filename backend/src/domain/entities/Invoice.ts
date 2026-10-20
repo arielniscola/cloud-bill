@@ -33,6 +33,7 @@ export interface InvoiceItem {
   id: string;
   invoiceId: string;
   productId: string;
+  detail?: string | null;
   quantity: Decimal;
   unitPrice: Decimal;
   discountPct: Decimal;
@@ -48,6 +49,7 @@ export interface InvoiceWithItems extends Invoice {
 
 export interface CreateInvoiceItemInput {
   productId: string;
+  detail?: string | null;
   quantity: number;
   unitPrice: number;
   discountPct?: number;

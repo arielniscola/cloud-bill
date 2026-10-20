@@ -43,6 +43,8 @@ import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
 import { cardRoutes } from './routes/cardRoutes';
 import { bancoRoutes } from './routes/bancoRoutes';
+import { provinciaRoutes } from './routes/provinciaRoutes';
+import { localidadRoutes } from './routes/localidadRoutes';
 import { chequeraRoutes } from './routes/chequeraRoutes';
 import { categoryRoutes } from './routes/categoryRoutes';
 import { productVariantRoutes, productVariantStandaloneRoutes } from './routes/productVariantRoutes';
@@ -157,6 +159,8 @@ export function createApp(): Application {
   app.use('/api/mercadopago', mpRoutes);
   app.use('/api/cards', cardRoutes);
   app.use('/api/bancos', bancoRoutes);
+  app.use('/api/provincias', provinciaRoutes);
+  app.use('/api/localidades', localidadRoutes);
   app.use('/api/chequeras', chequeraRoutes);
   app.use('/api/categories', categoryRoutes);
   app.use('/api/product-custom-fields', productCustomFieldRoutes);

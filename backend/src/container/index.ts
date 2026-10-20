@@ -27,6 +27,8 @@ import { IOrdenPagoRepository } from '../domain/repositories/IOrdenPagoRepositor
 import { IBankRepository } from '../domain/repositories/IBankRepository';
 import { ICardRepository } from '../domain/repositories/ICardRepository';
 import { IBancoRepository } from '../domain/repositories/IBancoRepository';
+import { IProvinciaRepository } from '../domain/repositories/IProvinciaRepository';
+import { ILocalidadRepository } from '../domain/repositories/ILocalidadRepository';
 import { IChequeraRepository } from '../domain/repositories/IChequeraRepository';
 import { ICategoryRepository } from '../domain/repositories/ICategoryRepository';
 import { IProductVariantRepository } from '../domain/repositories/IProductVariantRepository';
@@ -64,6 +66,8 @@ import { PrismaOrdenPagoRepository } from '../infrastructure/database/repositori
 import { PrismaBankRepository } from '../infrastructure/database/repositories/PrismaBankRepository';
 import { PrismaCardRepository } from '../infrastructure/database/repositories/PrismaCardRepository';
 import { PrismaBancoRepository } from '../infrastructure/database/repositories/PrismaBancoRepository';
+import { PrismaProvinciaRepository } from '../infrastructure/database/repositories/PrismaProvinciaRepository';
+import { PrismaLocalidadRepository } from '../infrastructure/database/repositories/PrismaLocalidadRepository';
 import { PrismaChequeraRepository } from '../infrastructure/database/repositories/PrismaChequeraRepository';
 import { PrismaCategoryRepository } from '../infrastructure/database/repositories/PrismaCategoryRepository';
 import { PrismaProductVariantRepository } from '../infrastructure/database/repositories/PrismaProductVariantRepository';
@@ -105,6 +109,8 @@ container.registerSingleton<IOrdenPagoRepository>('OrdenPagoRepository', PrismaO
 container.registerSingleton<IBankRepository>('BankRepository', PrismaBankRepository);
 container.registerSingleton<ICardRepository>('CardRepository', PrismaCardRepository);
 container.registerSingleton<IBancoRepository>('BancoRepository', PrismaBancoRepository);
+container.registerSingleton<IProvinciaRepository>('ProvinciaRepository', PrismaProvinciaRepository);
+container.registerSingleton<ILocalidadRepository>('LocalidadRepository', PrismaLocalidadRepository);
 container.registerSingleton<IChequeraRepository>('ChequeraRepository', PrismaChequeraRepository);
 container.registerSingleton<ICategoryRepository>('CategoryRepository', PrismaCategoryRepository);
 container.registerSingleton<IProductVariantRepository>('ProductVariantRepository', PrismaProductVariantRepository);

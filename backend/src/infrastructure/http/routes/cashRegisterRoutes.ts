@@ -6,6 +6,7 @@ import {
   createCashRegisterSchema,
   updateCashRegisterSchema,
   createCashRegisterCloseSchema,
+  createCashMovementSchema,
 } from '../../../application/dtos/cashRegister.dto';
 
 const router = Router();
@@ -29,6 +30,15 @@ router.post(
   validate({ body: createCashRegisterCloseSchema }),
   cashRegisterController.createClose
 );
+// Retiros / ingresos manuales de caja
+router.post(
+  '/:id/cash-movements',
+  requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'),
+  validate({ body: createCashMovementSchema }),
+  cashRegisterController.createCashMovement
+);
+router.get('/:id/cash-movements/:movementId', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'), cashRegisterController.getCashMovement);
+router.post('/:id/cash-movements/:movementId/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.cancelCashMovement);
 router.get('/:id', cashRegisterController.findById);
 router.put(
   '/:id',

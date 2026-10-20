@@ -10,6 +10,7 @@ export interface BudgetItem {
   budgetId: string;
   productId: string | null;
   description: string;
+  detail?: string | null;
   quantity: number;
   unitPrice: number;
   taxRate: number;
@@ -52,6 +53,7 @@ export interface BudgetWithItems extends Budget {
 export interface CreateBudgetItemInput {
   productId?: string | null;
   description: string;
+  detail?: string | null;
   quantity: number;
   unitPrice: number;
   taxRate: number;

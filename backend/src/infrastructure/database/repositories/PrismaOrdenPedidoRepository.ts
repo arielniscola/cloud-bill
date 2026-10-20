@@ -12,6 +12,7 @@ import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 import { Prisma } from '@prisma/client';
 import { allocateDocumentNumber } from '../DocumentSequence';
+import { attachItemDetails, saveItemDetail } from '../itemDetail';
 
 const includeWithoutItems = {
   customer: { select: { id: true, name: true, taxId: true, email: true, address: true } },
@@ -232,7 +233,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
           LEFT JOIN "product_variants" v ON v.id = opi."variantId"
           WHERE opi."ordenPedidoId" = ${ordenPedidoId}
         `;
-    return rows.map((r) => ({
+    return attachItemDetails('orden_pedido_items', rows.map((r) => ({
       id: r.id,
       ordenPedidoId: r.ordenPedidoId,
       productId: r.productId,
@@ -247,7 +248,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
       total: r.total,
       product: r.prod_id ? { id: r.prod_id, name: r.prod_name, sku: r.prod_sku } : null,
       variant: r.var_id ? { id: r.var_id, name: r.var_name, sku: r.var_sku, attributes: r.var_attributes ?? {} } : null,
-    }));
+    })));
   }
 
   private async _insertItemsRaw(ordenPedidoId: string, items: any[]): Promise<void> {
@@ -283,6 +284,7 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
              ${Number(item.taxRate)}, ${Number(item.subtotal)}, ${Number(item.taxAmount)}, ${Number(item.total)})
         `;
       }
+      await saveItemDetail('orden_pedido_items', itemId, item.detail);
     }
   }
 

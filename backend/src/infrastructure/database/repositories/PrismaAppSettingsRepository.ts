@@ -77,6 +77,7 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
       printFormatOrdenPedido:      r.printFormatOrdenPedido ?? r.printFormat ?? 'THERMAL_80MM',
       printFormatRemito:           r.printFormatRemito      ?? r.printFormat ?? 'A4',
       printFormatRecibo:           r.printFormatRecibo      ?? r.printFormat ?? 'A4',
+      printFormatCashMovement:     r.printFormatCashMovement ?? 'A4',
       smtpHost:                    r.smtpHost,
       smtpPort:                    r.smtpPort != null ? Number(r.smtpPort) : null,
       smtpUser:                    r.smtpUser,
@@ -229,6 +230,13 @@ export class PrismaAppSettingsRepository implements IAppSettingsRepository {
           "printEstablishment" = ${pick(data.printEstablishment, current?.printEstablishment)},
           "remitoCai"          = ${pick(data.remitoCai, current?.remitoCai)},
           "remitoCaiExpiry"    = ${pick(data.remitoCaiExpiry, current?.remitoCaiExpiry)}
+        WHERE id = ${companyId}
+      `;
+    }
+
+    if (data.printFormatCashMovement !== undefined && await columnExists('app_settings', 'printFormatCashMovement')) {
+      await prisma.$executeRaw`
+        UPDATE "app_settings" SET "printFormatCashMovement" = ${data.printFormatCashMovement}
         WHERE id = ${companyId}
       `;
     }

@@ -51,6 +51,7 @@ export const DOC_SEQUENCES = {
   CHEQUE:          { prefix: 'CHQ',  pad: 6 },
   JOURNAL_ENTRY:   { prefix: 'ASI',  pad: 6 },
   RETENTION:       { prefix: 'RET',  pad: 4 },
+  CASH_MOVEMENT:   { prefix: 'MC',   pad: 8 },
   // Compras: la misma tabla `purchases` guarda la compra y sus NC/ND, cada
   // una con su prefijo. NCC/NDC repiten el prefijo de las notas de VENTA,
   // pero son tablas distintas y por eso la clave de secuencia es distinta.

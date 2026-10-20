@@ -20,6 +20,8 @@ router.post(
   remitoController.create
 );
 router.get('/', validate({ query: remitoQuerySchema }), remitoController.findAll);
+// Antes de '/:id' para que "unbilled" no se lea como un id.
+router.get('/unbilled', remitoController.findUnbilled);
 router.get('/:id', remitoController.findById);
 router.post(
   '/:id/deliver',

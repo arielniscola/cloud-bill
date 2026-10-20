@@ -1,3 +1,4 @@
+import { LotPool, loadLotSelections, saveLotSelections, selectionsFromItems, stripItemLots } from '../../../shared/utils/lotSelections';
 import { Request, Response, NextFunction } from 'express';
 import type { Prisma } from '@prisma/client';
 import { container } from 'tsyringe';
@@ -196,6 +197,7 @@ export class OrdenPedidoController {
         taxAmount += itemTax;
         return { ...item, subtotal: itemSubtotal, taxAmount: itemTax, total: itemSubtotal + itemTax };
       });
+      const lotSelections = selectionsFromItems(data.items as any);
 
       const op = await repo.create({
         customerId: data.customerId ?? null,
@@ -215,8 +217,9 @@ export class OrdenPedidoController {
         subtotal,
         taxAmount,
         total: subtotal + taxAmount,
-        items,
+        items: stripItemLots(items),
       } as any);
+      await saveLotSelections('orden_pedidos', op.id, lotSelections);
 
       // Persistir el depósito elegido: las reversas (cancelar/eliminar) y los
       // remitos deben operar sobre el mismo depósito que el alta.
@@ -246,6 +249,7 @@ export class OrdenPedidoController {
           throw new AppError('No se encontró un almacén por defecto. Seleccioná un almacén para registrar el movimiento de stock.', 400);
         }
         const defaultWarehouse = stockWarehouse;
+        const pool = new LotPool(lotSelections);
         for (const item of itemsWithProduct) {
           const variantId = (item as any).variantId ?? null;
           if (stockBehavior === 'RESERVE') {
@@ -265,6 +269,7 @@ export class OrdenPedidoController {
               reason: `Orden de pedido ${op.number}`,
               referenceId: op.id,
               userId: req.user!.userId,
+              lots: pool.take(item.productId!, variantId, Number(item.quantity)),
             });
           }
         }
@@ -426,7 +431,7 @@ export class OrdenPedidoController {
         const itemsWithProduct = op.items.filter((item) => item.productId);
         const existingRemitos = await remitoRepo.findAll({ page: 1, limit: 1 }, { ordenPedidoId: op.id });
         if (itemsWithProduct.length > 0 && existingRemitos.total === 0) {
-          await remitoRepo.create({
+          const autoRemito = await remitoRepo.create({
             customerId: op.customerId,
             userId: req.user!.userId,
             stockBehavior: ((op as any).stockBehavior ?? 'DISCOUNT') as any,
@@ -438,6 +443,9 @@ export class OrdenPedidoController {
               quantity: Number(item.quantity),
             })),
           } as any);
+          // Los lotes elegidos en la orden se usan al entregar ese remito (si reserva).
+          const opLots = await loadLotSelections('orden_pedidos', op.id);
+          if (opLots.length) await saveLotSelections('remitos', autoRemito.id, opLots);
         }
       }
 
@@ -501,6 +509,7 @@ export class OrdenPedidoController {
         ordenPedidoId: op.id,
         items: op.items.map((item) => ({
           productId: item.productId!,
+          detail: item.detail ?? null,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           discountPct: Number(item.discountPct ?? 0),

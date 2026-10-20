@@ -12,6 +12,8 @@ export interface ProductFilters {
   companyId?: string;
   /** Filtra por disponible (quantity - reservedQuantity) sumado entre depósitos. */
   stockState?: 'with' | 'low' | 'out';
+  /** Si viene, `stockQuantity`/`stockReserved` son los de ese depósito y no la suma de todos. */
+  stockWarehouseId?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }

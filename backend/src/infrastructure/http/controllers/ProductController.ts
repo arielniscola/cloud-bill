@@ -11,6 +11,7 @@ import {
 } from '../../database/repositories/productCustomFieldValuesHelper';
 import { ProductCustomFieldValueInput } from '../../../domain/entities/ProductCustomField';
 import prisma from '../../database/prisma';
+import { reconcileLots } from '../../database/repositories/stockLots';
 import { getStorageService } from '../../storage';
 
 /** Filtra los IDs recibidos dejando solo los que pertenecen a la empresa activa. */
@@ -59,6 +60,7 @@ export class ProductController {
         salePriceUSD: req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null,
         taxRate: new Decimal(req.body.taxRate ?? 21),
         trackStock: req.body.trackStock ?? true,
+        trackLots: req.body.trackLots === true,
         isActive: req.body.isActive ?? true,
       } as any);
 
@@ -164,9 +166,16 @@ export class ProductController {
       if (req.body.salePriceUSD !== undefined) updateData.salePriceUSD = req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null;
       if (req.body.taxRate !== undefined) updateData.taxRate = new Decimal(req.body.taxRate);
       if (req.body.trackStock !== undefined) updateData.trackStock = req.body.trackStock;
+      if (req.body.trackLots !== undefined) updateData.trackLots = req.body.trackLots;
       if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
 
       const product = await productRepository.update(req.params.id, updateData);
+
+      // Al activar lotes, el stock que ya había queda en el lote S/L (y si se
+      // reactivan, los lotes se vuelven a cuadrar con el stock actual).
+      if (req.body.trackLots === true && !(existingProduct as any).trackLots) {
+        await prisma.$transaction((tx) => reconcileLots(tx, product.id));
+      }
 
       const customFields = parseCustomFieldsPayload(req.body);
       if (customFields && req.companyId) {

@@ -1,5 +1,6 @@
 import { Decimal } from '@prisma/client/runtime/library';
 import { StockMovementType } from '../../shared/types';
+import type { LotSpec, LotAllocation } from '../../infrastructure/database/repositories/stockLots';
 
 export interface Warehouse {
   id: string;
@@ -41,6 +42,8 @@ export interface StockMovement {
   userId: string | null;
   relatedWarehouseId: string | null;
   createdAt: Date;
+  /** Lotes que tocó el movimiento (solo productos con `trackLots`). */
+  lotAllocations?: LotAllocation[];
 }
 
 export type CreateWarehouseInput = Omit<Warehouse, 'id' | 'createdAt' | 'updatedAt'>;
@@ -56,4 +59,9 @@ export interface CreateStockMovementInput {
   referenceId?: string;
   userId?: string;
   relatedWarehouseId?: string;
+  /**
+   * Lotes pedidos (productos con `trackLots`). Lo que no se asigne se reparte
+   * solo: salidas por vencimiento más próximo, entradas al lote S/L.
+   */
+  lots?: LotSpec[] | null;
 }

@@ -64,6 +64,8 @@ export class StockController {
         quantity: req.body.quantity,
         reason: req.body.reason,
         userId: req.user?.userId,
+        variantId: req.body.variantId ?? null,
+        lots: req.body.lots,
       });
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
@@ -94,7 +96,9 @@ export class StockController {
         req.body.fromWarehouseId,
         req.body.toWarehouseId,
         req.body.quantity,
-        req.user?.userId
+        req.user?.userId,
+        req.body.variantId ?? null,
+        req.body.lots
       );
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');

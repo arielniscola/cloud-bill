@@ -18,6 +18,9 @@ const itemSchema = z.object({
   description: z.string().min(1),
   quantity:    z.coerce.number().positive(),
   unitPrice:   z.coerce.number().min(0).default(0),
+  // Lote y vencimiento de lo que entra (productos con lotes).
+  lotNumber:   z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().max(60).optional().nullable()),
+  expiresAt:   z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Vencimiento inválido').optional().nullable()),
 });
 
 const createSchema = z.object({
@@ -62,6 +65,7 @@ async function fetchFull(id: string) {
 
   const items = await prisma.$queryRaw<any[]>`
     SELECT ri.id, ri."productId", ri."variantId", ri.description, ri.quantity, ri."unitPrice",
+           ri."lotNumber", to_char(ri."expiresAt", 'YYYY-MM-DD') AS "expiresAt",
            pr.name AS "productName"
     FROM "purchase_remito_items" ri
     LEFT JOIN "products" pr ON pr.id = ri."productId"
@@ -174,10 +178,11 @@ export class PurchaseRemitoController {
         for (const item of data.items) {
           await tx.$executeRaw`
             INSERT INTO "purchase_remito_items"
-              (id, "remitoId", "productId", "variantId", description, quantity, "unitPrice")
+              (id, "remitoId", "productId", "variantId", description, quantity, "unitPrice", "lotNumber", "expiresAt")
             VALUES
               (${randomUUID()}, ${id}, ${item.productId ?? null}, ${item.variantId ?? null},
-               ${item.description}, ${item.quantity}, ${item.unitPrice})
+               ${item.description}, ${item.quantity}, ${item.unitPrice},
+               ${item.lotNumber || null}, ${item.expiresAt || null}::date)
           `;
         }
 
@@ -196,6 +201,10 @@ export class PurchaseRemitoController {
             reason:      `Remito de compra ${number}`,
             referenceId: id,
             userId:      req.user!.userId,
+            // Productos con lotes: la línea trae el lote y su vencimiento (sin lote → S/L).
+            lots: item.lotNumber
+              ? [{ lotNumber: item.lotNumber, expiresAt: item.expiresAt ?? null, quantity: item.quantity }]
+              : undefined,
           }, tx);
         }
       });

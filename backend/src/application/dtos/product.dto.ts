@@ -16,6 +16,8 @@ export const createProductSchema = z.object({
   salePriceUSD: z.number().min(0).optional().nullable(),
   taxRate: z.number().min(0).max(100).default(21),
   trackStock: z.boolean().default(true),
+  // Sin default: en el update parcial un default lo apagaría en cada edición.
+  trackLots: z.boolean().optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -34,6 +36,12 @@ export const productQuerySchema = z.object({
   isActive: z.preprocess(emptyToUndefined, z.string().transform((v) => v === 'true').optional()),
   minPrice: z.preprocess(emptyToUndefined, z.string().transform(Number).optional()),
   maxPrice: z.preprocess(emptyToUndefined, z.string().transform(Number).optional()),
+  // Sin declararlos acá, el parse los descartaba y el repo nunca los recibía.
+  stockState: z.preprocess(emptyToUndefined, z.enum(['with', 'low', 'out']).optional()),
+  stockWarehouseId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  sortBy: z.preprocess(emptyToUndefined, z.string().optional()),
+  sortOrder: z.preprocess(emptyToUndefined, z.enum(['asc', 'desc']).optional()),
+  includeCustomFields: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type CreateProductDTO = z.infer<typeof createProductSchema>;

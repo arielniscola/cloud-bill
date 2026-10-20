@@ -1,5 +1,20 @@
 import { z } from 'zod';
 
+/** Lote pedido en un movimiento: salida por `lotId`/`lotNumber`; entrada con `lotNumber` + `expiresAt`. */
+export const lotSpecSchema = z.object({
+  lotId: z.string().uuid().optional(),
+  lotNumber: z.string().trim().min(1).max(60).optional(),
+  expiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Vencimiento inválido').optional().nullable(),
+  quantity: z.number().positive(),
+});
+export const lotSpecsSchema = z.array(lotSpecSchema).max(50).optional();
+
+/** Lotes elegidos para una línea de venta (remito, factura, orden de pedido). */
+export const itemLotsSchema = z
+  .array(z.object({ lotId: z.string().uuid(), quantity: z.number().positive() }))
+  .max(50)
+  .optional();
+
 export const stockMovementSchema = z.object({
   productId: z.string().uuid(),
   warehouseId: z.string().uuid(),
@@ -14,6 +29,8 @@ export const stockMovementSchema = z.object({
   ]),
   quantity: z.number().positive('Quantity must be positive'),
   reason: z.string().optional(),
+  variantId: z.string().uuid().optional().nullable(),
+  lots: lotSpecsSchema,
 });
 
 export const stockTransferSchema = z.object({
@@ -21,6 +38,8 @@ export const stockTransferSchema = z.object({
   fromWarehouseId: z.string().uuid(),
   toWarehouseId: z.string().uuid(),
   quantity: z.number().positive('Quantity must be positive'),
+  variantId: z.string().uuid().optional().nullable(),
+  lots: lotSpecsSchema,
 });
 
 export const setMinQuantitySchema = z.object({

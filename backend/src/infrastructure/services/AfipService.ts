@@ -1,5 +1,6 @@
 import * as forge from 'node-forge';
 import { round2 } from '../../shared/utils/money';
+import { arcaDayOf } from '../../shared/utils/arcaBatch';
 import { createAfipSoapClient } from './afipSoapClient';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -135,6 +136,7 @@ export interface PadronResult {
   address: string | null;
   city: string | null;
   province: string | null;
+  provinceCode: number | null; // idProvincia de ARCA (ver catálogo de provincias)
   postalCode: string | null;
   personType: string | null; // FISICA | JURIDICA
   estado: string | null;     // ACTIVO | ...
@@ -349,7 +351,23 @@ export class AfipService {
     if (digits.length !== 11) throw new Error('El CUIT debe tener 11 dígitos');
 
     const env = config.isProduction ? 'prod' : 'test';
-    const ta = await this.getTA(config, 'ws_sr_constancia_inscripcion');
+    // Sin el servicio asociado al certificado, ARCA rechaza ya en el login a
+    // WSAA (coe.notAuthorized), no recién en getPersona.
+    const notAuthorized = (msg: string) =>
+      /notAuthorized|no autorizado|unauthorized/i.test(msg)
+        ? new Error(
+            'ARCA rechazó la consulta al padrón: el certificado no tiene asociado el servicio ' +
+            '"ws_sr_constancia_inscripcion". Asocialo desde el portal de ARCA ' +
+            (config.isProduction
+              ? '(Administración de Certificados Digitales)'
+              : '(WSASS – Autogestión Certificados Homologación)') +
+            ' y volvé a intentar.'
+          )
+        : null;
+
+    const ta = await this.getTA(config, 'ws_sr_constancia_inscripcion').catch((err: any) => {
+      throw notAuthorized(String(err.message ?? err)) ?? err;
+    });
 
     const client = await createAfipSoapClient(PADRON_WSDL[env]);
     let result: any;
@@ -362,14 +380,7 @@ export class AfipService {
       });
     } catch (err: any) {
       const msg = String(err.root?.Envelope?.Body?.Fault?.faultstring ?? err.message ?? err);
-      if (/no autorizado|unauthorized|computador no autorizado/i.test(msg)) {
-        throw new Error(
-          'ARCA rechazó la consulta al padrón: el certificado no tiene asociado el servicio ' +
-          '"ws_sr_constancia_inscripcion". Asocialo desde el portal de ARCA ' +
-          '(Administración de Certificados Digitales) y volvé a intentar.'
-        );
-      }
-      throw new Error(`Padrón ARCA: ${msg}`);
+      throw notAuthorized(msg) ?? new Error(`Padrón ARCA: ${msg}`);
     }
 
     const persona = result?.personaReturn;
@@ -413,6 +424,7 @@ export class AfipService {
       address: dom.direccion ?? null,
       city: dom.localidad ?? null,
       province: dom.descripcionProvincia ?? null,
+      provinceCode: dom.idProvincia != null ? Number(dom.idProvincia) : null,
       postalCode: dom.codPostal ?? null,
       personType: dg.tipoPersona ?? null,
       estado: dg.estadoClave ?? null,
@@ -459,17 +471,11 @@ export class AfipService {
     const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
     const auth = { Token: ta.token, Sign: ta.sign, Cuit: config.cuit };
 
-    const docTipo = DOC_TIPO_MAP[invoice.customer.taxCondition] ?? 99;
-    const docNro =
-      docTipo === 80 && invoice.customer.taxId
-        ? invoice.customer.taxId.replace(/-/g, '')
-        : '0';
+    const { docTipo, docNro } = this.receptorDoc(invoice.customer);
 
-    const fecha = new Date(invoice.date);
-    const cbteFch =
-      fecha.getFullYear().toString() +
-      String(fecha.getMonth() + 1).padStart(2, '0') +
-      String(fecha.getDate()).padStart(2, '0');
+    // Día ARGENTINO: con getFullYear/getMonth/getDate en un servidor en UTC,
+    // una venta de las 21:00 se declaraba con la fecha del día siguiente.
+    const cbteFch = arcaDayOf(invoice.date).replace(/-/g, '');
 
     const impNeto = invoice.subtotal.toNumber();
     const impIva = invoice.taxAmount.toNumber();
@@ -518,11 +524,7 @@ export class AfipService {
       if (asocTipo === undefined) {
         throw new Error(`Tipo de comprobante de origen no soportado: ${originInvoice.type}`);
       }
-      const od = new Date(originInvoice.date);
-      const asocFch =
-        od.getFullYear().toString() +
-        String(od.getMonth() + 1).padStart(2, '0') +
-        String(od.getDate()).padStart(2, '0');
+      const asocFch = arcaDayOf(originInvoice.date).replace(/-/g, '');
       detRequest.CbtesAsoc = {
         CbteAsoc: {
           Tipo: asocTipo,
@@ -584,6 +586,57 @@ export class AfipService {
       afipPtVenta: pdvNumber,
       observaciones,
     };
+  }
+
+  /**
+   * Busca en ARCA (FECompConsultar) si el número `cbteNro` ya quedó autorizado
+   * para ESTA factura. Se usa cuando FECAESolicitar falló sin respuesta legible
+   * (timeout, corte de red): ARCA pudo haber otorgado el CAE igual, y si no lo
+   * recuperamos el número queda autorizado en ARCA sin registro local.
+   *
+   * Sólo devuelve el CAE si el comprobante coincide con la factura (receptor e
+   * importe total); si no coincide, o no existe, devuelve null.
+   */
+  async findAuthorizedVoucher(
+    invoice: InvoiceWithItems & { customer: { taxId: string | null; taxCondition: string } },
+    config: AfipConfig,
+    pdvNumber: number,
+    cbteNro: number
+  ): Promise<EmitResult | null> {
+    const cbteTipo = INVOICE_TYPE_MAP[invoice.type];
+    if (cbteTipo === undefined) return null;
+
+    const ta = await this.getTA(config);
+    const env = config.isProduction ? 'prod' : 'test';
+    const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
+
+    const [res] = await (wsfeClient as any).FECompConsultarAsync({
+      Auth: { Token: ta.token, Sign: ta.sign, Cuit: config.cuit },
+      FeCompConsReq: { CbteTipo: cbteTipo, CbteNro: cbteNro, PtoVta: pdvNumber },
+    });
+
+    const r = res?.FECompConsultarResult?.ResultGet;
+    // Número inexistente → ARCA responde con Errors (602) y sin ResultGet.
+    if (!r?.CodAutorizacion || r.Resultado !== 'A') return null;
+
+    const { docTipo, docNro } = this.receptorDoc(invoice.customer);
+    const sameReceptor = Number(r.DocTipo) === docTipo && String(r.DocNro) === String(Number(docNro));
+    const sameTotal = Math.abs(Number(r.ImpTotal) - invoice.total.toNumber()) < 0.01;
+    if (!sameReceptor || !sameTotal) return null;
+
+    return {
+      cae: String(r.CodAutorizacion),
+      caeExpiry: this.parseAfipDate(String(r.FchVto)),
+      afipCbtNum: cbteNro,
+      afipPtVenta: pdvNumber,
+      observaciones: 'CAE recuperado de ARCA (FECompConsultar) tras una respuesta fallida de FECAESolicitar',
+    };
+  }
+
+  private receptorDoc(customer: { taxId: string | null; taxCondition: string }): { docTipo: number; docNro: string } {
+    const docTipo = DOC_TIPO_MAP[customer.taxCondition] ?? 99;
+    const docNro = docTipo === 80 && customer.taxId ? customer.taxId.replace(/-/g, '') : '0';
+    return { docTipo, docNro };
   }
 
   private parseAfipDate(dateStr: string): Date {

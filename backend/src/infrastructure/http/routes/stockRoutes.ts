@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { StockController } from '../controllers/StockController';
+import { StockLotController } from '../controllers/StockLotController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
 import {
@@ -12,6 +13,7 @@ import {
 
 const router = Router();
 const stockController = new StockController();
+const stockLotController = new StockLotController();
 
 router.use(authMiddleware);
 
@@ -20,6 +22,10 @@ router.get('/warehouse/:warehouseId/export', stockController.exportWarehouseStoc
 router.get('/warehouse/:warehouseId', stockController.getStockByWarehouse);
 router.get('/low-stock', stockController.getLowStock);
 router.get('/movements', validate({ query: stockQuerySchema }), stockController.getMovements);
+// Lotes: antes de '/:productId/:warehouseId', que si no se traga '/lots/...'.
+router.get('/lots', stockLotController.list);
+router.get('/lots/by-reference', stockLotController.byReference);
+router.get('/lots/:id/trace', stockLotController.trace);
 router.get('/:productId/:warehouseId', stockController.getStock);
 
 router.post(

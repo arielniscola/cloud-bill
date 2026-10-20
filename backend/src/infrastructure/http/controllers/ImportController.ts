@@ -4,6 +4,9 @@ import prisma from '../../database/prisma';
 import { assignCustomerCode, assignSupplierCode } from '../../database/partyExtras';
 
 import { parseCsv, pick, parseNumber } from '../utils/csvImport';
+import { container } from 'tsyringe';
+import { IProvinciaRepository } from '../../../domain/repositories/IProvinciaRepository';
+import { normalizeProvinciaName } from '../../../shared/constants/provincias';
 
 type ImportError = { row: number; message: string };
 
@@ -215,6 +218,10 @@ export class ImportController {
         '': 'CONSUMIDOR_FINAL',
       };
 
+      // "CORDOBA" / "cordoba" → "Córdoba" del catálogo; lo que no matchea queda como vino.
+      const provincias = await container.resolve<IProvinciaRepository>('ProvinciaRepository').findAll(companyId);
+      const provinciaByKey = new Map(provincias.map((p) => [normalizeProvinciaName(p.name), p.name]));
+
       let imported = 0;
       let skipped  = 0;
       const errors: ImportError[] = [];
@@ -238,7 +245,8 @@ export class ImportController {
 
         const address    = pick(row, 'direccion', 'address')                   || null;
         const city       = pick(row, 'ciudad', 'city')                         || null;
-        const province   = pick(row, 'provincia', 'province')                  || null;
+        const rawProv    = pick(row, 'provincia', 'province')                  || null;
+        const province   = rawProv ? provinciaByKey.get(normalizeProvinciaName(rawProv)) ?? rawProv : null;
         const postalCode = pick(row, 'codigopostal', 'postalcode', 'cp')       || null;
         const phone      = pick(row, 'telefono', 'phone', 'tel')               || null;
         const email      = pick(row, 'email', 'mail', 'correo')                || null;

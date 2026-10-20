@@ -17,6 +17,7 @@ export interface AppSettings {
   printFormatOrdenPedido:       string;
   printFormatRemito:            string;
   printFormatRecibo:            string;
+  printFormatCashMovement:      string;
   smtpHost:                     string | null;
   smtpPort:                     number;
   smtpUser:                     string | null;
@@ -63,6 +64,7 @@ export interface UpdateAppSettingsInput {
   printFormatOrdenPedido?:       string;
   printFormatRemito?:            string;
   printFormatRecibo?:            string;
+  printFormatCashMovement?:      string;
   smtpHost?:                     string | null;
   smtpPort?:                     number;
   smtpUser?:                     string | null;

@@ -1,4 +1,5 @@
 import prisma from '../../infrastructure/database/prisma';
+import { billedDeliveredRows } from './billedRemitos';
 
 export type DeliveryStatus = 'NOT_DELIVERED' | 'PARTIALLY_DELIVERED' | 'DELIVERED';
 
@@ -92,6 +93,14 @@ export async function computeDeliveryStatusBatch(
     deliveredBySource[sid][ri.productId] =
       (deliveredBySource[sid][ri.productId] || 0) + Number(ri.deliveredQuantity);
   }
+  // Remitos libres facturados después: la mercadería ya la entregaron ellos.
+  if (sourceField === 'invoiceId') {
+    for (const row of await billedDeliveredRows(sourceIds)) {
+      if (!deliveredBySource[row.invoiceId]) deliveredBySource[row.invoiceId] = {};
+      deliveredBySource[row.invoiceId][row.productId] =
+        (deliveredBySource[row.invoiceId][row.productId] || 0) + Number(row.delivered);
+    }
+  }
 
   // Compute status for each id
   const result: Record<string, DeliveryStatus> = {};
@@ -164,6 +173,12 @@ export async function computeDeliveryStatus(
   const deliveredMap: Record<string, number> = {};
   for (const item of remitoItems) {
     deliveredMap[item.productId] = (deliveredMap[item.productId] || 0) + Number(item.deliveredQuantity);
+  }
+  // Remitos libres facturados después: la mercadería ya la entregaron ellos.
+  if (sourceField === 'invoiceId') {
+    for (const row of await billedDeliveredRows([sourceId])) {
+      deliveredMap[row.productId] = (deliveredMap[row.productId] || 0) + Number(row.delivered);
+    }
   }
 
   let allDelivered = true;

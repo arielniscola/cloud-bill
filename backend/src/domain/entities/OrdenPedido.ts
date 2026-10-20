@@ -7,6 +7,7 @@ export interface OrdenPedidoItem {
   ordenPedidoId: string;
   productId: string | null;
   description: string;
+  detail?: string | null;
   quantity: Decimal;
   unitPrice: Decimal;
   discountPct: Decimal;
@@ -53,6 +54,7 @@ export interface OrdenPedidoWithItems extends OrdenPedido {
 export interface CreateOrdenPedidoItemInput {
   productId?: string | null;
   description: string;
+  detail?: string | null;
   quantity: number;
   unitPrice: number;
   discountPct?: number;

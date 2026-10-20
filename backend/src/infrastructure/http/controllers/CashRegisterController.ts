@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
+import { CASH_CONCEPT_LABELS } from '../../database/repositories/PrismaCashRegisterRepository';
 
 export class CashRegisterController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -142,6 +143,74 @@ export class CashRegisterController {
       }, req.fiscalMode);
 
       res.status(201).json({ status: 'success', data: close });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createCashMovement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
+      const cashRegister = await repo.findById(req.params.id, req.companyId);
+      if (!cashRegister) throw new NotFoundError('Caja');
+
+      const movement = await repo.createCashMovement({
+        companyId: req.companyId!,
+        cashRegisterId: cashRegister.id,
+        type: req.body.type,
+        concept: req.body.concept,
+        amount: req.body.amount,
+        personName: req.body.personName,
+        notes: req.body.notes,
+        bankAccountId: req.body.bankAccountId,
+        userId: req.user?.userId,
+        fiscalMode: req.fiscalMode ?? 'FORMAL',
+      });
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'CREATE',
+        entity: 'CashMovement',
+        entityId: movement.id,
+        description: `${CASH_CONCEPT_LABELS[movement.concept] ?? movement.concept} ${movement.number} en caja ${cashRegister.name} por $${Number(movement.amount).toFixed(2)}`,
+      });
+
+      res.status(201).json({ status: 'success', data: movement });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getCashMovement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
+      const movement = await repo.findCashMovement(req.params.movementId, req.params.id, req.companyId);
+      if (!movement) throw new NotFoundError('Movimiento de caja');
+      res.json({ status: 'success', data: movement });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async cancelCashMovement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
+      const existing = await repo.findCashMovement(req.params.movementId, req.params.id, req.companyId);
+      if (!existing) throw new NotFoundError('Movimiento de caja');
+
+      const movement = await repo.cancelCashMovement(existing);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'CashMovement',
+        entityId: movement.id,
+        description: `Movimiento de caja ${movement.number} anulado`,
+      });
+
+      res.json({ status: 'success', data: movement });
     } catch (error) {
       next(error);
     }

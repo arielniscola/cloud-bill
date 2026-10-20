@@ -11,6 +11,7 @@ import {
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
 import prisma from '../prisma';
 import { allocateDocumentNumber } from '../DocumentSequence';
+import { attachItemDetails, saveItemDetail } from '../itemDetail';
 
 const includeRelations = {
   items: {
@@ -71,6 +72,7 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     });
     if (!budget) return null;
     await this._enrichItemsWithVariants((budget as any).items);
+    await attachItemDetails('budget_items', (budget as any).items ?? []);
     return budget as unknown as BudgetWithItems;
   }
 
@@ -99,19 +101,6 @@ export class PrismaBudgetRepository implements IBudgetRepository {
     const companyId = (data as any).companyId ?? (() => { throw new Error('companyId is required'); })();
     const number = await this.getNextBudgetNumber(companyId);
 
-    const itemsWithVariant = data.items.map((item) => ({
-      productId: item.productId ?? null,
-      variantId: (item as any).variantId ?? null,
-      description: item.description,
-      quantity: new Decimal(item.quantity),
-      unitPrice: new Decimal(item.unitPrice),
-      taxRate: new Decimal(item.taxRate),
-      subtotal: new Decimal(item.subtotal),
-      taxAmount: new Decimal(item.taxAmount),
-      total: new Decimal(item.total),
-    }));
-    const itemsForPrisma = itemsWithVariant.map(({ variantId: _v, ...rest }) => rest);
-
     const created = await (prisma as any).budget.create({
       data: {
         number,
@@ -130,57 +119,53 @@ export class PrismaBudgetRepository implements IBudgetRepository {
         subtotal: new Decimal(data.subtotal),
         taxAmount: new Decimal(data.taxAmount),
         total: new Decimal(data.total),
-        items: { create: itemsForPrisma },
       },
-      include: includeRelations,
     });
 
-    // Backfill variantId via raw SQL
-    const createdItems = (created.items ?? []) as Array<{ id: string }>;
-    for (let i = 0; i < itemsWithVariant.length; i++) {
-      const variantId = itemsWithVariant[i].variantId;
-      if (variantId && createdItems[i]?.id) {
-        await prisma.$executeRaw`UPDATE "budget_items" SET "variantId" = ${variantId} WHERE "id" = ${createdItems[i].id}`;
-        (createdItems[i] as any).variantId = variantId;
-      }
-    }
+    await this._createItems(created.id, data.items);
 
-    return created as BudgetWithItems;
+    return this.findById(created.id) as Promise<BudgetWithItems>;
   }
 
   async update(id: string, data: UpdateBudgetInput): Promise<BudgetWithItems> {
     const { items, ...rest } = data;
 
+    await prisma.budget.update({ where: { id }, data: rest as any });
     if (items) {
       // Replace items: delete all and recreate
       await prisma.budgetItem.deleteMany({ where: { budgetId: id } });
-      const variantIds = items.map((item) => (item as any).variantId ?? null);
-      const itemsForCreate = items.map((item) => ({
-        productId: item.productId ?? null,
-        description: item.description,
-        quantity: new Decimal(item.quantity),
-        unitPrice: new Decimal(item.unitPrice),
-        taxRate: new Decimal(item.taxRate),
-        subtotal: new Decimal(item.subtotal),
-        taxAmount: new Decimal(item.taxAmount),
-        total: new Decimal(item.total),
-      }));
-      const updated = await (prisma as any).budget.update({
-        where: { id },
-        data: { ...(rest as any), items: { create: itemsForCreate } },
-        include: includeRelations,
-      });
-      const createdItems = (updated.items ?? []) as Array<{ id: string }>;
-      for (let i = 0; i < variantIds.length; i++) {
-        if (variantIds[i] && createdItems[i]?.id) {
-          await prisma.$executeRaw`UPDATE "budget_items" SET "variantId" = ${variantIds[i]} WHERE "id" = ${createdItems[i].id}`;
-        }
-      }
-    } else {
-      await prisma.budget.update({ where: { id }, data: rest as any });
+      await this._createItems(id, items);
     }
 
     return this.findById(id) as Promise<BudgetWithItems>;
+  }
+
+  /**
+   * Crea las líneas una por una (en orden) y completa por SQL crudo las
+   * columnas que el cliente Prisma (desactualizado) no conoce: variantId y detalle.
+   */
+  private async _createItems(budgetId: string, items: CreateBudgetInput['items']): Promise<void> {
+    for (const item of items) {
+      const created = await prisma.budgetItem.create({
+        data: {
+          budgetId,
+          productId: item.productId ?? null,
+          description: item.description,
+          quantity: new Decimal(item.quantity),
+          unitPrice: new Decimal(item.unitPrice),
+          taxRate: new Decimal(item.taxRate),
+          subtotal: new Decimal(item.subtotal),
+          taxAmount: new Decimal(item.taxAmount),
+          total: new Decimal(item.total),
+        },
+        select: { id: true },
+      });
+      const variantId = (item as any).variantId ?? null;
+      if (variantId) {
+        await prisma.$executeRaw`UPDATE "budget_items" SET "variantId" = ${variantId} WHERE "id" = ${created.id}`;
+      }
+      await saveItemDetail('budget_items', created.id, (item as any).detail);
+    }
   }
 
   async delete(id: string): Promise<void> {
