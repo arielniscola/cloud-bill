@@ -75,3 +75,26 @@
     @apply bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200/80 dark:border-slate-700;
   }
 }
+
+/* ── Modo fiscal: tinte del área de trabajo ─────────────────────────────
+   FiscalModeTopBorder pone data-fiscal-view en <html>. Informal tiñe el fondo
+   en rosa (claro) o pizarra con velo rosa (oscuro); Formal queda neutro. En la
+   vista "Todo" se tiñen solo las filas que llevan el chip INF. */
+html[data-fiscal-view="INFORMAL"] .fiscal-workspace {
+  background-color: #fce7ef;
+}
+html.dark[data-fiscal-view="INFORMAL"] .fiscal-workspace {
+  background-color: #1a1224;
+}
+html[data-fiscal-view="ALL"] tr:has(.fiscal-badge-inf) {
+  background-color: #fce4ec;
+}
+html[data-fiscal-view="ALL"] tr:has(.fiscal-badge-inf):hover {
+  background-color: #fad4e1;
+}
+html.dark[data-fiscal-view="ALL"] tr:has(.fiscal-badge-inf) {
+  background-color: rgb(251 113 133 / 0.10);
+}
+html.dark[data-fiscal-view="ALL"] tr:has(.fiscal-badge-inf):hover {
+  background-color: rgb(251 113 133 / 0.16);
+}

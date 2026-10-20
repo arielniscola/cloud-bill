@@ -120,10 +120,10 @@ function ModalToggle({ checked, onChange }: { checked: boolean; onChange: (v: bo
       </div>
       <div className="flex-1">
         <p className={`text-sm font-medium leading-none ${checked ? 'text-emerald-800' : 'text-gray-600 dark:text-slate-300'}`}>
-          CategorÃ­a activa
+          Categoría activa
         </p>
         <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-none">
-          Solo las categorÃ­as activas aparecen al cargar productos.
+          Solo las categorías activas aparecen al cargar productos.
         </p>
       </div>
       <div
@@ -224,16 +224,16 @@ export default function CategoriesPage() {
     try {
       if (editingCategory) {
         await categoriesService.update(editingCategory.id, data);
-        toast.success('CategorÃ­a actualizada');
+        toast.success('Categoría actualizada');
       } else {
         await categoriesService.create(data);
-        toast.success('CategorÃ­a creada');
+        toast.success('Categoría creada');
       }
       closeModal();
       fetchCategories();
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar categorÃ­a');
+      toast.error(err.response?.data?.message || 'Error al guardar categoría');
     } finally {
       setIsSaving(false);
     }
@@ -244,11 +244,11 @@ export default function CategoriesPage() {
     setIsDeleting(true);
     try {
       await categoriesService.delete(deleteId);
-      toast.success('CategorÃ­a eliminada');
+      toast.success('Categoría eliminada');
       setDeleteId(null);
       fetchCategories();
     } catch {
-      toast.error('Error al eliminar categorÃ­a. Verificá que no tenga productos asociados.');
+      toast.error('Error al eliminar categoría. Verificá que no tenga productos asociados.');
     } finally {
       setIsDeleting(false);
     }
@@ -263,7 +263,7 @@ export default function CategoriesPage() {
   return (
     <div>
       <PageHeader
-        title="CategorÃ­as"
+        title="Categorías"
         subtitle={
           isFirstLoad
             ? undefined
@@ -272,7 +272,7 @@ export default function CategoriesPage() {
         actions={
           <Button onClick={() => openModal()}>
             <Plus className="w-4 h-4 mr-2" />
-            Nueva categorÃ­a
+            Nueva categoría
           </Button>
         }
       />
@@ -308,7 +308,7 @@ export default function CategoriesPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar categorÃ­as..."
+              placeholder="Buscar categorías..."
               className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg placeholder-gray-400 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-[border-color,box-shadow] duration-150"
             />
           </div>
@@ -325,11 +325,11 @@ export default function CategoriesPage() {
             <Layers className="w-7 h-7 text-gray-300 dark:text-slate-500" />
           </div>
           <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
-            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin categorÃ­as en esta vista' : 'Sin categorÃ­as'}
+            {search ? 'Sin resultados' : activeTab !== 'all' ? 'Sin categorías en esta vista' : 'Sin categorías'}
           </p>
           <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
             {search
-              ? `No se encontraron categorÃ­as para "${search}".`
+              ? `No se encontraron categorías para "${search}".`
               : activeTab !== 'all'
               ? 'Probá con otro filtro o creá uno nuevo.'
               : 'Creá tu primera categoría para clasificar líneas de productos.'}
@@ -337,7 +337,7 @@ export default function CategoriesPage() {
           {!search && activeTab === 'all' && (
             <Button onClick={() => openModal()}>
               <Plus className="w-4 h-4 mr-2" />
-              Nueva categorÃ­a
+              Nueva categoría
             </Button>
           )}
         </div>
@@ -357,7 +357,7 @@ export default function CategoriesPage() {
               className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 dark:border-slate-600 rounded-xl py-4 px-4 text-gray-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all duration-150 active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              <span className="text-xs font-medium">Nueva categorÃ­a</span>
+              <span className="text-xs font-medium">Nueva categoría</span>
             </button>
           )}
         </div>
@@ -367,7 +367,7 @@ export default function CategoriesPage() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingCategory ? `Editar "${editingCategory.name}"` : 'Nueva categorÃ­a'}
+        title={editingCategory ? `Editar "${editingCategory.name}"` : 'Nueva categoría'}
         size="sm"
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -415,7 +415,7 @@ export default function CategoriesPage() {
                 Admite variantes
               </p>
               <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 leading-snug">
-                Activá si los productos de esta categorÃ­a tienen talles, colores u otros atributos (ej. indumentaria).
+                Activá si los productos de esta categoría tienen talles, colores u otros atributos (ej. indumentaria).
               </p>
             </div>
             <div
@@ -440,7 +440,7 @@ export default function CategoriesPage() {
 
           <div className="flex gap-2.5 pt-1">
             <Button type="submit" isLoading={isSaving}>
-              {editingCategory ? 'Guardar cambios' : 'Crear categorÃ­a'}
+              {editingCategory ? 'Guardar cambios' : 'Crear categoría'}
             </Button>
             <Button type="button" variant="outline" onClick={closeModal} disabled={isSaving}>
               Cancelar
@@ -454,7 +454,7 @@ export default function CategoriesPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Eliminar categorÃ­a"
+        title="Eliminar categoría"
         message="¿Eliminar esta categoría? Los productos asociados quedarán sin categoría asignada."
         confirmText="Eliminar"
         isLoading={isDeleting}
