@@ -95,7 +95,8 @@ export default function StockMovementsPage() {
   const [outLots,    setOutLots]    = useState<ItemLotDTO[] | undefined>(undefined);
   const resetLots = () => { setLotNumber(''); setLotExpires(''); setOutLots(undefined); };
 
-  const [filterProduct,   setFilterProduct]   = useState('');
+  // ?productId= llega desde la ficha del producto ("Ver todos").
+  const [filterProduct,   setFilterProduct]   = useState(() => new URLSearchParams(window.location.search).get('productId') ?? '');
   const [filterWarehouse, setFilterWarehouse] = useState('');
   const [filterType,      setFilterType]      = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');

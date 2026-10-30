@@ -27,6 +27,17 @@ export function fromArs(amountArs: number, currency: string | null | undefined, 
   return round2(amountArs / rate);
 }
 
+/**
+ * Factor a pesos con la cotización GUARDADA en el comprobante (ventas,
+ * compras, cobros: lo que valió ese día — misma regla que el Dashboard). En
+ * ARS es siempre 1 aunque `exchangeRate` traiga la cotización del día.
+ */
+export function arsFactor(currency: string | null | undefined, exchangeRate: number | string | null | undefined): number {
+  if (!currency || currency === 'ARS') return 1;
+  const rate = Number(exchangeRate);
+  return rate > 0 ? rate : 1;
+}
+
 /** true si el importe necesita conversión (moneda extranjera). */
 export const isForeign = (currency: string | null | undefined): boolean =>
   !!currency && currency !== 'ARS';

@@ -1,6 +1,10 @@
 import type { Supplier } from './supplier.types';
 
-export type PurchaseRemitoStatus = 'RECEIVED' | 'INVOICED' | 'CANCELLED';
+/**
+ * PENDING_CONFIRMATION: lo cargó depósito y espera que un admin lo confirme
+ * (todavía no entró el stock). REJECTED: el admin lo rechazó (nunca entró).
+ */
+export type PurchaseRemitoStatus = 'RECEIVED' | 'INVOICED' | 'CANCELLED' | 'PENDING_CONFIRMATION' | 'REJECTED';
 
 export interface PurchaseRemitoItem {
   id:          string;
@@ -13,6 +17,10 @@ export interface PurchaseRemitoItem {
   lotNumber?:  string | null;
   /** 'YYYY-MM-DD' o null. */
   expiresAt?:  string | null;
+  /** Lo que cargó depósito, si la recepción pasó por confirmación (quantity/lot/expiresAt = lo confirmado). */
+  receivedQuantity?:  number | string | null;
+  receivedLotNumber?: string | null;
+  receivedExpiresAt?: string | null;
 }
 
 export interface PurchaseRemito {
@@ -33,6 +41,11 @@ export interface PurchaseRemito {
   warehouse?:  { id: string; name: string };
   user?:       { id: string; name: string };
   purchase?:   { id: string; number: string } | null;
+  confirmedAt?:     string | null;
+  confirmedBy?:     { id: string; name: string } | null;
+  rejectedAt?:      string | null;
+  rejectedBy?:      { id: string; name: string } | null;
+  rejectionReason?: string | null;
   items:       PurchaseRemitoItem[];
   itemCount?:  number;
 }
@@ -56,6 +69,14 @@ export interface CreatePurchaseRemitoDTO {
   date?:       string;
   notes?:      string | null;
   items:       CreatePurchaseRemitoItemDTO[];
+}
+
+/** Corrección de una línea al confirmar la recepción. */
+export interface ConfirmPurchaseRemitoItemDTO {
+  id:         string;
+  quantity:   number;
+  lotNumber?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface PurchaseRemitoFilters {

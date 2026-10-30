@@ -39,7 +39,7 @@ export interface CashRegisterMovement {
   };
   invoice?: { id: string; type: string; number: string };
   /** Solo en movimientos manuales (retiro, depósito, aporte...). */
-  cashMovement?: { id: string; number: string; concept: CashMovementConcept; status: CashMovementStatus };
+  cashMovement?: { id: string; number: string; concept: CashMovementConcept; reasonName: string | null; status: CashMovementStatus };
 }
 
 export type CashMovementDirection = 'IN' | 'OUT';
@@ -57,6 +57,9 @@ export interface CashMovement {
   personName: string | null;
   notes: string | null;
   bankAccountId: string | null;
+  /** Motivo del catálogo de la empresa (Combustible, Viáticos…), copiado al registrar. */
+  reasonId: string | null;
+  reasonName: string | null;
   status: CashMovementStatus;
   cancelledAt: string | null;
   userId: string | null;
@@ -73,6 +76,18 @@ export interface CreateCashMovementDTO {
   personName?: string;
   notes?: string;
   bankAccountId?: string;
+  reasonId?: string;
+}
+
+export type CashMovementReasonType = 'OUT' | 'IN' | 'BOTH';
+
+export interface CashMovementReason {
+  id: string;
+  name: string;
+  type: CashMovementReasonType;
+  isActive: boolean;
+  /** Movimientos que lo usan: si es > 0, eliminarlo lo desactiva. */
+  usageCount: number;
 }
 
 export interface CashRegisterClose {
@@ -104,6 +119,8 @@ export interface CashRegisterMovementFilters {
   type?: CashRegisterMovementType;
   startDate?: string;
   endDate?: string;
+  /** Solo retiros / ingresos manuales con ese motivo. */
+  reasonId?: string;
 }
 
 export interface CreateCashRegisterCloseDTO {

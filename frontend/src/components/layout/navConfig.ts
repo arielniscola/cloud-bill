@@ -5,7 +5,7 @@ import { CalendarClock,
   ArrowRightLeft, BarChart2, TrendingUp, History, BookOpen, Truck, ShoppingCart,
   Calculator, Brain, Receipt, ShoppingBag, Store, Banknote, Building2,
   Smartphone, FileEdit, BookMarked, Sliders, Crown, Repeat, Percent, Coins,
-  Wallet, PieChart, ClipboardX, CloudOff, MapPin, MapPinned,
+  Wallet, PieChart, ClipboardX, CloudOff, MapPin, MapPinned, Tags, PackagePlus,
 } from "lucide-react";
 
 /**
@@ -19,6 +19,7 @@ export interface NavItem {
   icon: React.ElementType;
   featureKey?: string;  // se oculta si el plan no incluye la feature
   section?: string;     // subtítulo dentro del panel del módulo
+  requiredRoles?: readonly string[]; // se oculta a los demás roles
 }
 
 /**
@@ -109,6 +110,8 @@ export const navModules: NavModule[] = [
       { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock" },
       { name: "Transferencias",        href: "/stock/transfer",          icon: ArrowRightLeft,section: "Stock", featureKey: "multi_warehouse" },
       { name: "Conteo físico",         href: "/stock/physical-count",    icon: ClipboardCheck,section: "Stock" },
+      // Depósito carga la recepción y un admin la confirma; los admins la ven en Compras › Remitos de Compra.
+      { name: "Recepción de mercadería", href: "/purchase-remitos",      icon: PackagePlus,   section: "Stock", requiredRoles: ["WAREHOUSE_CLERK"] },
       { name: "Lotes y vencimientos",  href: "/stock/lots",              icon: CalendarClock, section: "Stock" },
       { name: "Almacenes",             href: "/warehouses",              icon: Warehouse,     section: "Stock" },
       { name: "Inteligente",           href: "/stock/intelligence",      icon: Brain,         section: "Stock", featureKey: "stock_intelligence" },
@@ -125,6 +128,7 @@ export const navModules: NavModule[] = [
     items: [
       { name: "Cajas",             href: "/cash-registers", icon: Landmark,  section: "Tesorería" },
       { name: "Bancos",            href: "/bancos",         icon: Building2, section: "Tesorería" },
+      { name: "Motivos de caja",   href: "/cash-movement-reasons", icon: Tags, section: "Tesorería" },
       { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  section: "Tesorería", featureKey: "bank_module" },
       { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  section: "Tesorería", featureKey: "bank_module" },
       { name: "Tarjetas",          href: "/cards",          icon: CreditCard,section: "Tesorería", featureKey: "cards" },

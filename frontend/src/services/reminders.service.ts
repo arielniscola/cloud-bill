@@ -12,7 +12,11 @@ export interface Reminder {
   dueDate: string;
   daysUntilDue: number;
   urgency: ReminderUrgency;
+  /** En la moneda del comprobante. */
   amount: number;
+  currency?: string;
+  /** En pesos con la cotización del día: es lo que se suma. */
+  amountArs?: number;
 }
 
 export interface RemindersResult {

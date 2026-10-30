@@ -1,3 +1,4 @@
+import { roleAllowed } from '../../utils/roles';
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
@@ -201,14 +202,14 @@ export default function HomePage() {
   const visibleModuleGroups = moduleGroups
     .filter((g) => {
       if (g.moduleKey && !isModuleEnabled(g.moduleKey)) return false;
-      if (g.requiredRoles && !g.requiredRoles.includes(role)) return false;
+      if (g.requiredRoles && !roleAllowed(role, g.requiredRoles)) return false;
       return true;
     })
     .map((g) => ({
       ...g,
       items: g.items.filter((i) => {
         if (i.featureKey && !hasFeature(i.featureKey)) return false;
-        if (i.requiredRoles && !i.requiredRoles.includes(role)) return false;
+        if (i.requiredRoles && !roleAllowed(role, i.requiredRoles)) return false;
         return true;
       }),
     }))
@@ -221,7 +222,7 @@ export default function HomePage() {
   const sumAmount = (urgency: 'overdue' | 'critical') =>
     reminders?.reminders
       .filter((r) => r.urgency === urgency)
-      .reduce((sum, r) => sum + (r.amount ?? 0), 0) ?? 0;
+      .reduce((sum, r) => sum + (r.amountArs ?? r.amount ?? 0), 0) ?? 0;
 
   const alerts: AlertItem[] = [];
   if (reminders && reminders.counts.overdue > 0) {

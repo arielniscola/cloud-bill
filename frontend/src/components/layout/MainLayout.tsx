@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Menu } from 'lucide-react';
@@ -5,10 +6,12 @@ import { useUIStore } from '../../stores';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import NotificationBell from '../notifications/NotificationBell';
+import ApprovalsBell from '../approvals/ApprovalsBell';
 import OfflineBanner from './OfflineBanner';
 import OfflineRouteGuard from './OfflineRouteGuard';
 import { useOfflineSync } from '../../lib/offline/useOfflineSync';
 import FiscalModeTopBorder from './FiscalModeTopBorder';
+import { resyncPush } from '../../lib/pwa/push';
 
 export default function MainLayout() {
   const { menuType, sidebarOpen, toggleMobileMenu } = useUIStore();
@@ -16,6 +19,10 @@ export default function MainLayout() {
   // Monitorea la conexion y mantiene al dia la cache offline. Va aca y no en
   // App para que no corra en /login, donde todavia no hay token.
   useOfflineSync();
+
+  // Si este navegador tiene los avisos push activados, re-afirmar la
+  // suscripción para el usuario logueado (el endpoint puede haber rotado).
+  useEffect(() => { void resyncPush(); }, []);
 
   if (menuType === 'navbar') {
     return (
@@ -53,7 +60,8 @@ export default function MainLayout() {
           <span className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">CloudBill</span>
         </div>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <ApprovalsBell />
           <NotificationBell />
         </div>
       </header>

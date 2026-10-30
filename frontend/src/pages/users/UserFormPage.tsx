@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, ShieldCheck, ShoppingBag, DollarSign, Truck, Eye as EyeIcon } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Crown, ShieldCheck, ShoppingBag, DollarSign, Truck, Eye as EyeIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { Button, Input } from '../../components/ui';
@@ -12,7 +12,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { useAuthStore } from '../../stores';
 import { apiErrorMessage } from '../../utils/apiError';
 
-type AssignableRole = 'ADMIN' | 'SELLER' | 'FINANCES' | 'PURCHASES' | 'WAREHOUSE_CLERK';
+type AssignableRole = 'OWNER' | 'ADMIN' | 'SELLER' | 'FINANCES' | 'PURCHASES' | 'WAREHOUSE_CLERK';
 
 interface RoleCard {
   value: AssignableRole;
@@ -26,6 +26,16 @@ interface RoleCard {
 }
 
 const ROLE_CARDS: RoleCard[] = [
+  {
+    value: 'OWNER',
+    label: 'Dueño',
+    description: 'Acceso total + aprobaciones',
+    capabilities: ['Todo lo del Administrador', 'Aprueba anulaciones y devoluciones', 'Configura las acciones protegidas'],
+    icon: Crown,
+    color: 'text-amber-700 dark:text-amber-300',
+    bg: 'bg-amber-50 dark:bg-amber-900/20',
+    border: 'border-amber-300 dark:border-amber-600',
+  },
   {
     value: 'ADMIN',
     label: 'Administrador',

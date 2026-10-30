@@ -25,6 +25,8 @@ import type { Invoice, Recibo, CreateReciboDTO, AfipError, ActivityLog, Remito, 
 import InvoicePDF from '../../components/pdf/InvoicePDF';
 import InformalInvoicePDF from '../../components/pdf/InformalInvoicePDF';
 import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
+import { approvalOutcome } from '../../utils/approvalActions';
+import PendingApprovalBanner from '../../components/approvals/PendingApprovalBanner';
 
 const DELIVERY_STATUS_LABEL: Record<string, string> = {
   NOT_DELIVERED: 'Sin entregas',
@@ -202,13 +204,14 @@ export default function InvoiceDetailPage() {
         invoicesService.getById(id),
         recibosService.getAll({ invoiceId: id }),
         invoicesService.getAfipErrors(id).catch(() => []),
-        activityLogsService.getAll({ entityId: id, limit: 100 }).catch(() => ({ data: [] as ActivityLog[] })),
+        // Historia del documento: visible para cualquier rol que abra la factura (no solo admin).
+        activityLogsService.getForDocument(id).catch(() => [] as ActivityLog[]),
         remitosService.getAll({ invoiceId: id, limit: 50 }).catch(() => ({ data: [] as Remito[] })),
       ]);
       setInvoice(invoiceData);
       setRecibos(recibosData.data);
       setAfipErrors(afipErrorsData);
-      setLogs(logsData.data);
+      setLogs(logsData);
       setLinkedRemitos(remitosData.data);
       if (invoiceData.ordenPedidoId) {
         ordenPedidosService.getById(invoiceData.ordenPedidoId)
@@ -247,6 +250,7 @@ export default function InvoiceDetailPage() {
       setShowCancelDialog(false);
       await loadData();
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setShowCancelDialog(false); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar factura');
     } finally {
@@ -263,6 +267,7 @@ export default function InvoiceDetailPage() {
       setShowDeleteDialog(false);
       navigate('/invoices');
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setShowDeleteDialog(false); setIsDeleting(false); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al eliminar factura');
       setIsDeleting(false);
@@ -278,6 +283,8 @@ export default function InvoiceDetailPage() {
       setShowPayModal(false);
       await loadData();
     } catch (error: unknown) {
+      if (approvalOutcome(error) === 'pending') { setShowPayModal(false); return; }
+      if (approvalOutcome(error)) return;
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al registrar pago');
     } finally {
@@ -294,6 +301,7 @@ export default function InvoiceDetailPage() {
       setCancelReciboId(null);
       await loadData();
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setCancelReciboId(null); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar recibo');
     } finally {
@@ -487,16 +495,21 @@ export default function InvoiceDetailPage() {
 
   // ── Timeline: creada → emitida → CAE → cobros → saldo ──
   const timelineEvents: TimelineEvent[] = (() => {
-    const dated: TimelineEvent[] = [{ date: invoice.createdAt, title: 'Creada', detail: 'Borrador' }];
+    const createLog = logs.find((l) => l.entity === 'Invoice' && l.action === 'CREATE');
+    const dated: TimelineEvent[] = [{
+      date: createLog?.createdAt ?? invoice.createdAt, withTime: true, title: 'Creada', detail: 'Borrador',
+      user: createLog?.user?.name ?? invoice.user?.name ?? null,
+    }];
     for (const log of logs) {
+      const user = log.user?.name ?? null;
       if (log.entity === 'Invoice' && log.action === 'UPDATE' && log.description.includes('emitida')) {
-        dated.push({ date: log.createdAt, title: 'Emitida' });
-      }
-      if (log.entity === 'AfipEmission') {
-        dated.push({ date: log.createdAt, title: 'CAE otorgado por ARCA', detail: invoice.cae ?? undefined, tone: 'success' });
-      }
-      if (log.entity === 'Invoice' && log.action === 'CANCEL') {
-        dated.push({ date: log.createdAt, title: 'Anulada', tone: 'danger' });
+        dated.push({ date: log.createdAt, withTime: true, title: 'Emitida', user });
+      } else if (log.entity === 'AfipEmission') {
+        dated.push({ date: log.createdAt, withTime: true, title: 'CAE otorgado por ARCA', detail: invoice.cae ?? undefined, tone: 'success', user });
+      } else if (log.entity === 'Invoice' && log.action === 'CANCEL') {
+        dated.push({ date: log.createdAt, withTime: true, title: 'Anulada', detail: log.description, tone: 'danger', user });
+      } else if (log.entity === 'Invoice' && log.action === 'UPDATE' && log.metadata?.previousDate) {
+        dated.push({ date: log.createdAt, withTime: true, title: 'Fecha modificada', detail: log.description, user });
       }
     }
     // Facturas emitidas antes de que existiera el log de emisión
@@ -509,6 +522,7 @@ export default function InvoiceDetailPage() {
         title: `${isCreditNote ? 'Devolución' : 'Cobro'} ${r.number}`,
         detail: formatCurrency(Number(r.amount), invoice.currency),
         tone: 'success',
+        user: r.user?.name ?? null,
       });
     }
     // Los remitos existían solo en "Documentos relacionados", sin fecha ni
@@ -588,6 +602,7 @@ export default function InvoiceDetailPage() {
   return (
     <div>
       {/* ── Cabecera: identidad, plata y una sola acción principal ── */}
+      <PendingApprovalBanner entityType="INVOICE" entityId={id} />
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl mb-6">
         <div className="px-5 pt-4 pb-4 flex flex-col lg:flex-row lg:items-start gap-5">
           <div className="min-w-0 flex-1">

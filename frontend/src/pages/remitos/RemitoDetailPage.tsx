@@ -8,7 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
-import { PageHeader, ConfirmDialog, SendEmailModal } from '../../components/shared';
+import { PageHeader, ConfirmDialog, SendEmailModal, DocumentHistory } from '../../components/shared';
 import { remitosService } from '../../services';
 import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
 import { formatDate, formatCuit } from '../../utils/formatters';
@@ -16,6 +16,8 @@ import { REMITO_STATUSES } from '../../utils/constants';
 import type { Remito } from '../../types';
 import RemitoPDF, { type RemitoPrintMode } from '../../components/pdf/RemitoPDF';
 import BillRemitosModal from './BillRemitosModal';
+import { approvalOutcome } from '../../utils/approvalActions';
+import PendingApprovalBanner from '../../components/approvals/PendingApprovalBanner';
 
 const PRINT_MODES: { value: RemitoPrintMode; label: string; description: string }[] = [
   { value: 'REMITO', label: 'Remito', description: 'Con las copias de la configuración de impresión' },
@@ -152,6 +154,7 @@ export default function RemitoDetailPage() {
       toast.success('Remito cancelado');
       setShowCancelDialog(false);
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setShowCancelDialog(false); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar remito');
     } finally {
@@ -217,6 +220,7 @@ export default function RemitoDetailPage() {
           </div>
         }
       />
+      <PendingApprovalBanner entityType="REMITO" entityId={id} />
 
       {/* Status strip — only for RESERVE remitos */}
       {isReserve && !isCancelled && (
@@ -429,6 +433,20 @@ export default function RemitoDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <DocumentHistory
+          entityId={remito.id}
+          reloadKey={remito.status}
+          created={{ date: remito.createdAt, user: remito.user?.name, title: `Remito ${remito.number} creado` }}
+          final={
+            remito.status === 'PENDING' ? [{ title: 'Pendiente de entrega', tone: 'pending' }]
+            : remito.status === 'PARTIALLY_DELIVERED' ? [{ title: 'Entrega parcial: quedan ítems por entregar', tone: 'pending' }]
+            : remito.status === 'DELIVERED' ? [{ title: 'Entregado por completo', tone: 'success' }]
+            : []
+          }
+        />
       </div>
 
       {/* Deliver Modal */}

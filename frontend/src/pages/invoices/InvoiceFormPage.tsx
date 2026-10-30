@@ -44,6 +44,7 @@ const ND_TYPE_MAP: Partial<Record<InvoiceType, InvoiceType>> = {
   FACTURA_C: 'NOTA_DEBITO_C',
 };
 import { PaymentModal } from '../../components/shared';
+import { approvalOutcome } from '../../utils/approvalActions';
 
 /** Qué hacer al confirmar el formulario. */
 type SubmitAction = 'draft' | 'issue' | 'arca';
@@ -1318,6 +1319,8 @@ export default function InvoiceFormPage() {
       }
       navigate(`/invoices/${createdInvoiceId}`);
     } catch (error: unknown) {
+      // Devolución de una NC: quedó pendiente de aprobación (o sin pedir); la NC ya existe.
+      if (approvalOutcome(error)) { navigate(`/invoices/${createdInvoiceId}`); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al registrar pago');
     } finally {

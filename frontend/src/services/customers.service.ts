@@ -1,5 +1,6 @@
 import api from './api';
 import type {
+  CustomerOverview,
   Customer,
   CreateCustomerDTO,
   UpdateCustomerDTO,
@@ -18,6 +19,11 @@ export const customersService = {
 
   async getById(id: string): Promise<Customer> {
     const response = await api.get<ApiResponse<Customer>>(`/customers/${id}`);
+    return response.data.data;
+  },
+
+  async getOverview(id: string): Promise<CustomerOverview> {
+    const response = await api.get<ApiResponse<CustomerOverview>>(`/customers/${id}/overview`);
     return response.data.data;
   },
 

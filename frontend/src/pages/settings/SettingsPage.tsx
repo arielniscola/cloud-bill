@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users, Store, Check, Smartphone } from 'lucide-react';
+import { Monitor, Building2, Landmark, PackageSearch, LayoutDashboard, AlignJustify, Sun, Moon, Mail, Users, Store, Check, Smartphone, ShieldCheck } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 import { Card } from '../../components/ui';
 import { useUIStore } from '../../stores';
@@ -19,11 +19,12 @@ import UsersSettingsCard from './UsersSettingsCard';
 import CompanySettingsCard from './CompanySettingsCard';
 import MercadoPagoSettingsCard from './MercadoPagoSettingsCard';
 import PdvSettingsCard from './PdvSettingsCard';
+import ApprovalSettingsCard from './ApprovalSettingsCard';
 
 // ── Types ──────────────────────────────────────────────────────────
-type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios' | 'empresas' | 'pagos';
+type Tab = 'general' | 'empresa' | 'operaciones' | 'stock' | 'correo' | 'usuarios' | 'aprobaciones' | 'empresas' | 'pagos';
 
-const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: string; superAdminOnly?: boolean; featureKey?: FeatureKey }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: string; superAdminOnly?: boolean; ownerOnly?: boolean; featureKey?: FeatureKey }[] = [
   { id: 'general',     label: 'General',     icon: Monitor,       description: 'Apariencia y preferencias' },
   { id: 'empresa',     label: 'Empresa',     icon: Building2,     description: 'Datos fiscales y ARCA/AFIP' },
   { id: 'operaciones', label: 'Operaciones', icon: Landmark,      description: 'Cajas predeterminadas' },
@@ -31,6 +32,7 @@ const ALL_TABS: { id: Tab; label: string; icon: React.ElementType; description: 
   { id: 'pagos',       label: 'Pagos',       icon: Smartphone,    description: 'Integración con MercadoPago y métodos de cobro', featureKey: 'mercadopago' },
   { id: 'correo',      label: 'Correo',      icon: Mail,          description: 'Configuración SMTP para envío de emails' },
   { id: 'usuarios',    label: 'Usuarios',    icon: Users,         description: 'Gestión de usuarios y roles de acceso' },
+  { id: 'aprobaciones', label: 'Aprobaciones', icon: ShieldCheck, description: 'Acciones que requieren aprobación del Dueño', ownerOnly: true },
   { id: 'empresas',    label: 'Empresas',    icon: Store,         description: 'Gestión de empresas y puntos de venta', superAdminOnly: true },
 ];
 
@@ -210,10 +212,11 @@ function DarkModeCard() {
 
 // ── Main page ──────────────────────────────────────────────────────
 export default function SettingsPage() {
-  const { isSuperAdmin } = usePermissions();
+  const { isSuperAdmin, isOwner } = usePermissions();
   const { hasFeature } = useFeatures();
   const TABS = ALL_TABS.filter(t => {
     if (t.superAdminOnly && !isSuperAdmin) return false;
+    if (t.ownerOnly && !isOwner) return false;
     if (t.featureKey && !hasFeature(t.featureKey)) return false;
     return true;
   });
@@ -297,6 +300,11 @@ export default function SettingsPage() {
       )}
 
       {activeTab === 'usuarios' && <UsersSettingsCard />}
+      {activeTab === 'aprobaciones' && (
+        <div className="max-w-4xl">
+          <ApprovalSettingsCard />
+        </div>
+      )}
       {activeTab === 'empresas' && <CompanySettingsCard />}
     </div>
   );

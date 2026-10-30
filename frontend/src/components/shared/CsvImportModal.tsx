@@ -11,8 +11,8 @@ import { excelFileToCsv } from '../../utils/importExcel';
 const TEMPLATES: Record<Entity, { filename: string; headers: string[]; example: string[] }> = {
   products: {
     filename: 'template_productos.csv',
-    headers: ['sku', 'nombre', 'costo', 'precio', 'preciousd', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'superrubro', 'marca', 'proveedor'],
-    example: ['PROD-001', 'Producto de ejemplo', '100', '150', '12.5', '21', 'UN', 'Descripción opcional', '', 'Hortaliza Hibrida', 'Semilla', 'MarcaX', 'Proveedor SA'],
+    headers: ['sku', 'nombre', 'costo', 'costousd', 'precio', 'preciousd', 'iva', 'unidad', 'descripcion', 'codigobarras', 'rubro', 'superrubro', 'marca', 'proveedor'],
+    example: ['PROD-001', 'Producto de ejemplo', '100', '', '150', '12.5', '21', 'UN', 'Descripción opcional', '', 'Hortaliza Hibrida', 'Semilla', 'MarcaX', 'Proveedor SA'],
   },
   customers: {
     filename: 'template_clientes.csv',
@@ -36,6 +36,7 @@ const CONDITION_HINTS: Record<Entity, React.ReactNode> = {
     <ul className="space-y-1 text-xs text-gray-500 dark:text-slate-400">
       <li>Acepta <span className="font-medium">Excel (.xlsx/.xlsm)</span> — lee la hoja "BASE DE DATOS"</li>
       <li><span className="font-medium">sku, nombre, costo, precio</span> — requeridos</li>
+      <li><span className="font-medium">costousd</span> — costo en USD (opcional): el costo en pesos se calcula con la cotización del día</li>
       <li><span className="font-medium">preciousd</span> — precio de venta en USD (opcional)</li>
       <li><span className="font-medium">iva</span> — % o fracción (21 o 0.21). Default: 21</li>
       <li><span className="font-medium">rubro / superrubro / marca / proveedor</span> — deben existir (no se crean)</li>
@@ -190,8 +191,8 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
     e.target.value = '';
   };
 
-  const importChunk = (csv: string, rowOffset: number): Promise<ImportResult> => {
-    if (entity === 'products')  return importService.importProducts(csv, rowOffset);
+  const importChunk = (csv: string, rowOffset: number, importRef: string): Promise<ImportResult> => {
+    if (entity === 'products')  return importService.importProducts(csv, rowOffset, importRef);
     if (entity === 'customers') return importService.importCustomers(csv, rowOffset);
     if (entity === 'suppliers') return importService.importSuppliers(csv, rowOffset);
     return importService.importBancos(csv, rowOffset);
@@ -211,13 +212,14 @@ export default function CsvImportModal({ entity, onClose, onSuccess }: Props) {
 
     const acc: ImportResult = { imported: 0, created: 0, updated: 0, skipped: 0, total: 0, errors: [] };
     let failed = false;
+    const importRef = crypto.randomUUID();
 
     try {
       for (let start = 0; start < dataLines.length; start += CHUNK_SIZE) {
         const chunkLines = dataLines.slice(start, start + CHUNK_SIZE);
         const chunkCsv = [header, ...chunkLines].join('\n');
         try {
-          const res = await importChunk(chunkCsv, start);
+          const res = await importChunk(chunkCsv, start, importRef);
           acc.imported += res.imported;
           acc.created  = (acc.created ?? 0) + (res.created ?? 0);
           acc.updated  = (acc.updated ?? 0) + (res.updated ?? 0);

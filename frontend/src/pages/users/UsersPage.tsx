@@ -18,6 +18,7 @@ import { formatDate } from '../../utils/formatters';
 
 const ROLE_BADGE: Record<string, string> = {
   SUPER_ADMIN:     'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-900/30 dark:border-purple-800',
+  OWNER:           'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800',
   ADMIN:           'text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-800',
   SELLER:          'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800',
   FINANCES:        'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-900/30 dark:border-cyan-800',
@@ -25,7 +26,7 @@ const ROLE_BADGE: Record<string, string> = {
   WAREHOUSE_CLERK: 'text-gray-600 bg-gray-50 border-gray-200 dark:text-slate-400 dark:bg-slate-700 dark:border-slate-600',
 };
 const ROLE_LABEL: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin', ADMIN: 'Administrador', SELLER: 'Vendedor',
+  SUPER_ADMIN: 'Super Admin', OWNER: 'Dueño', ADMIN: 'Administrador', SELLER: 'Vendedor',
   FINANCES: 'Finanzas', PURCHASES: 'Compras', WAREHOUSE_CLERK: 'Depósito',
 };
 
@@ -311,7 +312,7 @@ export default function UsersPage() {
   const stats = useMemo(() => ({
     total:  users.length,
     active: users.filter(u => u.isActive).length,
-    admins: users.filter(u => u.role === 'ADMIN').length,
+    admins: users.filter(u => u.role === 'ADMIN' || u.role === 'OWNER').length,
   }), [users]);
 
   const filtered = useMemo(() => {

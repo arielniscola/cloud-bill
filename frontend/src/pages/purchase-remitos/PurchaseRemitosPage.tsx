@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Package, Truck, Warehouse as WarehouseIcon, CheckCircle2, XCircle, FileText, Search, X } from 'lucide-react';
+import { Plus, Package, Truck, Warehouse as WarehouseIcon, CheckCircle2, XCircle, FileText, Search, X, Clock, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, Pagination } from '../../components/shared';
@@ -13,14 +13,19 @@ const STATUS_CFG: Record<PurchaseRemitoStatus, { label: string; className: strin
   RECEIVED:  { label: 'Recibido',  className: 'text-emerald-700 bg-emerald-50 border-emerald-200', icon: CheckCircle2 },
   INVOICED:  { label: 'Facturado', className: 'text-indigo-700 bg-indigo-50 border-indigo-200',    icon: FileText },
   CANCELLED: { label: 'Cancelado', className: 'text-red-600 bg-red-50 border-red-200',             icon: XCircle },
+  PENDING_CONFIRMATION: { label: 'Pendiente', className: 'text-amber-700 bg-amber-50 border-amber-200', icon: Clock },
+  REJECTED:  { label: 'Rechazado', className: 'text-gray-600 bg-gray-100 border-gray-200',         icon: Ban },
 };
 
 type Tab = 'all' | PurchaseRemitoStatus;
 const TABS: { key: Tab; label: string }[] = [
   { key: 'all', label: 'Todos' },
+  // Recepciones cargadas por depósito que esperan que un admin las confirme.
+  { key: 'PENDING_CONFIRMATION', label: 'Pendientes' },
   { key: 'RECEIVED', label: 'Recibidos' },
   { key: 'INVOICED', label: 'Facturados' },
   { key: 'CANCELLED', label: 'Cancelados' },
+  { key: 'REJECTED', label: 'Rechazados' },
 ];
 
 export default function PurchaseRemitosPage() {
@@ -32,6 +37,7 @@ export default function PurchaseRemitosPage() {
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Filters
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
@@ -94,6 +100,10 @@ export default function PurchaseRemitosPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  useEffect(() => {
+    purchaseRemitosService.pendingCount().then(setPendingCount).catch(() => { /* el contador es informativo */ });
+  }, [remitos]);
+
   return (
     <div>
       <PageHeader
@@ -114,6 +124,11 @@ export default function PurchaseRemitosPage() {
               tab === t.key ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700'
             }`}>
             {t.label}
+            {t.key === 'PENDING_CONFIRMATION' && pendingCount > 0 && (
+              <span className={`ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-full px-1.5 text-xs font-semibold ${
+                tab === t.key ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+              }`}>{pendingCount}</span>
+            )}
           </button>
         ))}
       </div>

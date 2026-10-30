@@ -13,6 +13,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { formatDate } from '../../utils/formatters';
 
 const ROLE_OPTIONS = [
+  { value: 'OWNER',           label: 'Dueño' },
   { value: 'ADMIN',           label: 'Administrador' },
   { value: 'SELLER',          label: 'Vendedor' },
   { value: 'FINANCES',        label: 'Finanzas' },
@@ -22,6 +23,7 @@ const ROLE_OPTIONS = [
 
 const ROLE_BADGE: Record<string, string> = {
   SUPER_ADMIN:     'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-900/30 dark:border-purple-800',
+  OWNER:           'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800',
   ADMIN:           'text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-800',
   SELLER:          'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800',
   FINANCES:        'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-900/30 dark:border-cyan-800',
@@ -30,6 +32,7 @@ const ROLE_BADGE: Record<string, string> = {
 };
 const ROLE_LABEL: Record<string, string> = {
   SUPER_ADMIN:     'Super Admin',
+  OWNER:           'Dueño',
   ADMIN:           'Administrador',
   SELLER:          'Vendedor',
   FINANCES:        'Finanzas',
@@ -420,6 +423,7 @@ export default function UsersSettingsCard() {
         <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">Roles disponibles</h4>
         <div className="space-y-3">
           {[
+            { role: 'OWNER',           Icon: ShieldCheck, desc: 'Todo lo del Administrador, y además aprueba o rechaza las acciones protegidas (anulaciones, devoluciones) que piden los demás usuarios.' },
             { role: 'ADMIN',           Icon: ShieldCheck, desc: 'Acceso total a su empresa: ventas, compras, finanzas y configuración. Puede ver la lista de usuarios.' },
             { role: 'SELLER',          Icon: ShieldAlert, desc: 'Puede gestionar ventas, presupuestos, clientes, productos y stock. Sin acceso a compras ni finanzas.' },
             { role: 'FINANCES',        Icon: ShieldAlert, desc: 'Ve reportes, finanzas (cajas, banco, IVA), compras y proveedores en modo lectura, y cuentas corrientes. No puede realizar ventas ni modificar configuración.' },

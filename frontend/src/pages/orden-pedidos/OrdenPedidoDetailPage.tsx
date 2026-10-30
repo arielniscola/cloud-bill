@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Pencil, CheckCircle, XCircle, FileText, Trash2, ArrowRight, ChevronDown, Banknote, Printer, Truck, Copy, Mail, PackageCheck, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Modal, Select } from '../../components/ui';
-import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal, DocumentTimeline, RelatedDocuments } from '../../components/shared';
+import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal, DocumentHistory, RelatedDocuments } from '../../components/shared';
 import type { TimelineEvent, RelatedDocGroup } from '../../components/shared';
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { ordenPedidosService, recibosService, remitosService, appSettingsService, budgetsService } from '../../services';
@@ -16,7 +16,8 @@ import {
   INVOICE_STATUSES,
   REMITO_STATUSES,
 } from '../../utils/constants';
-import type { OrdenPedido, OrdenPedidoStatus, Recibo, CreateReciboDTO, Remito, Budget } from '../../types';
+import type { OrdenPedido, OrdenPedidoStatus, Recibo, CreateReciboDTO, Remito, Budget, ActivityLog } from '../../types';
+import { approvalOutcome } from '../../utils/approvalActions';
 
 type StatusVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
@@ -184,6 +185,7 @@ export default function OrdenPedidoDetailPage() {
       setCancelReciboId(null);
       await loadData();
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setCancelReciboId(null); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar recibo');
     } finally {
@@ -258,29 +260,27 @@ export default function OrdenPedidoDetailPage() {
   const canEdit = isDraft;
   const canDelete = isDraft;
 
-  // ── Timeline: creada → confirmada → cobros → convertida/saldo ──
-  const timelineEvents: TimelineEvent[] = (() => {
-    const dated: TimelineEvent[] = [{ date: op.createdAt, title: 'Creada' }];
-    for (const r of activeRecibos) {
-      dated.push({
-        date: r.date,
-        title: `Cobro ${r.number}`,
-        detail: formatCurrency(Number(r.amount), op.currency),
-        tone: 'success',
-      });
-    }
-    dated.sort((a, b) => new Date(a.date as string).getTime() - new Date(b.date as string).getTime());
-    if (op.status === 'CANCELLED') {
-      dated.push({ title: 'Cancelada', tone: 'danger' });
-    } else if (op.status === 'CONVERTED') {
-      dated.push({ title: op.invoice ? `Convertida a factura ${op.invoice.number}` : 'Convertida a factura', tone: 'success' });
-    } else if (op.status === 'PAID') {
-      dated.push({ title: 'Cobrada por completo', tone: 'success' });
-    } else if (remaining > 0.009 && op.status !== 'DRAFT') {
-      dated.push({ title: `Saldo pendiente: ${formatCurrency(remaining, op.currency)}`, tone: 'pending' });
-    }
-    return dated;
-  })();
+  // ── Historia: creada → cambios de estado (con usuario) → cobros → convertida/saldo ──
+  const timelineCobros: TimelineEvent[] = activeRecibos.map((r) => ({
+    date: r.date,
+    title: `Cobro ${r.number}`,
+    detail: formatCurrency(Number(r.amount), op.currency),
+    tone: 'success',
+    user: r.user?.name ?? null,
+  }));
+  const timelineFinal: TimelineEvent[] =
+    op.status === 'PAID' ? [{ title: 'Cobrada por completo', tone: 'success' }]
+    : remaining > 0.009 && op.status !== 'DRAFT' && op.status !== 'CANCELLED' && op.status !== 'CONVERTED'
+      ? [{ title: `Saldo pendiente: ${formatCurrency(remaining, op.currency)}`, tone: 'pending' }]
+      : [];
+  // Los cobros ya salen de los recibos (con importe); el log de "estado X" se
+  // traduce al nombre del estado.
+  const mapOpLog = (log: ActivityLog) => {
+    if (log.action === 'PAYMENT') return null;
+    const m = log.description.match(/a estado (\w+)$/);
+    if (m) return `Estado: ${ORDEN_PEDIDO_STATUSES[m[1] as keyof typeof ORDEN_PEDIDO_STATUSES] ?? m[1]}`;
+    return undefined;
+  };
 
   // ── Documentos relacionados: presupuesto de origen, factura generada, remitos, recibos ──
   const relatedGroups: RelatedDocGroup[] = [
@@ -720,7 +720,14 @@ export default function OrdenPedidoDetailPage() {
           <RelatedDocuments groups={relatedGroups} />
 
           {/* Historia del documento */}
-          <DocumentTimeline events={timelineEvents} />
+          <DocumentHistory
+            entityId={op.id}
+            reloadKey={`${op.status}-${activeRecibos.length}`}
+            created={{ date: op.createdAt, user: op.user?.name, title: 'Creada' }}
+            extra={timelineCobros}
+            final={timelineFinal}
+            mapLog={mapOpLog}
+          />
         </div>
       </div>
 

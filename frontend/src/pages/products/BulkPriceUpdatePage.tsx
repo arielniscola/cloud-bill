@@ -2,23 +2,34 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
-import { TrendingUp, TrendingDown, Save, RefreshCw, CheckSquare, Square, ChevronDown, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, Save, RefreshCw, CheckSquare, Square, ChevronDown, X, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
 import { PageHeader, SearchInput } from '../../components/shared';
 import { productsService, rubrosService, brandsService, suppliersService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
 import type { Product, Rubro, Brand, Supplier } from '../../types';
+import RecalculateUsdCostsModal from './RecalculateUsdCostsModal';
 
 // ── Types ────────────────────────────────────────────────────────
 interface RowState {
   product: Product;
   newPrice: number;
   newCost: number;
+  /** null = sin costo en USD (el costo en pesos se edita directo). */
+  newCostUSD: number | null;
   selected: boolean;
 }
 
-type AdjustTarget = 'price' | 'cost' | 'both';
+type AdjustTarget = 'price' | 'cost' | 'costUSD' | 'both';
+
+const origCostUSD = (p: Product): number | null => (p.costUSD != null ? Number(p.costUSD) : null);
+
+const isRowModified = (r: RowState) =>
+  r.newPrice !== Number(r.product.price) ||
+  r.newCost !== Number(r.product.cost) ||
+  r.newCostUSD !== origCostUSD(r.product);
 
 // ── Filter simple select ─────────────────────────────────────────
 function FilterSelect({
@@ -202,6 +213,8 @@ function DeltaBadge({ original, current }: { original: number; current: number }
 // ── Main page ─────────────────────────────────────────────────────
 export default function BulkPriceUpdatePage() {
   const navigate = useNavigate();
+  const { rate: usdRate } = useExchangeRate();
+  const [showRecalcUsd, setShowRecalcUsd] = useState(false);
 
   // Filter state
   const [supplierId, setSupplierId]       = useState('');
@@ -289,7 +302,7 @@ export default function BulkPriceUpdatePage() {
           // Preserve edits if product is already in prev state
           next[p.id] = prev[p.id]
             ? { ...prev[p.id], product: p }
-            : { product: p, newPrice: Number(p.price), newCost: Number(p.cost), selected: false };
+            : { product: p, newPrice: Number(p.price), newCost: Number(p.cost), newCostUSD: origCostUSD(p), selected: false };
         });
         return next;
       });
@@ -307,9 +320,7 @@ export default function BulkPriceUpdatePage() {
   const allSelected  = displayedIds.length > 0 && displayedIds.every((id) => rows[id].selected);
   const someSelected = displayedIds.some((id) => rows[id].selected);
   const selectedIds  = displayedIds.filter((id) => rows[id].selected);
-  const modifiedRows = Object.values(rows).filter(
-    (r) => r.newPrice !== Number(r.product.price) || r.newCost !== Number(r.product.cost)
-  );
+  const modifiedRows = Object.values(rows).filter(isRowModified);
 
   // ── Handlers ──────────────────────────────────────────────────
   const toggleSelect = (id: string) =>
@@ -330,30 +341,63 @@ export default function BulkPriceUpdatePage() {
     setRows((prev) => ({ ...prev, [id]: { ...prev[id], [field]: val } }));
   };
 
+  // Costo en pesos que va a quedar para un costo USD dado: si el USD no cambió
+  // queda el guardado; si cambió, el backend lo convierte con el dólar del día.
+  const costFromUsd = (r: RowState, usd: number | null): number => {
+    if (usd == null) return r.newCost;
+    if (usd === origCostUSD(r.product)) return Number(r.product.cost);
+    return usdRate != null ? Math.round(usd * usdRate * 100) / 100 : r.newCost;
+  };
+
+  const setCostUSD = (id: string, raw: string) => {
+    const val = raw.trim() === '' ? null : parseFloat(raw);
+    if (val != null && (isNaN(val) || val < 0)) return;
+    const usd = val === 0 ? null : val;
+    setRows((prev) => {
+      const r = prev[id];
+      return { ...prev, [id]: { ...r, newCostUSD: usd, newCost: costFromUsd(r, usd) } };
+    });
+  };
+
   const applyAdjustment = (direction: 1 | -1) => {
     const pct = parseFloat(adjustPct);
     if (!pct || pct <= 0) { toast.error('Ingresá un porcentaje válido'); return; }
     const factor = 1 + (direction * pct / 100);
-    if (adjustTarget === 'cost' || adjustTarget === 'both') setShowCost(true);
+    if (adjustTarget !== 'price') setShowCost(true);
+    let skipped = 0;
     setRows((prev) => {
       const updated = { ...prev };
       selectedIds.forEach((id) => {
         const r = { ...updated[id] };
         if (adjustTarget === 'price' || adjustTarget === 'both')
           r.newPrice = Math.round(r.newPrice * factor * 100) / 100;
-        if (adjustTarget === 'cost' || adjustTarget === 'both')
-          r.newCost  = Math.round(r.newCost  * factor * 100) / 100;
+        // El costo en pesos de un producto dolarizado sale del USD: se ajusta con "Costo USD".
+        if (adjustTarget === 'cost' || adjustTarget === 'both') {
+          if (r.newCostUSD == null) r.newCost = Math.round(r.newCost * factor * 100) / 100;
+          else skipped++;
+        }
+        if (adjustTarget === 'costUSD') {
+          if (r.newCostUSD != null) {
+            r.newCostUSD = Math.round(r.newCostUSD * factor * 100) / 100;
+            r.newCost = costFromUsd(r, r.newCostUSD);
+          } else skipped++;
+        }
         updated[id] = r;
       });
       return updated;
     });
+    if (skipped > 0) {
+      toast(adjustTarget === 'costUSD'
+        ? `${skipped} sin costo en USD: no se tocaron`
+        : `${skipped} con costo en USD: ajustalos con "Costo USD"`);
+    }
   };
 
   const resetRow = (id: string) => {
     const p = rows[id].product;
     setRows((prev) => ({
       ...prev,
-      [id]: { ...prev[id], newPrice: Number(p.price), newCost: Number(p.cost) },
+      [id]: { ...prev[id], newPrice: Number(p.price), newCost: Number(p.cost), newCostUSD: origCostUSD(p) },
     }));
   };
 
@@ -365,6 +409,7 @@ export default function BulkPriceUpdatePage() {
         id: r.product.id,
         ...(r.newPrice !== Number(r.product.price) && { price: r.newPrice }),
         ...(r.newCost  !== Number(r.product.cost)  && { cost:  r.newCost  }),
+        ...(r.newCostUSD !== origCostUSD(r.product) && { costUSD: r.newCostUSD }),
       }));
       const result = await productsService.bulkUpdatePrices(updates);
       toast.success(`${result.updated} productos actualizados`);
@@ -390,6 +435,10 @@ export default function BulkPriceUpdatePage() {
                 {modifiedRows.length} modificado{modifiedRows.length !== 1 ? 's' : ''}
               </span>
             )}
+            <Button variant="outline" onClick={() => setShowRecalcUsd(true)}>
+              <DollarSign className="w-4 h-4 mr-2" />
+              Recalcular costos USD
+            </Button>
             <Button onClick={handleSave} isLoading={isSaving} disabled={modifiedRows.length === 0}>
               <Save className="w-4 h-4 mr-2" />
               Guardar cambios
@@ -397,6 +446,18 @@ export default function BulkPriceUpdatePage() {
           </div>
         }
       />
+
+      {showRecalcUsd && (
+        <RecalculateUsdCostsModal
+          onClose={() => setShowRecalcUsd(false)}
+          onDone={() => {
+            setShowRecalcUsd(false);
+            // Los costos cambiaron en la base: se descartan las ediciones y se recarga.
+            setRows({});
+            loadProducts();
+          }}
+        />
+      )}
 
       {/* ── Filter bar ── */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 mb-4 flex flex-wrap gap-3 items-center">
@@ -465,6 +526,7 @@ export default function BulkPriceUpdatePage() {
             >
               <option value="price">Precio venta</option>
               <option value="cost">Costo</option>
+              <option value="costUSD">Costo USD</option>
               <option value="both">Precio + Costo</option>
             </select>
           </div>
@@ -502,7 +564,7 @@ export default function BulkPriceUpdatePage() {
         <div className={clsx(
           'grid gap-3 px-4 py-2.5 border-b border-gray-100 dark:border-slate-700 text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider',
           showCost
-            ? 'grid-cols-[32px_1fr_80px_110px_72px_80px_110px_72px_32px]'
+            ? 'grid-cols-[32px_1fr_90px_80px_110px_72px_80px_110px_72px_32px]'
             : 'grid-cols-[32px_1fr_80px_110px_72px_32px]'
         )}>
           <button onClick={toggleAll} className="flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-indigo-600">
@@ -511,6 +573,7 @@ export default function BulkPriceUpdatePage() {
               : <Square className="w-4 h-4" />}
           </button>
           <span>Producto</span>
+          {showCost && <span>Costo USD</span>}
           {showCost && <span>Costo actual</span>}
           {showCost && <span>Nuevo costo</span>}
           {showCost && <span>Δ costo</span>}
@@ -546,7 +609,8 @@ export default function BulkPriceUpdatePage() {
               const p = r.product;
               const priceModified = r.newPrice !== Number(p.price);
               const costModified  = r.newCost  !== Number(p.cost);
-              const isModified    = priceModified || costModified;
+              const usdModified   = r.newCostUSD !== origCostUSD(p);
+              const isModified    = isRowModified(r);
 
               return (
                 <div
@@ -554,7 +618,7 @@ export default function BulkPriceUpdatePage() {
                   className={clsx(
                     'grid gap-3 px-4 py-2.5 items-center transition-colors duration-100',
                     showCost
-                      ? 'grid-cols-[32px_1fr_80px_110px_72px_80px_110px_72px_32px]'
+                      ? 'grid-cols-[32px_1fr_90px_80px_110px_72px_80px_110px_72px_32px]'
                       : 'grid-cols-[32px_1fr_80px_110px_72px_32px]',
                     isModified
                       ? 'bg-amber-50/60 dark:bg-amber-900/10'
@@ -577,6 +641,25 @@ export default function BulkPriceUpdatePage() {
                     <p className="text-xs text-gray-400 dark:text-slate-500 font-mono">{p.sku}</p>
                   </div>
 
+                  {/* Cost USD input — vacío = costo solo en pesos */}
+                  {showCost && (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={r.newCostUSD ?? ''}
+                      placeholder="—"
+                      onChange={(e) => setCostUSD(id, e.target.value)}
+                      title={p.costUsdRate != null ? `Costo en pesos calculado con dólar $${Number(p.costUsdRate)}` : undefined}
+                      className={clsx(
+                        'w-full px-2.5 py-1.5 text-sm tabular-nums rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:text-slate-200',
+                        usdModified
+                          ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/20'
+                          : 'border-gray-200 dark:border-slate-600 bg-white'
+                      )}
+                    />
+                  )}
+
                   {/* Cost current */}
                   {showCost && (
                     <span className="text-sm tabular-nums text-gray-500 dark:text-slate-400">
@@ -592,8 +675,11 @@ export default function BulkPriceUpdatePage() {
                       step="0.01"
                       value={r.newCost}
                       onChange={(e) => setField(id, 'newCost', e.target.value)}
+                      readOnly={r.newCostUSD != null}
+                      title={r.newCostUSD != null ? 'Se calcula desde el costo USD' : undefined}
                       className={clsx(
                         'w-full px-2.5 py-1.5 text-sm tabular-nums rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:text-slate-200',
+                        r.newCostUSD != null && 'text-gray-500 dark:text-slate-400 cursor-default',
                         costModified
                           ? 'border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/20'
                           : 'border-gray-200 dark:border-slate-600 bg-white'

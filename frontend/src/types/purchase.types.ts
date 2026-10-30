@@ -22,6 +22,7 @@ export interface PurchaseInvoiceItem {
   subtotal:    number;
   taxAmount:   number;
   total:       number;
+  productId?:  string | null;
 }
 
 export interface PurchaseInvoiceTributo {
@@ -89,6 +90,18 @@ export interface PurchaseInvoice {
   originInvoice?: { id: string; number: string; type: string } | null;
   createdAt: string;
   updatedAt: string;
+  /** Órdenes de pago que imputaron a la factura (solo en el detalle). */
+  payments?: { id: string; number: string; date: string; status: string; amount: number; userName: string | null }[];
+  /** Quién la cargó (null en facturas anteriores a que se registrara). */
+  userId?: string | null;
+  userName?: string | null;
+  /** Solo en la respuesta de alta/edición: costos de producto actualizados. */
+  costUpdate?: PurchaseCostUpdateResult | null;
+}
+
+export interface PurchaseCostUpdateResult {
+  updated: number;
+  skipped: { productId: string; name: string; reason: string }[];
 }
 
 export interface CreatePurchaseInvoiceItemDTO {
@@ -97,6 +110,7 @@ export interface CreatePurchaseInvoiceItemDTO {
   unitPrice:   number;
   discountPct?: number;   // % de descuento PROPIO de la línea
   taxRate:     number;
+  productId?:  string | null;
 }
 
 export interface CreatePurchaseInvoiceTributoDTO {
@@ -131,6 +145,8 @@ export interface CreatePurchaseInvoiceDTO {
   date?: string | null;
   remitoIds?: string[];
   originInvoiceId?: string | null;
+  /** Productos cuyo costo se actualiza con lo facturado (con o sin mantener margen). */
+  updateCosts?: { productIds: string[]; keepMargin: boolean };
 }
 
 // Totales de la consulta (todo el filtro, no solo la página). Los importes van

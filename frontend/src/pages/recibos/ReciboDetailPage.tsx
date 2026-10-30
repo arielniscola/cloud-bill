@@ -4,13 +4,15 @@ import { XCircle, ArrowRight, Printer, Download } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
-import { PageHeader, ConfirmDialog } from '../../components/shared';
+import { PageHeader, ConfirmDialog, DocumentHistory } from '../../components/shared';
 import { recibosService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { PAYMENT_METHODS, RECIBO_STATUSES } from '../../utils/constants';
 import type { Recibo } from '../../types';
 import ReciboPDF from '../../components/pdf/ReciboPDF';
 import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
+import { approvalOutcome } from '../../utils/approvalActions';
+import PendingApprovalBanner from '../../components/approvals/PendingApprovalBanner';
 
 function SkeletonDetail() {
   return (
@@ -77,6 +79,7 @@ export default function ReciboDetailPage() {
       toast.success('Recibo cancelado');
       setShowCancelDialog(false);
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setShowCancelDialog(false); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al cancelar recibo');
     } finally {
@@ -115,6 +118,7 @@ export default function ReciboDetailPage() {
           </div>
         }
       />
+      <PendingApprovalBanner entityType="RECIBO" entityId={id} />
 
       {recibo.status === 'CANCELLED' && (
         <div className="mb-6 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-800 dark:text-red-400">
@@ -292,6 +296,15 @@ export default function ReciboDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <DocumentHistory
+          entityId={recibo.id}
+          reloadKey={recibo.status}
+          created={{ date: recibo.createdAt, user: recibo.user?.name, title: `Recibo ${recibo.number} registrado` }}
+          final={recibo.status === 'CANCELLED' ? [] : [{ title: `${formatCurrency(Number(recibo.amount), recibo.currency)} cobrados`, tone: 'success' }]}
+        />
       </div>
 
       <ConfirmDialog

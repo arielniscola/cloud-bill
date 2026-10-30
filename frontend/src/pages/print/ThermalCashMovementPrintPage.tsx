@@ -97,6 +97,7 @@ export default function ThermalCashMovementPrintPage() {
 
       <div className="row sm"><span>Caja</span><span>{mov.cashRegister?.name}</span></div>
       <div className="row sm"><span>Concepto</span><span>{CASH_CONCEPT_LABELS[mov.concept] ?? mov.concept}</span></div>
+      {mov.reasonName && <div className="row sm"><span>Motivo</span><span>{mov.reasonName}</span></div>}
       {mov.personName && (
         <div className="row sm"><span>{isOut ? 'Retiró' : 'Entregó'}</span><span>{mov.personName}</span></div>
       )}

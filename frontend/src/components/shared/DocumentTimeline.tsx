@@ -1,5 +1,5 @@
 import { Card } from '../ui';
-import { formatDate } from '../../utils/formatters';
+import { formatDate, formatDateTime } from '../../utils/formatters';
 
 export type TimelineTone = 'default' | 'success' | 'danger' | 'pending';
 
@@ -8,6 +8,10 @@ export interface TimelineEvent {
   title: string;
   detail?: string;
   tone?: TimelineTone;
+  /** Quién lo hizo (sale del historial de actividad). */
+  user?: string | null;
+  /** La fecha es un instante exacto (registro de actividad): se muestra con hora. */
+  withTime?: boolean;
 }
 
 const DOT: Record<TimelineTone, string> = {
@@ -40,10 +44,13 @@ export function DocumentTimeline({ title = 'Historia', events }: {
                 {e.title}
               </p>
               {e.date && (
-                <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">{formatDate(e.date as string)}</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">
+                  {e.withTime ? formatDateTime(e.date as string) : formatDate(e.date as string)}
+                </span>
               )}
             </div>
             {e.detail && <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{e.detail}</p>}
+            {e.user && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">por {e.user}</p>}
           </li>
         ))}
       </ol>

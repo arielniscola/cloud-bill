@@ -6,6 +6,10 @@ import type {
   ProductFilters,
   ApiResponse,
   PaginatedResponse,
+  PriceHistoryEntry,
+  PriceOperation,
+  PriceOperationItem,
+  ProductOverview,
 } from '../types';
 import { resizeImage } from '../utils/imageResize';
 
@@ -45,9 +49,48 @@ export const productsService = {
     await api.delete(`/products/${id}`);
   },
 
-  async bulkUpdatePrices(updates: Array<{ id: string; price?: number; cost?: number; salePriceUSD?: number | null }>): Promise<{ updated: number }> {
+  async bulkUpdatePrices(updates: Array<{ id: string; price?: number; cost?: number; costUSD?: number | null; salePriceUSD?: number | null }>): Promise<{ updated: number }> {
     const response = await api.patch<{ status: string; updated: number }>('/products/bulk-price-update', { updates });
     return response.data;
+  },
+
+  /** Cuántos productos tienen costo en USD y con qué cotización se calculó su costo en pesos. */
+  async getUsdCostSummary(): Promise<{ count: number; minRate: number | null; maxRate: number | null }> {
+    const response = await api.get<ApiResponse<{ count: number; minRate: number | null; maxRate: number | null }>>('/products/usd-costs/summary');
+    return response.data.data;
+  },
+
+  /** Recalcula el costo en pesos de todos los productos con costo en USD (sin `rate` usa la cotización del día). */
+  async getOverview(id: string): Promise<ProductOverview> {
+    const response = await api.get<ApiResponse<ProductOverview>>(`/products/${id}/overview`);
+    return response.data.data;
+  },
+
+  async getPriceHistory(id: string): Promise<PriceHistoryEntry[]> {
+    const response = await api.get<ApiResponse<PriceHistoryEntry[]>>(`/products/${id}/price-history`);
+    return response.data.data;
+  },
+
+  async getPriceOperations(page = 1, limit = 20): Promise<PaginatedResponse<PriceOperation>> {
+    const response = await api.get<PaginatedResponse<PriceOperation>>('/products/price-history/operations', { params: { page, limit } });
+    return response.data;
+  },
+
+  async getPriceOperation(ref: string): Promise<PriceOperationItem[]> {
+    const response = await api.get<ApiResponse<PriceOperationItem[]>>(`/products/price-history/operations/${encodeURIComponent(ref)}`);
+    return response.data.data;
+  },
+
+  async revertPriceOperation(ref: string): Promise<{ reverted: number; changedSince: number; created: number }> {
+    const response = await api.post<ApiResponse<{ reverted: number; changedSince: number; created: number }>>(
+      `/products/price-history/operations/${encodeURIComponent(ref)}/revert`,
+    );
+    return response.data.data;
+  },
+
+  async recalculateUsdCosts(params: { rate?: number; keepMargin?: boolean }): Promise<{ updated: number; rate: number }> {
+    const response = await api.post<ApiResponse<{ updated: number; rate: number }>>('/products/recalculate-usd-costs', params);
+    return response.data.data;
   },
 
   async bulkUpdate(

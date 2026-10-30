@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Edit, FileText, ClipboardList, Truck, ArrowRight, Mail, Phone, MapPin } from 'lucide-react';
+import { Edit, FileText, ClipboardList, Truck, ArrowRight, Mail, Phone, MapPin, Package, Receipt, FileSpreadsheet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
-import { customersService, invoicesService, remitosService, ordenPedidosService } from '../../services';
+import { customersService, invoicesService, remitosService, ordenPedidosService, recibosService, budgetsService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
-import { INVOICE_STATUSES, INVOICE_TYPES, REMITO_STATUSES, ORDEN_PEDIDO_STATUSES, TAX_CONDITIONS } from '../../utils/constants';
-import type { Customer, Invoice, InvoiceStatus, InvoiceType } from '../../types';
+import { INVOICE_STATUSES, INVOICE_TYPES, REMITO_STATUSES, ORDEN_PEDIDO_STATUSES, TAX_CONDITIONS, BUDGET_STATUSES, PAYMENT_METHODS } from '../../utils/constants';
+import type { Customer, CustomerOverview, Invoice, InvoiceStatus, InvoiceType, Recibo, Budget } from '../../types';
+import CustomerOverviewPanel from './CustomerOverviewPanel';
 import type { Remito } from '../../types';
 import type { OrdenPedido, OrdenPedidoStatus } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -52,13 +53,19 @@ function SkeletonRow({ cols }: { cols: number }) {
 }
 
 // ── Tab types ───────────────────────────────────────────────────
-type Tab = 'invoices' | 'ordenPedidos' | 'remitos';
+type Tab = 'invoices' | 'recibos' | 'budgets' | 'ordenPedidos' | 'remitos' | 'products';
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'invoices', label: 'Facturas', icon: FileText },
+  { id: 'recibos', label: 'Recibos', icon: Receipt },
+  { id: 'budgets', label: 'Presupuestos', icon: FileSpreadsheet },
   { id: 'ordenPedidos', label: 'Órdenes de Pedido', icon: ClipboardList },
   { id: 'remitos', label: 'Remitos', icon: Truck },
+  { id: 'products', label: 'Qué compra', icon: Package },
 ];
+
+// Presupuestos que siguen abiertos (todavía se pueden convertir en venta).
+const BUDGET_OPEN = new Set(['DRAFT', 'SENT', 'ACCEPTED']);
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -81,6 +88,13 @@ export default function CustomerDetailPage() {
   const [remitosLoading, setRemitosLoading] = useState(false);
   const [remitosTotal, setRemitosTotal] = useState(0);
 
+  const [recibos, setRecibos] = useState<Recibo[] | null>(null);
+  const [recibosTotal, setRecibosTotal] = useState(0);
+  const [budgets, setBudgets] = useState<Budget[] | null>(null);
+  const [budgetsTotal, setBudgetsTotal] = useState(0);
+
+  const [overview, setOverview] = useState<CustomerOverview | null>(null);
+
   // ── Load customer ──────────────────────────────────────────────
   useEffect(() => {
     if (!id) return;
@@ -88,6 +102,7 @@ export default function CustomerDetailPage() {
       .then(setCustomer)
       .catch(() => { toast.error('Error al cargar cliente'); navigate('/customers'); })
       .finally(() => setIsLoading(false));
+    customersService.getOverview(id).then(setOverview).catch(() => setOverview(null));
   }, [id, navigate]);
 
   // ── Load tab data ──────────────────────────────────────────────
@@ -108,6 +123,18 @@ export default function CustomerDetailPage() {
         .then((r) => { setOrdenPedidos(r.data); setOpTotal(r.total); })
         .catch(() => toast.error('Error al cargar órdenes de pedido'))
         .finally(() => setOpLoading(false));
+    }
+
+    if (tab === 'recibos' && recibos === null) {
+      recibosService.getAll({ customerId: id, limit: 50 })
+        .then((r) => { setRecibos(r.data); setRecibosTotal(r.total); })
+        .catch(() => { toast.error('Error al cargar recibos'); setRecibos([]); });
+    }
+
+    if (tab === 'budgets' && budgets === null) {
+      budgetsService.getAll({ customerId: id, limit: 50 })
+        .then((r) => { setBudgets(r.data); setBudgetsTotal(r.total); })
+        .catch(() => { toast.error('Error al cargar presupuestos'); setBudgets([]); });
     }
 
     if (tab === 'remitos' && remitos.length === 0) {
@@ -202,18 +229,25 @@ export default function CustomerDetailPage() {
         )}
       </div>
 
+      {overview && <CustomerOverviewPanel customerId={customer.id} overview={overview} />}
+
       {/* Tabs */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
         {/* Tab bar */}
-        <div className="flex border-b border-gray-100 dark:border-slate-700">
+        <div className="flex border-b border-gray-100 dark:border-slate-700 overflow-x-auto">
           {TABS.map((t) => {
-            const count = t.id === 'invoices' ? invoicesTotal : t.id === 'ordenPedidos' ? opTotal : remitosTotal;
+            const count = t.id === 'invoices' ? invoicesTotal
+              : t.id === 'ordenPedidos' ? opTotal
+              : t.id === 'remitos' ? remitosTotal
+              : t.id === 'recibos' ? recibosTotal
+              : t.id === 'budgets' ? budgetsTotal
+              : overview?.sales.topProducts.length ?? 0;
             const Icon = t.icon;
             return (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors duration-150 ${
+                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors duration-150 ${
                   tab === t.id
                     ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
                     : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
@@ -359,6 +393,112 @@ export default function CustomerDetailPage() {
                 }
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Recibos tab */}
+        {tab === 'recibos' && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50/80 dark:bg-slate-700/50">
+                <tr>
+                  {['Número', 'Fecha', 'Forma de pago', 'Aplicado a', 'Importe', ''].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {recibos === null
+                  ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
+                  : recibos.length === 0
+                  ? <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Sin recibos</td></tr>
+                  : recibos.map((r) => (
+                    <tr key={r.id} onClick={() => navigate(`/recibos/${r.id}`)} className={`hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100 ${r.status === 'CANCELLED' ? 'opacity-50' : ''}`}>
+                      <td className="px-5 py-3.5"><span className="text-sm font-mono font-medium text-indigo-600 dark:text-indigo-400">{r.number}</span></td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-slate-400 tabular-nums">{formatDate(r.date)}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-slate-400">{PAYMENT_METHODS[r.paymentMethod as keyof typeof PAYMENT_METHODS] ?? r.paymentMethod}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-slate-400">
+                        {r.invoice ? `Factura ${r.invoice.number}` : r.ordenPedido ? `Orden ${r.ordenPedido.number}` : r.budget ? `Presupuesto ${r.budget.number}` : 'A cuenta'}
+                        {r.status === 'CANCELLED' && <span className="ml-2 text-xs text-rose-500">Cancelado</span>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums text-right">{formatCurrency(Number(r.amount), r.currency)}</td>
+                      <td className="px-5 py-3.5 text-right"><ArrowRight className="w-4 h-4 text-gray-300 dark:text-slate-600" /></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Presupuestos tab */}
+        {tab === 'budgets' && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50/80 dark:bg-slate-700/50">
+                <tr>
+                  {['Número', 'Fecha', 'Válido hasta', 'Total', 'Estado', ''].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {budgets === null
+                  ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
+                  : budgets.length === 0
+                  ? <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Sin presupuestos</td></tr>
+                  : budgets.map((b) => (
+                    <tr key={b.id} onClick={() => navigate(`/budgets/${b.id}`)} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100">
+                      <td className="px-5 py-3.5"><span className="text-sm font-mono font-medium text-indigo-600 dark:text-indigo-400">{b.number}</span></td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-slate-400 tabular-nums">{formatDate(b.date)}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-500 tabular-nums">{b.validUntil ? formatDate(b.validUntil) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums text-right">{formatCurrency(Number(b.total), b.currency)}</td>
+                      <td className="px-5 py-3.5">
+                        <Badge variant={BUDGET_OPEN.has(b.status) ? 'warning' : b.status === 'CONVERTED' ? 'success' : 'default'} dot>
+                          {BUDGET_STATUSES[b.status as keyof typeof BUDGET_STATUSES] ?? b.status}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3.5 text-right"><ArrowRight className="w-4 h-4 text-gray-300 dark:text-slate-600" /></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Qué compra tab */}
+        {tab === 'products' && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50/80 dark:bg-slate-700/50">
+                <tr>
+                  {['Producto', 'Unidades', 'Importe neto', 'Última vez', ''].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {!overview
+                  ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={5} />)
+                  : overview.sales.topProducts.length === 0
+                  ? <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Sin compras en los últimos 12 meses</td></tr>
+                  : overview.sales.topProducts.map((p) => (
+                    <tr key={p.id} onClick={() => navigate(`/products/${p.id}`)} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 cursor-pointer transition-colors duration-100">
+                      <td className="px-5 py-3.5 text-sm text-gray-900 dark:text-white">
+                        {p.name}<span className="ml-2 text-xs font-mono text-gray-400 dark:text-slate-500">{p.sku}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-slate-400 tabular-nums">{p.quantity % 1 ? p.quantity.toFixed(2) : p.quantity}</td>
+                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 dark:text-white tabular-nums">{formatCurrency(p.net, 'ARS')}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-500 dark:text-slate-500 tabular-nums">{formatDate(p.lastDate)}</td>
+                      <td className="px-5 py-3.5 text-right"><ArrowRight className="w-4 h-4 text-gray-300 dark:text-slate-600" /></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            {overview && overview.sales.topProducts.length > 0 && (
+              <p className="px-5 py-3 text-xs text-gray-400 dark:text-slate-500 border-t border-gray-100 dark:border-slate-700">
+                Los 10 productos con más importe en los últimos 12 meses, netos de IVA y en pesos.
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -4,13 +4,12 @@ import { useUrlFilters } from '../../hooks/useUrlFilters';
 import {
   Plus, Truck, Receipt, CheckCircle2, Clock, Trash2, Search, X, PackagePlus,
   AlertTriangle, SlidersHorizontal, Rows3, Table2, Download, DollarSign,
+  Eye,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, Pagination, ConfirmDialog } from '../../components/shared';
-import { AddPurchaseInvoiceModal } from '../../components/shared/AddPurchaseInvoiceModal';
 import type { RemitoPrefill } from '../../components/shared/AddPurchaseInvoiceModal';
-import { PurchaseInvoiceDetailModal } from '../../components/shared/PurchaseInvoiceDetailModal';
 import { purchaseInvoicesService, suppliersService } from '../../services';
 import { formatDate, formatCurrency, daysUntil } from '../../utils/formatters';
 import { exportToExcel } from '../../utils/excelExport';
@@ -18,7 +17,7 @@ import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import { useExchangeRate } from '../../hooks/useExchangeRate';
 import { toArs, isForeign } from '../../utils/currencyConversion';
 import type {
-  PurchaseInvoice, CreatePurchaseInvoiceDTO, PurchaseInvoiceStatus,
+  PurchaseInvoice, PurchaseInvoiceStatus,
   PurchaseInvoiceFilters, PurchaseInvoiceSummary,
 } from '../../types';
 
@@ -142,12 +141,6 @@ export default function PurchaseInvoicesPage() {
   // Selección para acciones en lote (solo planilla)
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<PurchaseInvoice | null>(null);
-  const [viewing, setViewing] = useState<PurchaseInvoice | null>(null);
-  const [prefill, setPrefill] = useState<RemitoPrefill | null>(null);
-  const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<PurchaseInvoice | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -195,51 +188,28 @@ export default function PurchaseInvoicesPage() {
   }, []);
 
 
-  // Auto-open prefilled from a remito (navigated from PurchaseRemitoDetailPage)
+  // Enlaces viejos: precarga desde remito → /new; ?view= / ?edit= → páginas propias.
   useEffect(() => {
-    if (remitoState) {
-      setPrefill(remitoState);
-      setEditing(null);
-      setModalOpen(true);
-      // clear the navigation state so a refresh doesn't reopen it
-      navigate(location.pathname, { replace: true, state: null });
-    }
+    if (remitoState) { navigate('/purchase-invoices/new', { replace: true, state: { fromRemito: remitoState } }); return; }
+    const params = new URLSearchParams(location.search);
+    const viewId = params.get('view');
+    if (viewId) { navigate(`/purchase-invoices/${viewId}`, { replace: true }); return; }
+    const editId = params.get('edit');
+    if (editId) navigate(`/purchase-invoices/${editId}/edit`, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remitoState]);
+  }, [remitoState, location.search]);
 
-  const openNew = () => { setEditing(null); setPrefill(null); setModalOpen(true); };
+  const openNew = () => navigate('/purchase-invoices/new');
   // Una factura con pagos imputados (pagada / parcialmente pagada) no se edita.
   const canModify = (inv: PurchaseInvoice) =>
     inv.status !== 'PAID' && inv.status !== 'PARTIALLY_PAID';
 
-  // Clic en la fila: editable → form de edición; con pagos imputados → vista de detalle.
+  // Clic en la fila: editable → form de edición; con pagos imputados → página de detalle.
   const openRow = (inv: PurchaseInvoice) => (canModify(inv) ? openEdit(inv) : openView(inv));
 
-  // Traemos la factura completa (con ítems/tributos) porque la fila
-  // de la lista no los incluye — sin esto el modal abría sin ítems.
-  const openEdit = async (inv: PurchaseInvoice) => {
-    setPrefill(null);
-    try {
-      const full = await purchaseInvoicesService.getById(inv.id);
-      setEditing(full);
-    } catch {
-      toast.error('No se pudo cargar la factura');
-      setEditing(inv);
-    }
-    setModalOpen(true);
-  };
+  const openEdit = (inv: PurchaseInvoice) => navigate(`/purchase-invoices/${inv.id}/edit`);
 
-  // Vista de detalle (solo lectura). Preservamos paidAmount de la fila del listado
-  // porque el getById no lo computa.
-  const openView = async (inv: PurchaseInvoice) => {
-    try {
-      const full = await purchaseInvoicesService.getById(inv.id);
-      setViewing({ ...full, paidAmount: inv.paidAmount });
-    } catch {
-      toast.error('No se pudo cargar la factura');
-      setViewing(inv);
-    }
-  };
+  const openView = (inv: PurchaseInvoice) => navigate(`/purchase-invoices/${inv.id}`);
 
   // Registrar mercadería (remito de compra) a partir de una factura: trae la factura
   // completa (con ítems) y abre el form de remito prefijado.
@@ -249,29 +219,6 @@ export default function PurchaseInvoicesPage() {
       navigate('/purchase-remitos/new', { state: { fromInvoice: full } });
     } catch {
       toast.error('No se pudo cargar la factura');
-    }
-  };
-
-  const handleSave = async (data: CreatePurchaseInvoiceDTO) => {
-    setSaving(true);
-    try {
-      if (editing) {
-        await purchaseInvoicesService.update(editing.id, data);
-        toast.success('Factura actualizada');
-      } else {
-        await purchaseInvoicesService.create(data);
-        toast.success('Factura creada');
-      }
-      setModalOpen(false);
-      setEditing(null);
-      setPrefill(null);
-      fetchData();
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } };
-      toast.error(err.response?.data?.message || 'Error al guardar la factura');
-      throw e; // el modal usa el rechazo para NO limpiar el borrador si falló
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -450,6 +397,12 @@ export default function PurchaseInvoicesPage() {
     const fullyReceived = inv.reception?.status === 'FULL';
     return (
     <div className="inline-flex items-center gap-0.5">
+      <button
+        onClick={(e) => { e.stopPropagation(); openView(inv); }}
+        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+        title="Ver detalle e historia">
+        <Eye className="w-4 h-4" />
+      </button>
       <button
         disabled={fullyReceived}
         onClick={(e) => { e.stopPropagation(); if (!fullyReceived) handleGenerateRemito(inv); }}
@@ -996,26 +949,6 @@ export default function PurchaseInvoicesPage() {
             <X className="w-4 h-4" />
           </button>
         </div>
-      )}
-
-      <AddPurchaseInvoiceModal
-        isOpen={modalOpen}
-        standalone
-        suppliers={suppliers}
-        fromRemito={prefill}
-        existing={editing}
-        currency={editing?.currency ?? 'ARS'}
-        onClose={() => { setModalOpen(false); setEditing(null); setPrefill(null); }}
-        onSave={handleSave}
-        isLoading={saving}
-      />
-
-      {viewing && (
-        <PurchaseInvoiceDetailModal
-          invoice={viewing}
-          onClose={() => setViewing(null)}
-          onGenerateRemito={(inv) => { setViewing(null); handleGenerateRemito(inv); }}
-        />
       )}
 
       <ConfirmDialog

@@ -56,6 +56,7 @@ function Copy({ movement, ctx, label }: { movement: CashMovement; ctx: PrintCont
           labelWidth={78}
           rows={[
             ['Concepto', CASH_CONCEPT_LABELS[movement.concept] ?? movement.concept],
+            ['Motivo', movement.reasonName || ''],
             [isOut ? 'Retirado por' : 'Entregado por', movement.personName || ''],
             ['Cuenta bancaria', bank],
             ['Observaciones', movement.notes || ''],

@@ -103,6 +103,7 @@ export default function PurchaseInvoicesReportPage() {
         { header: 'Subtotal',         key: 'subtotal',       width: 14, format: 'currency' },
         { header: 'IVA',              key: 'taxAmount',      width: 14, format: 'currency' },
         { header: 'Total',            key: 'amount',         width: 14, format: 'currency' },
+        { header: 'Moneda',           key: 'currency',       width: 8  },
         { header: 'Método pago',      key: 'paymentMethod',  width: 16 },
         { header: 'Vencimiento',      key: 'dueDate',        width: 14 },
         { header: 'Estado',           key: 'status',         width: 12 },
@@ -258,9 +259,9 @@ export default function PurchaseInvoicesReportPage() {
                         <div className="font-mono text-xs text-gray-400 dark:text-slate-500">{r.supplierCuit}</div>
                       </td>
                       <td className="px-3 py-3 text-gray-500 dark:text-slate-400 text-xs whitespace-nowrap">{r.type}</td>
-                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.subtotal)}</td>
-                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.taxAmount)}</td>
-                      <td className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right whitespace-nowrap">{formatCurrency(r.amount)}</td>
+                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.subtotal, r.currency)}</td>
+                      <td className="px-3 py-3 text-gray-700 dark:text-slate-300 text-right whitespace-nowrap">{formatCurrency(r.taxAmount, r.currency)}</td>
+                      <td className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right whitespace-nowrap">{formatCurrency(r.amount, r.currency)}</td>
                       <td className="px-3 py-3 text-gray-500 dark:text-slate-400 text-xs whitespace-nowrap">
                         {PAYMENT_METHODS[r.paymentMethod as keyof typeof PAYMENT_METHODS] ?? r.paymentMethod}
                       </td>
@@ -276,10 +277,15 @@ export default function PurchaseInvoicesReportPage() {
                 {totals && (
                   <tfoot className="bg-gray-50 dark:bg-slate-700/30 border-t-2 border-gray-200 dark:border-slate-600">
                     <tr>
-                      <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Total</td>
-                      <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.subtotal)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.taxAmount)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatCurrency(totals.amount)}</td>
+                      <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
+                        Total en pesos
+                        {data.some((r) => r.currency !== 'ARS') && (
+                          <span className="block normal-case font-normal tracking-normal text-gray-400 dark:text-slate-500">USD a la cotización de cada factura</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.subtotal, 'ARS')}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{formatCurrency(totals.taxAmount, 'ARS')}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatCurrency(totals.amount, 'ARS')}</td>
                       <td colSpan={3} />
                     </tr>
                   </tfoot>

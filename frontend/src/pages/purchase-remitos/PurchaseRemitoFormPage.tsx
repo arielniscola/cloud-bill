@@ -6,6 +6,7 @@ import { Button, Input, Select } from '../../components/ui';
 import { PageHeader, ProductSearchSelect } from '../../components/shared';
 import { purchaseRemitosService, suppliersService, warehousesService, productsService, purchaseInvoicesService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
+import { usePermissions } from '../../hooks/usePermissions';
 import type { CreatePurchaseRemitoItemDTO, Supplier, Warehouse, Product, PurchaseInvoice, PurchaseRemito } from '../../types';
 
 // Límite por línea de la factura: cuánto trae la FC y cuánto ya se recibió en remitos previos.
@@ -22,6 +23,8 @@ const defaultItem: CreatePurchaseRemitoItemDTO = {
 
 export default function PurchaseRemitoFormPage() {
   const navigate = useNavigate();
+  // Lo que carga depósito queda pendiente: un admin lo confirma y recién ahí entra el stock.
+  const { isWarehouseClerk } = usePermissions();
   const location = useLocation();
   const fromInvoice = (location.state as { fromInvoice?: PurchaseInvoice } | null)?.fromInvoice ?? null;
   const [suppliers,  setSuppliers]  = useState<Supplier[]>([]);
@@ -92,11 +95,13 @@ export default function PurchaseRemitoFormPage() {
             .map((lim) => {
               const key = normDesc(lim.description);
               const pending = lim.invoiceQty - lim.received;
-              // Auto-vincula el producto si el nombre coincide exactamente (para que mueva stock)
-              const match = prodRes.data.find((p) => p.name.trim().toLowerCase() === key);
+              // El producto de la línea de la factura; en facturas viejas (sin
+              // producto guardado) se vincula si el nombre coincide exactamente.
               const invItem = (fromInvoice.items ?? []).find((it) => normDesc(it.description) === key);
+              const match = (invItem?.productId && prodRes.data.find((p) => p.id === invItem.productId))
+                || prodRes.data.find((p) => p.name.trim().toLowerCase() === key);
               return {
-                productId: match?.id ?? null,
+                productId: invItem?.productId ?? match?.id ?? null,
                 description: lim.description,
                 quantity: pending,
                 unitPrice: Number(invItem?.unitPrice ?? 0),
@@ -191,7 +196,11 @@ export default function PurchaseRemitoFormPage() {
           toast('Remito creado, pero no se pudo vincular a la factura', { icon: '⚠️' });
         });
       }
-      toast.success('Remito recibido — stock actualizado');
+      if (remito.status === 'PENDING_CONFIRMATION') {
+        toast.success('Recepción enviada — un administrador tiene que confirmarla para que entre el stock', { duration: 6000 });
+      } else {
+        toast.success('Remito recibido — stock actualizado');
+      }
       navigate(`/purchase-remitos/${remito.id}`);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
@@ -395,7 +404,9 @@ export default function PurchaseRemitoFormPage() {
               />
               <p className="text-xs text-indigo-600 flex items-center gap-1.5">
                 <Package className="w-3.5 h-3.5 shrink-0" />
-                La mercadería vinculada a un producto entra al stock al guardar.
+                {isWarehouseClerk
+                  ? 'La mercadería vinculada a un producto entra al stock cuando un administrador confirma la recepción.'
+                  : 'La mercadería vinculada a un producto entra al stock al guardar.'}
               </p>
             </div>
 
@@ -407,7 +418,14 @@ export default function PurchaseRemitoFormPage() {
             </div>
 
             <div className="flex flex-col gap-2.5">
-              <Button type="submit" isLoading={isSaving} className="w-full justify-center">Registrar recepción</Button>
+              {isWarehouseClerk && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  La recepción queda pendiente hasta que un administrador la confirme. Recién ahí entra el stock.
+                </p>
+              )}
+              <Button type="submit" isLoading={isSaving} className="w-full justify-center">
+                {isWarehouseClerk ? 'Enviar para confirmar' : 'Registrar recepción'}
+              </Button>
               <Button type="button" variant="outline" className="w-full justify-center" onClick={() => navigate('/purchase-remitos')}>Cancelar</Button>
             </div>
           </div>

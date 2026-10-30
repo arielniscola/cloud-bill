@@ -80,6 +80,7 @@ export const STOCK_MOVEMENT_OPTIONS = Object.entries(STOCK_MOVEMENT_TYPES).map(
 );
 
 export const USER_ROLES = {
+  OWNER: 'Dueño',
   ADMIN: 'Administrador',
   SELLER: 'Vendedor',
   WAREHOUSE_CLERK: 'Empleado de Almacén',

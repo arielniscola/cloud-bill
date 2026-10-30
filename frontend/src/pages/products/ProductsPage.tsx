@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Edit, Trash2, Package, ChevronDown, X, RefreshCw, Search, Upload, Wand2,
-  MoreHorizontal, PanelRight, AlertTriangle, ChevronUp, Loader2, ImageOff,
+  MoreHorizontal, PanelRight, AlertTriangle, ChevronUp, Loader2, ImageOff, DollarSign,
+  History,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
@@ -14,6 +15,7 @@ import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { Product, Rubro, Brand, Supplier, Stock, StockStateFilter, ProductSortKey } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import RecalculateUsdCostsModal from './RecalculateUsdCostsModal';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function margin(cost: number, price: number) {
@@ -440,12 +442,12 @@ function BulkFieldsModal({
 
 // ── Panel de detalle ─────────────────────────────────────────────
 function DetailPanel({
-  product, onClose, onSaved, onEdit,
+  product, onClose, onSaved, onOpenDetail,
 }: {
   product: Product | null;
   onClose: () => void;
   onSaved: () => void;
-  onEdit: (id: string) => void;
+  onOpenDetail: (id: string) => void;
 }) {
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState('');
@@ -652,7 +654,7 @@ function DetailPanel({
         <Button className="flex-1" isLoading={isSaving} disabled={!canSave} onClick={handleSave}>
           Guardar precio
         </Button>
-        <Button variant="outline" onClick={() => onEdit(product.id)}>Ficha completa</Button>
+        <Button variant="outline" onClick={() => onOpenDetail(product.id)}>Ficha completa</Button>
       </div>
     </div>
   );
@@ -680,6 +682,7 @@ export default function ProductsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showRecalcUsd, setShowRecalcUsd] = useState(false);
   const [rubros, setRubros] = useState<Rubro[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -895,6 +898,8 @@ export default function ProductsPage() {
                 { label: 'Importar CSV',          icon: Upload,    onClick: () => setShowImport(true) },
                 { label: 'Actualizar precios',    icon: RefreshCw, onClick: () => navigate('/products/bulk-price-update') },
                 { label: 'Actualización masiva',  icon: Wand2,     onClick: () => navigate('/products/bulk-update') },
+                { label: 'Recalcular costos USD', icon: DollarSign, onClick: () => setShowRecalcUsd(true) },
+                { label: 'Historial de precios',  icon: History,   onClick: () => navigate('/products/price-history') },
               ]}
             />
             <Button onClick={() => navigate('/products/new')}>
@@ -1230,7 +1235,7 @@ export default function ProductsPage() {
             product={panelProduct}
             onClose={closePanel}
             onSaved={fetchProducts}
-            onEdit={(id) => navigate(`/products/${id}/edit`)}
+            onOpenDetail={(id) => navigate(`/products/${id}`)}
           />
         )}
       </div>
@@ -1278,6 +1283,13 @@ export default function ProductsPage() {
           entity="products"
           onClose={() => setShowImport(false)}
           onSuccess={() => { setShowImport(false); fetchProducts(); }}
+        />
+      )}
+
+      {showRecalcUsd && (
+        <RecalculateUsdCostsModal
+          onClose={() => setShowRecalcUsd(false)}
+          onDone={() => { setShowRecalcUsd(false); fetchProducts(); }}
         />
       )}
     </div>

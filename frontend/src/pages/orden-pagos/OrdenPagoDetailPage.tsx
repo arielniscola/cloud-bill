@@ -4,7 +4,7 @@ import { ChevronLeft, Printer, Download, XCircle, AlertTriangle, CheckCircle } f
 import { pdf } from '@react-pdf/renderer';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
-import { PageHeader, ConfirmDialog, formatChequeNumber } from '../../components/shared';
+import { PageHeader, ConfirmDialog, formatChequeNumber, DocumentHistory } from '../../components/shared';
 import { ordenPagosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
 import { PAYMENT_METHODS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
@@ -413,6 +413,13 @@ export default function OrdenPagoDetailPage() {
               </div>
             </div>
           </Card>
+
+          <DocumentHistory
+            entityId={op.id}
+            reloadKey={op.status}
+            created={{ date: op.createdAt, user: op.user?.name, title: `Orden de pago ${op.number} emitida` }}
+            final={op.status === 'EMITTED' ? [{ title: 'Pendiente de pago', tone: 'pending' }] : []}
+          />
         </div>
       </div>
 

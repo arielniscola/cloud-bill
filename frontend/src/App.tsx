@@ -6,6 +6,7 @@ import { useUIStore } from './stores';
 import { GlobalSearch } from './components/shared/GlobalSearch';
 import { FiscalModeQuickSwitch } from './components/shared/FiscalModeQuickSwitch';
 import { PwaUpdatePrompt } from './components/pwa/PwaUpdatePrompt';
+import ApprovalReasonModal from './components/approvals/ApprovalReasonModal';
 
 function App() {
   const { isDarkMode } = useUIStore();
@@ -20,6 +21,7 @@ function App() {
       <GlobalSearch />
       <FiscalModeQuickSwitch />
       <PwaUpdatePrompt />
+      <ApprovalReasonModal />
       <Toaster
         position="top-right"
         gutter={8}

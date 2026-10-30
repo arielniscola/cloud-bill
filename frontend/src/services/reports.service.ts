@@ -229,7 +229,10 @@ export interface CashFlowRow {
   cashRegister:   string;
   paymentMethod:  string;
   currency:       string;
+  /** En la moneda del recibo. */
   amount:         number;
+  /** En pesos con la cotización del recibo: es lo que suman los totales. */
+  amountArs:      number;
   surchargeAmount:number;
   reference:      string;
 }
@@ -246,9 +249,13 @@ export interface RetentionReportRow {
   type:            string;                       // IIBB | GANANCIAS | IVA | SUSS | OTHER
   jurisdiction:    string | null;
   baseKind:        'NETO' | 'IVA' | 'BRUTO';
+  /** Base y retención en PESOS (una OP en dólares se convierte con su cotización). */
   baseAmount:      number;
   percentage:      number;
   amount:          number;
+  /** Retención en la moneda de la OP. */
+  amountOriginal:  number;
+  exchangeRate:    number;
   certificate:     string | null;
   arcaImpuesto:    string | null;                // 217 Ganancias / 767 IVA
   arcaRegimen:     string | null;                // según la actividad

@@ -4,6 +4,7 @@ import type {
   PurchaseRemito,
   CreatePurchaseRemitoDTO,
   PurchaseRemitoFilters,
+  ConfirmPurchaseRemitoItemDTO,
 } from '../types/purchase-remito.types';
 
 export const purchaseRemitosService = {
@@ -20,6 +21,22 @@ export const purchaseRemitosService = {
   async create(data: CreatePurchaseRemitoDTO): Promise<PurchaseRemito> {
     const response = await api.post<ApiResponse<PurchaseRemito>>('/purchase-remitos', data);
     return response.data.data;
+  },
+
+  /** Confirma una recepción de depósito (con correcciones opcionales): recién ahí entra el stock. */
+  async confirm(id: string, items?: ConfirmPurchaseRemitoItemDTO[]): Promise<PurchaseRemito> {
+    const response = await api.post<ApiResponse<PurchaseRemito>>(`/purchase-remitos/${id}/confirm`, { items });
+    return response.data.data;
+  },
+
+  async reject(id: string, reason: string): Promise<PurchaseRemito> {
+    const response = await api.post<ApiResponse<PurchaseRemito>>(`/purchase-remitos/${id}/reject`, { reason });
+    return response.data.data;
+  },
+
+  async pendingCount(): Promise<number> {
+    const response = await api.get<ApiResponse<{ count: number }>>('/purchase-remitos/pending-count');
+    return response.data.data.count;
   },
 
   async cancel(id: string): Promise<PurchaseRemito> {

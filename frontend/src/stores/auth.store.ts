@@ -15,7 +15,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -30,6 +30,10 @@ export const useAuthStore = create<AuthState>()(
         // visible para quien inicie sesion despues en la misma maquina.
         // NOTA (Fase 3): la cola de ventas pendientes NO debe borrarse aca.
         void clearCache().catch(() => { /* la cache se rehace en el proximo login */ });
+        // Los avisos push son de quien tenia la sesion: se dan de baja en este
+        // navegador. Import dinamico por el mismo ciclo que evita clearCache.
+        const token = get().token;
+        void import('../lib/pwa/push').then((m) => m.unsubscribePushOnLogout(token)).catch(() => {});
         set({
           user: null,
           token: null,

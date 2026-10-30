@@ -30,6 +30,7 @@ export { RecibosList } from './RecibosList';
 
 export { DocumentTimeline } from './DocumentTimeline';
 export type { TimelineEvent } from './DocumentTimeline';
+export { DocumentHistory } from './DocumentHistory';
 export { RelatedDocuments } from './RelatedDocuments';
 export type { RelatedDocGroup } from './RelatedDocuments';
 
@@ -80,3 +81,5 @@ export { default as ExchangeRateBadge } from './ExchangeRateBadge';
 export { PurchaseInvoiceDetailModal } from './PurchaseInvoiceDetailModal';
 export { default as ItemDetailInput } from './ItemDetailInput';
 export type { ItemDetailInputProps } from './ItemDetailInput';
+export { MonthlyBarChart } from './MonthlyBarChart';
+export type { MonthlyMeasure } from './MonthlyBarChart';

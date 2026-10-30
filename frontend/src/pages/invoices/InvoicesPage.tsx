@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUrlFilters } from '../../hooks/useUrlFilters';
-import { Plus, X, Receipt, Search, Check, ExternalLink, CloudOff, Zap } from 'lucide-react';
+import { Plus, X, Receipt, Search, ExternalLink, CloudOff, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card } from '../../components/ui';
 import { PageHeader, CustomerSearchSelect } from '../../components/shared';
@@ -18,7 +18,6 @@ import {
   INVOICE_TYPES,
   INVOICE_STATUS_OPTIONS,
   INVOICE_TYPE_OPTIONS,
-  DELIVERY_STATUSES,
   DEFAULT_PAGE_SIZE,
 } from '../../utils/constants';
 import type { Invoice, InvoiceStatus, InvoiceType, Customer, InvoiceStats, InvoiceCurrencyStats } from '../../types';
@@ -55,6 +54,49 @@ const DELIVERY_CFG: Record<string, { label: string; cls: string }> = {
   PARTIALLY_DELIVERED: { label: 'Parcial',        cls: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800' },
   DELIVERED:           { label: 'Entregado',      cls: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800' },
 };
+
+// ── Estado en tres facetas ───────────────────────────────────────
+// `status` mezcla emisión y cobro (una factura cobrada deja de decir si tiene
+// CAE) y la entrega se calcula aparte: la tabla las muestra por separado.
+type Facet = { label: string; cls: string; dot: string };
+
+const NEUTRAL_CLS = 'text-gray-500 bg-gray-50 border-gray-200 dark:text-slate-400 dark:bg-slate-700/50 dark:border-slate-600';
+
+function emissionFacet(inv: Invoice): Facet {
+  if (inv.status === 'CANCELLED') return STATUS_CFG.CANCELLED;
+  if (inv.status === 'DRAFT') return STATUS_CFG.DRAFT;
+  if (inv.cae) return { ...STATUS_CFG.AUTHORIZED, label: 'CAE' };
+  return { ...STATUS_CFG.ISSUED, label: 'Sin CAE' };
+}
+
+/** null = no aplica (borrador o anulada). */
+function paymentFacet(inv: Invoice): Facet | null {
+  if (inv.status === 'DRAFT' || inv.status === 'CANCELLED') return null;
+  if (inv.status === 'PAID') return STATUS_CFG.PAID;
+  if (inv.status === 'PARTIALLY_PAID') return { ...STATUS_CFG.PARTIALLY_PAID, label: 'Parcial' };
+  return { label: 'Sin cobrar', cls: NEUTRAL_CLS, dot: 'bg-gray-400' };
+}
+
+/** null = no aplica: borrador, anulada o NC/ND (no llevan remito). */
+function deliveryFacet(inv: Invoice): Facet | null {
+  if (inv.status === 'DRAFT' || inv.status === 'CANCELLED') return null;
+  if (inv.type.startsWith('NOTA_')) return null;
+  const cfg = inv.deliveryStatus ? DELIVERY_CFG[inv.deliveryStatus] : null;
+  if (!cfg) return null;
+  const dot = inv.deliveryStatus === 'DELIVERED' ? 'bg-emerald-500'
+    : inv.deliveryStatus === 'PARTIALLY_DELIVERED' ? 'bg-amber-500' : 'bg-gray-400';
+  return { ...cfg, dot };
+}
+
+function FacetBadge({ facet }: { facet: Facet | null }) {
+  if (!facet) return <span className="text-gray-300 dark:text-slate-600">—</span>;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border leading-none whitespace-nowrap ${facet.cls}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${facet.dot}`} />
+      {facet.label}
+    </span>
+  );
+}
 
 // ── Saldo y vencimiento ──────────────────────────────────────────
 /** Estados en los que una factura todavía puede deber plata. */
@@ -535,7 +577,7 @@ export default function InvoicesPage() {
             <table className="w-full">
               <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                 <tr>
-                  {['Fecha', 'Comprobante', 'Cliente', 'Total', 'Saldo', 'Estado'].map((h) => (
+                  {['Fecha', 'Comprobante', 'Cliente', 'Total', 'Saldo', 'Emisión', 'Cobro', 'Entrega'].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -568,7 +610,7 @@ export default function InvoicesPage() {
         {!showSkeleton && !showEmpty && (
           <div className={`transition-opacity duration-200 ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: '820px' }}>
+              <table className="w-full text-sm" style={{ minWidth: '1000px' }}>
                 <thead className="bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
                   <tr>
                     {pendingArca && (
@@ -587,30 +629,26 @@ export default function InvoicesPage() {
                     <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider w-full">Cliente</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Total ARS</th>
                     <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Saldo ARS</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Estado</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Emisión</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Cobro</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Entrega</th>
                     <th className="px-4 py-2.5 w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">
                   {invoices.map((inv) => {
                     const chip = TYPE_CHIP[inv.type];
-                    const statusCfg = STATUS_CFG[inv.status];
                     const isCancelled = inv.status === 'CANCELLED';
                     const customerName = inv.customer?.name ?? '';
                     const itemCount = (inv as any)._count?.items ?? inv.items?.length ?? 0;
                     const isCC = inv.saleCondition === 'CUENTA_CORRIENTE';
                     const outstanding = invoiceOutstanding(inv);
                     const overdueDays = invoiceOverdueDays(inv);
-                    const delivery = inv.deliveryStatus && inv.deliveryStatus !== 'NOT_DELIVERED'
-                      ? DELIVERY_CFG[inv.deliveryStatus]?.label ?? DELIVERY_STATUSES[inv.deliveryStatus]
-                      : null;
-
-                    // Segunda linea del cliente: lo que antes eran tres columnas
-                    // de badges (items, condicion, entrega) sin pelearse por foco.
+                    // Segunda linea del cliente: items y condicion sin pelearse
+                    // por foco (la entrega tiene columna propia).
                     const meta = [
                       itemCount > 0 ? `${itemCount} ${itemCount === 1 ? 'ítem' : 'ítems'}` : null,
                       isCC ? 'cta. cte.' : 'contado',
-                      delivery ? `entrega ${delivery.toLowerCase()}` : null,
                     ].filter(Boolean).join(' · ');
 
                     return (
@@ -662,12 +700,6 @@ export default function InvoicesPage() {
                             <span className="font-mono text-xs font-semibold text-gray-900 dark:text-slate-200">
                               {formatInvoiceNumber(inv)}
                             </span>
-                            {inv.cae && (
-                              <Check
-                                className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0"
-                                aria-label="Autorizada por ARCA"
-                              />
-                            )}
                             <FiscalModeBadge mode={(inv as any).fiscalMode} />
                           </div>
                         </td>
@@ -719,14 +751,14 @@ export default function InvoicesPage() {
                           )}
                         </td>
 
-                        {/* Estado */}
+                        {/* Emisión — borrador / sin CAE / con CAE / anulada */}
                         <td className="px-4 py-3.5 align-top">
-                          {statusCfg && (
-                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border leading-none ${statusCfg.cls}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusCfg.dot}`} />
-                              {statusCfg.label}
-                            </span>
-                          )}
+                          <FacetBadge facet={emissionFacet(inv)} />
+                        </td>
+
+                        {/* Cobro — con el chip de NC aplicadas */}
+                        <td className="px-4 py-3.5 align-top whitespace-nowrap">
+                          <FacetBadge facet={paymentFacet(inv)} />
                           {Number(inv.creditNotesTotal ?? 0) > 0 && (
                             <span
                               title={`Notas de crédito por ${formatCurrency(Number(inv.creditNotesTotal), inv.currency)}`}
@@ -735,6 +767,11 @@ export default function InvoicesPage() {
                               NC
                             </span>
                           )}
+                        </td>
+
+                        {/* Entrega — según los remitos */}
+                        <td className="px-4 py-3.5 align-top">
+                          <FacetBadge facet={deliveryFacet(inv)} />
                         </td>
 
                         {/* Abrir en pestana nueva — para revisar varias sin perder la lista */}

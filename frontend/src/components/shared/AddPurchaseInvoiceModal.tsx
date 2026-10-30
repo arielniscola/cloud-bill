@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Receipt, Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Package } from 'lucide-react';
+import { X, ArrowLeft, Receipt, Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Package } from 'lucide-react';
 import { Button } from '../ui';
 import ProductPickerModal from './ProductPickerModal';
+import { productCostIn } from '../../utils/productCost';
+import { PurchaseCostReview, type CostCandidate } from './PurchaseCostReview';
 import ProvinciaSelect from './ProvinciaSelect';
 import { formatCurrency } from '../../utils/formatters';
 import { purchaseInvoicesService, productsService } from '../../services';
@@ -14,9 +16,9 @@ import type {
   Product,
 } from '../../types';
 
-// Fila de ítem en el formulario. `productId` es solo una ayuda de carga
-// (autocompleta descripción/precio/IVA); no se persiste en la factura.
-type PurchaseInvoiceItemRow = CreatePurchaseInvoiceItemDTO & { productId?: string | null };
+// Fila de ítem en el formulario. `productId` autocompleta descripción/precio/IVA
+// y se guarda con la línea: al guardar se ofrece actualizar el costo del producto.
+type PurchaseInvoiceItemRow = CreatePurchaseInvoiceItemDTO;
 
 // ── Options ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +118,9 @@ interface Props {
   standalone?: boolean;
   suppliers?: { id: string; name: string }[];
   fromRemito?: RemitoPrefill | null;
+  // 'page': se renderiza dentro de la página /purchase-invoices/new|:id/edit
+  // (sin overlay; Escape no sale de la página).
+  variant?: 'modal' | 'page';
 }
 
 const CURRENCY_OPTIONS = [
@@ -144,8 +149,9 @@ const formatInvoiceNumberInput = (raw: string): string => {
 
 export function AddPurchaseInvoiceModal({
   isOpen, purchaseId, currency, existing, onClose, onSave, isLoading,
-  standalone = false, suppliers = [], fromRemito = null,
+  standalone = false, suppliers = [], fromRemito = null, variant = 'modal',
 }: Props) {
+  const isPage = variant === 'page';
   const [supplierId,    setSupplierId]    = useState('');
   const [currencyState, setCurrencyState] = useState(currency);
   const [saleCondition, setSaleCondition] = useState<'CONTADO' | 'CUENTA_CORRIENTE'>('CONTADO');
@@ -155,17 +161,21 @@ export function AddPurchaseInvoiceModal({
   const [remitoLink,    setRemitoLink]    = useState<{ id: string; number: string } | null>(null);
 
   // Cotización del día (Banco Nación, venta) — editable
-  const fetchDayRate = async () => {
+  const fetchDayRate = async (): Promise<number | null> => {
     setRateLoading(true);
     try {
       const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
       const data = await res.json();
-      if (data?.venta) setExchangeRate(Number(data.venta));
+      if (data?.venta) {
+        setExchangeRate(Number(data.venta));
+        return Number(data.venta);
+      }
     } catch {
       /* sin conexión: queda el valor actual, editable a mano */
     } finally {
       setRateLoading(false);
     }
+    return null;
   };
   const [originInvoiceId, setOriginInvoiceId] = useState<string>('');
   const [originOptions,   setOriginOptions]   = useState<PurchaseInvoice[]>([]);
@@ -176,8 +186,11 @@ export function AddPurchaseInvoiceModal({
   const [showItems,   setShowItems]   = useState(false);
   // Buscador de productos: 'multi' agrega varias líneas; un número edita esa fila.
   const [picker,      setPicker]      = useState<null | 'multi' | number>(null);
-  // Productos ya elegidos, para poder rotular la fila (el productId no se persiste).
+  // Productos ya elegidos, para poder rotular la fila.
   const [productById, setProductById] = useState<Record<string, Product>>({});
+  // Paso previo al guardado: productos cuyo costo cambia con lo facturado.
+  const [costReview, setCostReview] = useState<CostCandidate[] | null>(null);
+  const [checkingCosts, setCheckingCosts] = useState(false);
   const [showTribs,   setShowTribs]   = useState(false);
   const [confirmAction, setConfirmAction] = useState<null | 'close' | 'discard'>(null);
 
@@ -262,6 +275,7 @@ export function AddPurchaseInvoiceModal({
         unitPrice:   Number(i.unitPrice),
         discountPct: Number(i.discountPct) || 0,
         taxRate:     Number(i.taxRate),
+        productId:   i.productId ?? null,
       }));
       const existingTribs = (existing.tributos ?? []).map((t) => ({
         type:         t.type as TributoType,
@@ -311,6 +325,22 @@ export function AddPurchaseInvoiceModal({
     return () => { cancelled = true; };
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Líneas con producto que no está en memoria (factura guardada o borrador
+  // restaurado): se traen para rotular la fila y comparar el costo.
+  useEffect(() => {
+    if (!isOpen) return;
+    const missingIds = [...new Set(items.map((i) => i.productId).filter((id): id is string => !!id && !productById[id]))];
+    if (missingIds.length === 0) return;
+    let cancelled = false;
+    Promise.all(missingIds.map((id) => productsService.getById(id).catch(() => null)))
+      .then((list) => {
+        if (cancelled) return;
+        const found = list.filter((p): p is Product => !!p);
+        if (found.length) setProductById((prev) => ({ ...prev, ...Object.fromEntries(found.map((p) => [p.id, p])) }));
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, items]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ¿Hay datos cargados? (para confirmar cierre y decidir si guardar el borrador)
   const isDirty = useMemo(() => (
     !!form.number.trim() || Number(form.amount) > 0 || Number(form.subtotal) > 0 ||
@@ -341,13 +371,14 @@ export function AddPurchaseInvoiceModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
+      if (costReview) { setCostReview(null); return; }
       if (confirmAction) { setConfirmAction(null); return; }
-      attemptClose();
+      if (!isPage) attemptClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isDraftMode, isDirty, confirmAction]);
+  }, [isOpen, isDraftMode, isDirty, confirmAction, costReview]);
 
   const set = (field: keyof typeof EMPTY_FORM, value: unknown) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -409,6 +440,20 @@ export function AddPurchaseInvoiceModal({
   const setItem = (i: number, field: keyof CreatePurchaseInvoiceItemDTO, val: unknown) =>
     setItems((prev) => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
 
+  // Precio unitario de un producto en la moneda del comprobante: en USD toma el
+  // costo en dólares del producto (ver productCostIn).
+  const unitCostOf = (p: Product): number | null =>
+    productCostIn(p, currencyState, currencyState === 'ARS' ? 1 : exchangeRate)?.value ?? null;
+
+  // Al cambiar la moneda, las líneas con producto pasan al costo en esa moneda
+  // (en USD, el costo en dólares del producto).
+  const repriceItems = (cur: string, rate: number) =>
+    setItems((prev) => prev.map((item) => {
+      const p = item.productId ? productById[item.productId] : undefined;
+      const c = p ? productCostIn(p, cur, cur === 'ARS' ? 1 : rate) : null;
+      return c ? { ...item, unitPrice: c.value } : item;
+    }));
+
   // Al elegir un producto: autocompleta descripción, precio unitario (costo) e IVA.
   // El productId queda solo en el estado local (no se envía al backend).
   const selectProduct = (i: number, productId: string, picked?: Product) => {
@@ -421,7 +466,7 @@ export function AddPurchaseInvoiceModal({
         ...item,
         productId,
         description: product.name,
-        unitPrice: Number(product.cost) || item.unitPrice,
+        unitPrice: unitCostOf(product) || item.unitPrice,
         taxRate: Number(product.taxRate),
       };
     }));
@@ -437,7 +482,7 @@ export function AddPurchaseInvoiceModal({
         productId:   p.id,
         description: p.name,
         quantity:    1,
-        unitPrice:   Number(p.cost) || 0,
+        unitPrice:   unitCostOf(p) || 0,
         taxRate:     Number(p.taxRate),
       })),
     ]);
@@ -632,9 +677,10 @@ export function AddPurchaseInvoiceModal({
     // Invariante: suma(item.subtotal) − discountAmount = subtotal.
     discountPct:    globalDiscountPct,
     discountAmount: discountAmount,
-    items: items.map(({ productId: _productId, ...rest }) => ({
-      ...rest,
-      discountPct: itemDiscountPct(rest),
+    items: items.map((item) => ({
+      ...item,
+      productId:   item.productId || null,
+      discountPct: itemDiscountPct(item),
     })),
     tributos,
     originInvoiceId: isNote ? (originInvoiceId || null) : null,
@@ -676,11 +722,67 @@ export function AddPurchaseInvoiceModal({
   };
 
   // Guarda y, solo si el guardado fue exitoso, limpia el borrador.
-  const handleSaveClick = async () => {
+  const save = async (updateCosts?: { productIds: string[]; keepMargin: boolean }) => {
     try {
-      await onSave(buildPayload());
+      await onSave({ ...buildPayload(), ...(updateCosts?.productIds.length ? { updateCosts } : {}) });
+      setCostReview(null);
       if (isDraftMode) clearDraft();
     } catch { /* el padre ya muestra el error y mantiene el modal abierto */ }
+  };
+
+  /**
+   * Productos cuyo costo cambia con lo facturado. Costo unitario = neto de la
+   * línea / cantidad, menos el descuento global, sin IVA (mismo cálculo que el
+   * backend). Si un producto está en varias líneas, promedio ponderado. Los
+   * productos se releen para comparar contra el costo vigente.
+   */
+  const findCostChanges = async (): Promise<CostCandidate[]> => {
+    if (isNote) return [];
+    const byProduct = new Map<string, { qty: number; net: number }>();
+    for (const it of items) {
+      if (!it.productId || !(Number(it.quantity) > 0)) continue;
+      const acc = byProduct.get(it.productId) ?? { qty: 0, net: 0 };
+      acc.qty += Number(it.quantity);
+      acc.net += itemSubtotal(it) * globalFactor;
+      byProduct.set(it.productId, acc);
+    }
+    if (byProduct.size === 0) return [];
+
+    const fresh = await Promise.all([...byProduct.keys()].map((id) => productsService.getById(id).catch(() => null)));
+    const rate = currencyState === 'ARS' ? 1 : (exchangeRate || 1);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const out: CostCandidate[] = [];
+    for (const p of fresh) {
+      if (!p) continue;
+      const { qty, net } = byProduct.get(p.id)!;
+      const next = round2(net / qty);
+      if (!(next > 0)) continue;
+      const current = productCostIn(p, currencyState, rate)?.value ?? null;
+      if (current != null && Math.abs(round2(current) - next) < 0.01) continue;
+      const oldCost = Number(p.cost) || 0;
+      const nextArs = currencyState === 'ARS' ? next : next * rate;
+      out.push({
+        productId: p.id,
+        name:      p.name,
+        sku:       p.sku,
+        current,
+        next,
+        price:     Number(p.price) || 0,
+        priceKeepingMargin: oldCost > 0 ? round2((Number(p.price) || 0) * nextArs / oldCost) : null,
+        usdFromArs: currencyState === 'ARS' && p.costUSD != null,
+      });
+    }
+    return out;
+  };
+
+  const handleSaveClick = async () => {
+    setCheckingCosts(true);
+    let changes: CostCandidate[] = [];
+    try { changes = await findCostChanges(); }
+    catch { /* sin datos de productos: se guarda sin ofrecer la actualización */ }
+    finally { setCheckingCosts(false); }
+    if (changes.length > 0) { setCostReview(changes); return; }
+    await save();
   };
 
   // All hooks have been called — safe to early-return now
@@ -731,14 +833,22 @@ export function AddPurchaseInvoiceModal({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={isPage ? '' : 'fixed inset-0 z-50 flex items-center justify-center p-4'}>
       {/* Click afuera NO cierra: evita perder lo cargado por accidente */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      {!isPage && <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />}
 
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh] overflow-hidden">
+      <div className={isPage
+        ? 'relative bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm w-full flex flex-col lg:h-[calc(100dvh-3rem)] overflow-hidden'
+        : 'relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl flex flex-col max-h-[92vh] overflow-hidden'}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-700">
           <div className="flex items-center gap-3">
+            {isPage && (
+              <button onClick={attemptClose} title="Volver" aria-label="Volver"
+                className="w-8 h-8 -ml-2 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500">
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
             <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
               <Receipt className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
@@ -753,9 +863,11 @@ export function AddPurchaseInvoiceModal({
               )}
             </div>
           </div>
-          <button onClick={attemptClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400">
-            <X className="w-4 h-4" />
-          </button>
+          {!isPage && (
+            <button onClick={attemptClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Body: carga a la izquierda, totales fijos a la derecha */}
@@ -787,8 +899,13 @@ export function AddPurchaseInvoiceModal({
                     onChange={(e) => {
                       const v = e.target.value;
                       setCurrencyState(v);
-                      if (v !== 'ARS' && !existing) fetchDayRate();
-                      if (v === 'ARS') setExchangeRate(1);
+                      if (v === 'ARS') {
+                        setExchangeRate(1);
+                        repriceItems('ARS', 1);
+                      } else {
+                        repriceItems(v, exchangeRate);
+                        if (!existing) fetchDayRate().then((r) => { if (r) repriceItems(v, r); });
+                      }
                     }}>
                     {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -1272,7 +1389,7 @@ export function AddPurchaseInvoiceModal({
           </div>
 
           <div className="px-5 py-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2">
-            <Button className="w-full" onClick={handleSaveClick} isLoading={isLoading} disabled={!isValid}>
+            <Button className="w-full" onClick={handleSaveClick} isLoading={isLoading || checkingCosts} disabled={!isValid}>
               {existing ? 'Guardar cambios' : standalone ? 'Crear factura' : 'Agregar factura'}
             </Button>
             <div className="flex items-center gap-2">
@@ -1322,6 +1439,16 @@ export function AddPurchaseInvoiceModal({
             </div>
           </div>
         )}
+
+        {costReview && (
+          <PurchaseCostReview
+            candidates={costReview}
+            currency={currencyState}
+            isLoading={isLoading}
+            onCancel={() => setCostReview(null)}
+            onConfirm={(update) => save(update)}
+          />
+        )}
       </div>
 
       <ProductPickerModal
@@ -1332,6 +1459,7 @@ export function AddPurchaseInvoiceModal({
         supplierId={supplierId || null}
         supplierName={suppliers.find((s) => s.id === supplierId)?.name}
         currency={currencyState}
+        exchangeRate={currencyState === 'ARS' ? 1 : exchangeRate}
         onSelect={(picked) => {
           if (picker === 'multi') addItemsFromProducts(picked);
           else if (typeof picker === 'number' && picked[0]) selectProduct(picker, picked[0].id, picked[0]);

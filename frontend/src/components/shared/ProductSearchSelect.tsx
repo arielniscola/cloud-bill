@@ -115,10 +115,17 @@ export default function ProductSearchSelect({
 
     const showAbove = spaceBelow < dropdownHeight && spaceAbove > spaceBelow;
 
+    // En columnas angostas (p.ej. remito de compra) el ancho del trigger no
+    // alcanza para leer el nombre: el desplegable se ensancha hasta un mínimo,
+    // sin salirse de la ventana.
+    const gutter = 8;
+    const width = Math.min(Math.max(rect.width, 480), window.innerWidth - gutter * 2);
+    const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - width - gutter));
+
     setDropdownStyle({
       position: 'fixed',
-      left: rect.left,
-      width: rect.width,
+      left,
+      width,
       zIndex: 9999,
       ...(showAbove
         ? { bottom: window.innerHeight - rect.top + 4 }
@@ -402,7 +409,7 @@ export default function ProductSearchSelect({
                       {p.sku}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate leading-tight ${isSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-800 dark:text-slate-200'}`}>
+                      <p title={p.name} className={`text-sm font-medium break-words leading-tight ${isSelected ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-800 dark:text-slate-200'}`}>
                         {p.name}
                       </p>
                       {(p.brand || p.rubro) && (
@@ -467,7 +474,7 @@ export default function ProductSearchSelect({
               <span className="font-mono text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 px-1.5 py-0.5 rounded flex-shrink-0">
                 {selected.sku}
               </span>
-              <span className="flex-1 truncate text-gray-900 dark:text-slate-200 font-medium">
+              <span title={selected.name} className="flex-1 truncate text-gray-900 dark:text-slate-200 font-medium">
                 {selected.name}
               </span>
               {optional && (

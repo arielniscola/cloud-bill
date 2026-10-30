@@ -4,7 +4,7 @@ import { Pencil, Send, CheckCircle, XCircle, ShoppingBag, Trash2, ArrowRight, Ch
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Badge, Button } from '../../components/ui';
-import { PageHeader, ConfirmDialog, SendEmailModal, RelatedDocuments } from '../../components/shared';
+import { PageHeader, ConfirmDialog, SendEmailModal, RelatedDocuments, DocumentHistory } from '../../components/shared';
 import type { RelatedDocGroup } from '../../components/shared';
 import { budgetsService, afipService, ordenPedidosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
@@ -473,6 +473,18 @@ export default function BudgetDetailPage() {
                 })) as RelatedDocGroup['docs'],
               },
             ]}
+          />
+
+          <DocumentHistory
+            entityId={budget.id}
+            reloadKey={budget.status}
+            created={{ date: budget.createdAt, user: budget.user?.name, title: `Presupuesto ${budget.number} creado` }}
+            extra={generatedOps.map((o) => ({ date: o.date, title: `Orden de pedido ${o.number} generada`, tone: 'success' as const }))}
+            final={
+              budget.status === 'SENT' || budget.status === 'DRAFT'
+                ? (budget.validUntil ? [{ title: `Válido hasta el ${formatDate(budget.validUntil)}`, tone: 'pending' as const }] : [])
+                : []
+            }
           />
         </div>
       </div>

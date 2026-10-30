@@ -18,13 +18,15 @@ import {
   productCustomFieldsService,
   suppliersService,
 } from '../../services';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
 import type { Rubro, Brand, Category, Supplier } from '../../types';
 import type { ProductCustomField } from '../../types/product-custom-field.types';
 import ProductCustomFieldsSection from './ProductCustomFieldsSection';
 import ProductVariantsSection from './ProductVariantsSection';
 import ProductImageSection from './ProductImageSection';
+import ProductPriceHistorySection from './ProductPriceHistorySection';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useExchangeRate } from '../../hooks/useExchangeRate';
 
 // ── Constants ────────────────────────────────────────────────────
 const UNIT_OPTIONS = [
@@ -58,6 +60,8 @@ const productSchema = z.object({
   cost: z.coerce.number().min(0, 'El costo debe ser ≥ 0'),
   price: z.coerce.number().min(0, 'El precio debe ser ≥ 0'),
   salePriceUSD: z.coerce.number().min(0).optional().nullable(),
+  costUSD: z.coerce.number().min(0).optional().nullable(),
+  costUsdRate: z.coerce.number().min(0).optional().nullable(),
   taxRate: z.coerce.number().min(0).max(100).default(21),
   trackStock: z.boolean(),
   trackLots: z.boolean().optional(),
@@ -335,6 +339,7 @@ export default function ProductFormPage() {
     register,
     handleSubmit,
     setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<ProductFormData>({
@@ -349,10 +354,35 @@ export default function ProductFormPage() {
   const unit       = watch('unit')       || '';
   const taxRate    = watch('taxRate')    ?? 21;
   const cost       = watch('cost')        ?? 0;
+  const costUSD    = Number(watch('costUSD') ?? 0);
   const price      = watch('price')       ?? 0;
   const isActiveVal = watch('isActive');
   const trackStockVal = watch('trackStock');
   const trackLotsVal = watch('trackLots');
+
+  // Costo en USD: costo en pesos = USD × cotización. La cotización se propone
+  // con el dólar del día pero es editable; editar el costo en pesos recalcula
+  // la cotización implícita. Se guardan los tres tal cual (ver applyUsdCost).
+  const { rate: usdRate } = useExchangeRate();
+  const costUsdRate = Number(watch('costUsdRate') ?? 0);
+  const hasCostUSD = costUSD > 0;
+  const costFromUsd = (usd: number, rate: number) => {
+    if (usd > 0 && rate > 0) setValue('cost', Math.round(usd * rate * 100) / 100, { shouldValidate: true });
+  };
+  const onCostUsdChange = (usd: number) => {
+    let rate = Number(getValues('costUsdRate')) || 0;
+    if (usd > 0 && !(rate > 0) && usdRate) { rate = usdRate; setValue('costUsdRate', usdRate); }
+    costFromUsd(usd, rate);
+  };
+  const onCostArsChange = (ars: number) => {
+    const usd = Number(getValues('costUSD')) || 0;
+    if (usd > 0 && ars > 0) setValue('costUsdRate', Math.round((ars / usd) * 10000) / 10000);
+  };
+  const applyDayRate = () => {
+    if (!usdRate) return;
+    setValue('costUsdRate', usdRate);
+    costFromUsd(costUSD, usdRate);
+  };
 
   // Derived margin state — not saved, just a calculation helper
   const [marginPct, setMarginPct] = useState<string>('');
@@ -406,6 +436,8 @@ export default function ProductFormPage() {
         setValue('cost',          p.cost);
         setValue('price',         p.price);
         setValue('salePriceUSD',  p.salePriceUSD ?? null);
+        setValue('costUSD',       p.costUSD != null ? Number(p.costUSD) : null);
+        setValue('costUsdRate',   p.costUsdRate != null ? Number(p.costUsdRate) : null);
         setValue('taxRate',       p.taxRate);
         setValue('trackStock',    p.trackStock ?? true);
         setValue('trackLots',     p.trackLots === true);
@@ -460,6 +492,9 @@ export default function ProductFormPage() {
         unit:          data.unit          || null,
         internalNotes: data.internalNotes || null,
         salePriceUSD:  data.salePriceUSD  != null && data.salePriceUSD > 0 ? data.salePriceUSD : null,
+        costUSD:       data.costUSD       != null && data.costUSD > 0 ? data.costUSD : null,
+        costUsdRate:   data.costUSD != null && data.costUSD > 0 && data.costUsdRate != null && data.costUsdRate > 0
+          ? data.costUsdRate : null,
         // Sin inventario no hay lotes.
         trackLots:     data.trackStock ? data.trackLots === true : false,
         customFields:  customFieldsPayload,
@@ -689,9 +724,13 @@ export default function ProductFormPage() {
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    {...register('cost')}
+                    {...register('cost', { onChange: (e) => onCostArsChange(Number(e.target.value)) })}
                     error={errors.cost?.message}
-                    hint="Precio de compra"
+                    hint={
+                      hasCostUSD && costUsdRate > 0
+                        ? `USD ${formatNumber(costUSD, 2)} × $${formatNumber(costUsdRate, 2)}`
+                        : 'Precio de compra'
+                    }
                   />
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
@@ -731,16 +770,52 @@ export default function ProductFormPage() {
                   />
                 </div>
 
-                <Input
-                  label="Precio en USD (opcional)"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  {...register('salePriceUSD')}
-                  error={errors.salePriceUSD?.message}
-                  hint="Se usa en presupuestos en dólares"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Costo en USD (opcional)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    {...register('costUSD', { onChange: (e) => onCostUsdChange(Number(e.target.value)) })}
+                    error={errors.costUSD?.message}
+                    hint="Costo en pesos = USD × cotización"
+                  />
+                  <Input
+                    label="Precio en USD (opcional)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    {...register('salePriceUSD')}
+                    error={errors.salePriceUSD?.message}
+                    hint="Se usa en presupuestos en dólares"
+                  />
+                </div>
+
+                {hasCostUSD && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Cotización del costo"
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      placeholder="0.00"
+                      {...register('costUsdRate', { onChange: (e) => costFromUsd(costUSD, Number(e.target.value)) })}
+                      hint={usdRate != null && costUsdRate > 0 && Math.abs(costUsdRate - usdRate) >= 0.01
+                        ? `Distinta al dólar del día ($${formatNumber(usdRate, 2)})`
+                        : 'Editable: pesos por dólar'}
+                    />
+                    {usdRate != null && (
+                      <div className="sm:pt-7">
+                        <Button type="button" variant="outline" size="sm" onClick={applyDayRate}
+                          disabled={Math.abs(costUsdRate - usdRate) < 0.01}>
+                          Usar dólar del día (${formatNumber(usdRate, 2)})
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <IvaSelector
                   value={Number(taxRate)}
@@ -782,6 +857,8 @@ export default function ProductFormPage() {
           </div>
         </form>
       </Card>
+
+      {isEditing && id && <ProductPriceHistorySection productId={id} />}
     </div>
   );
 }

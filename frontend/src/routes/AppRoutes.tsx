@@ -13,7 +13,9 @@ import CustomerFormPage from '../pages/customers/CustomerFormPage';
 import CustomerDetailPage from '../pages/customers/CustomerDetailPage';
 import ProductsPage from '../pages/products/ProductsPage';
 import ProductFormPage from '../pages/products/ProductFormPage';
+import ProductDetailPage from '../pages/products/ProductDetailPage';
 import BulkPriceUpdatePage from '../pages/products/BulkPriceUpdatePage';
+import PriceHistoryPage from '../pages/products/PriceHistoryPage';
 import BulkProductUpdatePage from '../pages/products/BulkProductUpdatePage';
 import RubrosPage from '../pages/rubros/RubrosPage';
 import WarehousesPage from '../pages/warehouses/WarehousesPage';
@@ -39,12 +41,15 @@ import CashRegistersPage from '../pages/cash-registers/CashRegistersPage';
 import CashRegisterFormPage from '../pages/cash-registers/CashRegisterFormPage';
 import CashRegisterDetailPage from '../pages/cash-registers/CashRegisterDetailPage';
 import SettingsPage from '../pages/settings/SettingsPage';
+import ApprovalsPage from '../pages/approvals/ApprovalsPage';
 import ActivityPage from '../pages/activity/ActivityPage';
 import IvaPage from '../pages/iva/IvaPage';
 import SuppliersPage from '../pages/suppliers/SuppliersPage';
 import SupplierFormPage from '../pages/suppliers/SupplierFormPage';
 import SupplierDetailPage from '../pages/suppliers/SupplierDetailPage';
 import PurchaseInvoicesPage from '../pages/purchase-invoices/PurchaseInvoicesPage';
+import PurchaseInvoiceDetailPage from '../pages/purchase-invoices/PurchaseInvoiceDetailPage';
+import PurchaseInvoiceFormPage from '../pages/purchase-invoices/PurchaseInvoiceFormPage';
 import BrandsPage from '../pages/brands/BrandsPage';
 import BudgetsPage from '../pages/budgets/BudgetsPage';
 import BudgetFormPage from '../pages/budgets/BudgetFormPage';
@@ -90,6 +95,7 @@ import CardsPage from '../pages/cards/CardsPage';
 import BancosPage from '../pages/bancos/BancosPage';
 import ProvinciasPage from '../pages/provincias/ProvinciasPage';
 import LocalidadesPage from '../pages/localidades/LocalidadesPage';
+import CashMovementReasonsPage from '../pages/cash-movement-reasons/CashMovementReasonsPage';
 import CategoriesPage from '../pages/categories/CategoriesPage';
 import ProductCustomFieldsPage from '../pages/product-custom-fields/ProductCustomFieldsPage';
 import PlansPage from '../pages/plans/PlansPage';
@@ -135,11 +141,13 @@ export default function AppRoutes() {
 
         <Route path="/" element={<HomePage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/approvals" element={<ApprovalsPage />} />
 
         {/* Read-only sections — all authenticated roles */}
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/products/:id" element={<ProductDetailPage />} />
         <Route path="/rubros" element={<RubrosPage />} />
         <Route path="/brands" element={<BrandsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
@@ -174,6 +182,7 @@ export default function AppRoutes() {
           <Route path="/customers/:id/edit" element={<CustomerFormPage />} />
           <Route path="/products/new" element={<ProductFormPage />} />
           <Route path="/products/bulk-price-update" element={<BulkPriceUpdatePage />} />
+          <Route path="/products/price-history" element={<PriceHistoryPage />} />
           <Route path="/products/bulk-update" element={<BulkProductUpdatePage />} />
           <Route path="/products/:id/edit" element={<ProductFormPage />} />
           <Route path="/warehouses/new" element={<WarehouseFormPage />} />
@@ -216,6 +225,15 @@ export default function AppRoutes() {
         </Route>
 
         {/* Suppliers & Purchases — ADMIN only */}
+        {/* Remitos de compra (recepción de mercadería). Depósito carga la
+            recepción y queda pendiente hasta que un admin la confirma. Mismos
+            roles que el backend. */}
+        <Route element={<RoleGuard allowed={['ADMIN', 'PURCHASES', 'FINANCES', 'WAREHOUSE_CLERK']} />}>
+          <Route path="/purchase-remitos" element={<PurchaseRemitosPage />} />
+          <Route path="/purchase-remitos/new" element={<PurchaseRemitoFormPage />} />
+          <Route path="/purchase-remitos/:id" element={<PurchaseRemitoDetailPage />} />
+        </Route>
+
         <Route element={<RoleGuard allowed={['ADMIN']} />}>
           <Route path="/suppliers" element={<SuppliersPage />} />
           <Route path="/suppliers/new" element={<SupplierFormPage />} />
@@ -228,11 +246,9 @@ export default function AppRoutes() {
 
           {/* Facturas de compra (documento de primer nivel — reemplaza a Compras) */}
           <Route path="/purchase-invoices" element={<PurchaseInvoicesPage />} />
-
-          {/* Remitos de compra (recepción de mercadería) */}
-          <Route path="/purchase-remitos" element={<PurchaseRemitosPage />} />
-          <Route path="/purchase-remitos/new" element={<PurchaseRemitoFormPage />} />
-          <Route path="/purchase-remitos/:id" element={<PurchaseRemitoDetailPage />} />
+          <Route path="/purchase-invoices/new" element={<PurchaseInvoiceFormPage />} />
+          <Route path="/purchase-invoices/:id" element={<PurchaseInvoiceDetailPage />} />
+          <Route path="/purchase-invoices/:id/edit" element={<PurchaseInvoiceFormPage />} />
 
           {/* Retenciones practicadas a proveedores (consulta + reimpresión) */}
           <Route path="/purchase-retentions" element={<PurchaseRetentionsPage />} />
@@ -250,6 +266,9 @@ export default function AppRoutes() {
 
           {/* Catálogo de bancos (parametrización) — sin feature gate */}
           <Route path="/bancos" element={<BancosPage />} />
+
+          {/* Motivos de retiros / ingresos de caja (parametrización) */}
+          <Route path="/cash-movement-reasons" element={<CashMovementReasonsPage />} />
 
           {/* MercadoPago */}
           <Route element={<FeatureRouteGuard feature="mercadopago" />}>

@@ -330,14 +330,19 @@ export default function RetentionsReportPage() {
                         {r.jurisdiction && <span className="ml-1.5 text-[11px] text-gray-400">{r.jurisdiction}</span>}
                       </td>
                       <td className="px-3 py-3 text-right text-gray-700 dark:text-slate-300 whitespace-nowrap tabular-nums">
-                        {formatCurrency(r.baseAmount, r.currency)}
+                        {formatCurrency(r.baseAmount, 'ARS')}
                         <span className="block text-[11px] text-gray-400 dark:text-slate-500">
                           s/{BASE_LABELS[r.baseKind] ?? r.baseKind}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right text-gray-600 dark:text-slate-400 whitespace-nowrap tabular-nums">{r.percentage}%</td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap tabular-nums">
-                        {formatCurrency(r.amount, r.currency)}
+                        {formatCurrency(r.amount, 'ARS')}
+                        {r.currency !== 'ARS' && (
+                          <span className="block text-[11px] font-normal text-gray-400 dark:text-slate-500">
+                            {formatCurrency(r.amountOriginal, r.currency)} × {r.exchangeRate}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3 font-mono text-xs whitespace-nowrap">
                         {isSicoreType(r.type)

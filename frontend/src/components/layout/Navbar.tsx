@@ -1,3 +1,4 @@
+import { roleAllowed } from '../../utils/roles';
 import { Fragment, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
@@ -10,6 +11,7 @@ import { useAuthStore, useUIStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useFeatures } from '../../hooks/useFeatures';
 import NotificationBell from '../notifications/NotificationBell';
+import ApprovalsBell from '../approvals/ApprovalsBell';
 import { getNavTheme } from '../../utils/navThemes';
 import { navModules, superAdminModules, hrefPath, isHrefActive, type NavItem } from './navConfig';
 
@@ -69,14 +71,17 @@ export default function Navbar() {
 
     return navModules.reduce<NavEntry[]>((acc, m) => {
       if (NAVBAR_EXCLUDED_MODULES.has(m.key)) return acc;
-      if (m.requiredRoles && !m.requiredRoles.includes(role)) return acc;
+      if (m.requiredRoles && !roleAllowed(role, m.requiredRoles)) return acc;
       if (m.moduleKey && !isModuleEnabled(m.moduleKey)) return acc;
       if (m.featureKey && !hasFeature(m.featureKey as any)) return acc;
       if (!m.items) {
         acc.push({ type: 'link', name: m.name, href: m.href, icon: m.icon });
         return acc;
       }
-      const items = m.items.filter((i) => !i.featureKey || hasFeature(i.featureKey as any));
+      const items = m.items.filter((i) =>
+        (!i.featureKey || hasFeature(i.featureKey as any)) &&
+        (!i.requiredRoles || roleAllowed(role, i.requiredRoles))
+      );
       if (items.length === 0) return acc;
       acc.push({ type: 'dropdown', key: m.key, name: m.name, icon: m.icon, sections: toSections(items) });
       return acc;
@@ -219,6 +224,7 @@ export default function Navbar() {
 
           {/* Right: Notifications + User */}
           <div className="flex items-center gap-2">
+            <ApprovalsBell />
             <NotificationBell />
 
             <Menu as="div" className="relative">

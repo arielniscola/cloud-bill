@@ -16,8 +16,9 @@ export const importService = {
   // `rowOffset`: cuando el archivo se manda en lotes (ver CsvImportModal), es la
   // cantidad de filas de datos ya procesadas en lotes anteriores — así los
   // números de fila en `errors` coinciden con el archivo original completo.
-  async importProducts(csv: string, rowOffset = 0): Promise<ImportResult> {
-    const res = await api.post<ApiResponse<ImportResult>>('/products/import', { csv, rowOffset });
+  /** `importRef`: el mismo en todos los lotes de un archivo (una operación en el historial de precios). */
+  async importProducts(csv: string, rowOffset = 0, importRef?: string): Promise<ImportResult> {
+    const res = await api.post<ApiResponse<ImportResult>>('/products/import', { csv, rowOffset, importRef });
     return res.data.data;
   },
   async importCustomers(csv: string, rowOffset = 0): Promise<ImportResult> {

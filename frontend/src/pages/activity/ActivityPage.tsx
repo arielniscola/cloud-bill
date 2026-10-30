@@ -30,21 +30,41 @@ const ACTION_COLORS: Record<ActivityAction, string> = {
 
 const ACTION_OPTIONS: ActivityAction[] = ['CREATE', 'UPDATE', 'DELETE', 'PAYMENT', 'CANCEL', 'TRANSFER'];
 
-// Entity → route mapping for clickable links
-const ENTITY_ROUTES: Record<string, string> = {
-  Invoice: '/invoices',
-  Customer: '/customers',
-  Product: '/products',
-  Supplier: '/suppliers',
-  Warehouse: '/warehouses',
-  Purchase: '/purchases',
-  Budget: '/budgets',
-  Recibo: '/recibos',
-  OrdenPago: '/orden-pagos',
-  OrdenPedido: '/orden-pedidos',
-  Remito: '/remitos',
-  CashRegister: '/cash-registers',
-  User: '/users',
+// Entity → link a la entidad. Solo para ids reales: las operaciones masivas o
+// importaciones registran un id que no es de ningún registro.
+const ENTITY_ROUTES: Record<string, (id: string) => string> = {
+  Invoice: (id) => `/invoices/${id}`,
+  Customer: (id) => `/customers/${id}`,
+  Product: (id) => `/products/${id}`,
+  Supplier: (id) => `/suppliers/${id}`,
+  Warehouse: (id) => `/warehouses/${id}`,
+  Budget: (id) => `/budgets/${id}`,
+  Recibo: (id) => `/recibos/${id}`,
+  OrdenPago: (id) => `/orden-pagos/${id}`,
+  OrdenPedido: (id) => `/orden-pedidos/${id}`,
+  Remito: (id) => `/remitos/${id}`,
+  CashRegister: (id) => `/cash-registers/${id}`,
+  PurchaseInvoice: (id) => `/purchase-invoices/${id}`,
+  PurchaseRemito: (id) => `/purchase-remitos/${id}`,
+  JournalEntry: (id) => `/accounting/journal-entries/${id}`,
+};
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Nombre legible de los campos que aparecen en `metadata.changes`.
+const FIELD_LABELS: Record<string, string> = {
+  number: 'Número', type: 'Tipo', supplierId: 'Proveedor', subtotal: 'Neto', taxAmount: 'IVA',
+  discountAmount: 'Descuento', amount: 'Total', currency: 'Moneda', exchangeRate: 'Cotización',
+  saleCondition: 'Condición', date: 'Fecha', dueDate: 'Vencimiento', imputationDate: 'Imputación',
+  paymentMethod: 'Forma de pago', notes: 'Notas', originInvoiceId: 'Comprobante de origen', status: 'Estado',
+  creditLimit: 'Límite de crédito', name: 'Nombre', bank: 'Banco', accountNumber: 'Cuenta',
+  numberFrom: 'Desde', numberTo: 'Hasta', nextNumber: 'Próximo número', isActive: 'Activa',
+};
+
+const formatChangeValue = (v: unknown): string => {
+  if (v == null || v === '') return '—';
+  if (typeof v === 'boolean') return v ? 'Sí' : 'No';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return new Date(v).toLocaleDateString('es-AR');
+  return String(v);
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -68,6 +88,14 @@ const ENTITY_LABELS: Record<string, string> = {
   User: 'Usuario',
   Afip: 'AFIP',
   MercadoPago: 'MercadoPago',
+  PurchaseInvoice: 'Factura de compra',
+  PurchaseRemito: 'Remito de compra',
+  AppSettings: 'Configuración',
+  JournalEntry: 'Asiento contable',
+  Account: 'Plan de cuentas',
+  InternalNote: 'Nota interna',
+  Chequera: 'Chequera',
+  Banco: 'Banco',
 };
 
 interface UserOption {
@@ -215,7 +243,7 @@ export default function ActivityPage() {
       key: 'entity',
       header: 'Entidad',
       render: (log) => {
-        const route = ENTITY_ROUTES[log.entity];
+        const route = UUID_RE.test(log.entityId) ? ENTITY_ROUTES[log.entity] : undefined;
         const label = ENTITY_LABELS[log.entity] ?? log.entity;
         return (
           <div className="flex items-center gap-1.5">
@@ -225,7 +253,7 @@ export default function ActivityPage() {
             {route && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); navigate(`${route}/${log.entityId}`); }}
+                onClick={(e) => { e.stopPropagation(); navigate(route(log.entityId)); }}
                 className="text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
                 title="Ver entidad"
               >
@@ -241,8 +269,24 @@ export default function ActivityPage() {
       header: 'Descripción',
       render: (log) => (
         <div className="min-w-0">
-          <p className="text-sm text-gray-600 dark:text-slate-300 truncate max-w-[300px]">{log.description}</p>
-          {log.metadata && Object.keys(log.metadata).length > 0 && (
+          <p className="text-sm text-gray-600 dark:text-slate-300 truncate max-w-[300px]" title={log.description}>{log.description}</p>
+          {(() => {
+            // Ediciones: lo que cambió, campo por campo (antes → después).
+            const changes = log.metadata?.changes as Record<string, { from: unknown; to: unknown }> | undefined;
+            if (!changes || Object.keys(changes).length === 0) return null;
+            return (
+              <ul className="mt-1 space-y-0.5">
+                {Object.entries(changes).map(([field, c]) => (
+                  <li key={field} className="text-xs text-gray-500 dark:text-slate-400">
+                    <span className="font-medium">{FIELD_LABELS[field] ?? field}:</span>{' '}
+                    <span className="text-gray-400 dark:text-slate-500 line-through">{formatChangeValue(c.from)}</span>{' → '}
+                    <span className="text-gray-700 dark:text-slate-200">{formatChangeValue(c.to)}</span>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+          {log.metadata && Object.keys(log.metadata).filter((k) => k !== 'changes').length > 0 && (
             <details className="mt-1">
               <summary className="text-[10px] text-gray-400 dark:text-slate-500 cursor-pointer hover:text-gray-600 dark:hover:text-slate-400">
                 Metadata

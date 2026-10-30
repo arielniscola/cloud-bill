@@ -53,6 +53,9 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
 
         cleanupOutdatedCaches: true,
+
+        // Handlers de 'push' y 'notificationclick' (avisos de aprobaciones).
+        importScripts: ['push-sw.js'],
         // Sin runtimeCaching: en Fase 1 las llamadas a /api van siempre a la
         // red. La cache de datos es Fase 2 (IndexedDB, no Cache Storage).
       },

@@ -78,7 +78,8 @@ export default function CashFlowReportPage() {
 
   // Method totals for summary
   const byMethod: Record<string, number> = {};
-  for (const r of data) byMethod[r.paymentMethod] = (byMethod[r.paymentMethod] ?? 0) + r.amount;
+  // En pesos (cotización de cada recibo): sumar dólares tal cual daba cualquier cosa.
+  for (const r of data) byMethod[r.paymentMethod] = (byMethod[r.paymentMethod] ?? 0) + r.amountArs;
 
   return (
     <div>
@@ -166,7 +167,7 @@ export default function CashFlowReportPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-gray-500 dark:text-slate-400">{r.currency}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatCurrency(r.amount)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatCurrency(r.amount, r.currency)}</td>
                         <td className="px-4 py-3 text-xs text-gray-400 dark:text-slate-500">{r.reference}</td>
                       </tr>
                     ))}

@@ -8,6 +8,7 @@ import { PageHeader, CustomerSearchSelect } from '../../components/shared';
 import { invoicesService, reportsService, usersService, customersService, ordenPedidosService } from '../../services';
 import type { ByProductRow } from '../../services/reports.service';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
+import { arsFactor } from '../../utils/currencyConversion';
 import {
   INVOICE_TYPES,
   INVOICE_TYPE_OPTIONS,
@@ -64,8 +65,10 @@ const STATUS_VARIANT: Record<string, StatusVariant> = {
   DRAFT: 'default', ISSUED: 'info', AUTHORIZED: 'authorized', PAID: 'success', CANCELLED: 'error', PARTIALLY_PAID: 'warning',
 };
 
-function signedInvoice(inv: Invoice) {
-  const sign = inv.type.startsWith('NOTA_CREDITO') ? -1 : 1;
+// `toArs`: sin filtro de moneda los totales van a pesos con la cotización de
+// cada comprobante (sumar dólares y pesos tal cual daba un número que no existe).
+function signedInvoice(inv: Invoice, toArs = false) {
+  const sign = (inv.type.startsWith('NOTA_CREDITO') ? -1 : 1) * (toArs ? arsFactor(inv.currency, inv.exchangeRate) : 1);
   return {
     subtotal:  Number(inv.subtotal)  * sign,
     taxAmount: Number(inv.taxAmount) * sign,
@@ -122,9 +125,12 @@ function TabBtn({ icon: Icon, label, active, onClick }: {
 }
 
 // ── Summary strip ──────────────────────────────────────────────────────────
-function SummaryStrip({ count, countLabel, subtotal, taxAmount, total, hasMixed }: {
+function SummaryStrip({ count, countLabel, subtotal, taxAmount, total, hasMixed, currency = 'ARS' }: {
   count: number; countLabel: string;
-  subtotal: number; taxAmount: number; total: number; hasMixed?: boolean;
+  subtotal: number; taxAmount: number; total: number;
+  /** Hay comprobantes en otra moneda convertidos a pesos. */
+  hasMixed?: boolean;
+  currency?: string;
 }) {
   const cards = [
     { label: countLabel,    value: count,    isCurrency: false },
@@ -149,10 +155,10 @@ function SummaryStrip({ count, countLabel, subtotal, taxAmount, total, hasMixed 
             'text-2xl font-bold tabular-nums',
             c.accent ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-900 dark:text-white'
           )}>
-            {c.isCurrency ? formatCurrency(c.value as number) : (c.value as number).toLocaleString('es-AR')}
+            {c.isCurrency ? formatCurrency(c.value as number, currency) : (c.value as number).toLocaleString('es-AR')}
           </p>
           {c.accent && hasMixed && (
-            <p className="text-xs text-amber-500 mt-0.5">Monedas mixtas</p>
+            <p className="text-xs text-amber-500 mt-0.5">USD en pesos, a la cotización de cada comprobante</p>
           )}
         </div>
       ))}
@@ -236,6 +242,11 @@ export default function SalesReportPage() {
   const [statusFilter,  setStatusFilter]  = useState('');
   // OP-only filters
   const [opStatusFilter, setOpStatus]     = useState('');
+  // Moneda con la que se pidieron los datos en pantalla: sin filtro todo se
+  // expresa en pesos; con filtro, en esa moneda.
+  const [appliedCurrency, setAppliedCurrency] = useState('');
+  const toArs = !appliedCurrency;
+  const reportCurrency = appliedCurrency || 'ARS';
 
   useEffect(() => {
     usersService.getAll().then(setUsers).catch(() => null);
@@ -257,6 +268,7 @@ export default function SalesReportPage() {
     try {
       const data = await invoicesService.getAll({ limit: 10000, ...invoiceFilters });
       setInvoices(data.data);
+      setAppliedCurrency(currencyFilter);
     } catch { toast.error('Error al cargar el reporte'); }
     finally   { setIsLoading(false); }
   };
@@ -266,6 +278,7 @@ export default function SalesReportPage() {
     try {
       const data = await reportsService.salesByProduct(invoiceFilters);
       setByProduct(data);
+      setAppliedCurrency(currencyFilter);
     } catch { toast.error('Error al cargar reporte por producto'); }
     finally   { setLoadingProd(false); }
   };
@@ -282,6 +295,7 @@ export default function SalesReportPage() {
         status:     opStatusFilter  || undefined,
       });
       setOrdenPedidos(data.data);
+      setAppliedCurrency(currencyFilter);
     } catch { toast.error('Error al cargar órdenes de pedido'); }
     finally   { setLoadingOP(false); }
   };
@@ -316,37 +330,37 @@ export default function SalesReportPage() {
 
   const invTotals = useMemo(() => activeInv.reduce(
     (acc, inv) => {
-      const s = signedInvoice(inv);
+      const s = signedInvoice(inv, toArs);
       return { subtotal: acc.subtotal + s.subtotal, taxAmount: acc.taxAmount + s.taxAmount, total: acc.total + s.total };
     },
     { subtotal: 0, taxAmount: 0, total: 0 }
-  ), [activeInv]);
+  ), [activeInv, toArs]);
 
-  const hasMixed = invoices.length > 0 && new Set(invoices.map((i) => i.currency)).size > 1;
+  const hasMixed = toArs && invoices.some((i) => i.currency !== 'ARS');
 
   const byCustomerInv = useMemo<ByCustomerRow[]>(() => {
     const map = new Map<string, ByCustomerRow>();
     for (const inv of activeInv) {
-      const { subtotal, taxAmount, total } = signedInvoice(inv);
+      const { subtotal, taxAmount, total } = signedInvoice(inv, toArs);
       const ex = map.get(inv.customerId);
       if (ex) { ex.count++; ex.subtotal += subtotal; ex.taxAmount += taxAmount; ex.total += total; }
       else map.set(inv.customerId, { customerId: inv.customerId, customerName: inv.customer?.name ?? inv.customerId, customerTaxId: inv.customer?.taxId ?? null, count: 1, subtotal, taxAmount, total });
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [activeInv]);
+  }, [activeInv, toArs]);
 
   const userMap = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
 
   const bySellerInv = useMemo<BySellerRow[]>(() => {
     const map = new Map<string, BySellerRow>();
     for (const inv of activeInv) {
-      const { subtotal, taxAmount, total } = signedInvoice(inv);
+      const { subtotal, taxAmount, total } = signedInvoice(inv, toArs);
       const ex = map.get(inv.userId);
       if (ex) { ex.count++; ex.subtotal += subtotal; ex.taxAmount += taxAmount; ex.total += total; }
       else map.set(inv.userId, { userId: inv.userId, sellerName: userMap.get(inv.userId) ?? (inv.user?.name ?? 'Usuario'), count: 1, subtotal, taxAmount, total });
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [activeInv, userMap]);
+  }, [activeInv, userMap, toArs]);
 
   const byProductTotals = useMemo(() => byProduct.reduce(
     (acc, r) => ({ subtotal: acc.subtotal + r.subtotal, taxAmount: acc.taxAmount + r.taxAmount, total: acc.total + r.total }),
@@ -355,34 +369,40 @@ export default function SalesReportPage() {
 
   // ── Aggregations from OPs ────────────────────────────────────────────────
   const activeOP = ordenPedidos.filter((op) => op.status !== 'CANCELLED');
+  const opFx = (op: OrdenPedido) => (toArs ? arsFactor(op.currency, op.exchangeRate) : 1);
 
   const opTotals = useMemo(() => activeOP.reduce(
-    (acc, op) => ({ subtotal: acc.subtotal + Number(op.subtotal), taxAmount: acc.taxAmount + Number(op.taxAmount), total: acc.total + Number(op.total) }),
+    (acc, op) => {
+      const fx = opFx(op);
+      return { subtotal: acc.subtotal + Number(op.subtotal) * fx, taxAmount: acc.taxAmount + Number(op.taxAmount) * fx, total: acc.total + Number(op.total) * fx };
+    },
     { subtotal: 0, taxAmount: 0, total: 0 }
-  ), [activeOP]);
+  ), [activeOP, toArs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byCustomerOP = useMemo<ByCustomerRow[]>(() => {
     const map = new Map<string, ByCustomerRow>();
     for (const op of activeOP) {
       if (!op.customerId) continue;
-      const subtotal = Number(op.subtotal), taxAmount = Number(op.taxAmount), total = Number(op.total);
+      const fx = opFx(op);
+      const subtotal = Number(op.subtotal) * fx, taxAmount = Number(op.taxAmount) * fx, total = Number(op.total) * fx;
       const ex = map.get(op.customerId);
       if (ex) { ex.count++; ex.subtotal += subtotal; ex.taxAmount += taxAmount; ex.total += total; }
       else map.set(op.customerId, { customerId: op.customerId, customerName: op.customer?.name ?? op.customerId, customerTaxId: op.customer?.taxId ?? null, count: 1, subtotal, taxAmount, total });
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [activeOP]);
+  }, [activeOP, toArs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bySellerOP = useMemo<BySellerRow[]>(() => {
     const map = new Map<string, BySellerRow>();
     for (const op of activeOP) {
-      const subtotal = Number(op.subtotal), taxAmount = Number(op.taxAmount), total = Number(op.total);
+      const fx = opFx(op);
+      const subtotal = Number(op.subtotal) * fx, taxAmount = Number(op.taxAmount) * fx, total = Number(op.total) * fx;
       const ex = map.get(op.userId);
       if (ex) { ex.count++; ex.subtotal += subtotal; ex.taxAmount += taxAmount; ex.total += total; }
       else map.set(op.userId, { userId: op.userId, sellerName: userMap.get(op.userId) ?? (op.user?.name ?? 'Usuario'), count: 1, subtotal, taxAmount, total });
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [activeOP, userMap]);
+  }, [activeOP, userMap, toArs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Resolved values based on source ─────────────────────────────────────
   const isOP     = source === 'op';
@@ -593,17 +613,18 @@ export default function SalesReportPage() {
         <SummaryStrip
           count={listCount} countLabel={isOP ? 'Órdenes' : 'Comprobantes'}
           subtotal={totals.subtotal} taxAmount={totals.taxAmount} total={totals.total}
-          hasMixed={!isOP && hasMixed}
+          hasMixed={isOP ? toArs && ordenPedidos.some((op) => op.currency !== 'ARS') : hasMixed}
+          currency={reportCurrency}
         />
       )}
       {tab === 'by-customer' && (
-        <SummaryStrip count={byCustomer.length} countLabel="Clientes" {...totals} />
+        <SummaryStrip count={byCustomer.length} countLabel="Clientes" {...totals} currency={reportCurrency} />
       )}
       {tab === 'by-seller' && (
-        <SummaryStrip count={bySeller.length} countLabel="Vendedores" {...totals} />
+        <SummaryStrip count={bySeller.length} countLabel="Vendedores" {...totals} currency={reportCurrency} />
       )}
       {tab === 'by-product' && !isOP && (
-        <SummaryStrip count={byProduct.length} countLabel="Productos" {...byProductTotals} />
+        <SummaryStrip count={byProduct.length} countLabel="Productos" {...byProductTotals} currency={reportCurrency} />
       )}
 
       {/* ── TAB: Lista de comprobantes ──────────────────────────────────── */}
@@ -670,9 +691,9 @@ export default function SalesReportPage() {
                 <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{r.customerName}</td>
                 <td className="px-4 py-3 text-sm font-mono text-gray-400 dark:text-slate-500">{r.customerTaxId ?? '—'}</td>
                 <td className="px-4 py-3 text-sm text-center tabular-nums font-semibold text-gray-700 dark:text-slate-300">{r.count}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal)}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount)}</td>
-                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total, reportCurrency)}</td>
               </tr>
             ))
           )}
@@ -688,9 +709,9 @@ export default function SalesReportPage() {
               <tr key={r.userId} className="hover:bg-gray-50/60 dark:hover:bg-slate-700/50 transition-colors">
                 <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{r.sellerName}</td>
                 <td className="px-4 py-3 text-sm text-center tabular-nums font-semibold text-gray-700 dark:text-slate-300">{r.count}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal)}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount)}</td>
-                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total, reportCurrency)}</td>
               </tr>
             ))
           )}
@@ -708,10 +729,10 @@ export default function SalesReportPage() {
                 <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white max-w-[200px] truncate">{r.productName}</td>
                 <td className="px-4 py-3 text-sm text-center tabular-nums text-gray-600 dark:text-slate-400">{r.invoiceCount}</td>
                 <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-600 dark:text-slate-400">{r.quantity.toLocaleString('es-AR', { maximumFractionDigits: 2 })}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.unitPriceAvg)}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal)}</td>
-                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount)}</td>
-                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.unitPriceAvg, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums">{formatCurrency(r.subtotal, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500">{formatCurrency(r.taxAmount, reportCurrency)}</td>
+                <td className="px-4 py-3 text-sm font-bold text-right tabular-nums text-gray-900 dark:text-white">{formatCurrency(r.total, reportCurrency)}</td>
               </tr>
             ))
           )}

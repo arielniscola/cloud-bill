@@ -1,6 +1,6 @@
 import api from './api';
 
-type AssignableRole = 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK' | 'FINANCES' | 'PURCHASES';
+type AssignableRole = 'OWNER' | 'ADMIN' | 'SELLER' | 'WAREHOUSE_CLERK' | 'FINANCES' | 'PURCHASES';
 
 export interface UserDTO {
   id: string;

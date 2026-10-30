@@ -1,3 +1,4 @@
+import { roleAllowed } from '../../utils/roles';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
@@ -7,6 +8,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useFeatures } from "../../hooks/useFeatures";
 import { getNavTheme } from "../../utils/navThemes";
 import NotificationBell from "../notifications/NotificationBell";
+import ApprovalsBell from "../approvals/ApprovalsBell";
 import CompanySwitcher from "../shared/CompanySwitcher";
 import { useCompanyStore } from "../../stores/company.store";
 import { confirmLogoutWithPendingSales } from '../../lib/offline/logoutGuard';
@@ -60,14 +62,17 @@ export default function Sidebar() {
     const source = role === "SUPER_ADMIN" ? superAdminModules : navModules;
     return source
       .filter((m) => {
-        if (m.requiredRoles && !m.requiredRoles.includes(role)) return false;
+        if (m.requiredRoles && !roleAllowed(role, m.requiredRoles)) return false;
         if (m.moduleKey && !isModuleEnabled(m.moduleKey)) return false;
         if (m.featureKey && !hasFeature(m.featureKey as any)) return false;
         return true;
       })
       .map((m) => ({
         ...m,
-        items: m.items?.filter((i) => !i.featureKey || hasFeature(i.featureKey as any)),
+        items: m.items?.filter((i) =>
+          (!i.featureKey || hasFeature(i.featureKey as any)) &&
+          (!i.requiredRoles || roleAllowed(role, i.requiredRoles))
+        ),
       }))
       // Un módulo cuyos items quedaron todos ocultos por el plan no va al riel.
       .filter((m) => !m.items || m.items.length > 0);
@@ -496,6 +501,7 @@ export default function Sidebar() {
                 <PinOff className="w-[18px] h-[18px]" />
               </button>
             )}
+            <ApprovalsBell triggerClassName={tileClass(false)} iconClassName="w-5 h-5" />
             <NotificationBell
               align="left"
               triggerClassName={tileClass(false)}

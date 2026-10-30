@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, X, Package, Loader2, Check } from 'lucide-react';
 import { productsService } from '../../services';
 import { formatCurrency } from '../../utils/formatters';
+import { productCostIn } from '../../utils/productCost';
 import type { Product } from '../../types';
 
 const PAGE_SIZE = 25;
@@ -18,13 +19,15 @@ interface Props {
   supplierName?: string;
   /** Moneda en la que mostrar el costo. */
   currency?: string;
+  /** Cotización del comprobante: en USD convierte el costo de los productos sin costo en USD. */
+  exchangeRate?: number;
   /** Producto ya elegido en la fila (modo simple), para marcarlo en la lista. */
   selectedId?: string | null;
 }
 
 export function ProductPickerModal({
   isOpen, onClose, onSelect, multiple = false,
-  supplierId = null, supplierName, currency = 'ARS', selectedId = null,
+  supplierId = null, supplierName, currency = 'ARS', exchangeRate = 1, selectedId = null,
 }: Props) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -207,13 +210,24 @@ export function ProductPickerModal({
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right text-[13px] font-semibold tabular-nums text-gray-800 dark:text-slate-200">
-                        {formatCurrency(Number(p.cost), currency)}
+                        {(() => {
+                          const c = productCostIn(p, currency, exchangeRate);
+                          if (!c) return <span className="text-gray-300 dark:text-slate-600">—</span>;
+                          return (
+                            <span title={c.converted ? 'Sin costo en USD: convertido desde el costo en pesos' : undefined}>
+                              {c.converted && <span className="font-normal text-gray-400 dark:text-slate-500">≈ </span>}
+                              {formatCurrency(c.value, currency)}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-gray-500 dark:text-slate-400">
                         {Number(p.taxRate)}%
                       </td>
                       <td className="px-3 py-2.5 pr-6 text-right text-[13px] tabular-nums text-gray-400 dark:text-slate-500">
-                        {formatCurrency(Number(p.price), currency)}
+                        {currency === 'USD'
+                          ? (p.salePriceUSD != null ? formatCurrency(Number(p.salePriceUSD), 'USD') : '—')
+                          : formatCurrency(Number(p.price), currency)}
                       </td>
                     </tr>
                   );

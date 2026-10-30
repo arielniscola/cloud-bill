@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Edit, Lock, TrendingUp, Activity,
-  ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Printer, XCircle,
+  ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Printer, XCircle, ShieldAlert, Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Button, Modal, Input, Select } from '../../components/ui';
 import { PageHeader, DataTable, ConfirmDialog } from '../../components/shared';
 import type { Column } from '../../components/shared/DataTable';
-import { cashRegistersService, bankService, appSettingsService } from '../../services';
+import { cashRegistersService, bankService, appSettingsService, cashMovementReasonsService } from '../../services';
 import { useAuthStore } from '../../stores';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
@@ -24,8 +24,12 @@ import type {
   CashRegisterClosePreview,
   CashMovementConcept,
   CashMovementDirection,
+  CashMovementReason,
 } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
+import { approvalOutcome } from '../../utils/approvalActions';
+import { approvalsService, type ApprovalRequest } from '../../services/approvals.service';
+import { useApprovalStore } from '../../stores/approval.store';
 
 // ── Filter components ────────────────────────────────────────────────────────
 function CompactDateInput({ label, value, onChange }: {
@@ -140,6 +144,7 @@ export default function CashRegisterDetailPage() {
   const [filterType, setFilterType]           = useState<CashRegisterMovementType | ''>('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate]     = useState('');
+  const [filterReasonId, setFilterReasonId]   = useState('');
 
   // Modal cierre
   const [isCloseModalOpen, setIsCloseModalOpen]         = useState(false);
@@ -150,7 +155,7 @@ export default function CashRegisterDetailPage() {
 
   // Modal retiro / ingreso manual
   const { user } = useAuthStore();
-  const canCancelManual = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const canCancelManual = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'OWNER';
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [cashType, setCashType]               = useState<CashMovementDirection>('OUT');
   const [cashConcept, setCashConcept]         = useState<CashMovementConcept>('RETIRO');
@@ -158,10 +163,18 @@ export default function CashRegisterDetailPage() {
   const [cashPerson, setCashPerson]           = useState('');
   const [cashNotes, setCashNotes]             = useState('');
   const [cashBankId, setCashBankId]           = useState('');
+  const [cashReasonId, setCashReasonId]       = useState('');
+  // Catálogo de motivos de la empresa (Combustible, Viáticos…), solo activos.
+  const [reasons, setReasons]                 = useState<CashMovementReason[]>([]);
+  const [newReasonName, setNewReasonName]     = useState<string | null>(null);
+  const [isSavingReason, setIsSavingReason]   = useState(false);
   const [printAfterSave, setPrintAfterSave]   = useState(true);
   const [isSavingCash, setIsSavingCash]       = useState(false);
   const [bankAccounts, setBankAccounts]       = useState<BankAccount[]>([]);
   const [cancelTarget, setCancelTarget]       = useState<CashRegisterMovement | null>(null);
+  // Anulaciones esperando al Dueño, por id de movimiento de caja (bloquean la fila).
+  const [pendingApprovals, setPendingApprovals] = useState<Record<string, ApprovalRequest>>({});
+  const approvalVersion = useApprovalStore((s) => s.version);
   const [isCancellingCash, setIsCancellingCash] = useState(false);
   const [printingId, setPrintingId]           = useState<string | null>(null);
   const [printFormat, setPrintFormat]         = useState<'A4' | 'THERMAL_80MM'>('A4');
@@ -201,6 +214,7 @@ export default function CashRegisterDetailPage() {
         ...(filterType      && { type: filterType }),
         ...(filterStartDate && { startDate: filterStartDate }),
         ...(filterEndDate   && { endDate: filterEndDate }),
+        ...(filterReasonId  && { reasonId: filterReasonId }),
       });
       setMovements(response.data);
       setTotal(response.total);
@@ -209,9 +223,20 @@ export default function CashRegisterDetailPage() {
     } finally {
       setIsLoadingMovements(false);
     }
-  }, [id, page, limit, filterType, filterStartDate, filterEndDate]);
+  }, [id, page, limit, filterType, filterStartDate, filterEndDate, filterReasonId]);
 
   useEffect(() => { fetchMovements(); }, [fetchMovements]);
+
+  useEffect(() => {
+    const ids = movements.filter((m) => m.cashMovement?.status === 'ACTIVE').map((m) => m.cashMovement!.id);
+    if (!ids.length) { setPendingApprovals({}); return; }
+    let alive = true;
+    approvalsService
+      .getOpenForEntities('CASH_MOVEMENT', ids)
+      .then((rows) => { if (alive) setPendingApprovals(Object.fromEntries(rows.map((r) => [r.entityId, r]))); })
+      .catch(() => { /* sin la marca, el backend igual rechaza una segunda solicitud */ });
+    return () => { alive = false; };
+  }, [movements, approvalVersion]);
 
   // Cierres
   const fetchCloses = useCallback(async () => {
@@ -232,12 +257,37 @@ export default function CashRegisterDetailPage() {
 
   const clearFilters = () => {
     setFilterType('');
+    setFilterReasonId('');
     setFilterStartDate('');
     setFilterEndDate('');
     setPage(1);
   };
 
-  const hasActiveFilters = !!(filterType || filterStartDate || filterEndDate);
+  const hasActiveFilters = !!(filterType || filterStartDate || filterEndDate || filterReasonId);
+
+  const loadReasons = useCallback(() => {
+    cashMovementReasonsService.getAll().then(setReasons).catch(() => {});
+  }, []);
+  useEffect(() => { loadReasons(); }, [loadReasons]);
+
+  const reasonsFor = (type: CashMovementDirection) => reasons.filter((r) => r.type === 'BOTH' || r.type === type);
+
+  const handleCreateReason = async () => {
+    const name = (newReasonName ?? '').trim();
+    if (name.length < 2) { toast.error('Ingresá el nombre del motivo'); return; }
+    setIsSavingReason(true);
+    try {
+      const created = await cashMovementReasonsService.create({ name, type: cashType });
+      setReasons((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'es')));
+      setCashReasonId(created.id);
+      setNewReasonName(null);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'No se pudo crear el motivo');
+    } finally {
+      setIsSavingReason(false);
+    }
+  };
 
   const refreshPreview = () => {
     if (!id) return;
@@ -256,6 +306,8 @@ export default function CashRegisterDetailPage() {
     setCashPerson('');
     setCashNotes('');
     setCashBankId('');
+    setCashReasonId('');
+    setNewReasonName(null);
     setIsCashModalOpen(true);
     if (bankAccounts.length === 0) {
       bankService.getAll()
@@ -268,6 +320,8 @@ export default function CashRegisterDetailPage() {
     setCashType(type);
     setCashConcept(CASH_CONCEPTS_BY_TYPE[type][0]);
     setCashBankId('');
+    // Un motivo solo de egresos no sirve para un ingreso (y viceversa).
+    setCashReasonId((prev) => (reasons.find((r) => r.id === prev && (r.type === 'BOTH' || r.type === type)) ? prev : ''));
   };
 
   const thermalUrl = (movementId: string) => `/print/cash-movement/${id}/${movementId}`;
@@ -313,6 +367,7 @@ export default function CashRegisterDetailPage() {
         personName: cashPerson.trim() || undefined,
         notes: cashNotes.trim() || undefined,
         bankAccountId: isBankConcept(cashConcept) ? cashBankId : undefined,
+        reasonId: cashReasonId || undefined,
       });
       toast.success(`${cashType === 'OUT' ? 'Retiro' : 'Ingreso'} ${movement.number} registrado`);
       setIsCashModalOpen(false);
@@ -339,6 +394,7 @@ export default function CashRegisterDetailPage() {
       fetchMovements();
       refreshPreview();
     } catch (error: unknown) {
+      if (approvalOutcome(error)) { setCancelTarget(null); return; }
       const err = error as { response?: { data?: { message?: string } } };
       toast.error(err.response?.data?.message || 'Error al anular el movimiento');
     } finally {
@@ -476,7 +532,17 @@ export default function CashRegisterDetailPage() {
             >
               <Printer className="w-4 h-4" />
             </button>
-            {canCancelManual && mov.cashMovement.status === 'ACTIVE' && (
+            {pendingApprovals[mov.cashMovement.id] ? (
+              <button
+                type="button"
+                onClick={() => navigate('/approvals')}
+                title={`Anulación pedida por ${pendingApprovals[mov.cashMovement.id].requestedByName ?? 'un usuario'}${pendingApprovals[mov.cashMovement.id].reason ? ` — Motivo: ${pendingApprovals[mov.cashMovement.id].reason}` : ''}`}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50 transition-colors"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Anulación pendiente
+              </button>
+            ) : canCancelManual && mov.cashMovement.status === 'ACTIVE' && (
               <button
                 type="button"
                 title="Anular"
@@ -682,6 +748,16 @@ export default function CashRegisterDetailPage() {
                   { value: 'DEBIT',  label: 'Egresos' },
                 ]}
               />
+              {reasons.length > 0 && (
+                <CompactSelect
+                  value={filterReasonId}
+                  onChange={(v) => { setFilterReasonId(v); setPage(1); }}
+                  options={[
+                    { value: '', label: 'Todos los motivos' },
+                    ...reasons.map((r) => ({ value: r.id, label: r.name })),
+                  ]}
+                />
+              )}
               {hasActiveFilters && (
                 <button
                   type="button"
@@ -772,6 +848,43 @@ export default function CashRegisterDetailPage() {
             options={CASH_CONCEPTS_BY_TYPE[cashType].map((c) => ({ value: c, label: CASH_CONCEPT_LABELS[c] }))}
           />
 
+          {newReasonName === null ? (
+            <div>
+              <Select
+                label="Motivo (opcional)"
+                value={cashReasonId}
+                onChange={setCashReasonId}
+                placeholder={reasonsFor(cashType).length ? 'Sin motivo' : 'No hay motivos cargados'}
+                options={[
+                  { value: '', label: 'Sin motivo' },
+                  ...reasonsFor(cashType).map((r) => ({ value: r.id, label: r.name })),
+                ]}
+              />
+              <button
+                type="button"
+                onClick={() => setNewReasonName('')}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
+              >
+                <Plus className="w-3.5 h-3.5" /> Nuevo motivo
+              </button>
+            </div>
+          ) : (
+            <div>
+              <Input
+                label={`Nuevo motivo de ${cashType === 'OUT' ? 'retiro' : 'ingreso'}`}
+                placeholder="Ej.: Combustible, Viáticos…"
+                value={newReasonName}
+                autoFocus
+                onChange={(e) => setNewReasonName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateReason(); } }}
+              />
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" onClick={handleCreateReason} isLoading={isSavingReason}>Agregar</Button>
+                <Button size="sm" variant="ghost" onClick={() => setNewReasonName(null)}>Cancelar</Button>
+              </div>
+            </div>
+          )}
+
           {isBankConcept(cashConcept) && (
             <Select
               label={cashConcept === 'DEPOSITO_BANCARIO' ? 'Cuenta donde se deposita' : 'Cuenta de la que se extrae'}
@@ -801,7 +914,7 @@ export default function CashRegisterDetailPage() {
 
           <Input
             label="Observaciones (opcional)"
-            placeholder="Motivo, detalle..."
+            placeholder="Detalle..."
             value={cashNotes}
             onChange={(e) => setCashNotes(e.target.value)}
           />
