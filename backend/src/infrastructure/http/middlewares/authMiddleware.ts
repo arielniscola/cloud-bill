@@ -102,10 +102,19 @@ export function requireRoles(...roles: UserRole[]) {
       throw new UnauthorizedError('User not authenticated');
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roleAllowed(req.user.role, roles)) {
       throw new ForbiddenError('Insufficient permissions');
     }
 
     next();
   };
+}
+
+/**
+ * El Dueño (OWNER) hereda todo lo de ADMIN: cualquier ruta que habilita a
+ * ADMIN lo habilita a él, sin tener que listarlo en cada `requireRoles`.
+ */
+export function roleAllowed(role: UserRole, roles: readonly UserRole[]): boolean {
+  if (roles.includes(role)) return true;
+  return role === 'OWNER' && roles.includes('ADMIN');
 }

@@ -71,11 +71,19 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
 
   async getMovements(
     cashRegisterId: string,
-    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string },
+    filters: { type?: string; startDate?: string; endDate?: string; reasonId?: string; fiscalMode?: string },
     pagination: PaginationParams = { page: 1, limit: 20 }
   ): Promise<PaginatedResult<CashRegisterMovement>> {
     const { page = 1, limit = 20 } = pagination;
     const skip = (page - 1) * limit;
+
+    // El motivo solo existe en los retiros / ingresos manuales: filtrando por
+    // motivo, cobros y órdenes de pago no entran.
+    if (filters.reasonId) {
+      const manual = (await this._getManualCashMovements(cashRegisterId, filters))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return { data: manual.slice(skip, skip + limit), total: manual.length, page, limit, totalPages: Math.ceil(manual.length / limit) };
+    }
 
     const where: Prisma.AccountMovementWhereInput = { cashRegisterId };
     if (filters.type) where.type = filters.type as any;
@@ -265,16 +273,17 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
    */
   private async _getManualCashMovements(
     cashRegisterId: string,
-    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string }
+    filters: { type?: string; startDate?: string; endDate?: string; reasonId?: string; fiscalMode?: string }
   ): Promise<CashRegisterMovement[]> {
     const conditions: Prisma.Sql[] = [Prisma.sql`cm."cashRegisterId" = ${cashRegisterId}`];
+    if (filters.reasonId) conditions.push(Prisma.sql`cm."reasonId" = ${filters.reasonId}`);
     if (filters.type === 'CREDIT') conditions.push(Prisma.sql`cm.type = 'IN'`);
     if (filters.type === 'DEBIT') conditions.push(Prisma.sql`cm.type = 'OUT'`);
     if (filters.fiscalMode) conditions.push(Prisma.sql`cm."fiscalMode" = ${filters.fiscalMode}`);
     if (filters.startDate) conditions.push(Prisma.sql`cm."createdAt" >= ${startOfDay(String(filters.startDate))}`);
     if (filters.endDate) conditions.push(Prisma.sql`cm."createdAt" <= ${endOfDay(String(filters.endDate))}`);
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT cm.id, cm.number, cm.type, cm.concept, cm.amount, cm."personName", cm.notes,
+      SELECT cm.id, cm.number, cm.type, cm.concept, cm."reasonName", cm.amount, cm."personName", cm.notes,
              cm.status, cm."cashRegisterId", cm."createdAt", ba.name AS "bankName"
       FROM "cash_movements" cm
       LEFT JOIN "bank_accounts" ba ON ba.id = cm."bankAccountId"
@@ -288,6 +297,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       balance: new Decimal(0),
       description: [
         CASH_CONCEPT_LABELS[r.concept] ?? r.concept,
+        r.reasonName,
         r.bankName,
         r.personName,
         r.notes,
@@ -297,7 +307,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       createdAt: r.createdAt,
       currentAccount: undefined,
       invoice: undefined,
-      cashMovement: { id: r.id, number: r.number, concept: r.concept, status: r.status },
+      cashMovement: { id: r.id, number: r.number, concept: r.concept, reasonName: r.reasonName, status: r.status },
     }));
   }
 
@@ -359,11 +369,12 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       const [row] = await tx.$queryRaw<{ id: string }[]>`
         INSERT INTO "cash_movements" (
           id, "companyId", "cashRegisterId", number, type, concept, amount,
-          "personName", notes, "bankAccountId", status, "userId", "fiscalMode", "createdAt", "updatedAt"
+          "personName", notes, "bankAccountId", "reasonId", "reasonName", status, "userId", "fiscalMode", "createdAt", "updatedAt"
         ) VALUES (
           gen_random_uuid()::text, ${data.companyId}, ${data.cashRegisterId}, ${number}, ${data.type},
           ${data.concept}, ${new Decimal(data.amount)}, ${data.personName ?? null}, ${data.notes ?? null},
-          ${data.bankAccountId ?? null}, 'ACTIVE', ${data.userId ?? null}, ${data.fiscalMode}, NOW(), NOW()
+          ${data.bankAccountId ?? null}, ${data.reasonId ?? null}, ${data.reasonName ?? null},
+          'ACTIVE', ${data.userId ?? null}, ${data.fiscalMode}, NOW(), NOW()
         )
         RETURNING id
       `;

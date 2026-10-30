@@ -15,6 +15,9 @@ export interface Product {
   unit: string | null;
   internalNotes: string | null;
   cost: Decimal;
+  /** Costo en USD: si está, `cost` se deriva de él con la cotización (`costUsdRate`). */
+  costUSD?: Decimal | null;
+  costUsdRate?: Decimal | null;
   price: Decimal;
   salePriceUSD?: Decimal | null;
   taxRate: Decimal;
@@ -33,5 +36,20 @@ export interface Product {
   customFieldValues?: ProductCustomFieldValue[];
 }
 
-export type CreateProductInput = Omit<Product, 'id' | 'createdAt' | 'updatedAt'>;
-export type UpdateProductInput = Partial<Omit<Product, 'id' | 'createdAt' | 'updatedAt'>>;
+/** Origen de un cambio de precio/costo (ver product_price_history). */
+export type PriceChangeSource =
+  | 'CREATE' | 'MANUAL' | 'BULK' | 'IMPORT' | 'USD_RECALC' | 'PURCHASE_INVOICE' | 'REVERT' | 'OTHER';
+
+/**
+ * Quién y por qué cambia el precio. Se estampa en la misma sentencia que el
+ * cambio y el trigger de products lo copia al historial. `ref` agrupa una
+ * operación (masiva, importación, factura de compra) para poder deshacerla.
+ */
+export interface PriceContext {
+  source: PriceChangeSource;
+  userId?: string | null;
+  ref?: string | null;
+}
+
+export type CreateProductInput = Omit<Product, 'id' | 'createdAt' | 'updatedAt'> & { priceContext?: PriceContext };
+export type UpdateProductInput = Partial<Omit<Product, 'id' | 'createdAt' | 'updatedAt'>> & { priceContext?: PriceContext };

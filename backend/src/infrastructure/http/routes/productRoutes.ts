@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { ProductController } from '../controllers/ProductController';
 import { ImportController } from '../controllers/ImportController';
 import { ProductImageController } from '../controllers/ProductImageController';
+import { ProductPriceHistoryController } from '../controllers/ProductPriceHistoryController';
+import { ProductOverviewController } from '../controllers/ProductOverviewController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { requireModule } from '../middlewares/moduleMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
@@ -15,6 +17,8 @@ const router = Router();
 const productController = new ProductController();
 const importController  = new ImportController();
 const productImageController = new ProductImageController();
+const priceHistoryController = new ProductPriceHistoryController();
+const overviewController = new ProductOverviewController();
 
 router.use(authMiddleware);
 
@@ -23,7 +27,15 @@ router.post('/', requireRoles('ADMIN', 'SELLER'), validate({ body: createProduct
 router.patch('/bulk-price-update', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdatePrices);
 router.patch('/bulk-update', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdate);
 router.patch('/bulk-update-by-filter', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdateByFilter);
+router.get('/usd-costs/summary', productController.usdCostSummary);
+router.post('/recalculate-usd-costs', requireRoles('ADMIN', 'SELLER'), productController.recalculateUsdCosts);
+// Historial de precios: operaciones (masivas, importación, etc.) y deshacer.
+router.get('/price-history/operations', priceHistoryController.operations);
+router.get('/price-history/operations/:ref', priceHistoryController.operationDetail);
+router.post('/price-history/operations/:ref/revert', requireRoles('ADMIN', 'SELLER'), priceHistoryController.revert);
 router.get('/', validate({ query: productQuerySchema }), productController.findAll);
+router.get('/:id/price-history', priceHistoryController.byProduct);
+router.get('/:id/overview', overviewController.overview);
 router.get('/:id', productController.findById);
 router.put('/:id', requireRoles('ADMIN', 'SELLER'), validate({ body: updateProductSchema }), productController.update);
 router.delete('/:id', requireRoles('ADMIN', 'SELLER'), productController.delete);

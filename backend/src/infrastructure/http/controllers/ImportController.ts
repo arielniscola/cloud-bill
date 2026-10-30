@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity } from '../utils/activityLog';
 import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
 import { assignCustomerCode, assignSupplierCode } from '../../database/partyExtras';
@@ -7,6 +8,9 @@ import { parseCsv, pick, parseNumber } from '../utils/csvImport';
 import { container } from 'tsyringe';
 import { IProvinciaRepository } from '../../../domain/repositories/IProvinciaRepository';
 import { normalizeProvinciaName } from '../../../shared/constants/provincias';
+import { exchangeRateService } from '../../services/ExchangeRateService';
+import { IProductRepository } from '../../../domain/repositories/IProductRepository';
+import { randomUUID } from 'crypto';
 
 type ImportError = { row: number; message: string };
 
@@ -29,6 +33,12 @@ export class ImportController {
         res.status(400).json({ status: 'error', message: 'CSV vacío o inválido' });
         return;
       }
+      // Todos los lotes de un mismo archivo comparten `importRef`: en el
+      // historial de precios la importación queda como UNA operación.
+      const importRef = typeof req.body?.importRef === 'string' && /^[0-9a-f-]{36}$/i.test(req.body.importRef)
+        ? req.body.importRef : randomUUID();
+      const priceContext = { source: 'IMPORT' as const, userId: req.user?.userId, ref: importRef };
+      const productRepository = container.resolve<IProductRepository>('ProductRepository');
 
       const { rows, malformed } = parseCsv(csv);
       if (rows.length === 0) {
@@ -70,10 +80,25 @@ export class ImportController {
         if (key && !productIdBySku.has(key)) productIdBySku.set(key, p.id);
       }
 
+      // Productos con costo en USD: si la fila no trae "costousd", su costo en
+      // pesos no se pisa con la columna "costo" (se deriva del USD).
+      const dollarizedRows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM products WHERE "companyId" = ${companyId} AND "costUSD" IS NOT NULL
+      `;
+      const dollarizedIds = new Set(dollarizedRows.map((r) => r.id));
+
       let created = 0;
       let updated = 0;
       let skipped  = 0;
       const errors: ImportError[] = [];
+
+      // Cotización del día para la columna "costousd" — se pide una sola vez y
+      // solo si el archivo trae algún costo en dólares.
+      let usdRate: number | null | undefined;
+      const getUsdRate = async (): Promise<number | null> => {
+        if (usdRate === undefined) usdRate = (await exchangeRateService.getUsdRate())?.rate ?? null;
+        return usdRate;
+      };
 
       for (let i = 0; i < rows.length; i++) {
         const row    = rows[i];
@@ -89,7 +114,7 @@ export class ImportController {
 
         const costStr  = pick(row, 'costo', 'cost');
         const priceStr = pick(row, 'precio', 'price', 'precioventa');
-        const cost     = parseNumber(costStr  || '0');
+        let   cost     = parseNumber(costStr  || '0');
         const price    = parseNumber(priceStr || '0');
         if (isNaN(cost)  || cost  < 0) { errors.push({ row: rowNum, message: 'Costo inválido' });  skipped++; continue; }
         if (isNaN(price) || price < 0) { errors.push({ row: rowNum, message: 'Precio inválido' }); skipped++; continue; }
@@ -101,6 +126,15 @@ export class ImportController {
         const usdStr = pick(row, 'preciousd', 'salepriceusd', 'preciosivausd', 'precioventausd');
         const salePriceUSD = usdStr ? parseNumber(usdStr) : NaN;
         const hasUSD = !isNaN(salePriceUSD) && salePriceUSD > 0;
+
+        // Costo en USD: si viene, el costo en pesos se calcula con la cotización
+        // del día (pisa la columna "costo"), igual que al cargarlo a mano.
+        const costUsdStr = pick(row, 'costousd', 'costusd');
+        const costUSD = costUsdStr ? parseNumber(costUsdStr) : NaN;
+        if (costUsdStr && (isNaN(costUSD) || costUSD < 0)) { errors.push({ row: rowNum, message: 'Costo USD inválido' }); skipped++; continue; }
+        const hasCostUSD = !isNaN(costUSD) && costUSD > 0;
+        const costUsdRate = hasCostUSD ? await getUsdRate() : null;
+        if (hasCostUSD && costUsdRate) cost = Math.round(costUSD * costUsdRate * 100) / 100;
 
         const rubroName      = pick(row, 'rubro').toLowerCase();
         const superRubroName = pick(row, 'superrubro', 'rubropadre').toLowerCase();
@@ -124,63 +158,67 @@ export class ImportController {
           // Upsert por SKU dentro de la empresa (ver indice mas arriba)
           const skuKey = normalizeSku(sku);
           const existingId = productIdBySku.get(skuKey);
-          let productId: string;
+          // Una sola sentencia por producto (vía repositorio, en SQL crudo):
+          // así el historial de precios registra un único cambio, con la
+          // importación como origen. supplierId solo se pisa si el archivo trajo
+          // un proveedor reconocido, para no borrar uno ya cargado a mano.
+          const usdFields = hasCostUSD
+            ? { costUSD: new Prisma.Decimal(costUSD), costUsdRate: costUsdRate != null ? new Prisma.Decimal(costUsdRate) : null }
+            : {};
           if (existingId) {
-            await prisma.product.update({
-              where: { id: existingId },
-              data: {
-                name,
-                description,
-                cost:  new Prisma.Decimal(cost),
-                price: new Prisma.Decimal(price),
-                taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
-                unit,
-                ...(barcode     && { barcode }),
-                ...(rubroId  && { rubroId }),
-                ...(brandId     && { brandId }),
-                ...(hasUSD && { salePriceUSD: new Prisma.Decimal(salePriceUSD) }),
-                // internalNotes NO se pisa al actualizar (preserva notas cargadas en la app)
-              },
-            });
-            productId = existingId;
+            await productRepository.update(existingId, {
+              name,
+              description,
+              ...((hasCostUSD || !dollarizedIds.has(existingId)) && { cost: new Prisma.Decimal(cost) }),
+              ...usdFields,
+              price: new Prisma.Decimal(price),
+              taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
+              unit,
+              ...(barcode     && { barcode }),
+              ...(rubroId  && { rubroId }),
+              ...(brandId     && { brandId }),
+              ...(supplierId  && { supplierId }),
+              ...(hasUSD && { salePriceUSD: new Prisma.Decimal(salePriceUSD) }),
+              // internalNotes NO se pisa al actualizar (preserva notas cargadas en la app)
+              priceContext,
+            } as any);
             updated++;
           } else {
-            const createdProduct = await prisma.product.create({
-              data: {
-                sku,
-                name,
-                description,
-                cost:  new Prisma.Decimal(cost),
-                price: new Prisma.Decimal(price),
-                taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
-                unit,
-                barcode:    barcode    ?? undefined,
-                rubroId: rubroId ?? undefined,
-                brandId:    brandId    ?? undefined,
-                ...(hasUSD && { salePriceUSD: new Prisma.Decimal(salePriceUSD) }),
-                ...(internalNotes && { internalNotes }),
-                companyId,
-              },
-            });
-            productId = createdProduct.id;
+            const createdProduct = await productRepository.create({
+              sku,
+              name,
+              description,
+              cost:  new Prisma.Decimal(cost),
+              ...usdFields,
+              price: new Prisma.Decimal(price),
+              taxRate: new Prisma.Decimal(isNaN(taxRate) ? 21 : taxRate),
+              unit,
+              barcode,
+              rubroId,
+              brandId,
+              supplierId,
+              salePriceUSD: hasUSD ? new Prisma.Decimal(salePriceUSD) : null,
+              internalNotes,
+              companyId,
+              priceContext,
+            } as any);
             // Si el archivo repite el mismo SKU mas abajo, la segunda fila tiene
             // que actualizar este producto y no chocar contra el unique.
             productIdBySku.set(skuKey, createdProduct.id);
             created++;
           }
-          // supplierId no está en el cliente Prisma generado todavía — raw SQL
-          // (ver PrismaProductRepository). Solo se pisa si el archivo trajo un
-          // proveedor reconocido, para no borrar uno ya cargado a mano.
-          if (supplierId) {
-            await prisma.$executeRaw`UPDATE products SET "supplierId" = ${supplierId} WHERE id = ${productId}`;
-          }
         } catch (err: any) {
-          const msg = err?.code === 'P2002' ? 'Ya existe un producto con este SKU' : (err?.message ?? 'Error al procesar');
+          const msg = (err?.code === 'P2002' || err?.meta?.code === '23505') ? 'Ya existe un producto con este SKU' : (err?.message ?? 'Error al procesar');
           errors.push({ row: rowNum, message: msg });
           skipped++;
         }
       }
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'Product', entityId: importRef,
+        description: `Importación de productos${rowOffset ? ` (desde la fila ${rowOffset + 2})` : ''}: ${created} creados, ${updated} actualizados, ${skipped} omitidos`,
+        metadata: { importRef, created, updated, skipped, rows: rows.length },
+      });
       res.json({
         status: 'success',
         data: { imported: created + updated, created, updated, skipped, total: rows.length, errors },
@@ -303,6 +341,11 @@ export class ImportController {
         }
       }
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'Customer', entityId: 'import',
+        description: `Importación de clientes${rowOffset ? ` (desde la fila ${rowOffset + 2})` : ''}: ${imported} importados, ${skipped} omitidos`,
+        metadata: { imported, skipped, rows: rows.length },
+      });
       res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
     } catch (error) {
       next(error);
@@ -411,6 +454,11 @@ export class ImportController {
         }
       }
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'Supplier', entityId: 'import',
+        description: `Importación de proveedores${rowOffset ? ` (desde la fila ${rowOffset + 2})` : ''}: ${imported} importados, ${skipped} omitidos`,
+        metadata: { imported, skipped, rows: rows.length },
+      });
       res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
     } catch (error) {
       next(error);
@@ -480,6 +528,11 @@ export class ImportController {
         }
       }
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'Banco', entityId: 'import',
+        description: `Importación de bancos${rowOffset ? ` (desde la fila ${rowOffset + 2})` : ''}: ${imported} importados, ${skipped} omitidos`,
+        metadata: { imported, skipped, rows: rows.length },
+      });
       res.json({ status: 'success', data: { imported, skipped, total: rows.length, errors } });
     } catch (error) {
       next(error);

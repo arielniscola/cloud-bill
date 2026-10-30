@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity, diffFields } from '../utils/activityLog';
 import { container } from 'tsyringe';
 import { IAppSettingsRepository } from '../../../domain/repositories/IAppSettingsRepository';
 import { updateAppSettingsSchema } from '../../../application/dtos/appSettings.dto';
@@ -38,7 +39,21 @@ export class AppSettingsController {
         if (data[field] === '') delete data[field];
       }
       const companyId = req.companyId ?? '00000000-0000-0000-0000-000000000001';
+      const before = (await (repo as any).get(companyId)) ?? {};
       const settings = await (repo as any).upsert(data, companyId);
+
+      // Qué configuración cambió y cómo. De los secretos solo consta que cambiaron.
+      const changes = diffFields(before, settings ?? {}, Object.keys(data));
+      for (const field of SECRET_FIELDS) {
+        if (changes[field]) changes[field] = { from: '(oculto)', to: '(modificado)' };
+      }
+      if (Object.keys(changes).length > 0) {
+        logActivity(req, {
+          action: 'UPDATE', entity: 'AppSettings', entityId: companyId,
+          description: `Configuración modificada: ${Object.keys(changes).join(', ')}`,
+          metadata: { changes },
+        });
+      }
       res.json({ status: 'success', data: withoutSecrets(settings) });
     } catch (error) {
       next(error);

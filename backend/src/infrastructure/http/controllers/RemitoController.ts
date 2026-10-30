@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity } from '../utils/activityLog';
 import { container } from 'tsyringe';
 import { Prisma } from '@prisma/client';
 import { IRemitoRepository } from '../../../domain/repositories/IRemitoRepository';
@@ -189,6 +190,11 @@ export class RemitoController {
         : (invoiceId ? await readTransport('invoices', invoiceId) : undefined);
       await writeTransport('remitos', remito.id, transport ?? undefined);
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'Remito', entityId: remito.id,
+        description: `Remito ${remito.number} creado (${remito.items.length} ítem${remito.items.length === 1 ? '' : 's'})`,
+      });
+
       res.status(201).json({
         status: 'success',
         data: remito,
@@ -378,6 +384,11 @@ export class RemitoController {
       await remitoRepository.updateStatus(remito.id, newStatus);
 
       const finalRemito = await remitoRepository.findById(req.params.id, req.companyId);
+      logActivity(req, {
+        action: 'UPDATE', entity: 'Remito', entityId: remito.id,
+        description: `Entrega registrada en remito ${remito.number}: ${newStatus === 'DELIVERED' ? 'entregado completo' : newStatus === 'PARTIALLY_DELIVERED' ? 'entrega parcial' : 'pendiente'}`,
+        metadata: { changes: { status: { from: remito.status, to: newStatus } } },
+      });
 
       res.json({
         status: 'success',
@@ -467,6 +478,11 @@ export class RemitoController {
       await remitoRepository.updateStatus(remito.id, 'CANCELLED');
 
       const updatedRemito = await remitoRepository.findById(req.params.id, req.companyId);
+      logActivity(req, {
+        action: 'CANCEL', entity: 'Remito', entityId: remito.id,
+        description: `Remito ${remito.number} cancelado`,
+        metadata: { changes: { status: { from: remito.status, to: 'CANCELLED' } } },
+      });
 
       res.json({
         status: 'success',

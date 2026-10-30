@@ -19,7 +19,7 @@ export interface ICashRegisterRepository {
   delete(id: string): Promise<void>;
   getMovements(
     cashRegisterId: string,
-    filters: { type?: string; startDate?: string; endDate?: string; fiscalMode?: string },
+    filters: { type?: string; startDate?: string; endDate?: string; reasonId?: string; fiscalMode?: string },
     pagination?: PaginationParams
   ): Promise<PaginatedResult<CashRegisterMovement>>;
   getClosePreview(cashRegisterId: string, fiscalMode?: string): Promise<CashRegisterClosePreview>;

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity } from '../utils/activityLog';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { IInternalNoteRepository } from '../../../domain/repositories/IInternalNoteRepository';
@@ -83,6 +84,11 @@ export class InternalNoteController {
         fiscalMode: req.fiscalMode,
       });
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'InternalNote', entityId: (note as any).id,
+        description: `Nota interna ${(note as any).number ?? ''} ${data.type === 'CREDIT' ? 'de crédito' : 'de débito'} a ${data.customerId ? 'cliente' : 'proveedor'}: ${data.currency} ${data.amount.toFixed(2)} — ${data.reason}`.replace(/\s+/g, ' '),
+        metadata: { customerId: data.customerId ?? null, supplierId: data.supplierId ?? null },
+      });
       res.status(201).json({ status: 'success', data: note });
     } catch (error) { next(error); }
   }
@@ -93,6 +99,10 @@ export class InternalNoteController {
       const note = await repo.findById(req.params.id, req.companyId);
       if (!note) throw new NotFoundError('Nota interna');
       const cancelled = await cancelInternalNote(note);
+      logActivity(req, {
+        action: 'CANCEL', entity: 'InternalNote', entityId: note.id,
+        description: `Nota interna ${(note as any).number ?? ''} anulada`.replace(/\s+/g, ' '),
+      });
       res.json({ status: 'success', data: cancelled });
     } catch (error) { next(error); }
   }

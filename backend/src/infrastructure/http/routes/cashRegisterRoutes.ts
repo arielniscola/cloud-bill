@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { CashRegisterController } from '../controllers/CashRegisterController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
+import { withApproval } from '../middlewares/approvalMiddleware';
+import { resolveCashMovementCancel } from '../middlewares/approvalResolvers';
 import {
   createCashRegisterSchema,
   updateCashRegisterSchema,
@@ -38,7 +40,11 @@ router.post(
   cashRegisterController.createCashMovement
 );
 router.get('/:id/cash-movements/:movementId', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES'), cashRegisterController.getCashMovement);
-router.post('/:id/cash-movements/:movementId/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), cashRegisterController.cancelCashMovement);
+router.post(
+  '/:id/cash-movements/:movementId/cancel',
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
+  ...withApproval('cashMovements.cancel', resolveCashMovementCancel, cashRegisterController.cancelCashMovement)
+);
 router.get('/:id', cashRegisterController.findById);
 router.put(
   '/:id',

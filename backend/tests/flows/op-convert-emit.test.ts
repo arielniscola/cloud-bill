@@ -1,5 +1,5 @@
 import { api, auth, expectStatus, ensureDefaultWarehouse, getStockQty } from '../helpers';
-import { ADMIN_A } from '../fixtures';
+import { ADMIN_A, OWNER_A } from '../fixtures';
 import prisma from '../../src/infrastructure/database/prisma';
 
 /**
@@ -214,7 +214,7 @@ describe('Regresión: emitir la factura convertida desde una OP no duplica efect
 
     const cancelled = await api
       .post(`/api/invoices/${converted.body.data.id}/cancel`)
-      .set(auth(A))
+      .set(auth(OWNER_A)) // anular es una acción protegida: la ejecuta el Dueño
       .send({});
     expectStatus(cancelled, 200);
     expect(cancelled.body.data.status).toBe('CANCELLED');

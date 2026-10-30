@@ -2,7 +2,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import * as bcrypt from 'bcryptjs';
-import { COMPANY_A, COMPANY_B, ADMIN_A, SELLER_A, ADMIN_B, TEST_PASSWORD } from './fixtures';
+import { COMPANY_A, COMPANY_B, ADMIN_A, SELLER_A, OWNER_A, CLERK_A, ADMIN_B, TEST_PASSWORD } from './fixtures';
 
 /**
  * Corre UNA vez por invocación de jest:
@@ -70,14 +70,14 @@ export default async function globalSetup(): Promise<void> {
          ('${COMPANY_B}', 'Empresa B (test)', 'RESPONSABLE_INSCRIPTO', true, 'ALL', NOW(), NOW())`
     );
 
-    const users = [ADMIN_A, SELLER_A, ADMIN_B];
+    const users = [ADMIN_A, SELLER_A, OWNER_A, CLERK_A, ADMIN_B];
     for (const u of users) {
       await prisma.$executeRawUnsafe(
         `INSERT INTO "users" (id, username, password, name, role, "isActive", "companyId", "createdAt", "updatedAt")
          VALUES ('${u.id}', '${u.username}', '${hash}', '${u.name}', '${u.role}'::"UserRole", true, '${u.companyId}', NOW(), NOW())`
       );
     }
-    console.log('[tests] Seed listo: 2 empresas, 3 usuarios');
+    console.log('[tests] Seed listo: 2 empresas, 5 usuarios');
   } finally {
     await prisma.$disconnect();
   }

@@ -12,6 +12,9 @@ export const createProductSchema = z.object({
   unit: z.string().optional().nullable(),
   internalNotes: z.string().optional().nullable(),
   cost: z.number().min(0, 'Cost must be positive'),
+  costUSD: z.number().min(0).optional().nullable(),
+  // Cotización elegida por el usuario para convertir costUSD (ver applyUsdCost).
+  costUsdRate: z.number().positive().optional().nullable(),
   price: z.number().min(0, 'Price must be positive'),
   salePriceUSD: z.number().min(0).optional().nullable(),
   taxRate: z.number().min(0).max(100).default(21),

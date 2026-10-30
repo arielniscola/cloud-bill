@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity, diffFields } from '../utils/activityLog';
 
 import { startOfDay, todayIso } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
@@ -182,6 +183,12 @@ export class CurrentAccountController {
         userId: req.user!.userId,
       });
 
+      logActivity(req, {
+        action: 'PAYMENT', entity: 'Recibo', entityId: recibo.id,
+        description: `Pago a cuenta ${recibo.number}: ${data.currency} ${data.amount.toFixed(2)} (${data.paymentMethod})`,
+        metadata: { customerId: req.params.customerId },
+      });
+
       res.status(201).json({
         status: 'success',
         data: movement,
@@ -225,6 +232,14 @@ export class CurrentAccountController {
         currentAccount.id,
         req.body.creditLimit
       );
+      const changes = diffFields(currentAccount as any, updatedAccount as any, ['creditLimit']);
+      if (Object.keys(changes).length > 0) {
+        logActivity(req, {
+          action: 'UPDATE', entity: 'Customer', entityId: req.params.customerId,
+          description: `Límite de crédito (${currency}) modificado`,
+          metadata: { changes },
+        });
+      }
 
       res.json({
         status: 'success',

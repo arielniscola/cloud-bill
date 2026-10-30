@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { CustomerOverviewController } from '../controllers/CustomerOverviewController';
 import { CustomerController } from '../controllers/CustomerController';
 import { ImportController } from '../controllers/ImportController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
@@ -19,6 +20,7 @@ router.post('/import', requireRoles('ADMIN', 'SELLER'), importController.importC
 router.post('/', requireRoles('ADMIN', 'SELLER'), validate({ body: createCustomerSchema }), customerController.create);
 router.get('/', validate({ query: customerQuerySchema }), customerController.findAll);
 router.get('/:id', customerController.findById);
+router.get('/:id/overview', new CustomerOverviewController().overview);
 router.put('/:id', requireRoles('ADMIN', 'SELLER'), validate({ body: updateCustomerSchema }), customerController.update);
 router.delete('/:id', requireRoles('ADMIN', 'SELLER'), customerController.delete);
 

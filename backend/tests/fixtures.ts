@@ -23,6 +23,22 @@ export const SELLER_A = {
   companyId: COMPANY_A,
 };
 
+export const OWNER_A = {
+  id: 'aaaaaaaa-3333-4000-8000-000000000003',
+  username: 'owner.a',
+  name: 'Dueño Empresa A',
+  role: 'OWNER' as const,
+  companyId: COMPANY_A,
+};
+
+export const CLERK_A = {
+  id: 'aaaaaaaa-4444-4000-8000-000000000004',
+  username: 'clerk.a',
+  name: 'Depósito Empresa A',
+  role: 'WAREHOUSE_CLERK' as const,
+  companyId: COMPANY_A,
+};
+
 export const ADMIN_B = {
   id: 'bbbbbbbb-1111-4000-8000-000000000001',
   username: 'admin.b',

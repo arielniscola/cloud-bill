@@ -37,7 +37,7 @@ export interface CashRegisterMovement {
   };
   invoice?: { id: string; type: string; number: string };
   /** Solo en movimientos manuales (retiro, depósito, aporte...). */
-  cashMovement?: { id: string; number: string; concept: string; status: string };
+  cashMovement?: { id: string; number: string; concept: string; reasonName: string | null; status: string };
 }
 
 export interface CashMovement {
@@ -51,6 +51,8 @@ export interface CashMovement {
   personName: string | null;
   notes: string | null;
   bankAccountId: string | null;
+  reasonId: string | null;
+  reasonName: string | null;
   status: 'ACTIVE' | 'CANCELLED';
   cancelledAt: Date | null;
   userId: string | null;
@@ -71,6 +73,8 @@ export interface CreateCashMovementInput {
   personName?: string | null;
   notes?: string | null;
   bankAccountId?: string | null;
+  reasonId?: string | null;
+  reasonName?: string | null;
   userId?: string;
   fiscalMode: string;
 }

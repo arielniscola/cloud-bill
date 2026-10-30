@@ -33,6 +33,7 @@ export const createCashMovementSchema = z.object({
   personName: z.preprocess(emptyToNull, z.string().max(120).nullable().optional()),
   notes: z.preprocess(emptyToNull, z.string().max(500).nullable().optional()),
   bankAccountId: z.preprocess(emptyToNull, z.string().uuid().nullable().optional()),
+  reasonId: z.preprocess(emptyToNull, z.string().uuid().nullable().optional()),
 }).superRefine((d, ctx) => {
   if (!(CASH_MOVEMENT_CONCEPTS[d.type] as readonly string[]).includes(d.concept)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['concept'], message: 'El concepto no corresponde al tipo de movimiento' });

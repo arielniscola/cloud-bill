@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { RemitoController } from '../controllers/RemitoController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
+import { withApproval, blockIfPendingApproval } from '../middlewares/approvalMiddleware';
+import { resolveRemitoCancel } from '../middlewares/approvalResolvers';
 import {
   createRemitoSchema,
   deliverRemitoSchema,
@@ -26,10 +28,15 @@ router.get('/:id', remitoController.findById);
 router.post(
   '/:id/deliver',
   requireRoles('ADMIN', 'SELLER'),
+  blockIfPendingApproval('REMITO'),
   validate({ body: deliverRemitoSchema }),
   remitoController.deliver
 );
-router.post('/:id/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), remitoController.cancel);
+router.post(
+  '/:id/cancel',
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
+  ...withApproval('remitos.cancel', resolveRemitoCancel, remitoController.cancel)
+);
 router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), remitoController.sendEmail);
 
 export { router as remitoRoutes };

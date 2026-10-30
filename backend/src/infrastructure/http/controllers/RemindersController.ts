@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../../database/prisma';
+import { exchangeRateService } from '../../services/ExchangeRateService';
 
 type UrgencyLevel = 'overdue' | 'critical' | 'warning';
 
@@ -42,6 +43,7 @@ export class RemindersController {
             number: true,
             dueDate: true,
             total: true,
+            currency: true,
             status: true,
             customer: { select: { id: true, name: true } },
           },
@@ -61,6 +63,7 @@ export class RemindersController {
             number: true,
             checkDueDate: true,
             amount: true,
+            currency: true,
             bank: true,
             reference: true,
             invoiceId: true,
@@ -81,6 +84,7 @@ export class RemindersController {
             number: true,
             dueDate: true,
             total: true,
+            currency: true,
             status: true,
             customer: { select: { id: true, name: true } },
           },
@@ -89,7 +93,7 @@ export class RemindersController {
 
         // Facturas de proveedor pendientes con vencimiento próximo o vencido
         prisma.$queryRaw<any[]>`
-          SELECT pi.id, pi.number, pi.amount, pi."dueDate",
+          SELECT pi.id, pi.number, pi.amount, pi.currency, pi."dueDate",
                  p.id AS "purchaseId", p.number AS "purchaseNumber",
                  s.name AS "supplierName"
           FROM "purchase_invoices" pi
@@ -103,6 +107,13 @@ export class RemindersController {
         `,
       ]);
 
+      // Lo que vence es deuda: se suma en pesos con la cotización del día
+      // (misma regla que cuentas corrientes y deudores). `amount` queda en la
+      // moneda del comprobante para mostrarlo.
+      const usdRate = (await exchangeRateService.getUsdRate().catch(() => null))?.rate ?? null;
+      const toArs = (amount: number, currency: unknown): number =>
+        !currency || String(currency) === 'ARS' || !usdRate ? amount : Math.round(amount * usdRate * 100) / 100;
+
       const reminders: Array<{
         id: string;
         type: string;
@@ -113,6 +124,8 @@ export class RemindersController {
         daysUntilDue: number;
         urgency: UrgencyLevel;
         amount: number;
+        currency: string;
+        amountArs: number;
       }> = [];
 
       for (const inv of invoices) {
@@ -128,6 +141,8 @@ export class RemindersController {
           daysUntilDue,
           urgency,
           amount: Number(inv.total),
+          currency: String(inv.currency ?? 'ARS'),
+          amountArs: toArs(Number(inv.total), inv.currency),
         });
       }
 
@@ -145,6 +160,8 @@ export class RemindersController {
           daysUntilDue,
           urgency,
           amount: Number(rec.amount),
+          currency: String(rec.currency ?? 'ARS'),
+          amountArs: toArs(Number(rec.amount), rec.currency),
         });
       }
 
@@ -161,6 +178,8 @@ export class RemindersController {
           daysUntilDue,
           urgency,
           amount: Number(op.total),
+          currency: String(op.currency ?? 'ARS'),
+          amountArs: toArs(Number(op.total), op.currency),
         });
       }
 
@@ -177,6 +196,8 @@ export class RemindersController {
           daysUntilDue,
           urgency,
           amount: Number(pinv.amount),
+          currency: String(pinv.currency ?? 'ARS'),
+          amountArs: toArs(Number(pinv.amount), pinv.currency),
         });
       }
 

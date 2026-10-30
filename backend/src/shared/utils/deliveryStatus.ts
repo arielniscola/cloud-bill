@@ -4,6 +4,34 @@ import { billedDeliveredRows } from './billedRemitos';
 export type DeliveryStatus = 'NOT_DELIVERED' | 'PARTIALLY_DELIVERED' | 'DELIVERED';
 
 /**
+ * Lo entregado se acumula por producto, así que lo pedido también: si el mismo
+ * producto va en varias líneas (p.ej. variantes), comparar línea por línea
+ * contra el total entregado daba DELIVERED cubriendo una sola de ellas.
+ */
+function statusFromQuantities(
+  items: { productId: string; quantity: number }[],
+  delivered: Record<string, number>
+): DeliveryStatus {
+  const required: Record<string, number> = {};
+  for (const item of items) {
+    required[item.productId] = (required[item.productId] || 0) + item.quantity;
+  }
+  const productIds = Object.keys(required);
+  if (productIds.length === 0) return 'NOT_DELIVERED';
+
+  let allDelivered = true;
+  let anyDelivered = false;
+  for (const pid of productIds) {
+    const qty = delivered[pid] || 0;
+    if (qty > 0) anyDelivered = true;
+    if (qty < required[pid]) allDelivered = false;
+  }
+  if (allDelivered) return 'DELIVERED';
+  if (anyDelivered) return 'PARTIALLY_DELIVERED';
+  return 'NOT_DELIVERED';
+}
+
+/**
  * Batch version of computeDeliveryStatus for list endpoints.
  * Runs only 2 DB queries regardless of list size.
  */
@@ -105,24 +133,7 @@ export async function computeDeliveryStatusBatch(
   // Compute status for each id
   const result: Record<string, DeliveryStatus> = {};
   for (const sid of sourceIds) {
-    const items = itemsBySource[sid] ?? [];
-    if (items.length === 0) {
-      result[sid] = 'NOT_DELIVERED';
-      continue;
-    }
-    const delivered = deliveredBySource[sid] ?? {};
-    let allDelivered = true;
-    let anyDelivered = false;
-    for (const item of items) {
-      const qty = delivered[item.productId] ?? 0;
-      if (qty >= item.quantity) {
-        anyDelivered = true;
-      } else {
-        allDelivered = false;
-        if (qty > 0) anyDelivered = true;
-      }
-    }
-    result[sid] = allDelivered ? 'DELIVERED' : anyDelivered ? 'PARTIALLY_DELIVERED' : 'NOT_DELIVERED';
+    result[sid] = statusFromQuantities(itemsBySource[sid] ?? [], deliveredBySource[sid] ?? {});
   }
   return result;
 }
@@ -181,23 +192,8 @@ export async function computeDeliveryStatus(
     }
   }
 
-  let allDelivered = true;
-  let anyDelivered = false;
-
-  for (const item of deliverableItems) {
-    const pid = item.productId as string;
-    const delivered = deliveredMap[pid] || 0;
-    const required = Number(item.quantity);
-
-    if (delivered >= required) {
-      anyDelivered = true;
-    } else {
-      allDelivered = false;
-      if (delivered > 0) anyDelivered = true;
-    }
-  }
-
-  if (allDelivered) return 'DELIVERED';
-  if (anyDelivered) return 'PARTIALLY_DELIVERED';
-  return 'NOT_DELIVERED';
+  return statusFromQuantities(
+    deliverableItems.map((i) => ({ productId: i.productId as string, quantity: Number(i.quantity) })),
+    deliveredMap
+  );
 }

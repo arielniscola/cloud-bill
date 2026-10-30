@@ -32,6 +32,25 @@ export class ActivityLogController {
     }
   }
 
+  /**
+   * GET /activity-logs/document/:entityId — registros de un documento (factura,
+   * recibo, remito…), del más viejo al más nuevo, para su línea de tiempo.
+   * Scopeado a la empresa del usuario; trae como máximo 200.
+   */
+  async byDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const activityLogRepository = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      const result = await activityLogRepository.findAll(
+        { page: 1, limit: 200 },
+        { companyId: req.user?.companyId ?? undefined, entityId: req.params.entityId },
+      );
+      const data = [...result.data].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      res.json({ status: 'success', data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getEntities(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const activityLogRepository = container.resolve<IActivityLogRepository>('ActivityLogRepository');

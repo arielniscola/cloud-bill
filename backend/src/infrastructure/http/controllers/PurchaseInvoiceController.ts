@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
+
 import { startOfUtcDay, endOfUtcDay } from '../../../shared/utils/dateRange';
 import { container } from 'tsyringe';
 import { randomUUID } from 'crypto';
@@ -7,6 +8,9 @@ import { Prisma } from '@prisma/client';
 import prisma from '../../database/prisma';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { IOrdenPagoRepository } from '../../../domain/repositories/IOrdenPagoRepository';
+import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
+import { exchangeRateService } from '../../services/ExchangeRateService';
+import { logActivity, diffFields } from '../utils/activityLog';
 
 // ── Sub-schemas ──────────────────────────────────────────────────────────────
 
@@ -18,6 +22,8 @@ const itemSchema = z.object({
   // upsertItems). Va en 0 cuando el descuento del comprobante es global.
   discountPct: z.coerce.number().min(0).max(100).default(0),
   taxRate:     z.coerce.number().min(0).max(100).default(21),
+  // Producto de la línea (opcional: puede ser una línea libre).
+  productId:   z.string().uuid().optional().nullable(),
 });
 
 // "Otros tributos" que SUMAN al total (percepciones, impuestos internos, otros)
@@ -48,6 +54,12 @@ const baseInvoiceSchema = z.object({
   notes:          z.string().optional().nullable(),
   items:          z.array(itemSchema).optional().default([]),
   tributos:       z.array(tribSchema).optional().default([]),
+  // Productos cuyo costo se actualiza con lo facturado (el usuario los elige
+  // al guardar). Con `keepMargin` el precio de venta acompaña al costo.
+  updateCosts:    z.object({
+    productIds: z.array(z.string().uuid()).default([]),
+    keepMargin: z.boolean().default(false),
+  }).optional(),
 });
 
 // Factura standalone (documento de primer nivel, sin compra)
@@ -140,6 +152,13 @@ async function fetchFull(invoiceId: string) {
            pi."saleCondition", pi.date, pi."dueDate", pi."imputationDate",
            pi."paymentMethod", pi.status, pi.notes, pi."companyId", pi."fiscalMode",
            pi."createdAt", pi."updatedAt", pi."originInvoiceId",
+           pi."userId", u.name AS "userName",
+           -- Imputado por OP pagadas, en la moneda de la factura (mismo cálculo que el listado).
+           COALESCE((
+             SELECT SUM(CASE WHEN op.currency = pi.currency THEN opi.amount ELSE opi.amount / NULLIF(op."exchangeRate", 0) END)
+             FROM "orden_pago_items" opi JOIN "orden_pagos" op ON op.id = opi."ordenPagoId"
+             WHERE opi."purchaseInvoiceId" = pi.id AND op.status = 'PAID'
+           ), 0)::float AS "paidAmount",
            s.name AS "supplierName", s.cuit AS "supplierCuit",
            p.number AS "purchaseNumber",
            orig.number AS "originNumber", orig.type AS "originType"
@@ -147,13 +166,14 @@ async function fetchFull(invoiceId: string) {
     LEFT JOIN "suppliers" s ON s.id = pi."supplierId"
     LEFT JOIN "purchases" p ON p.id = pi."purchaseId"
     LEFT JOIN "purchase_invoices" orig ON orig.id = pi."originInvoiceId"
+    LEFT JOIN users u ON u.id = pi."userId"
     WHERE pi.id = ${invoiceId}
   `;
   if (!invoice) return null;
 
   const items = await prisma.$queryRaw<any[]>`
     SELECT id, description, quantity, "unitPrice", "discountPct", "discountAmount",
-           "taxRate", subtotal, "taxAmount", total
+           "taxRate", subtotal, "taxAmount", total, "productId"
     FROM "purchase_invoice_items"
     WHERE "purchaseInvoiceId" = ${invoiceId}
     ORDER BY "createdAt" ASC
@@ -183,8 +203,19 @@ async function fetchFull(invoiceId: string) {
     WHERE pir."purchaseInvoiceId" = ${invoiceId}
   `;
 
+  // Órdenes de pago que imputaron a esta factura (para su historia).
+  const payments = await prisma.$queryRaw<any[]>`
+    SELECT op.id, op.number, op.date, op.status, opi.amount::float AS amount, u.name AS "userName"
+    FROM orden_pago_items opi
+    JOIN orden_pagos op ON op.id = opi."ordenPagoId"
+    LEFT JOIN users u ON u.id = op."userId"
+    WHERE opi."purchaseInvoiceId" = ${invoiceId}
+    ORDER BY op.date ASC
+  `;
+
   return {
     ...invoice,
+    payments,
     supplier: invoice.supplierName
       ? { id: invoice.supplierId, name: invoice.supplierName, cuit: invoice.supplierCuit ?? null }
       : undefined,
@@ -197,9 +228,18 @@ async function fetchFull(invoiceId: string) {
   };
 }
 
-async function upsertItems(invoiceId: string, items: z.infer<typeof itemSchema>[]) {
+async function upsertItems(invoiceId: string, items: z.infer<typeof itemSchema>[], companyId?: string) {
   await prisma.$executeRaw`DELETE FROM "purchase_invoice_items" WHERE "purchaseInvoiceId" = ${invoiceId}`;
+  // Un productId de otra empresa se descarta (la línea queda libre).
+  const ids = [...new Set(items.map((i) => i.productId).filter((x): x is string => !!x))];
+  const owned = new Set(
+    ids.length && companyId
+      ? (await prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM products WHERE id IN (${Prisma.join(ids)}) AND "companyId" = ${companyId}`).map((r) => r.id)
+      : [],
+  );
   for (const item of items) {
+    const productId = item.productId && owned.has(item.productId) ? item.productId : null;
     const id = randomUUID();
     // El descuento reduce la BASE IMPONIBLE: `subtotal` queda neto de descuento
     // y el IVA se calcula sobre ese neto (es lo que después lee el Libro IVA).
@@ -212,13 +252,125 @@ async function upsertItems(invoiceId: string, items: z.infer<typeof itemSchema>[
     await prisma.$executeRaw`
       INSERT INTO "purchase_invoice_items"
         (id, "purchaseInvoiceId", description, quantity, "unitPrice", "discountPct", "discountAmount",
-         "taxRate", subtotal, "taxAmount", total)
+         "taxRate", subtotal, "taxAmount", total, "productId")
       VALUES
         (${id}, ${invoiceId}, ${item.description}, ${item.quantity}, ${item.unitPrice},
          ${discountPct}, ${discountAmount},
-         ${item.taxRate}, ${subtotal}, ${taxAmount}, ${total})
+         ${item.taxRate}, ${subtotal}, ${taxAmount}, ${total}, ${productId})
     `;
   }
+}
+
+export interface CostUpdateResult {
+  updated: number;
+  skipped: { productId: string; name: string; reason: string }[];
+}
+
+/**
+ * Actualiza el costo de los productos elegidos con lo que facturó el
+ * proveedor. Costo unitario = neto de la línea (ya con su descuento) / cantidad,
+ * menos el descuento global de la factura; sin IVA ni percepciones (son
+ * recuperables). Si el producto está en varias líneas, promedio ponderado.
+ *
+ *   · Factura USD + producto dolarizado → costUSD = unitario; cost = × cotización de la factura.
+ *   · Factura USD + producto en pesos   → cost = unitario × cotización de la factura.
+ *   · Factura ARS + producto dolarizado → cost = unitario; costUSD = ÷ cotización del día
+ *                                         (si no, el próximo recálculo pisaría el costo).
+ *   · Factura ARS + producto en pesos   → cost = unitario.
+ *
+ * Con `keepMargin` el precio de venta (y el de USD, si lo tiene) se escala en la
+ * misma proporción que el costo. NC/ND no actualizan costos. Nunca tira error
+ * por un producto puntual: lo informa en `skipped`.
+ */
+async function applyPurchaseCosts(
+  invoiceId: string,
+  opts: { productIds: string[]; keepMargin: boolean } | undefined,
+  companyId: string | undefined,
+  userId: string | undefined,
+): Promise<CostUpdateResult | null> {
+  if (!opts || opts.productIds.length === 0 || !companyId) return null;
+  const [inv] = await prisma.$queryRaw<{ number: string; type: string; currency: string; exchangeRate: Prisma.Decimal; discountPct: Prisma.Decimal }[]>`
+    SELECT number, type, currency, "exchangeRate", "discountPct" FROM purchase_invoices WHERE id = ${invoiceId}`;
+  if (!inv || inv.type.startsWith('NOTA_')) return null;
+
+  const rows = await prisma.$queryRaw<{
+    productId: string; name: string; qty: number; net: number;
+    cost: number; price: number; costUSD: number | null; salePriceUSD: number | null;
+  }[]>`
+    SELECT ii."productId", p.name,
+           SUM(ii.quantity)::float AS qty, SUM(ii.subtotal)::float AS net,
+           p.cost::float AS cost, p.price::float AS price,
+           p."costUSD"::float AS "costUSD", p."salePriceUSD"::float AS "salePriceUSD"
+    FROM purchase_invoice_items ii
+    JOIN products p ON p.id = ii."productId" AND p."companyId" = ${companyId}
+    WHERE ii."purchaseInvoiceId" = ${invoiceId} AND ii."productId" IN (${Prisma.join(opts.productIds)})
+    GROUP BY ii."productId", p.name, p.cost, p.price, p."costUSD", p."salePriceUSD"
+  `;
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const money = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const isUsd = inv.currency !== 'ARS';
+  const invRate = Number(inv.exchangeRate) > 0 ? Number(inv.exchangeRate) : 1;
+  const globalFactor = 1 - Number(inv.discountPct ?? 0) / 100;
+  let todayRate: number | null | undefined;
+  const result: CostUpdateResult = { updated: 0, skipped: [] };
+  const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+
+  for (const r of rows) {
+    if (!(r.qty > 0)) { result.skipped.push({ productId: r.productId, name: r.name, reason: 'Cantidad en cero' }); continue; }
+    const unit = (r.net / r.qty) * globalFactor;
+    const dollarized = r.costUSD != null;
+    let cost: number;
+    let costUSD: number | null = r.costUSD;
+    let costUsdRate: number | null = null;
+
+    if (isUsd) {
+      cost = round2(unit * invRate);
+      if (dollarized) { costUSD = round2(unit); costUsdRate = invRate; }
+    } else {
+      cost = round2(unit);
+      if (dollarized) {
+        if (todayRate === undefined) todayRate = (await exchangeRateService.getUsdRate())?.rate ?? null;
+        if (!todayRate) {
+          result.skipped.push({ productId: r.productId, name: r.name, reason: 'Tiene costo en USD y no se pudo obtener la cotización del día' });
+          continue;
+        }
+        costUSD = round2(cost / todayRate);
+        costUsdRate = todayRate;
+      }
+    }
+    if (!(cost > 0)) { result.skipped.push({ productId: r.productId, name: r.name, reason: 'Costo en cero' }); continue; }
+
+    const price = opts.keepMargin && r.cost > 0 ? round2(r.price * cost / r.cost) : r.price;
+    const salePriceUSD = opts.keepMargin && r.salePriceUSD != null && r.costUSD && costUSD
+      ? round2(r.salePriceUSD * costUSD / r.costUSD)
+      : r.salePriceUSD;
+
+    await prisma.$executeRaw`
+      UPDATE products SET
+        cost = ${cost}, price = ${price},
+        "costUSD" = ${costUSD}, "costUsdRate" = COALESCE(${costUsdRate}::numeric, "costUsdRate"),
+        "salePriceUSD" = ${salePriceUSD},
+        "priceCtxSource" = 'PURCHASE_INVOICE', "priceCtxUserId" = ${userId ?? null}, "priceCtxRef" = ${invoiceId},
+        "priceUpdatedAt" = NOW(), "updatedAt" = NOW()
+      WHERE id = ${r.productId} AND "companyId" = ${companyId}
+    `;
+    result.updated++;
+
+    if (userId) {
+      await activityLogRepo.create({
+        userId, companyId, action: 'UPDATE', entity: 'Product', entityId: r.productId,
+        description: `Costo de ${r.name}: ${money(r.cost)} → ${money(cost)} (factura de compra ${inv.number})`
+          + (price !== r.price ? `; precio ${money(r.price)} → ${money(price)}` : ''),
+        metadata: {
+          source: 'PURCHASE_INVOICE', purchaseInvoiceId: invoiceId,
+          before: { cost: r.cost, price: r.price, costUSD: r.costUSD, salePriceUSD: r.salePriceUSD },
+          after:  { cost, price, costUSD, salePriceUSD },
+        },
+      }).catch(() => { /* log no crítico */ });
+    }
+  }
+  return result;
 }
 
 async function upsertTributos(invoiceId: string, tributos: z.infer<typeof tribSchema>[]) {
@@ -256,11 +408,21 @@ async function assertOriginInvoiceInCompany(originInvoiceId: string, companyId?:
 
 async function assertRemitosInCompany(remitoIds: string[], companyId?: string) {
   if (remitoIds.length === 0) return;
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "purchase_remitos"
+  const rows = await prisma.$queryRaw<{ id: string; number: string; status: string }[]>`
+    SELECT id, number, status FROM "purchase_remitos"
     WHERE id IN (${Prisma.join(remitoIds)}) AND "companyId" = ${companyId}
   `;
   if (rows.length !== remitoIds.length) throw new NotFoundError('Remito de compra');
+  // Una recepción de depósito sin confirmar (o rechazada) todavía no es mercadería recibida.
+  const notReceived = rows.find((r) => r.status === 'PENDING_CONFIRMATION' || r.status === 'REJECTED');
+  if (notReceived) {
+    throw new AppError(
+      notReceived.status === 'REJECTED'
+        ? `El remito ${notReceived.number} fue rechazado y no se puede vincular`
+        : `El remito ${notReceived.number} está pendiente de confirmación: un admin tiene que confirmarlo antes de vincularlo`,
+      400
+    );
+  }
 }
 
 async function assertRemitosWithinInvoice(invoiceId: string, remitoIds: string[]) {
@@ -504,31 +666,42 @@ export class PurchaseInvoiceController {
           (id, "purchaseId", "supplierId", number, type, subtotal, "taxRate", "taxAmount",
            "discountPct", "discountAmount",
            amount, currency, "exchangeRate", "saleCondition", date, "dueDate", "imputationDate",
-           "paymentMethod", status, notes, "companyId", "updatedAt", "fiscalMode", "originInvoiceId")
+           "paymentMethod", status, notes, "companyId", "updatedAt", "fiscalMode", "originInvoiceId", "userId")
         VALUES
           (${id}, ${null}, ${data.supplierId}, ${data.number}, ${data.type},
            ${data.subtotal}, ${data.taxRate}, ${data.taxAmount},
            ${data.discountPct}, ${data.discountAmount}, ${data.amount},
            ${data.currency}, ${data.exchangeRate}, ${data.saleCondition}, ${date}, ${dueDate}, ${imputationDate},
-           ${data.paymentMethod}, 'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode}, ${data.originInvoiceId ?? null})
+           ${data.paymentMethod}, 'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode}, ${data.originInvoiceId ?? null},
+           ${req.user?.userId ?? null})
       `;
 
-      if (data.items?.length)     await upsertItems(id, data.items);
+      if (data.items?.length)     await upsertItems(id, data.items, req.companyId);
       if (data.tributos?.length)  await upsertTributos(id, data.tributos);
       if (data.remitoIds?.length) await linkRemitos(id, data.remitoIds, req.companyId);
 
       // Generate the supplier current-account movement for the invoice debt
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
 
+      const costUpdate = await applyPurchaseCosts(id, data.updateCosts, req.companyId, req.user?.userId);
+
       const row = await fetchFull(id);
-      res.status(201).json({ status: 'success', data: row });
+      logActivity(req, {
+        action: 'CREATE', entity: 'PurchaseInvoice', entityId: id,
+        description: `Factura de compra ${data.number} de ${row?.supplierName ?? 'proveedor'} cargada (${data.currency} ${data.amount.toFixed(2)})`,
+      });
+      res.status(201).json({ status: 'success', data: { ...row, costUpdate } });
     } catch (error) { next(error); }
   }
 
   async updateStandalone(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const [existing] = await prisma.$queryRaw<{ id: string; status: string }[]>`
-        SELECT id, status FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
+      // Versión anterior completa: también sirve para registrar qué cambió.
+      const [existing] = await prisma.$queryRaw<Record<string, any>[]>`
+        SELECT id, status, number, type, "supplierId", subtotal, "taxAmount", "discountAmount", amount,
+               currency, "exchangeRate", "saleCondition", date, "dueDate", "imputationDate",
+               "paymentMethod", notes, "originInvoiceId"
+        FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
       `;
       if (!existing) throw new NotFoundError('Factura de proveedor');
 
@@ -573,22 +746,38 @@ export class PurchaseInvoiceController {
         const d = data.imputationDate ? new Date(data.imputationDate) : null;
         await prisma.$executeRaw`UPDATE "purchase_invoices" SET "imputationDate" = ${d}, "updatedAt" = NOW() WHERE id = ${id}`;
       }
-      if (data.items     !== undefined) await upsertItems(id, data.items);
+      if (data.items     !== undefined) await upsertItems(id, data.items, req.companyId);
       if (data.tributos  !== undefined) await upsertTributos(id, data.tributos);
       if (data.remitoIds !== undefined) await linkRemitos(id, data.remitoIds, req.companyId);
 
       // Re-sync supplier current account (invoice debt)
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);
 
+      const costUpdate = await applyPurchaseCosts(id, data.updateCosts, req.companyId, req.user?.userId);
+
       const row = await fetchFull(id);
-      res.json({ status: 'success', data: row });
+      const changes = diffFields(existing, row ?? {}, [
+        'number', 'type', 'supplierId', 'subtotal', 'taxAmount', 'discountAmount', 'amount', 'currency',
+        'exchangeRate', 'saleCondition', 'date', 'dueDate', 'imputationDate', 'paymentMethod', 'notes', 'originInvoiceId', 'status',
+      ]);
+      if (Object.keys(changes).length > 0 || data.items !== undefined) {
+        logActivity(req, {
+          action: 'UPDATE', entity: 'PurchaseInvoice', entityId: id,
+          description: `Factura de compra ${row?.number ?? existing.number} de ${row?.supplierName ?? 'proveedor'} modificada`
+            + (Object.keys(changes).length ? `: ${Object.keys(changes).join(', ')}` : ' (ítems)'),
+          metadata: { changes },
+        });
+      }
+      res.json({ status: 'success', data: { ...row, costUpdate } });
     } catch (error) { next(error); }
   }
 
   async deleteStandalone(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const [existing] = await prisma.$queryRaw<{ id: string; status: string }[]>`
-        SELECT id, status FROM "purchase_invoices" WHERE id = ${req.params.id} AND "companyId" = ${req.companyId}
+      const [existing] = await prisma.$queryRaw<{ id: string; status: string; number: string; type: string; amount: Prisma.Decimal; currency: string; supplierName: string | null }[]>`
+        SELECT pi.id, pi.status, pi.number, pi.type, pi.amount, pi.currency, s.name AS "supplierName"
+        FROM "purchase_invoices" pi LEFT JOIN suppliers s ON s.id = pi."supplierId"
+        WHERE pi.id = ${req.params.id} AND pi."companyId" = ${req.companyId}
       `;
       if (!existing) throw new NotFoundError('Factura de proveedor');
       if (existing.status === 'PAID' || existing.status === 'PARTIALLY_PAID') {
@@ -597,6 +786,11 @@ export class PurchaseInvoiceController {
 
       // CASCADE removes items/tributos/account-movements/remito links
       await prisma.$executeRaw`DELETE FROM "purchase_invoices" WHERE id = ${req.params.id}`;
+      logActivity(req, {
+        action: 'DELETE', entity: 'PurchaseInvoice', entityId: existing.id,
+        description: `Factura de compra ${existing.number} de ${existing.supplierName ?? 'proveedor'} eliminada (${existing.currency} ${Number(existing.amount).toFixed(2)})`,
+        metadata: { number: existing.number, type: existing.type, amount: Number(existing.amount), currency: existing.currency, supplier: existing.supplierName },
+      });
       res.status(204).send();
     } catch (error) { next(error); }
   }
@@ -646,7 +840,7 @@ export class PurchaseInvoiceController {
            'PENDING', ${data.notes ?? null}, ${req.companyId}, NOW(), ${fiscalMode})
       `;
 
-      if (data.items?.length)    await upsertItems(id, data.items);
+      if (data.items?.length)    await upsertItems(id, data.items, req.companyId);
       if (data.tributos?.length) await upsertTributos(id, data.tributos);
 
       await container.resolve<IOrdenPagoRepository>('OrdenPagoRepository').syncPurchaseInvoiceMovements(id);

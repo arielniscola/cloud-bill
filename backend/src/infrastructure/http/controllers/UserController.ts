@@ -13,7 +13,7 @@ const createUserSchema = z.object({
   username:  z.string().min(3, 'Mínimo 3 caracteres').regex(/^\S+$/, 'Sin espacios'),
   email:     z.string().email().optional().or(z.literal('')),
   password:  z.string().min(8, 'Mínimo 8 caracteres'),
-  role:      z.enum(['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).default('SELLER'),
+  role:      z.enum(['OWNER', 'ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).default('SELLER'),
   companyId: z.string().uuid('ID de empresa inválido'),
 });
 
@@ -21,7 +21,7 @@ const updateUserSchema = z.object({
   name:      z.string().min(1).optional(),
   username:  z.string().min(3).regex(/^\S+$/, 'Sin espacios').optional(),
   email:     z.string().email().optional().or(z.literal('')),
-  role:      z.enum(['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).optional(),
+  role:      z.enum(['OWNER', 'ADMIN', 'SELLER', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK']).optional(),
   isActive:  z.boolean().optional(),
   companyId: z.string().uuid('ID de empresa inválido').optional(),
 });

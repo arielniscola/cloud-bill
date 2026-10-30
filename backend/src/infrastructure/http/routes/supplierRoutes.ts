@@ -9,7 +9,9 @@ const importController   = new ImportController();
 
 router.use(authMiddleware);
 
-router.get('/',             requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findAll);
+// Depósito necesita el listado para elegir el proveedor al cargar una recepción
+// de mercadería (remito de compra); el resto de la ficha sigue cerrado.
+router.get('/',             requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES', 'WAREHOUSE_CLERK'), supplierController.findAll);
 router.get('/summary',      requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findSummaries);
 router.get('/:id/products', requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findProducts);
 router.get('/:id/summary',  requireRoles('SUPER_ADMIN', 'ADMIN', 'FINANCES', 'PURCHASES'), supplierController.findSummary);

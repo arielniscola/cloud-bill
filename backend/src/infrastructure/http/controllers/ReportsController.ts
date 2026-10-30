@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { round2 } from '../../../shared/utils/money';
+import { round2, arsFactor } from '../../../shared/utils/money';
 import { startOfDay as dayStart, endOfDay as dayEnd, startOfUtcDay, endOfUtcDay } from '../../../shared/utils/dateRange';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -88,7 +88,7 @@ export class ReportsController {
       const items = await prisma.invoiceItem.findMany({
         where: { invoice: invoiceWhere },
         include: {
-          invoice: { select: { id: true, type: true } },
+          invoice: { select: { id: true, type: true, currency: true, exchangeRate: true } },
           product: { select: { id: true, name: true, sku: true } },
         },
       });
@@ -99,13 +99,19 @@ export class ReportsController {
         taxAmount: number; total: number;
       }>();
 
+      // Con filtro de moneda el reporte queda en esa moneda; sin filtro todo va
+      // a PESOS con la cotización de cada comprobante (como el Dashboard):
+      // sumar dólares y pesos en una cifra daba un número que no existe.
+      const factorOf = (cur: unknown, rate: unknown) => (currency ? 1 : arsFactor(cur, rate));
+
       for (const item of items) {
         const isNC = (item.invoice.type as string).startsWith('NOTA_CREDITO');
         const sign = isNC ? -1 : 1;
+        const fx   = factorOf(item.invoice.currency, item.invoice.exchangeRate);
         const qty  = (item.quantity as Decimal).toNumber() * sign;
-        const sub  = (item.subtotal  as Decimal).toNumber() * sign;
-        const tax  = (item.taxAmount as Decimal).toNumber() * sign;
-        const tot  = (item.total     as Decimal).toNumber() * sign;
+        const sub  = (item.subtotal  as Decimal).toNumber() * sign * fx;
+        const tax  = (item.taxAmount as Decimal).toNumber() * sign * fx;
+        const tot  = (item.total     as Decimal).toNumber() * sign * fx;
 
         const ex = map.get(item.productId);
         if (ex) {
@@ -142,10 +148,12 @@ export class ReportsController {
         const opRows = await prisma.$queryRaw<Array<{
           ordenPedidoId: string; productId: string; productName: string; productSku: string;
           quantity: Decimal; subtotal: Decimal; taxAmount: Decimal; total: Decimal;
+          currency: string; exchangeRate: Decimal;
         }>>`
           SELECT op.id AS "ordenPedidoId", opi."productId",
                  p.name AS "productName", p.sku AS "productSku",
-                 opi.quantity, opi.subtotal, opi."taxAmount", opi.total
+                 opi.quantity, opi.subtotal, opi."taxAmount", opi.total,
+                 op.currency::text AS currency, op."exchangeRate"
           FROM "orden_pedido_items" opi
           JOIN "orden_pedidos" op ON op.id = opi."ordenPedidoId"
           JOIN "products" p ON p.id = opi."productId"
@@ -153,10 +161,11 @@ export class ReportsController {
         `;
 
         for (const row of opRows) {
+          const fx  = factorOf(row.currency, row.exchangeRate);
           const qty = Number(row.quantity);
-          const sub = Number(row.subtotal);
-          const tax = Number(row.taxAmount);
-          const tot = Number(row.total);
+          const sub = Number(row.subtotal) * fx;
+          const tax = Number(row.taxAmount) * fx;
+          const tot = Number(row.total) * fx;
 
           const ex = map.get(row.productId);
           if (ex) {
@@ -183,7 +192,7 @@ export class ReportsController {
         }))
         .sort((a, b) => b.total - a.total);
 
-      res.json({ status: 'success', data });
+      res.json({ status: 'success', data, currency: currency || 'ARS' });
     } catch (error) { next(error); }
   }
 
@@ -442,7 +451,7 @@ export class ReportsController {
         SELECT
           pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
           pi."dueDate", pi."imputationDate", pi."paymentMethod", pi.status, pi.notes,
-          pi."createdAt", pi.date AS "invoiceDate", pi.currency,
+          pi."createdAt", pi.date AS "invoiceDate", pi.currency, pi."exchangeRate",
           p.id AS "purchaseId", p.number AS "purchaseNumber", p.date AS "purchaseDate",
           s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit",
           COALESCE((
@@ -466,7 +475,10 @@ export class ReportsController {
         const amount        = Number(r.amount ?? 0);
         const paid          = Math.min(Number(r.paidAmount ?? 0), amount);
         const pending       = Math.max(amount - paid, 0);
+        // Las filas quedan en la moneda del comprobante; los totales, en pesos.
+        const fx            = arsFactor(r.currency, r.exchangeRate);
         return {
+          fx,
           id:             r.id,
           number:         r.number,
           type:           r.type,
@@ -491,16 +503,24 @@ export class ReportsController {
         };
       });
 
+      // Totales en PESOS con la cotización de cada comprobante (sumar dólares y
+      // pesos tal cual daba un número que no existe).
+      const sumArs = (key: 'subtotal' | 'taxAmount' | 'amount' | 'pending' | 'paid') =>
+        round2(data.reduce((a, r) => a + r[key] * r.fx, 0));
       const totals = {
         count:        data.length,
-        subtotal:     round2(data.reduce((a, r) => a + r.subtotal,    0)),
-        taxAmount:    round2(data.reduce((a, r) => a + r.taxAmount,   0)),
-        amount:       round2(data.reduce((a, r) => a + r.amount,      0)),
-        pending:      round2(data.reduce((a, r) => a + r.pending,     0)),
-        paid:         round2(data.reduce((a, r) => a + r.paid,        0)),
+        subtotal:     sumArs('subtotal'),
+        taxAmount:    sumArs('taxAmount'),
+        amount:       sumArs('amount'),
+        pending:      sumArs('pending'),
+        paid:         sumArs('paid'),
       };
 
-      res.json({ status: 'success', data, totals });
+      res.json({
+        status: 'success',
+        data: data.map(({ fx, ...r }) => ({ ...r, exchangeRate: fx })),
+        totals,
+      });
     } catch (error) { next(error); }
   }
 
@@ -537,7 +557,7 @@ export class ReportsController {
                COALESCE(ret."arcaRegimen",  cfg."arcaRegimen")  AS "arcaRegimen",
                ret."createdAt",
                op.id AS "ordenPagoId", op.number AS "ordenPagoNumber", op.date AS "ordenPagoDate",
-               op.amount AS "ordenPagoAmount", op.currency, op.status AS "ordenPagoStatus",
+               op.amount AS "ordenPagoAmount", op.currency, op."exchangeRate", op.status AS "ordenPagoStatus",
                s.id AS "supplierId", s.name AS "supplierName", s.cuit AS "supplierCuit"
         FROM "orden_pago_retenciones" ret
         JOIN "orden_pagos" op ON op.id = ret."ordenPagoId"
@@ -547,27 +567,35 @@ export class ReportsController {
         ORDER BY op.date ASC, op.number ASC
       `;
 
-      const data = rows.map((r) => ({
+      // La retención se calcula en la moneda de la OP; el impuesto se ingresa
+      // (y SICORE se informa) en PESOS: una OP en dólares se convierte con su
+      // cotización. `currency`/`exchangeRate` quedan como referencia.
+      const data = rows.map((r) => {
+        const fx = arsFactor(r.currency, r.exchangeRate);
+        return {
         id:              r.id,
         type:            r.type,
         jurisdiction:    r.jurisdiction ?? null,
         baseKind:        r.baseKind,
-        baseAmount:      round2(Number(r.baseAmount ?? 0)),
+        baseAmount:      round2(Number(r.baseAmount ?? 0) * fx),
         percentage:      Number(r.percentage ?? 0),
-        amount:          round2(Number(r.amount ?? 0)),
+        amount:          round2(Number(r.amount ?? 0) * fx),
+        amountOriginal:  round2(Number(r.amount ?? 0)),
+        exchangeRate:    fx,
         certificate:     r.certificate ?? null,
         arcaImpuesto:    r.arcaImpuesto ?? null,
         arcaRegimen:     r.arcaRegimen ?? null,
         date:            r.ordenPagoDate.toISOString().substring(0, 10),
         ordenPagoId:     r.ordenPagoId,
         ordenPagoNumber: r.ordenPagoNumber,
-        ordenPagoAmount: round2(Number(r.ordenPagoAmount ?? 0)),
+        ordenPagoAmount: round2(Number(r.ordenPagoAmount ?? 0) * fx),
         ordenPagoStatus: r.ordenPagoStatus,
         currency:        r.currency,
         supplierId:      r.supplierId,
         supplierName:    r.supplierName,
         supplierCuit:    r.supplierCuit ?? null,
-      }));
+        };
+      });
 
       // Subtotales por régimen — es como se presenta e ingresa el impuesto
       const byTypeMap = new Map<string, { type: string; count: number; baseAmount: number; amount: number }>();
@@ -624,6 +652,8 @@ export class ReportsController {
         CASH: 'Efectivo', BANK_TRANSFER: 'Transferencia', CHECK: 'Cheque', CARD: 'Tarjeta',
       };
 
+      // `amount` queda en la moneda del recibo; `amountArs` (con la cotización
+      // del recibo) es lo que se suma en los totales.
       const data = recibos.map((r) => ({
         id:               r.id,
         number:           r.number,
@@ -633,11 +663,12 @@ export class ReportsController {
         paymentMethod:    METHODS[r.paymentMethod] ?? r.paymentMethod,
         currency:         r.currency,
         amount:           round2((r.amount as Decimal).toNumber()),
+        amountArs:        round2((r.amount as Decimal).toNumber() * arsFactor(r.currency, r.exchangeRate)),
         surchargeAmount:  r.surchargeAmount ? round2((r.surchargeAmount as Decimal).toNumber()) : 0,
         reference:        r.reference ?? '—',
       }));
 
-      const totalAmount = round2(data.reduce((acc, r) => acc + r.amount, 0));
+      const totalAmount = round2(data.reduce((acc, r) => acc + r.amountArs, 0));
       res.json({ status: 'success', data, totalAmount });
     } catch (error) { next(error); }
   }

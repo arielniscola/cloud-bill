@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logActivity } from '../utils/activityLog';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { IAccountRepository } from '../../../domain/repositories/IAccountRepository';
@@ -21,6 +22,7 @@ export class AccountingController {
   async seedAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       await seedAccountsForCompany(req.companyId!);
+      logActivity(req, { action: 'CREATE', entity: 'Account', entityId: req.companyId!, description: 'Plan de cuentas inicializado' });
       const repo = container.resolve<IAccountRepository>('AccountRepository');
       const accounts = await repo.findAll(req.companyId!);
       res.json({ status: 'success', data: accounts, message: 'Plan de cuentas inicializado' });
@@ -135,6 +137,11 @@ export class AccountingController {
         lines: body.lines,
       });
 
+      logActivity(req, {
+        action: 'CREATE', entity: 'JournalEntry', entityId: (entry as any).id,
+        description: `Asiento manual${(entry as any).number ? ` ${(entry as any).number}` : ''}: ${body.description} ($${totalDebit.toFixed(2)})`,
+        metadata: { lines: body.lines },
+      });
       res.status(201).json({ status: 'success', data: entry });
     } catch (error) {
       next(error);

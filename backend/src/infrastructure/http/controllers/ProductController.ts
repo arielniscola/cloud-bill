@@ -13,6 +13,9 @@ import { ProductCustomFieldValueInput } from '../../../domain/entities/ProductCu
 import prisma from '../../database/prisma';
 import { reconcileLots } from '../../database/repositories/stockLots';
 import { getStorageService } from '../../storage';
+import { exchangeRateService } from '../../services/ExchangeRateService';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 /** Filtra los IDs recibidos dejando solo los que pertenecen a la empresa activa. */
 async function filterOwnedProductIds(ids: string[], companyId: string): Promise<Set<string>> {
@@ -21,6 +24,54 @@ async function filterOwnedProductIds(ids: string[], companyId: string): Promise<
     select: { id: true },
   });
   return new Set(owned.map((p) => p.id));
+}
+
+/**
+ * Costo en dólares. Si llega un costUSD NUEVO, el costo en pesos se pisa con
+ * la cotización del día y se guarda la cotización usada. Si no cambia, el
+ * costo en pesos de un producto dolarizado no se toca (ni aunque venga en el
+ * body): cuando sube el dólar se recalcula A MANO con
+ * POST /products/recalculate-usd-costs. Sin cotización disponible se guarda el
+ * USD y queda el costo en pesos que vino, hasta el próximo recálculo.
+ *
+ * Si llega `rateIn` (cotización elegida/editada por el usuario en la ficha) se
+ * respeta: se guarda esa cotización y el costo en pesos que vino en el body
+ * (o USD × cotización si no vino).
+ */
+async function applyUsdCost(
+  data: Record<string, unknown>,
+  costUSD: number | null | undefined,
+  prevCostUSD: unknown,
+  rateIn?: number | null,
+): Promise<void> {
+  const wasDollarized = prevCostUSD != null;
+  if (costUSD != null && costUSD > 0 && rateIn != null && rateIn > 0) {
+    data.costUSD = new Decimal(costUSD);
+    data.costUsdRate = new Decimal(rateIn);
+    if (data.cost == null) data.cost = new Decimal(Math.round(costUSD * rateIn * 100) / 100);
+    return;
+  }
+  if (costUSD === undefined) {
+    if (wasDollarized) delete data.cost;
+    return;
+  }
+  if (costUSD == null || costUSD <= 0) {
+    data.costUSD = null;
+    data.costUsdRate = null;
+    return;
+  }
+  if (wasDollarized && Number(prevCostUSD) === costUSD) {
+    delete data.cost;
+    return;
+  }
+  data.costUSD = new Decimal(costUSD);
+  const rate = await exchangeRateService.getUsdRate();
+  if (rate) {
+    data.cost = new Decimal(Math.round(costUSD * rate.rate * 100) / 100);
+    data.costUsdRate = new Decimal(rate.rate);
+  } else {
+    data.costUsdRate = null;
+  }
 }
 
 function parseCustomFieldsPayload(body: any): ProductCustomFieldValueInput[] | null {
@@ -43,6 +94,9 @@ export class ProductController {
         throw new ConflictError('Ya existe un producto con este código en tu empresa');
       }
 
+      const usdData: Record<string, unknown> = { cost: new Decimal(req.body.cost) };
+      await applyUsdCost(usdData, req.body.costUSD, null, req.body.costUsdRate);
+
       const product = await productRepository.create({
         sku: req.body.sku,
         name: req.body.name,
@@ -55,13 +109,14 @@ export class ProductController {
         barcode: req.body.barcode ?? null,
         unit: req.body.unit ?? null,
         internalNotes: req.body.internalNotes ?? null,
-        cost: new Decimal(req.body.cost),
         price: new Decimal(req.body.price),
         salePriceUSD: req.body.salePriceUSD != null ? new Decimal(req.body.salePriceUSD) : null,
+        ...usdData,
         taxRate: new Decimal(req.body.taxRate ?? 21),
         trackStock: req.body.trackStock ?? true,
         trackLots: req.body.trackLots === true,
         isActive: req.body.isActive ?? true,
+        priceContext: { source: 'CREATE', userId: req.user?.userId },
       } as any);
 
       const customFields = parseCustomFieldsPayload(req.body);
@@ -168,6 +223,8 @@ export class ProductController {
       if (req.body.trackStock !== undefined) updateData.trackStock = req.body.trackStock;
       if (req.body.trackLots !== undefined) updateData.trackLots = req.body.trackLots;
       if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
+      await applyUsdCost(updateData, req.body.costUSD, (existingProduct as any).costUSD, req.body.costUsdRate);
+      updateData.priceContext = { source: 'MANUAL', userId: req.user?.userId };
 
       const product = await productRepository.update(req.params.id, updateData);
 
@@ -204,27 +261,115 @@ export class ProductController {
   async bulkUpdatePrices(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const productRepository = container.resolve<IProductRepository>('ProductRepository');
-      const updates: Array<{ id: string; price?: number; cost?: number; salePriceUSD?: number | null }> = req.body.updates;
+      const updates: Array<{ id: string; price?: number; cost?: number; costUSD?: number | null; salePriceUSD?: number | null }> = req.body.updates;
 
       if (!Array.isArray(updates) || updates.length === 0) {
         res.status(400).json({ status: 'error', message: 'No hay actualizaciones' });
         return;
       }
 
-      const ownedIds = await filterOwnedProductIds(updates.map((u) => u.id), req.companyId!);
-      const ownedUpdates = updates.filter((u) => ownedIds.has(u.id));
+      // Además de filtrar por empresa trae el costUSD vigente (ver applyUsdCost).
+      const owned = await prisma.$queryRaw<{ id: string; costUSD: Prisma.Decimal | null }[]>`
+        SELECT id, "costUSD" FROM products
+        WHERE id IN (${Prisma.join(updates.map((u) => u.id))}) AND "companyId" = ${req.companyId!}
+      `;
+      const prevCostUSD = new Map(owned.map((r) => [r.id, r.costUSD]));
+      const ownedUpdates = updates.filter((u) => prevCostUSD.has(u.id));
+      // Una sola operación en el historial de precios: se puede deshacer entera.
+      const priceContext = { source: 'BULK' as const, userId: req.user?.userId, ref: randomUUID() };
 
       await Promise.all(
-        ownedUpdates.map(({ id, price, cost, salePriceUSD }) => {
+        ownedUpdates.map(async ({ id, price, cost, costUSD, salePriceUSD }) => {
           const data: Record<string, unknown> = {};
           if (price        !== undefined) data.price       = new Decimal(price);
           if (cost         !== undefined) data.cost        = new Decimal(cost);
           if (salePriceUSD !== undefined) data.salePriceUSD = salePriceUSD != null ? new Decimal(salePriceUSD) : null;
-          return productRepository.update(id, data);
+          await applyUsdCost(data, costUSD, prevCostUSD.get(id));
+          if (Object.keys(data).length === 0) return;
+          await productRepository.update(id, { ...data, priceContext });
         })
       );
 
-      res.json({ status: 'success', updated: ownedUpdates.length });
+      res.json({ status: 'success', updated: ownedUpdates.length, ref: priceContext.ref });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /products/usd-costs/summary
+   * Cuántos productos tienen costo en USD y con qué cotización se calculó su
+   * costo en pesos — lo muestra el modal de "Recalcular costos USD".
+   */
+  async usdCostSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const [row] = await prisma.$queryRaw<{ count: number; minRate: Prisma.Decimal | null; maxRate: Prisma.Decimal | null }[]>`
+        SELECT COUNT(*)::int AS count, MIN("costUsdRate") AS "minRate", MAX("costUsdRate") AS "maxRate"
+        FROM products
+        WHERE "companyId" = ${req.companyId!} AND "costUSD" IS NOT NULL
+      `;
+      res.json({
+        status: 'success',
+        data: {
+          count: row?.count ?? 0,
+          minRate: row?.minRate != null ? Number(row.minRate) : null,
+          maxRate: row?.maxRate != null ? Number(row.maxRate) : null,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /products/recalculate-usd-costs  { rate?, keepMargin? }
+   * Recalcula el costo en pesos de TODOS los productos con costo en USD de la
+   * empresa: cost = costUSD × cotización. Sin `rate` usa la cotización del día.
+   * Con `keepMargin` el precio de venta acompaña al costo en la misma
+   * proporción (mantiene el margen). Un único UPDATE en la base.
+   */
+  async recalculateUsdCosts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const keepMargin = req.body?.keepMargin === true;
+      let rate = Number(req.body?.rate);
+      if (req.body?.rate == null || req.body?.rate === '') {
+        const today = await exchangeRateService.getUsdRate();
+        if (!today) {
+          res.status(400).json({ status: 'error', message: 'No se pudo obtener la cotización del día; ingresala a mano' });
+          return;
+        }
+        rate = today.rate;
+      }
+      if (!Number.isFinite(rate) || rate <= 0) {
+        res.status(400).json({ status: 'error', message: 'Cotización inválida' });
+        return;
+      }
+
+      const r = new Prisma.Decimal(rate);
+      // En el SET, `cost` y `price` se leen con su valor ANTERIOR (Postgres).
+      const updated = await prisma.$executeRaw`
+        UPDATE products SET
+          price = CASE WHEN ${keepMargin} AND cost > 0
+                       THEN ROUND(price * ROUND("costUSD" * ${r}::numeric, 2) / cost, 2)
+                       ELSE price END,
+          cost = ROUND("costUSD" * ${r}::numeric, 2),
+          "costUsdRate" = ${r}::numeric,
+          "priceUpdatedAt" = NOW(),
+          "priceCtxSource" = 'USD_RECALC', "priceCtxUserId" = ${req.user?.userId ?? null}, "priceCtxRef" = ${randomUUID()},
+          "updatedAt" = NOW()
+        WHERE "companyId" = ${req.companyId!} AND "costUSD" IS NOT NULL
+      `;
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      activityLogRepo.create({
+        userId: req.user!.userId,
+        action: 'UPDATE',
+        entity: 'Product',
+        entityId: 'recalculate-usd-costs',
+        description: `Recálculo de costos USD de ${updated} producto(s) a $${rate}${keepMargin ? ' (manteniendo margen)' : ''}`,
+      }).catch(() => { /* log no crítico */ });
+
+      res.json({ status: 'success', data: { updated, rate } });
     } catch (error) {
       next(error);
     }

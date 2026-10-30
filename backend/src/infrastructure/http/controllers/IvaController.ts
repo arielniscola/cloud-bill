@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IPurchaseRepository } from '../../../domain/repositories/IPurchaseRepository';
 import prisma from '../../database/prisma';
+import { arsFactor } from '../../../shared/utils/money';
 import { buildIvaDigitalCompras, IvaDigitalCompraRow } from '../utils/ivaDigitalTxt';
 
 function escapeCSV(value: unknown): string {
@@ -89,7 +90,10 @@ export class IvaController {
       }
 
       const rows = filtered.map((inv: any) => {
-        const sign = String(inv.type).startsWith('NOTA_CREDITO') ? -1 : 1;
+        // El libro de IVA es en PESOS: un comprobante en dólares se convierte
+        // con la cotización informada en él (la que fue a ARCA).
+        const fx = arsFactor(inv.currency, inv.exchangeRate);
+        const sign = (String(inv.type).startsWith('NOTA_CREDITO') ? -1 : 1) * fx;
         const its = itemsMap.get(inv.id) ?? [];
 
         // Neto gravado / exento / alícuotas a partir de los ítems
@@ -134,8 +138,10 @@ export class IvaController {
           status: inv.status,
           saleCondition: (inv as any).saleCondition ?? 'CONTADO',
           paymentTerms: inv.paymentTerms ?? null,
+          moneda: inv.currency ?? 'ARS',
+          tipoCambio: fx,
           alicuotas,
-          items: its.map((it: any) => ({ ...it, subtotal: it.subtotal * sign, total: it.total * sign })),
+          items: its.map((it: any) => ({ ...it, unitPrice: it.unitPrice * fx, subtotal: it.subtotal * sign, total: it.total * sign })),
         };
       });
 
@@ -161,13 +167,15 @@ export class IvaController {
 
       const header = toCSVRow([
         'Fecha', 'Número', 'N° AFIP', 'Tipo', 'Cliente', 'CUIT', 'Condición IVA',
-        'Neto Gravado', 'IVA', 'Total', 'CAE',
+        'Neto Gravado', 'IVA', 'Total', 'CAE', 'Moneda', 'Tipo de cambio',
       ]);
 
+      // Importes en PESOS (ver getVentas).
       const lines = result.data
         .filter((inv: any) => inv.status !== 'CANCELLED')
-        .map((inv: any) =>
-          toCSVRow([
+        .map((inv: any) => {
+          const fx = arsFactor(inv.currency, inv.exchangeRate);
+          return toCSVRow([
             new Date(inv.date).toLocaleDateString('es-AR'),
             inv.number,
             inv.afipCbtNum ?? '',
@@ -175,12 +183,14 @@ export class IvaController {
             inv.customer?.name ?? '',
             inv.customer?.taxId ?? '',
             inv.customer?.taxCondition ?? '',
-            Number(inv.subtotal).toFixed(2),
-            Number(inv.taxAmount).toFixed(2),
-            Number(inv.total).toFixed(2),
+            (Number(inv.subtotal) * fx).toFixed(2),
+            (Number(inv.taxAmount) * fx).toFixed(2),
+            (Number(inv.total) * fx).toFixed(2),
             inv.cae ?? '',
-          ])
-        );
+            inv.currency ?? 'ARS',
+            fx,
+          ]);
+        });
 
       const csv = [header, ...lines].join('\r\n');
 
@@ -208,7 +218,7 @@ export class IvaController {
       // fecha de imputación cuando existe, si no la fecha del comprobante.
       const invoices = await prisma.$queryRaw<any[]>`
         SELECT pi.id, pi.number, pi.type, pi.subtotal, pi."taxRate", pi."taxAmount", pi.amount,
-               pi."discountAmount",
+               pi."discountAmount", pi.currency, pi."exchangeRate",
                COALESCE(pi."imputationDate", pi.date) AS fecha,
                pi.status, pi."saleCondition",
                s.name AS "supplierName", s.cuit AS "supplierCuit"
@@ -248,8 +258,10 @@ export class IvaController {
       }
 
       const rows = invoices.map((inv) => {
-        // Las NC restan en el libro IVA
-        const sign = String(inv.type).startsWith('NOTA_CREDITO') ? -1 : 1;
+        // Las NC restan en el libro IVA. Todo en PESOS: un comprobante en
+        // dólares se convierte con la cotización cargada en él.
+        const fx = arsFactor(inv.currency, inv.exchangeRate);
+        const sign = (String(inv.type).startsWith('NOTA_CREDITO') ? -1 : 1) * fx;
         const its = itemsByInv.get(inv.id) ?? [];
         const trs = tribByInv.get(inv.id) ?? [];
 
@@ -310,11 +322,13 @@ export class IvaController {
           status: inv.status,
           paymentStatus: null,
           saleCondition: inv.saleCondition ?? 'CONTADO',
+          moneda: inv.currency ?? 'ARS',
+          tipoCambio: fx,
           alicuotas,
           items: its.map((it: any) => ({
             description: it.description ?? '',
             quantity: Number(it.quantity),
-            unitPrice: Number(it.unitPrice),
+            unitPrice: Number(it.unitPrice) * fx,
             taxRate: Number(it.taxRate ?? 21),
             subtotal: Number(it.subtotal) * sign,
             total: Number(it.total) * sign,

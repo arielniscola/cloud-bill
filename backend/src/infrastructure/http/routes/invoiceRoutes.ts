@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { InvoiceController } from '../controllers/InvoiceController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
+import { withApproval, blockIfPendingApproval } from '../middlewares/approvalMiddleware';
+import { resolveInvoiceCancel, resolveInvoiceDelete, resolveInvoicePay } from '../middlewares/approvalResolvers';
 import {
   createInvoiceSchema,
   updateInvoiceStatusSchema,
@@ -35,12 +37,14 @@ router.get('/:id', invoiceController.findById);
 router.put(
   '/:id',
   requireRoles('ADMIN', 'SELLER'),
+  blockIfPendingApproval('INVOICE'),
   validate({ body: createInvoiceSchema }),
   invoiceController.updateDraft
 );
 router.patch(
   '/:id/status',
   requireRoles('SUPER_ADMIN', 'ADMIN'),
+  blockIfPendingApproval('INVOICE'),
   validate({ body: updateInvoiceStatusSchema }),
   invoiceController.updateStatus
 );
@@ -48,11 +52,20 @@ router.post(
   '/:id/pay',
   requireRoles('ADMIN', 'SELLER'),
   validate({ body: payInvoiceSchema }),
-  invoiceController.pay
+  // Pagar una NC es una devolución: requiere aprobación del Dueño.
+  ...withApproval('invoices.pay', resolveInvoicePay, invoiceController.pay)
 );
-router.post('/:id/cancel', requireRoles('SUPER_ADMIN', 'ADMIN'), invoiceController.cancel);
-router.delete('/:id', requireRoles('ADMIN', 'SELLER'), invoiceController.remove);
-router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), invoiceController.emit);
+router.post(
+  '/:id/cancel',
+  requireRoles('SUPER_ADMIN', 'ADMIN'),
+  ...withApproval('invoices.cancel', resolveInvoiceCancel, invoiceController.cancel)
+);
+router.delete(
+  '/:id',
+  requireRoles('ADMIN', 'SELLER'),
+  ...withApproval('invoices.delete', resolveInvoiceDelete, invoiceController.remove)
+);
+router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), blockIfPendingApproval('INVOICE'), invoiceController.emit);
 router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), invoiceController.sendEmail);
 router.get('/:id/afip-errors', invoiceController.getAfipErrors);
 

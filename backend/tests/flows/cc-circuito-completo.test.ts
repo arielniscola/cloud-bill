@@ -1,5 +1,5 @@
 import { api, auth, expectStatus } from '../helpers';
-import { ADMIN_A } from '../fixtures';
+import { ADMIN_A, OWNER_A } from '../fixtures';
 
 /**
  * Circuito completo de cuentas corrientes (revisión 2026-10-15):
@@ -94,7 +94,8 @@ describe('Circuito completo de cuentas corrientes', () => {
     expect(await balance(customerId)).toBeCloseTo(before, 2); // la compensación no mueve la CC
 
     // El pago a cuenta ya aplicado no se puede anular
-    const cancel = await api.delete(`/api/recibos/${pac.body.recibo.id}`).set(auth(A));
+    // Anular es una acción protegida: la ejecuta el Dueño (ver aprobaciones.test.ts).
+    const cancel = await api.delete(`/api/recibos/${pac.body.recibo.id}`).set(auth(OWNER_A));
     expectStatus(cancel, 400);
   });
 
@@ -108,7 +109,7 @@ describe('Circuito completo de cuentas corrientes', () => {
     expect(await balance(customerId)).toBeCloseTo(start, 2);
 
     // Anular el recibo revierte cobro y descuento
-    const cancel = await api.delete(`/api/recibos/${pay.body.recibo.id}`).set(auth(A));
+    const cancel = await api.delete(`/api/recibos/${pay.body.recibo.id}`).set(auth(OWNER_A));
     expectStatus(cancel, 200);
     expect((await invoice(inv.id)).status).toBe('ISSUED');
     expect(await balance(customerId)).toBeCloseTo(start + 12100, 2);

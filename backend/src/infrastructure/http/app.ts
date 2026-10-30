@@ -55,6 +55,9 @@ import { pdvRoutes } from './routes/pdvRoutes';
 import { chequeRoutes } from './routes/chequeRoutes';
 import { exchangeRateRoutes } from './routes/exchangeRateRoutes';
 import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
+import { approvalRoutes } from './routes/approvalRoutes';
+import { pushRoutes } from './routes/pushRoutes';
+import { cashMovementReasonRoutes } from './routes/cashMovementReasonRoutes';
 
 const LARGE_BODY_PATH = /\/(import|send-email|bulk[^/]*)$/;
 
@@ -169,6 +172,9 @@ export function createApp(): Application {
   app.use('/api/pdv', pdvRoutes);
   app.use('/api/cheques', chequeRoutes);
   app.use('/api/exchange-rate', exchangeRateRoutes);
+  app.use('/api/approvals', approvalRoutes);
+  app.use('/api/push', pushRoutes);
+  app.use('/api/cash-movement-reasons', cashMovementReasonRoutes);
 
   // 404 handler
   app.use((_req, res) => {

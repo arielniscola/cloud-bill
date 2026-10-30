@@ -12,6 +12,8 @@ type RawProductInfo = {
   imageUrl: string | null;
   imageKey: string | null;
   trackLots: boolean | null;
+  costUSD: Prisma.Decimal | null;
+  costUsdRate: Prisma.Decimal | null;
 };
 
 type RawStockInfo = {
@@ -41,7 +43,8 @@ export class PrismaProductRepository implements IProductRepository {
   private async enrichRawColumns<T extends { id: string }>(items: T[]): Promise<T[]> {
     if (items.length === 0) return items;
     const rows = await this.prisma.$queryRaw<RawProductInfo[]>`
-      SELECT p.id, p."supplierId", p."imageUrl", p."imageKey", p."trackLots", s.name AS "supplierName"
+      SELECT p.id, p."supplierId", p."imageUrl", p."imageKey", p."trackLots",
+             p."costUSD", p."costUsdRate", s.name AS "supplierName"
       FROM products p
       LEFT JOIN suppliers s ON s.id = p."supplierId"
       WHERE p.id IN (${Prisma.join(items.map((i) => i.id))})
@@ -56,6 +59,8 @@ export class PrismaProductRepository implements IProductRepository {
         imageUrl: info?.imageUrl ?? null,
         imageKey: info?.imageKey ?? null,
         trackLots: info?.trackLots === true,
+        costUSD: info?.costUSD ?? null,
+        costUsdRate: info?.costUsdRate ?? null,
       };
     });
   }
@@ -233,16 +238,18 @@ export class PrismaProductRepository implements IProductRepository {
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO products (
         id, sku, name, description, barcode, unit, "internalNotes",
-        cost, price, "salePriceUSD", "taxRate", "trackStock", "trackLots", "isActive",
+        cost, "costUSD", "costUsdRate", price, "salePriceUSD", "taxRate", "trackStock", "trackLots", "isActive",
         "priceUpdatedAt", "rubroId", "brandId", "categoryId", "supplierId", "companyId",
+        "priceCtxSource", "priceCtxUserId", "priceCtxRef",
         "createdAt", "updatedAt"
       ) VALUES (
         gen_random_uuid(),
         ${d.sku}, ${d.name}, ${d.description ?? null}, ${d.barcode ?? null},
         ${d.unit ?? 'UN'}, ${d.internalNotes ?? null},
-        ${d.cost}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
+        ${d.cost}, ${d.costUSD ?? null}, ${d.costUsdRate ?? null}, ${d.price}, ${d.salePriceUSD ?? null}, ${d.taxRate ?? 21},
         ${d.trackStock ?? true}, ${d.trackStock !== false && d.trackLots === true}, ${d.isActive ?? true}, NOW(),
         ${d.rubroId ?? null}, ${d.brandId ?? null}, ${d.categoryId ?? null}, ${d.supplierId ?? null}, ${companyId},
+        ${d.priceContext?.source ?? null}, ${d.priceContext?.userId ?? null}, ${d.priceContext?.ref ?? null},
         NOW(), NOW()
       )
       RETURNING id
@@ -252,7 +259,7 @@ export class PrismaProductRepository implements IProductRepository {
 
   // Compartido entre update() (un producto) y updateByFilter() (muchos a la vez).
   private buildSetClauses(d: Record<string, unknown>): { clauses: Prisma.Sql[]; priceChanged: boolean } {
-    const priceChanged = d.price !== undefined || d.salePriceUSD !== undefined || d.cost !== undefined;
+    const priceChanged = d.price !== undefined || d.salePriceUSD !== undefined || d.cost !== undefined || d.costUSD !== undefined;
     const clauses: Prisma.Sql[] = [];
 
     if (d.sku           !== undefined) clauses.push(Prisma.sql`sku = ${d.sku}`);
@@ -262,6 +269,8 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.unit          !== undefined) clauses.push(Prisma.sql`unit = ${d.unit}`);
     if (d.internalNotes !== undefined) clauses.push(Prisma.sql`"internalNotes" = ${d.internalNotes}`);
     if (d.cost          !== undefined) clauses.push(Prisma.sql`cost = ${d.cost}`);
+    if (d.costUSD       !== undefined) clauses.push(Prisma.sql`"costUSD" = ${d.costUSD}`);
+    if (d.costUsdRate   !== undefined) clauses.push(Prisma.sql`"costUsdRate" = ${d.costUsdRate}`);
     if (d.price         !== undefined) clauses.push(Prisma.sql`price = ${d.price}`);
     if (d.salePriceUSD  !== undefined) clauses.push(Prisma.sql`"salePriceUSD" = ${d.salePriceUSD}`);
     if (d.taxRate       !== undefined) clauses.push(Prisma.sql`"taxRate" = ${d.taxRate}`);
@@ -274,6 +283,13 @@ export class PrismaProductRepository implements IProductRepository {
     if (d.categoryId    !== undefined) clauses.push(Prisma.sql`"categoryId" = ${d.categoryId}`);
     if (d.supplierId    !== undefined) clauses.push(Prisma.sql`"supplierId" = ${d.supplierId}`);
     if (priceChanged)                  clauses.push(Prisma.sql`"priceUpdatedAt" = NOW()`);
+    // Quién y por qué: lo lee el trigger del historial de precios (y lo limpia).
+    const ctx = d.priceContext as { source: string; userId?: string | null; ref?: string | null } | undefined;
+    if (priceChanged && ctx) {
+      clauses.push(Prisma.sql`"priceCtxSource" = ${ctx.source}`);
+      clauses.push(Prisma.sql`"priceCtxUserId" = ${ctx.userId ?? null}`);
+      clauses.push(Prisma.sql`"priceCtxRef" = ${ctx.ref ?? null}`);
+    }
 
     return { clauses, priceChanged };
   }

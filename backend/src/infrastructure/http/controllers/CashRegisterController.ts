@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
+import { resolveCashMovementReason } from './CashMovementReasonController';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError } from '../../../shared/errors/AppError';
 import { CASH_CONCEPT_LABELS } from '../../database/repositories/PrismaCashRegisterRepository';
@@ -96,7 +97,7 @@ export class CashRegisterController {
     try {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
       const { id } = req.params;
-      const { page, limit, type, startDate, endDate } = req.query;
+      const { page, limit, type, startDate, endDate, reasonId } = req.query;
 
       const cashRegister = await repo.findById(id);
       if (!cashRegister) throw new NotFoundError('Caja');
@@ -107,6 +108,7 @@ export class CashRegisterController {
           type: type as string,
           startDate: startDate as string,
           endDate: endDate as string,
+          reasonId: typeof reasonId === 'string' && reasonId ? reasonId : undefined,
           fiscalMode: req.fiscalMode,
         },
         { page: Number(page) || 1, limit: Number(limit) || 20 }
@@ -154,6 +156,7 @@ export class CashRegisterController {
       const cashRegister = await repo.findById(req.params.id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
+      const reason = await resolveCashMovementReason(req.body.reasonId, req.companyId!, req.body.type);
       const movement = await repo.createCashMovement({
         companyId: req.companyId!,
         cashRegisterId: cashRegister.id,
@@ -163,6 +166,8 @@ export class CashRegisterController {
         personName: req.body.personName,
         notes: req.body.notes,
         bankAccountId: req.body.bankAccountId,
+        reasonId: reason?.id ?? null,
+        reasonName: reason?.name ?? null,
         userId: req.user?.userId,
         fiscalMode: req.fiscalMode ?? 'FORMAL',
       });
@@ -173,7 +178,7 @@ export class CashRegisterController {
         action: 'CREATE',
         entity: 'CashMovement',
         entityId: movement.id,
-        description: `${CASH_CONCEPT_LABELS[movement.concept] ?? movement.concept} ${movement.number} en caja ${cashRegister.name} por $${Number(movement.amount).toFixed(2)}`,
+        description: `${CASH_CONCEPT_LABELS[movement.concept] ?? movement.concept}${movement.reasonName ? ` (${movement.reasonName})` : ''} ${movement.number} en caja ${cashRegister.name} por $${Number(movement.amount).toFixed(2)}`,
       });
 
       res.status(201).json({ status: 'success', data: movement });

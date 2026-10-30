@@ -1,5 +1,5 @@
 import { api, auth, expectStatus, ensureDefaultWarehouse } from '../helpers';
-import { ADMIN_A, ADMIN_B } from '../fixtures';
+import { ADMIN_A, ADMIN_B, OWNER_A } from '../fixtures';
 
 const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
@@ -65,7 +65,8 @@ describe('Stock por lote', () => {
     expect(byRef.body.data.map((l: { lotNumber: string; quantity: number }) => `${l.lotNumber}:${l.quantity}`).sort())
       .toEqual(['L-CERCA:5', 'L-LEJOS:2']);
 
-    expectStatus(await api.post(`/api/remitos/${remito.body.data.id}/cancel`).set(auth(ADMIN_A)), 200);
+    // Anular es una acción protegida: la ejecuta el Dueño (ver aprobaciones.test.ts).
+    expectStatus(await api.post(`/api/remitos/${remito.body.data.id}/cancel`).set(auth(OWNER_A)), 200);
     expect(await lotMap()).toMatchObject({ 'L-CERCA': 5, 'L-LEJOS': 10 });
   });
 
@@ -95,7 +96,7 @@ describe('Stock por lote', () => {
     expectStatus(await api.patch(`/api/invoices/${inv.body.data.id}/status`).set(auth(ADMIN_A)).send({ status: 'ISSUED' }), 200);
     expect(await lotMap()).toMatchObject({ 'L-LEJOS': 6, 'L-CERCA': 5 });
 
-    expectStatus(await api.post(`/api/invoices/${inv.body.data.id}/cancel`).set(auth(ADMIN_A)), 200);
+    expectStatus(await api.post(`/api/invoices/${inv.body.data.id}/cancel`).set(auth(OWNER_A)), 200);
     expect((await lotMap())['L-LEJOS']).toBe(10);
   });
 
