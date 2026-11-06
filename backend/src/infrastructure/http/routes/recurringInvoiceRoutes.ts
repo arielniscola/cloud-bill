@@ -6,6 +6,8 @@ const router = Router();
 const controller = new RecurringInvoiceController();
 
 router.use(authMiddleware);
+// Depósito (WAREHOUSE_CLERK) no accede a esta sección, ni siquiera para leer.
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN', 'SELLER', 'FINANCES', 'PURCHASES'));
 
 router.get('/', controller.findAll);
 router.get('/:id', controller.findById);

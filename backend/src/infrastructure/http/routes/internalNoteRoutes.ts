@@ -6,6 +6,8 @@ const router = Router();
 const ctrl   = new InternalNoteController();
 
 router.use(authMiddleware);
+// Depósito (WAREHOUSE_CLERK) no accede a esta sección, ni siquiera para leer.
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN', 'SELLER', 'FINANCES', 'PURCHASES'));
 
 router.get('/',    ctrl.findAll);
 router.get('/:id', ctrl.findById);

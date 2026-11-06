@@ -15,9 +15,10 @@ const remitoController = new RemitoController();
 
 router.use(authMiddleware);
 
+// Depósito arma y entrega la mercadería: crea, entrega y envía remitos.
 router.post(
   '/',
-  requireRoles('ADMIN', 'SELLER'),
+  requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'),
   validate({ body: createRemitoSchema }),
   remitoController.create
 );
@@ -27,7 +28,7 @@ router.get('/unbilled', remitoController.findUnbilled);
 router.get('/:id', remitoController.findById);
 router.post(
   '/:id/deliver',
-  requireRoles('ADMIN', 'SELLER'),
+  requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'),
   blockIfPendingApproval('REMITO'),
   validate({ body: deliverRemitoSchema }),
   remitoController.deliver
@@ -37,6 +38,6 @@ router.post(
   requireRoles('SUPER_ADMIN', 'ADMIN'),
   ...withApproval('remitos.cancel', resolveRemitoCancel, remitoController.cancel)
 );
-router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), remitoController.sendEmail);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'), remitoController.sendEmail);
 
 export { router as remitoRoutes };

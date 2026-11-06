@@ -14,6 +14,8 @@ const currentAccountController = new CurrentAccountController();
 
 router.use(authMiddleware);
 router.use(requireFeature('current_accounts'));
+// Depósito (WAREHOUSE_CLERK) no accede a esta sección, ni siquiera para leer.
+router.use(requireRoles('SUPER_ADMIN', 'ADMIN', 'SELLER', 'FINANCES', 'PURCHASES'));
 
 router.get('/', currentAccountController.findAll);
 router.get('/stats', currentAccountController.getStats);
