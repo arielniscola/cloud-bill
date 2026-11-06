@@ -8,6 +8,8 @@ import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import Pagination from '../../components/shared/Pagination';
 import { remitosService, customersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
+import { useAuthStore } from '../../stores';
+import { roleAllowed } from '../../utils/roles';
 import { formatDate } from '../../utils/formatters';
 import {
   REMITO_STATUSES,
@@ -82,6 +84,8 @@ function SkeletonRows({ count }: { count: number }) {
 // ── Page ───────────────────────────────────────────────────────────
 export default function RemitosPage() {
   const navigate = useNavigate();
+  // Mismos roles que POST /remitos en el backend.
+  const canCreate = roleAllowed(useAuthStore((s) => s.user?.role), ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK']);
 
   // Data
   const [remitos,   setRemitos]   = useState<Remito[]>([]);
@@ -156,10 +160,12 @@ export default function RemitosPage() {
             : undefined
         }
         actions={
-          <Button onClick={() => navigate('/remitos/new')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo remito
-          </Button>
+          canCreate ? (
+            <Button onClick={() => navigate('/remitos/new')}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo remito
+            </Button>
+          ) : undefined
         }
       />
 
@@ -285,7 +291,7 @@ export default function RemitosPage() {
             <p className="text-sm text-gray-400 dark:text-slate-500 mb-5 max-w-xs">
               {hasFilters
                 ? 'Probá ajustando los filtros para encontrar lo que buscás.'
-                : 'Creá tu primer remito para registrar entregas de mercadería.'}
+                : (canCreate ? 'Creá tu primer remito para registrar entregas de mercadería.' : 'Todavía no hay remitos cargados.')}
             </p>
             {hasFilters ? (
               <button
@@ -294,12 +300,12 @@ export default function RemitosPage() {
               >
                 Limpiar filtros
               </button>
-            ) : (
+            ) : canCreate ? (
               <Button onClick={() => navigate('/remitos/new')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Nuevo remito
               </Button>
-            )}
+            ) : null}
           </div>
         )}
 

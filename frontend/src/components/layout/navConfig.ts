@@ -37,6 +37,12 @@ export interface NavModule {
   requiredRoles?: readonly string[];
 }
 
+/**
+ * Roles que ven las pantallas de back-office de ventas y los movimientos de
+ * stock. Depósito (WAREHOUSE_CLERK) queda afuera: solo remitos y consulta.
+ */
+export const NOT_WAREHOUSE_ROLES = ["ADMIN", "SELLER", "FINANCES", "PURCHASES"] as const;
+
 export const superAdminModules: NavModule[] = [
   {
     key: "global",
@@ -64,15 +70,15 @@ export const navModules: NavModule[] = [
     requiredRoles: ["ADMIN", "SELLER", "WAREHOUSE_CLERK", "FINANCES"] as const,
     items: [
       { name: "Órdenes de Pedido", href: "/orden-pedidos",      icon: ShoppingBag },
-      { name: "Ventas pendientes", href: "/ventas-pendientes",  icon: CloudOff },
+      { name: "Ventas pendientes", href: "/ventas-pendientes",  icon: CloudOff, requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Presupuestos",      href: "/budgets",            icon: Calculator },
       { name: "Facturas",          href: "/invoices",           icon: FileText },
-      { name: "Abonos",            href: "/recurring-invoices", icon: Repeat },
+      { name: "Abonos",            href: "/recurring-invoices", icon: Repeat, requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Remitos",           href: "/remitos",            icon: ClipboardList },
       { name: "Recibos",           href: "/recibos",            icon: Receipt },
       { name: "Clientes",          href: "/customers",          icon: Users },
-      { name: "Cuentas Corrientes",href: "/current-accounts",   icon: CreditCard, featureKey: "current_accounts" },
-      { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER", icon: FileEdit },
+      { name: "Cuentas Corrientes",href: "/current-accounts",   icon: CreditCard, featureKey: "current_accounts", requiredRoles: NOT_WAREHOUSE_ROLES },
+      { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER", icon: FileEdit, requiredRoles: NOT_WAREHOUSE_ROLES },
     ],
   },
 
@@ -107,7 +113,7 @@ export const navModules: NavModule[] = [
       { name: "Categorías",            href: "/categories",              icon: Layers,        section: "Productos" },
       { name: "Campos personalizados", href: "/products/custom-fields",  icon: Sliders,       section: "Productos" },
       { name: "Inventario",            href: "/stock",                   icon: PackageSearch, section: "Stock" },
-      { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock" },
+      { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Transferencias",        href: "/stock/transfer",          icon: ArrowRightLeft,section: "Stock", featureKey: "multi_warehouse" },
       { name: "Conteo físico",         href: "/stock/physical-count",    icon: ClipboardCheck,section: "Stock" },
       // Depósito carga la recepción y un admin la confirma; los admins la ven en Compras › Remitos de Compra.

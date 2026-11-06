@@ -10,6 +10,8 @@ import { pdf } from '@react-pdf/renderer';
 import { Badge, Button, Modal, Input } from '../../components/ui';
 import { PageHeader, ConfirmDialog, SendEmailModal, DocumentHistory } from '../../components/shared';
 import { remitosService } from '../../services';
+import { useAuthStore } from '../../stores';
+import { roleAllowed } from '../../utils/roles';
 import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
 import { formatDate, formatCuit } from '../../utils/formatters';
 import { REMITO_STATUSES } from '../../utils/constants';
@@ -61,6 +63,11 @@ function SkeletonDetail() {
 export default function RemitoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const role = useAuthStore((s) => s.user?.role);
+  // Entregar / enviar: también Depósito (mismos roles que el backend).
+  const canDeliverRole = roleAllowed(role, ['ADMIN', 'SELLER', 'WAREHOUSE_CLERK']);
+  // Facturar y cancelar quedan para ventas/administración.
+  const canWrite = roleAllowed(role, ['ADMIN', 'SELLER']);
   const [remito, setRemito] = useState<Remito | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -195,23 +202,25 @@ export default function RemitoDetailPage() {
               <Printer className="w-4 h-4 mr-2" />
               Imprimir / PDF
             </Button>
-            <Button variant="outline" onClick={() => setShowEmailModal(true)}>
-              <Mail className="w-4 h-4 mr-2" />
-              Enviar
-            </Button>
-            {canBill && (
+            {canDeliverRole && (
+              <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+                <Mail className="w-4 h-4 mr-2" />
+                Enviar
+              </Button>
+            )}
+            {canWrite && canBill && (
               <Button onClick={() => setShowBillModal(true)}>
                 <Receipt className="w-4 h-4 mr-2" />
                 Facturar
               </Button>
             )}
-            {canDeliver && (
+            {canDeliverRole && canDeliver && (
               <Button onClick={openDeliverModal}>
                 <Truck className="w-4 h-4 mr-2" />
                 Registrar entrega
               </Button>
             )}
-            {canCancel && !remito.billedInvoice && (
+            {canWrite && canCancel && !remito.billedInvoice && (
               <Button variant="danger" onClick={() => setShowCancelDialog(true)}>
                 <XCircle className="w-4 h-4 mr-2" />
                 Cancelar

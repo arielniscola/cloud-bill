@@ -150,6 +150,7 @@ export default function HomePage() {
     if (it.access === 'write' && !perms.canWrite) return false;
     if (it.access === 'purchases' && !perms.canAccessPurchases) return false;
     if (it.access === 'finances' && !perms.canAccessFinances) return false;
+    if (it.access === 'notWarehouse' && perms.isWarehouseClerk) return false;
     return true;
   });
   const availableIds = new Set(availableShortcuts.map((a) => a.id));

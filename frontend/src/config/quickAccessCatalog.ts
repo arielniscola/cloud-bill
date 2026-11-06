@@ -8,7 +8,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { FeatureKey } from '../utils/planFeatures';
 
 /** Permiso de rol requerido para un acceso (mapea a flags de usePermissions). */
-export type QuickAccessRole = 'write' | 'purchases' | 'finances';
+export type QuickAccessRole = 'write' | 'purchases' | 'finances' | 'notWarehouse';
 
 export interface QuickAccessItem {
   id: string;
@@ -37,7 +37,7 @@ export const QUICK_ACCESS_CATALOG: QuickAccessItem[] = [
   { id: 'recibos',           label: 'Recibos',          href: '/recibos',       icon: Receipt,     bg: 'bg-teal-50 dark:bg-teal-900/30',      color: 'text-teal-500',    module: 'ventas' },
   { id: 'clientes',          label: 'Clientes',         href: '/customers',     icon: Users,       bg: 'bg-rose-50 dark:bg-rose-900/30',      color: 'text-rose-500',    module: 'ventas' },
   { id: 'nuevo-cliente',     label: 'Nuevo cliente',    href: '/customers/new', icon: UserPlus,    bg: 'bg-rose-50 dark:bg-rose-900/30',      color: 'text-rose-500',    module: 'ventas', access: 'write' },
-  { id: 'cuentas-corrientes',label: 'Ctas. Corrientes', href: '/current-accounts', icon: ArrowLeftRight, bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', color: 'text-fuchsia-500', module: 'ventas', feature: 'current_accounts' },
+  { id: 'cuentas-corrientes',label: 'Ctas. Corrientes', href: '/current-accounts', icon: ArrowLeftRight, bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', color: 'text-fuchsia-500', module: 'ventas', feature: 'current_accounts', access: 'notWarehouse' },
 
   // ── Catálogo ──
   { id: 'productos',         label: 'Productos',        href: '/products',      icon: Package,      bg: 'bg-emerald-50 dark:bg-emerald-900/30', color: 'text-emerald-500', module: 'catalogo' },

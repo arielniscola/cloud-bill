@@ -157,7 +157,6 @@ export default function AppRoutes() {
         <Route path="/warehouses" element={<WarehousesPage />} />
         <Route path="/warehouses/:id" element={<WarehouseDetailPage />} />
         <Route path="/stock" element={<StockPage />} />
-        <Route path="/stock/movements" element={<StockMovementsPage />} />
         <Route element={<FeatureRouteGuard feature="multi_warehouse" />}>
           <Route path="/stock/transfer" element={<StockTransferPage />} />
         </Route>
@@ -168,12 +167,26 @@ export default function AppRoutes() {
         </Route>
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
-        <Route path="/recurring-invoices" element={<RecurringInvoicesPage />} />
         <Route path="/remitos" element={<RemitosPage />} />
         <Route path="/remitos/:id" element={<RemitoDetailPage />} />
-        <Route element={<FeatureRouteGuard feature="current_accounts" />}>
-          <Route path="/current-accounts" element={<CurrentAccountsPage />} />
-          <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
+
+        {/* Fuera del alcance de Depósito: CC, abonos, notas internas,
+            ventas pendientes y movimientos de stock. */}
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES']} />}>
+          <Route path="/stock/movements" element={<StockMovementsPage />} />
+          <Route path="/recurring-invoices" element={<RecurringInvoicesPage />} />
+          <Route element={<FeatureRouteGuard feature="current_accounts" />}>
+            <Route path="/current-accounts" element={<CurrentAccountsPage />} />
+            <Route path="/current-accounts/:customerId" element={<AccountDetailPage />} />
+          </Route>
+          <Route path="/internal-notes" element={<InternalNotesPage />} />
+          {/* Ventas cargadas sin conexion: accesible siempre, tambien offline */}
+          <Route path="/ventas-pendientes" element={<PendingSalesPage />} />
+        </Route>
+
+        {/* Remitos de venta: también Depósito (arma y entrega la mercadería). */}
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER', 'WAREHOUSE_CLERK']} />}>
+          <Route path="/remitos/new" element={<RemitoFormPage />} />
         </Route>
 
         {/* Write routes — ADMIN + SELLER only */}
@@ -191,7 +204,6 @@ export default function AppRoutes() {
           <Route path="/invoices/:id/edit" element={<InvoiceFormPage />} />
           <Route path="/recurring-invoices/new" element={<RecurringInvoiceFormPage />} />
           <Route path="/recurring-invoices/:id/edit" element={<RecurringInvoiceFormPage />} />
-          <Route path="/remitos/new" element={<RemitoFormPage />} />
         </Route>
 
         {/* Finances & System — ADMIN only */}
@@ -304,13 +316,8 @@ export default function AppRoutes() {
           <Route path="/banco-cheques" element={<BancoCheques />} />
         </Route>
 
-        {/* Notas Internas */}
-        <Route path="/internal-notes" element={<InternalNotesPage />} />
-
         {/* Órdenes de Pedido */}
         <Route path="/orden-pedidos" element={<OrdenPedidosPage />} />
-        {/* Ventas cargadas sin conexion: accesible siempre, tambien offline */}
-        <Route path="/ventas-pendientes" element={<PendingSalesPage />} />
         <Route path="/orden-pedidos/:id" element={<OrdenPedidoDetailPage />} />
         <Route element={<RoleGuard allowed={['ADMIN', 'SELLER']} />}>
           <Route path="/orden-pedidos/new" element={<OrdenPedidoFormPage />} />

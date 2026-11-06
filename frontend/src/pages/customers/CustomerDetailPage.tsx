@@ -70,7 +70,7 @@ const BUDGET_OPEN = new Set(['DRAFT', 'SENT', 'ACCEPTED']);
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { canWrite } = usePermissions();
+  const { canWrite, isWarehouseClerk } = usePermissions();
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -229,7 +229,8 @@ export default function CustomerDetailPage() {
         )}
       </div>
 
-      {overview && <CustomerOverviewPanel customerId={customer.id} overview={overview} />}
+      {/* Depósito no ve cuenta corriente ni deuda del cliente. */}
+      {overview && !isWarehouseClerk && <CustomerOverviewPanel customerId={customer.id} overview={overview} />}
 
       {/* Tabs */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">

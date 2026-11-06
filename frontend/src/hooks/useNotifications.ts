@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { stockService, invoicesService, currentAccountsService } from '../services';
+import { useAuthStore } from '../stores';
 import { remindersService } from '../services/reminders.service';
 import type { Stock, Invoice, CurrentAccount } from '../types';
 import type { Reminder } from '../services/reminders.service';
@@ -78,6 +79,8 @@ function reminderToNotification(r: Reminder): Notification {
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
+  // Depósito no ve cuentas corrientes: no se le avisan deudas.
+  const isWarehouseClerk = useAuthStore((s) => s.user?.role) === 'WAREHOUSE_CLERK';
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -86,7 +89,7 @@ export function useNotifications() {
         await Promise.allSettled([
           stockService.getLowStock(),
           invoicesService.getAll({ status: 'ISSUED', limit: 50 }),
-          currentAccountsService.getAllWithDebt(),
+          isWarehouseClerk ? Promise.resolve([] as CurrentAccount[]) : currentAccountsService.getAllWithDebt(),
           remindersService.getReminders(7),
         ]);
 
@@ -116,7 +119,7 @@ export function useNotifications() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isWarehouseClerk]);
 
   useEffect(() => {
     fetchNotifications();
