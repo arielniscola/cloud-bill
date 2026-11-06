@@ -44,7 +44,7 @@ export const QUICK_ACCESS_CATALOG: QuickAccessItem[] = [
   { id: 'nuevo-producto',    label: 'Nuevo producto',   href: '/products/new',  icon: PackagePlus,  bg: 'bg-emerald-50 dark:bg-emerald-900/30', color: 'text-emerald-500', module: 'catalogo', access: 'write' },
   { id: 'stock',             label: 'Stock',            href: '/stock',         icon: Boxes,        bg: 'bg-amber-50 dark:bg-amber-900/30',     color: 'text-amber-500',   module: 'catalogo' },
   { id: 'almacenes',         label: 'Almacenes',        href: '/warehouses',    icon: Warehouse,    bg: 'bg-blue-50 dark:bg-blue-900/30',       color: 'text-blue-500',    module: 'catalogo' },
-  { id: 'stock-inteligente', label: 'Stock Intelig.',   href: '/stock/intelligence',   icon: Brain,          bg: 'bg-orange-50 dark:bg-orange-900/30', color: 'text-orange-500', module: 'catalogo', feature: 'stock_intelligence' },
+  { id: 'stock-inteligente', label: 'Stock Intelig.',   href: '/stock/intelligence',   icon: Brain,          bg: 'bg-orange-50 dark:bg-orange-900/30', color: 'text-orange-500', module: 'catalogo', feature: 'stock_intelligence', access: 'notWarehouse' },
   { id: 'conteo-fisico',     label: 'Conteo Físico',    href: '/stock/physical-count', icon: ClipboardCheck, bg: 'bg-amber-50 dark:bg-amber-900/30',   color: 'text-amber-500',  module: 'catalogo' },
 
   // ── Compras ──

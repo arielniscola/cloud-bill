@@ -148,9 +148,6 @@ export default function AppRoutes() {
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/:id" element={<ProductDetailPage />} />
-        <Route path="/rubros" element={<RubrosPage />} />
-        <Route path="/brands" element={<BrandsPage />} />
-        <Route path="/categories" element={<CategoriesPage />} />
         <Route element={<RoleGuard allowed={['ADMIN']} />}>
           <Route path="/products/custom-fields" element={<ProductCustomFieldsPage />} />
         </Route>
@@ -162,18 +159,22 @@ export default function AppRoutes() {
         </Route>
         <Route path="/stock/physical-count" element={<StockPhysicalCountPage />} />
         <Route path="/stock/lots" element={<StockLotsPage />} />
-        <Route element={<FeatureRouteGuard feature="stock_intelligence" />}>
-          <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
-        </Route>
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
         <Route path="/remitos" element={<RemitosPage />} />
         <Route path="/remitos/:id" element={<RemitoDetailPage />} />
 
         {/* Fuera del alcance de Depósito: CC, abonos, notas internas,
-            ventas pendientes y movimientos de stock. */}
+            ventas pendientes, movimientos de stock, rubros, marcas,
+            categorías y stock inteligente. */}
         <Route element={<RoleGuard allowed={['ADMIN', 'SELLER', 'FINANCES', 'PURCHASES']} />}>
           <Route path="/stock/movements" element={<StockMovementsPage />} />
+          <Route path="/rubros" element={<RubrosPage />} />
+          <Route path="/brands" element={<BrandsPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route element={<FeatureRouteGuard feature="stock_intelligence" />}>
+            <Route path="/stock/intelligence" element={<StockIntelligencePage />} />
+          </Route>
           <Route path="/recurring-invoices" element={<RecurringInvoicesPage />} />
           <Route element={<FeatureRouteGuard feature="current_accounts" />}>
             <Route path="/current-accounts" element={<CurrentAccountsPage />} />

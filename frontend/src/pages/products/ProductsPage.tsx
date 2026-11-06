@@ -442,12 +442,14 @@ function BulkFieldsModal({
 
 // ── Panel de detalle ─────────────────────────────────────────────
 function DetailPanel({
-  product, onClose, onSaved, onOpenDetail,
+  product, onClose, onSaved, onOpenDetail, readOnly = false,
 }: {
   product: Product | null;
   onClose: () => void;
   onSaved: () => void;
   onOpenDetail: (id: string) => void;
+  /** Sin permiso de escritura (Depósito): precio y costo solo se muestran. */
+  readOnly?: boolean;
 }) {
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState('');
@@ -557,11 +559,11 @@ function DetailPanel({
         <div className="grid grid-cols-2 gap-2.5">
           <div>
             <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Costo</label>
-            <input type="text" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} className={fieldClass} />
+            <input type="text" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} readOnly={readOnly} className={fieldClass} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Precio de venta</label>
-            <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className={clsx(fieldClass, 'font-semibold')} />
+            <input type="text" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} readOnly={readOnly} className={clsx(fieldClass, 'font-semibold')} />
           </div>
         </div>
 
@@ -651,10 +653,12 @@ function DetailPanel({
       </div>
 
       <div className="p-3.5 flex gap-2">
-        <Button className="flex-1" isLoading={isSaving} disabled={!canSave} onClick={handleSave}>
-          Guardar precio
-        </Button>
-        <Button variant="outline" onClick={() => onOpenDetail(product.id)}>Ficha completa</Button>
+        {!readOnly && (
+          <Button className="flex-1" isLoading={isSaving} disabled={!canSave} onClick={handleSave}>
+            Guardar precio
+          </Button>
+        )}
+        <Button variant="outline" className={readOnly ? 'flex-1' : undefined} onClick={() => onOpenDetail(product.id)}>Ficha completa</Button>
       </div>
     </div>
   );
@@ -664,7 +668,8 @@ type StatusFilter = 'all' | 'active' | 'inactive';
 
 export default function ProductsPage() {
   const navigate = useNavigate();
-  const { canUseModule } = usePermissions();
+  // canWrite = ADMIN/SELLER; Depósito y el resto solo consultan el catálogo.
+  const { canUseModule, canWrite } = usePermissions();
   const imagesEnabled = canUseModule('imagenes');
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -891,7 +896,7 @@ export default function ProductsPage() {
       <PageHeader
         title="Productos"
         subtitle={`${total} ${total === 1 ? 'producto' : 'productos'}${activeFilterCount > 0 ? ' · filtros activos' : ''}`}
-        actions={
+        actions={canWrite ? (
           <div className="flex items-center gap-2">
             <HeaderMenu
               items={[
@@ -907,7 +912,7 @@ export default function ProductsPage() {
               Nuevo producto
             </Button>
           </div>
-        }
+        ) : undefined}
       />
 
       <div className="flex gap-4 items-start">
@@ -982,7 +987,7 @@ export default function ProductsPage() {
           </div>
 
           {/* Barra de selección */}
-          {selectedIds.size > 0 && (
+          {canWrite && selectedIds.size > 0 && (
             <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-200 dark:border-indigo-800">
               <span className="text-[13px] font-semibold text-indigo-900 dark:text-indigo-300">
                 {selectedIds.size} {selectedIds.size === 1 ? 'producto seleccionado' : 'productos seleccionados'}
@@ -1012,14 +1017,14 @@ export default function ProductsPage() {
 
           {/* Cabecera */}
           <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50/80 dark:bg-slate-700/50 border-b border-gray-100 dark:border-slate-700">
-            <input
+            {canWrite && <input
               type="checkbox"
               checked={allSelected}
               ref={(el) => { if (el) el.indeterminate = someSelected; }}
               onChange={toggleAll}
               aria-label="Seleccionar todos"
               className="w-4 h-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500/30 flex-shrink-0"
-            />
+            />}
             <div className="flex-1 min-w-0">
               <SortHeader label="Producto" sortKey="name" current={sortBy} order={sortOrder} onSort={handleSort} />
             </div>
@@ -1042,7 +1047,7 @@ export default function ProductsPage() {
               <span className="w-[56px] text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 flex-shrink-0">IVA</span>
             )}
             <span className="w-[86px] text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 flex-shrink-0">Estado</span>
-            {showSecondary && <span className="w-[68px] flex-shrink-0" />}
+            {showSecondary && canWrite && <span className="w-[68px] flex-shrink-0" />}
           </div>
 
           {/* Filas */}
@@ -1076,12 +1081,14 @@ export default function ProductsPage() {
                 <>
                   <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">Sin productos</p>
                   <p className="text-sm text-gray-400 dark:text-slate-500 max-w-xs leading-relaxed mb-5">
-                    Creá tu catálogo de productos para usarlos en facturas, remitos y compras.
+                    {canWrite ? 'Creá tu catálogo de productos para usarlos en facturas, remitos y compras.' : 'Todavía no hay productos cargados.'}
                   </p>
-                  <Button onClick={() => navigate('/products/new')}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Nuevo producto
-                  </Button>
+                  {canWrite && (
+                    <Button onClick={() => navigate('/products/new')}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Nuevo producto
+                    </Button>
+                  )}
                 </>
               )}
             </div>
@@ -1105,14 +1112,14 @@ export default function ProductsPage() {
                       !p.isActive && !isOpen && 'bg-gray-50/40 dark:bg-slate-900/20'
                     )}
                   >
-                    <input
+                    {canWrite && <input
                       type="checkbox"
                       checked={isSelected}
                       onClick={(e) => e.stopPropagation()}
                       onChange={() => toggleRow(p.id)}
                       aria-label={`Seleccionar ${p.name}`}
                       className="w-4 h-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500/30 flex-shrink-0"
-                    />
+                    />}
 
                     {imagesEnabled && (
                       <div className="w-9 h-9 flex-shrink-0 rounded-md border border-gray-100 dark:border-slate-700 overflow-hidden bg-gray-50 dark:bg-slate-800 flex items-center justify-center">
@@ -1194,7 +1201,7 @@ export default function ProductsPage() {
                       {p.isActive ? 'Activo' : 'Inactivo'}
                     </span>
 
-                    {showSecondary && (
+                    {showSecondary && canWrite && (
                       <div className="w-[68px] flex items-center justify-end gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                         <button
                           title="Editar"
@@ -1236,6 +1243,7 @@ export default function ProductsPage() {
             onClose={closePanel}
             onSaved={fetchProducts}
             onOpenDetail={(id) => navigate(`/products/${id}`)}
+            readOnly={!canWrite}
           />
         )}
       </div>

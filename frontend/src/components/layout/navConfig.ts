@@ -108,10 +108,10 @@ export const navModules: NavModule[] = [
     moduleKey: "catalogo",
     items: [
       { name: "Productos",             href: "/products",                icon: Package,       section: "Productos" },
-      { name: "Rubros",                href: "/rubros",                  icon: FolderTree,    section: "Productos" },
-      { name: "Marcas",                href: "/brands",                  icon: Tag,           section: "Productos" },
-      { name: "Categorías",            href: "/categories",              icon: Layers,        section: "Productos" },
-      { name: "Campos personalizados", href: "/products/custom-fields",  icon: Sliders,       section: "Productos" },
+      { name: "Rubros",                href: "/rubros",                  icon: FolderTree,    section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
+      { name: "Marcas",                href: "/brands",                  icon: Tag,           section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
+      { name: "Categorías",            href: "/categories",              icon: Layers,        section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
+      { name: "Campos personalizados", href: "/products/custom-fields",  icon: Sliders,       section: "Productos", requiredRoles: ["ADMIN"] },
       { name: "Inventario",            href: "/stock",                   icon: PackageSearch, section: "Stock" },
       { name: "Movimientos",           href: "/stock/movements",         icon: BarChart2,     section: "Stock", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Transferencias",        href: "/stock/transfer",          icon: ArrowRightLeft,section: "Stock", featureKey: "multi_warehouse" },
@@ -120,7 +120,7 @@ export const navModules: NavModule[] = [
       { name: "Recepción de mercadería", href: "/purchase-remitos",      icon: PackagePlus,   section: "Stock", requiredRoles: ["WAREHOUSE_CLERK"] },
       { name: "Lotes y vencimientos",  href: "/stock/lots",              icon: CalendarClock, section: "Stock" },
       { name: "Almacenes",             href: "/warehouses",              icon: Warehouse,     section: "Stock" },
-      { name: "Inteligente",           href: "/stock/intelligence",      icon: Brain,         section: "Stock", featureKey: "stock_intelligence" },
+      { name: "Inteligente",           href: "/stock/intelligence",      icon: Brain,         section: "Stock", featureKey: "stock_intelligence", requiredRoles: NOT_WAREHOUSE_ROLES },
     ],
   },
 
