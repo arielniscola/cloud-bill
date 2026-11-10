@@ -19,6 +19,12 @@ export const ordenPedidoItemSchema = z.object({
 
 export const createOrdenPedidoSchema = z.object({
   customerId: z.string().uuid().optional().nullable(),
+  // Venta a Consumidor Final (sin cliente): nombre y DNI/CUIL del comprador, opcionales.
+  buyerName: z.string().trim().max(120).optional().nullable(),
+  buyerDocument: z.string().optional().nullable().refine(
+    (v) => !v || [7, 8, 11].includes(v.replace(/\D/g, '').length),
+    'El documento del comprador debe ser un DNI (7 u 8 dígitos) o un CUIL (11 dígitos)',
+  ),
   dueDate: z.string().optional().nullable(),
   currency: z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate: z.number().positive().default(1),

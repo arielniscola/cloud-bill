@@ -24,6 +24,7 @@ import {
 import { createReciboSchema } from '../../../application/dtos/recibo.dto';
 import { resolveSaleWarehouse, setSaleWarehouse, getSaleWarehouseId } from '../../../shared/utils/saleWarehouse';
 import { resolveConsumidorFinalCustomerId } from '../../../shared/utils/consumidorFinal';
+import { readBuyer, writeBuyer, normalizeBuyer } from '../../database/partyExtras';
 import prisma from '../../database/prisma';
 import { recalcInvoiceStatus } from '../../services/CustomerSettlementService';
 
@@ -220,6 +221,12 @@ export class OrdenPedidoController {
         items: stripItemLots(items),
       } as any);
       await saveLotSelections('orden_pedidos', op.id, lotSelections);
+      // Comprador a mano (nombre/DNI) solo si la orden va a Consumidor Final.
+      const buyer = data.customerId
+        ? { buyerName: null, buyerDocument: null }
+        : normalizeBuyer(data.buyerName, data.buyerDocument);
+      await writeBuyer('orden_pedidos', op.id, buyer);
+      Object.assign(op as any, buyer);
 
       // Persistir el depósito elegido: las reversas (cancelar/eliminar) y los
       // remitos deben operar sobre el mismo depósito que el alta.
@@ -353,7 +360,7 @@ export class OrdenPedidoController {
         throw new AppError('Solo se pueden editar órdenes de pedido en borrador', 400);
       }
 
-      const data = updateOrdenPedidoSchema.parse(req.body);
+      const { buyerName, buyerDocument, ...data } = updateOrdenPedidoSchema.parse(req.body);
       let updateData: any = { ...data };
 
       if (data.items) {
@@ -374,6 +381,14 @@ export class OrdenPedidoController {
       }
 
       const updated = await repo.update(req.params.id, updateData);
+      if (buyerName !== undefined || buyerDocument !== undefined || data.customerId !== undefined) {
+        const customerId = data.customerId !== undefined ? data.customerId : op.customerId;
+        const buyer = customerId
+          ? { buyerName: null, buyerDocument: null }
+          : normalizeBuyer(buyerName ?? (op as any).buyerName, buyerDocument ?? (op as any).buyerDocument);
+        await writeBuyer('orden_pedidos', op.id, buyer);
+        Object.assign(updated as any, buyer);
+      }
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -519,6 +534,8 @@ export class OrdenPedidoController {
 
       // La factura hereda el depósito de la orden (relevante para NC futuras).
       await setSaleWarehouse('invoices', invoice.id, await getSaleWarehouseId('orden_pedidos', op.id));
+      // ... y el comprador cargado a mano si la orden era a Consumidor Final.
+      if (!op.customerId) await writeBuyer('invoices', invoice.id, await readBuyer('orden_pedidos', op.id));
 
       // Mark OP as CONVERTED and link to invoice
       await opRepo.update(req.params.id, { status: 'CONVERTED', invoiceId: invoice.id });

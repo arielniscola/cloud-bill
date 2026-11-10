@@ -471,7 +471,7 @@ export class AfipService {
     const wsfeClient = await createAfipSoapClient(WSFE_WSDL[env]);
     const auth = { Token: ta.token, Sign: ta.sign, Cuit: config.cuit };
 
-    const { docTipo, docNro } = this.receptorDoc(invoice.customer);
+    const { docTipo, docNro } = this.receptorDoc(invoice.customer, (invoice as any).buyerDocument);
 
     // Día ARGENTINO: con getFullYear/getMonth/getDate en un servidor en UTC,
     // una venta de las 21:00 se declaraba con la fecha del día siguiente.
@@ -619,7 +619,7 @@ export class AfipService {
     // Número inexistente → ARCA responde con Errors (602) y sin ResultGet.
     if (!r?.CodAutorizacion || r.Resultado !== 'A') return null;
 
-    const { docTipo, docNro } = this.receptorDoc(invoice.customer);
+    const { docTipo, docNro } = this.receptorDoc(invoice.customer, (invoice as any).buyerDocument);
     const sameReceptor = Number(r.DocTipo) === docTipo && String(r.DocNro) === String(Number(docNro));
     const sameTotal = Math.abs(Number(r.ImpTotal) - invoice.total.toNumber()) < 0.01;
     if (!sameReceptor || !sameTotal) return null;
@@ -633,7 +633,16 @@ export class AfipService {
     };
   }
 
-  private receptorDoc(customer: { taxId: string | null; taxCondition: string }): { docTipo: number; docNro: string } {
+  private receptorDoc(
+    customer: { taxId: string | null; taxCondition: string },
+    buyerDocument?: string | null,
+  ): { docTipo: number; docNro: string } {
+    // Consumidor Final con DNI/CUIL cargado a mano en la venta: se identifica
+    // (DocTipo 96 = DNI, 86 = CUIL) en vez de "sin identificar" (99).
+    const buyerDoc = (buyerDocument ?? '').replace(/\D/g, '');
+    if (customer.taxCondition === 'CONSUMIDOR_FINAL' && buyerDoc) {
+      return { docTipo: buyerDoc.length === 11 ? 86 : 96, docNro: buyerDoc };
+    }
     const docTipo = DOC_TIPO_MAP[customer.taxCondition] ?? 99;
     const docNro = docTipo === 80 && customer.taxId ? customer.taxId.replace(/-/g, '') : '0';
     return { docTipo, docNro };

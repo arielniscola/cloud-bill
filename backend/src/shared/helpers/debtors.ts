@@ -289,7 +289,6 @@ export async function supplierDebtAsOf(
       WHERE pi."companyId" = ${companyId}
         AND (${fm}::text IS NULL OR pi."fiscalMode" = ${fm})
         AND pi."supplierId" IS NOT NULL
-        AND pi."saleCondition" = 'CUENTA_CORRIENTE'
         AND pi.date <= ${cutoff}
         -- ver comentario en customerDebtAsOf
         AND (${since}::timestamptz IS NULL OR pi.date >= ${since})
@@ -379,7 +378,6 @@ export async function supplierCreditsAsOf(
       WHERE pi."companyId" = ${companyId}
         AND (${fm}::text IS NULL OR pi."fiscalMode" = ${fm})
         AND pi."supplierId" IS NOT NULL
-        AND pi."saleCondition" = 'CUENTA_CORRIENTE'
         AND pi.date <= ${cutoff}
         -- ver comentario en customerDebtAsOf
         AND (${since}::timestamptz IS NULL OR pi.date >= ${since})

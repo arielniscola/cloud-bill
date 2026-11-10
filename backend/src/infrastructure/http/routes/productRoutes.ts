@@ -4,6 +4,7 @@ import { ImportController } from '../controllers/ImportController';
 import { ProductImageController } from '../controllers/ProductImageController';
 import { ProductPriceHistoryController } from '../controllers/ProductPriceHistoryController';
 import { ProductOverviewController } from '../controllers/ProductOverviewController';
+import { PriceListController } from '../controllers/PriceListController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { requireModule } from '../middlewares/moduleMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
@@ -19,6 +20,7 @@ const importController  = new ImportController();
 const productImageController = new ProductImageController();
 const priceHistoryController = new ProductPriceHistoryController();
 const overviewController = new ProductOverviewController();
+const priceListController = new PriceListController();
 
 router.use(authMiddleware);
 
@@ -28,6 +30,9 @@ router.patch('/bulk-price-update', requireRoles('ADMIN', 'SELLER'), productContr
 router.patch('/bulk-update', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdate);
 router.patch('/bulk-update-by-filter', requireRoles('ADMIN', 'SELLER'), productController.bulkUpdateByFilter);
 router.get('/usd-costs/summary', productController.usdCostSummary);
+// Lista de precios (consulta + actualización con la cotización del día).
+router.get('/price-list', priceListController.list);
+router.post('/price-list/update-from-rate', requireRoles('ADMIN', 'SELLER'), priceListController.updateFromRate);
 router.post('/recalculate-usd-costs', requireRoles('ADMIN', 'SELLER'), productController.recalculateUsdCosts);
 // Historial de precios: operaciones (masivas, importación, etc.) y deshacer.
 router.get('/price-history/operations', priceHistoryController.operations);

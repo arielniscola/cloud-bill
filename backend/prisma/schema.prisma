@@ -358,6 +358,8 @@ model Invoice {
   notes              String?
   paymentTerms       String?
   transport          String? // Transporte (texto libre, se imprime)
+  buyerName          String? // Consumidor Final sin cliente: nombre cargado a mano
+  buyerDocument      String? // Consumidor Final sin cliente: DNI/CUIL (solo dígitos)
   saleCondition      String        @default("CONTADO") // CONTADO | CUENTA_CORRIENTE
   stockBehavior      String        @default("DISCOUNT") // DISCOUNT | RESERVE
   originInvoiceId    String? // FK to origin invoice (for NC/ND)
@@ -541,6 +543,7 @@ model CashRegister {
   ordenPedidosCashReg   OrdenPedido[]       @relation("OrdenPedidoCashRegister")
   ordenPedidosInvoiceCR OrdenPedido[]       @relation("OrdenPedidoInvoiceCashRegister")
   ordenPagos            OrdenPago[]
+  ordenPagoPayments     OrdenPagoPayment[]
 
   @@map("cash_registers")
 }
@@ -1120,6 +1123,8 @@ model OrdenPedido {
   lotSelections         Json? // lotes elegidos por producto, hasta que se mueve el stock
   number                String
   customerId            String?
+  buyerName             String? // Consumidor Final sin cliente: nombre cargado a mano
+  buyerDocument         String? // Consumidor Final sin cliente: DNI/CUIL (solo dígitos)
   userId                String
   date                  DateTime  @default(now())
   dueDate               DateTime?
@@ -1289,12 +1294,34 @@ model OrdenPago {
   items                    OrdenPagoItem[]
   ajustes                  OrdenPagoAjuste[]
   retenciones              OrdenPagoRetencion[]
+  payments                 OrdenPagoPayment[]
   supplierAccountMovements SupplierAccountMovement[]
 
   fiscalMode String @default("FORMAL")
 
   @@unique([companyId, number])
   @@map("orden_pagos")
+}
+
+// Forma de pago de una OP (puede haber varias: efectivo, transferencia, cheques…).
+// La suma de las líneas es el neto de la OP (amount - retentionAmount). Los
+// cheques viven en "cheques" (ordenPagoId) y además suman una línea CHECK.
+// paymentMethod de la OP = el método si hay uno solo, MIXED si hay varios.
+model OrdenPagoPayment {
+  id             String   @id @default(uuid())
+  ordenPagoId    String
+  method         String // CASH | BANK_TRANSFER | CHECK | CARD | MERCADO_PAGO | COMPENSACION
+  amount         Decimal  @db.Decimal(12, 2)
+  cashRegisterId String?
+  bank           String?
+  reference      String?
+  createdAt      DateTime @default(now())
+
+  ordenPago    OrdenPago     @relation(fields: [ordenPagoId], references: [id], onDelete: Cascade)
+  cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
+
+  @@index([ordenPagoId], map: "idx_op_payments_op")
+  @@map("orden_pago_payments")
 }
 
 // Retención practicada al pagar. No reduce la deuda con el proveedor (la

@@ -4,7 +4,8 @@ import { round2 } from '../../../shared/utils/money';
 import { Prisma } from '@prisma/client';
 import { IOrdenPagoRepository, OrdenPagoFilters, OrdenPagoSummary } from '../../../domain/repositories/IOrdenPagoRepository';
 import { IChequeRepository } from '../../../domain/repositories/IChequeRepository';
-import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput, OrdenPagoCheque, OrdenPagoAjuste, OrdenPagoRetencion, CreateOrdenPagoRetencionInput } from '../../../domain/entities/OrdenPago';
+import { OrdenPago, OrdenPagoWithRelations, CreateOrdenPagoInput, OrdenPagoCheque, OrdenPagoAjuste, OrdenPagoRetencion, CreateOrdenPagoRetencionInput, OrdenPagoPaymentLine } from '../../../domain/entities/OrdenPago';
+import { AppError } from '../../../shared/errors/AppError';
 import { SupplierAccountMovement, CreateSupplierMovementInput, SupplierMovementFilters } from '../../../domain/entities/SupplierAccountMovement';
 import { OpenDebitItem, OpenCreditItem, CreateSupplierCcAdjustmentInput, SupplierCcAdjustment } from '../../../domain/entities/SupplierCcAdjustment';
 import { PaginationParams, PaginatedResult } from '../../../shared/types';
@@ -35,7 +36,7 @@ type RawOrdenPago = {
 type RawItem = {
   id: string; ordenPagoId: string; purchaseId: string | null; purchaseInvoiceId: string | null; amount: any;
   purchaseNumber?: string; purchaseTotal?: any; purchasePaidAmount?: any; purchaseDate?: Date;
-  invoiceNumber?: string; invoiceType?: string; invoiceAmount?: any; invoiceStatus?: string; invoiceCurrency?: string; invoiceDate?: Date | null;
+  invoiceNumber?: string; invoiceType?: string; invoiceAmount?: any; invoiceStatus?: string; invoiceCurrency?: string; invoiceDate?: Date | null; invoiceFiscalMode?: string | null;
 };
 
 type RawMovement = {
@@ -83,7 +84,7 @@ function mapOrdenPago(row: RawOrdenPago, items: RawItem[]): OrdenPagoWithRelatio
         ? { id: i.purchaseId!, number: i.purchaseNumber, total: i.purchaseTotal, paidAmount: i.purchasePaidAmount, date: i.purchaseDate! }
         : undefined,
       invoice: i.invoiceNumber
-        ? { id: i.purchaseInvoiceId!, number: i.invoiceNumber, type: i.invoiceType!, amount: i.invoiceAmount, status: i.invoiceStatus!, currency: i.invoiceCurrency ?? 'ARS', date: i.invoiceDate ?? null }
+        ? { id: i.purchaseInvoiceId!, number: i.invoiceNumber, type: i.invoiceType!, amount: i.invoiceAmount, status: i.invoiceStatus!, currency: i.invoiceCurrency ?? 'ARS', date: i.invoiceDate ?? null, fiscalMode: i.invoiceFiscalMode ?? null }
         : undefined,
     })),
   };
@@ -102,7 +103,10 @@ function buildOrdenPagoWhere(filters: OrdenPagoFilters, skipStatus = false): Pri
   if (filters.status && !skipStatus) conditions.push(Prisma.sql`op.status = ${filters.status}`);
   // Anuladas fuera del listado (no de los totales: por eso viaja con skipStatus).
   if (filters.excludeCancelled && !skipStatus) conditions.push(Prisma.sql`op.status <> 'CANCELLED'`);
-  if (filters.paymentMethod) conditions.push(Prisma.sql`op."paymentMethod" = ${filters.paymentMethod}`);
+  // Por método: la OP de ese método o una MIXTA que lo incluya en sus formas de pago.
+  if (filters.paymentMethod) conditions.push(Prisma.sql`(op."paymentMethod" = ${filters.paymentMethod} OR EXISTS (
+    SELECT 1 FROM "orden_pago_payments" opp WHERE opp."ordenPagoId" = op.id AND opp.method = ${filters.paymentMethod}
+  ))`);
   if (filters.currency)      conditions.push(Prisma.sql`op.currency = ${filters.currency}`);
   if (filters.dateFrom)      conditions.push(Prisma.sql`op.date >= ${filters.dateFrom}`);
   if (filters.dateTo)        conditions.push(Prisma.sql`op.date <= ${filters.dateTo}`);
@@ -123,7 +127,7 @@ const ITEMS_SELECT = Prisma.sql`
     p."paidAmount" AS "purchasePaidAmount", p.date AS "purchaseDate",
     pi.number AS "invoiceNumber", pi.type AS "invoiceType",
     pi.amount AS "invoiceAmount", pi.status AS "invoiceStatus", pi.currency AS "invoiceCurrency",
-    pi.date AS "invoiceDate"
+    pi.date AS "invoiceDate", pi."fiscalMode" AS "invoiceFiscalMode"
   FROM "orden_pago_items" opi
   LEFT JOIN "purchases" p ON p.id = opi."purchaseId"
   LEFT JOIN "purchase_invoices" pi ON pi.id = opi."purchaseInvoiceId"
@@ -202,7 +206,22 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       certificate: r.certificate, notes: r.notes,
     }));
 
-    const op = { ...mapOrdenPago(rows[0], items), cheques, ajustes, retenciones };
+    const paymentRows = await prisma.$queryRaw<{
+      id: string; ordenPagoId: string; method: string; amount: any; cashRegisterId: string | null;
+      cashRegisterName: string | null; bank: string | null; reference: string | null;
+    }[]>`
+      SELECT p.id, p."ordenPagoId", p.method, p.amount, p."cashRegisterId", cr.name AS "cashRegisterName", p.bank, p.reference
+      FROM "orden_pago_payments" p
+      LEFT JOIN "cash_registers" cr ON cr.id = p."cashRegisterId"
+      WHERE p."ordenPagoId" = ${id}
+      ORDER BY p."createdAt" ASC, p.method ASC
+    `;
+    const payments: OrdenPagoPaymentLine[] = paymentRows.map((p) => ({
+      id: p.id, ordenPagoId: p.ordenPagoId, method: p.method, amount: p.amount,
+      cashRegisterId: p.cashRegisterId, cashRegisterName: p.cashRegisterName, bank: p.bank, reference: p.reference,
+    }));
+
+    const op = { ...mapOrdenPago(rows[0], items), cheques, ajustes, retenciones, payments };
     // Datos completos del proveedor para la impresión de la orden.
     if (op.supplier) {
       const [sup] = await prisma.$queryRaw<{
@@ -326,12 +345,6 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     const exchangeRate = data.exchangeRate ?? 1;
     const date = data.date ?? new Date();
 
-    // Solo el efectivo mueve caja física. Transferencia, Mercado Pago, tarjeta,
-    // cheque y compensación se saldan por fuera, así que no se les asocia caja.
-    const effectiveCashRegisterId = data.paymentMethod === 'CASH'
-      ? (data.cashRegisterId ?? null)
-      : null;
-
     const fiscalMode = (data as any).fiscalMode ?? 'FORMAL';
     // Monto base: suma de facturas seleccionadas o, si es pago a cuenta, el importe explícito.
     const baseAmount = data.items.length > 0
@@ -357,6 +370,19 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     if (retentionAmount > totalAmount + 0.005) {
       throw new Error('Las retenciones no pueden superar el total a pagar');
     }
+
+    // ── Formas de pago ──────────────────────────────────────────────────────
+    // Lo que sale por cada medio. Su suma tiene que dar el NETO (total menos
+    // retenciones). Los cheques suman como una línea CHECK por su total.
+    const net = round2(totalAmount - retentionAmount);
+    const { lines, attachCheques } = await this._buildPaymentLines(data, net, companyId);
+    const methods = [...new Set(lines.map((l) => l.method))];
+    const paymentMethod = methods.length === 1 ? methods[0] : 'MIXED';
+    // Compatibilidad: la columna de la OP guarda la caja de la (primera) línea en
+    // efectivo; la caja descuenta igual por línea (ver PrismaCashRegisterRepository).
+    const effectiveCashRegisterId = lines.find((l) => l.method === 'CASH' && l.cashRegisterId)?.cashRegisterId ?? null;
+    const headerBank = lines.length === 1 ? (lines[0].bank ?? data.bank ?? null) : (data.bank ?? null);
+    const headerReference = lines.length === 1 ? (lines[0].reference ?? data.reference ?? null) : (data.reference ?? null);
     // La orden, sus ítems, ajustes, retenciones y cheques se confirman o se
     // revierten juntos. Antes eran trece queries sueltas: un fallo a mitad
     // dejaba una OP sin sus retenciones, o con los cheques a medio endosar y
@@ -376,8 +402,8 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
           ${opId}, ${number}, ${data.supplierId}, ${data.userId},
           ${effectiveCashRegisterId}, ${companyId}, ${date},
           ${totalAmount},
-          ${currency}, ${exchangeRate}, ${data.paymentMethod},
-          ${data.reference ?? null}, ${data.bank ?? null},
+          ${currency}, ${exchangeRate}, ${paymentMethod},
+          ${headerReference}, ${headerBank},
           ${data.checkDueDate ?? null}, ${data.notes ?? null},
           'EMITTED', ${retentionAmount}, NOW(), NOW(), ${fiscalMode}
         )
@@ -428,13 +454,82 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         `;
       }
 
-      // Pago con cheques — solo cuando el método es CHECK
-      if (data.paymentMethod === 'CHECK') {
+      // Formas de pago
+      for (const l of lines) {
+        await tx.$executeRaw`
+          INSERT INTO "orden_pago_payments" ("id", "ordenPagoId", "method", "amount", "cashRegisterId", "bank", "reference")
+          VALUES (gen_random_uuid()::text, ${opId}, ${l.method}, ${l.amount}, ${l.cashRegisterId ?? null}, ${l.bank ?? null}, ${l.reference ?? null})
+        `;
+      }
+
+      // Cheques endosados / emitidos
+      if (attachCheques) {
         await this._attachCheques(opId, companyId, fiscalMode, data, currency, tx);
       }
     });
 
     return this.findById(opId) as Promise<OrdenPagoWithRelations>;
+  }
+
+  /**
+   * Arma las formas de pago de la OP y valida que cierren contra el neto.
+   *  - Con `payments` (formato nuevo): cada línea + una CHECK por el total de
+   *    cheques (de cartera y propios). La suma tiene que ser el neto exacto.
+   *  - Sin `payments` (formato anterior, un solo método): una línea por el neto.
+   */
+  private async _buildPaymentLines(
+    data: CreateOrdenPagoInput, net: number, companyId: string,
+  ): Promise<{ lines: { method: string; amount: number; cashRegisterId?: string | null; bank?: string | null; reference?: string | null }[]; attachCheques: boolean }> {
+    const enCartera = data.chequesEnCartera ?? [];
+    const propios = data.chequesPropios ?? [];
+
+    if (!data.payments && data.paymentMethod) {
+      // Formato anterior: solo el efectivo mueve caja física.
+      const method = data.paymentMethod;
+      return {
+        lines: [{
+          method,
+          amount: net,
+          cashRegisterId: method === 'CASH' ? (data.cashRegisterId ?? null) : null,
+          bank: data.bank ?? null,
+          reference: data.reference ?? null,
+        }],
+        attachCheques: method === 'CHECK',
+      };
+    }
+
+    const lines: { method: string; amount: number; cashRegisterId?: string | null; bank?: string | null; reference?: string | null }[] =
+      (data.payments ?? []).map((p) => ({
+        method: p.method,
+        amount: round2(p.amount),
+        cashRegisterId: p.method === 'CASH' ? (p.cashRegisterId ?? null) : null,
+        bank: p.bank ?? null,
+        reference: p.reference ?? null,
+      }));
+
+    let chequesTotal = propios.reduce((s, c) => s + c.amount, 0);
+    if (enCartera.length > 0) {
+      const rows = await prisma.$queryRaw<{ amount: any }[]>`
+        SELECT amount FROM "cheques" WHERE id IN (${Prisma.join(enCartera)}) AND "companyId" = ${companyId}
+      `;
+      chequesTotal += rows.reduce((s, r) => s + Number(r.amount), 0);
+    }
+    chequesTotal = round2(chequesTotal);
+    if (chequesTotal > 0) lines.push({ method: 'CHECK', amount: chequesTotal });
+
+    if (lines.length === 0) throw new AppError('Indicá al menos una forma de pago', 400);
+    const assigned = round2(lines.reduce((s, l) => s + l.amount, 0));
+    const diff = round2(net - assigned);
+    if (Math.abs(diff) > 0.01) {
+      const fmt = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      throw new AppError(
+        diff > 0
+          ? `Las formas de pago suman $${fmt(assigned)}: faltan $${fmt(diff)} para el neto a pagar ($${fmt(net)}).`
+          : `Las formas de pago suman $${fmt(assigned)}: sobran $${fmt(-diff)} sobre el neto a pagar ($${fmt(net)}). Si querés pagar de más, cargalo como excedente.`,
+        400,
+      );
+    }
+    return { lines, attachCheques: enCartera.length > 0 || propios.length > 0 };
   }
 
   /**
@@ -633,85 +728,13 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
         }
       }
 
-      // Movimiento de cuenta corriente: si las facturas pagadas son de cuenta
-      // corriente, o si es un pago a cuenta (sin facturas) → genera CREDIT.
+      // Movimiento de cuenta corriente: toda OP con facturas (de contado o CC)
+      // o pago a cuenta (sin facturas) → genera CREDIT.
       // El excedente genera su crédito interno SIEMPRE, incluso si todas las
       // facturas eran de contado: es plata entregada sin comprobante que la
       // respalde y tiene que quedar a favor nuestro en la cuenta del proveedor.
       if ((isPagoACuenta || hasCuentaCorriente || onAccountAmount > 0) && existingMovement.length === 0) {
-        const fiscalMode = ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
-
-        if (onAccountAmount > 0) {
-          await this._createExcedenteCreditoInterno(op, onAccountAmount, fiscalMode, tx);
-        }
-
-        if (isPagoACuenta) {
-          // Sin facturas: un solo movimiento, en la moneda de liquidación de la OP.
-          await this.createSupplierMovement({
-            supplierId: op.supplierId,
-            ordenPagoId: id,
-            type: 'CREDIT',
-            amount: Number(op.amount),
-            currency: op.currency,
-            description: `Pago a cuenta ${op.number}`,
-            companyId: op.companyId,
-            fiscalMode,
-          }, tx);
-        } else if (hasCuentaCorriente) {
-          // Con facturas: una OP puede pagar facturas en más de una moneda (el
-          // frontend convierte los ítems en USD a la moneda de liquidación con
-          // `op.exchangeRate`). Reconstruimos el monto en la moneda PROPIA de
-          // cada factura para no netear USD contra ARS en la cuenta corriente.
-          const byCurrency = new Map<string, number>();
-          for (const item of op.items) {
-            const invCurrency = item.purchaseInvoiceId ? (item.invoice?.currency ?? op.currency) : op.currency;
-            const converted = invCurrency === op.currency
-              ? Number(item.amount)
-              : Number(item.amount) / Number(op.exchangeRate);
-            byCurrency.set(invCurrency, (byCurrency.get(invCurrency) ?? 0) + converted);
-          }
-          // Ajustes (descuentos/intereses): no están atados a una factura, quedan
-          // en la moneda de liquidación de la propia OP.
-          const ajustesNet = (op.ajustes ?? []).reduce(
-            (s, a) => s + (a.type === 'SUMA' ? Number(a.amount) : -Number(a.amount)), 0
-          );
-          if (ajustesNet !== 0) byCurrency.set(op.currency, (byCurrency.get(op.currency) ?? 0) + ajustesNet);
-
-          for (const [curr, amount] of byCurrency) {
-            if (Math.abs(amount) < 0.005) continue;
-            await this.createSupplierMovement({
-              supplierId: op.supplierId,
-              ordenPagoId: id,
-              type: amount > 0 ? 'CREDIT' : 'DEBIT',
-              amount: Math.abs(amount),
-              currency: curr,
-              description: `Orden de Pago ${op.number}`,
-              companyId: op.companyId,
-              fiscalMode,
-            }, tx);
-          }
-
-          // El movimiento de arriba es la plata que sale (neto de ajustes). Cada
-          // ajuste lleva su propio movimiento para que lo imputado a las facturas
-          // quede cancelado en la cuenta: el descuento obtenido también baja la
-          // deuda (CREDIT) y el interés es deuda nueva que este pago cubre (DEBIT).
-          for (const a of op.ajustes ?? []) {
-            const isDiscount = a.type === 'RESTA';
-            const movement = await this.createSupplierMovement({
-              supplierId: op.supplierId,
-              ordenPagoId: id,
-              type: isDiscount ? 'CREDIT' : 'DEBIT',
-              amount: Number(a.amount),
-              currency: op.currency,
-              description: `${isDiscount ? 'Descuento obtenido' : 'Interés/recargo'}: ${a.description} (${op.number})`,
-              companyId: op.companyId,
-              fiscalMode,
-            }, tx);
-            await tx.$executeRaw`
-              UPDATE "supplier_account_movements" SET "ordenPagoAjusteId" = ${a.id} WHERE id = ${movement.id}
-            `;
-          }
-        }
+        await this._createPaymentMovements(op, { isPagoACuenta, hasCuentaCorriente, onAccountAmount }, tx);
       }
     }, { timeout: 30000 });
 
@@ -780,18 +803,132 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
     return rows[0] as any as OrdenPago;
   }
 
-  // True when any invoice (or, for legacy items, any purchase) paid by this OP is
-  // on cuenta corriente. The invoice is the source of truth for the debt now.
-  private async _opHasCuentaCorriente(op: OrdenPagoWithRelations): Promise<boolean> {
-    const invoiceIds = [...new Set(op.items.map((i) => i.purchaseInvoiceId).filter(Boolean) as string[])];
-    if (invoiceIds.length > 0) {
-      const rows = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "purchase_invoices"
-        WHERE id IN (${Prisma.join(invoiceIds)}) AND "saleCondition" = 'CUENTA_CORRIENTE'
-        LIMIT 1
-      `;
-      if (rows.length > 0) return true;
+  /**
+   * Movimientos de cuenta corriente de una OP pagada: crédito por lo pagado (en
+   * la moneda de cada factura), uno por cada ajuste y el crédito interno del
+   * excedente. Lo usan `pay` y `syncOrdenPagoMovements`.
+   */
+  private async _createPaymentMovements(
+    op: OrdenPagoWithRelations,
+    flags: { isPagoACuenta: boolean; hasCuentaCorriente: boolean; onAccountAmount: number },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const { isPagoACuenta, hasCuentaCorriente, onAccountAmount } = flags;
+    const fiscalMode = ((op as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
+
+    if (onAccountAmount > 0) {
+      await this._createExcedenteCreditoInterno(op, onAccountAmount, fiscalMode, tx);
     }
+
+    if (isPagoACuenta) {
+      // Sin facturas: un solo movimiento, en la moneda de liquidación de la OP.
+      await this.createSupplierMovement({
+        supplierId: op.supplierId,
+        ordenPagoId: op.id,
+        type: 'CREDIT',
+        amount: Number(op.amount),
+        currency: op.currency,
+        description: `Pago a cuenta ${op.number}`,
+        companyId: op.companyId,
+        fiscalMode,
+      }, tx);
+    } else if (hasCuentaCorriente) {
+      // Con facturas: una OP puede pagar facturas en más de una moneda (el
+      // frontend convierte los ítems en USD a la moneda de liquidación con
+      // `op.exchangeRate`). Reconstruimos el monto en la moneda PROPIA de
+      // cada factura para no netear USD contra ARS en la cuenta corriente.
+      // También en el MODO FISCAL de cada factura: si la OP (p.ej. cargada en
+      // "Ambos") paga una factura de otro modo, el crédito tiene que caer en la
+      // misma cuenta que el débito, o un modo queda con deuda y el otro a favor.
+      const key = (fm: string, curr: string) => `${fm}|${curr}`;
+      const byCurrency = new Map<string, number>();
+      for (const item of op.items) {
+        const invCurrency = item.purchaseInvoiceId ? (item.invoice?.currency ?? op.currency) : op.currency;
+        const invMode = (item.purchaseInvoiceId ? item.invoice?.fiscalMode : null) ?? fiscalMode;
+        const converted = invCurrency === op.currency
+          ? Number(item.amount)
+          : Number(item.amount) / Number(op.exchangeRate);
+        const k = key(invMode, invCurrency);
+        byCurrency.set(k, (byCurrency.get(k) ?? 0) + converted);
+      }
+      // Ajustes (descuentos/intereses): no están atados a una factura, quedan
+      // en la moneda de liquidación de la propia OP.
+      const ajustesNet = (op.ajustes ?? []).reduce(
+        (s, a) => s + (a.type === 'SUMA' ? Number(a.amount) : -Number(a.amount)), 0
+      );
+      if (ajustesNet !== 0) {
+        const k = key(fiscalMode, op.currency);
+        byCurrency.set(k, (byCurrency.get(k) ?? 0) + ajustesNet);
+      }
+
+      for (const [k, amount] of byCurrency) {
+        if (Math.abs(amount) < 0.005) continue;
+        const [mode, curr] = k.split('|') as ['FORMAL' | 'INFORMAL', string];
+        await this.createSupplierMovement({
+          supplierId: op.supplierId,
+          ordenPagoId: op.id,
+          type: amount > 0 ? 'CREDIT' : 'DEBIT',
+          amount: Math.abs(amount),
+          currency: curr,
+          description: `Orden de Pago ${op.number}`,
+          companyId: op.companyId,
+          fiscalMode: mode,
+        }, tx);
+      }
+
+      // El movimiento de arriba es la plata que sale (neto de ajustes). Cada
+      // ajuste lleva su propio movimiento para que lo imputado a las facturas
+      // quede cancelado en la cuenta: el descuento obtenido también baja la
+      // deuda (CREDIT) y el interés es deuda nueva que este pago cubre (DEBIT).
+      for (const a of op.ajustes ?? []) {
+        const isDiscount = a.type === 'RESTA';
+        const movement = await this.createSupplierMovement({
+          supplierId: op.supplierId,
+          ordenPagoId: op.id,
+          type: isDiscount ? 'CREDIT' : 'DEBIT',
+          amount: Number(a.amount),
+          currency: op.currency,
+          description: `${isDiscount ? 'Descuento obtenido' : 'Interés/recargo'}: ${a.description} (${op.number})`,
+          companyId: op.companyId,
+          fiscalMode,
+        }, tx);
+        await tx.$executeRaw`
+          UPDATE "supplier_account_movements" SET "ordenPagoAjusteId" = ${a.id} WHERE id = ${movement.id}
+        `;
+      }
+    }
+  }
+
+  /**
+   * Genera los movimientos de una OP ya PAGADA que no los tenga (p.ej. OPs que
+   * pagaron facturas de contado antes de que el contado impactara la cuenta
+   * corriente). Idempotente: si ya tiene movimientos no hace nada.
+   */
+  async syncOrdenPagoMovements(id: string): Promise<boolean> {
+    const op = await this.findById(id);
+    if (!op || (op as any).status !== 'PAID') return false;
+    const existing = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "supplier_account_movements" WHERE "ordenPagoId" = ${id} LIMIT 1
+    `;
+    if (existing.length > 0) return false;
+    const isPagoACuenta = op.items.length === 0;
+    const onAccountAmount = this.onAccountAmountOf(op);
+    const hasCuentaCorriente = await this._opHasCuentaCorriente(op);
+    if (!isPagoACuenta && !hasCuentaCorriente && onAccountAmount <= 0) return false;
+    await prisma.$transaction(
+      (tx) => this._createPaymentMovements(op, { isPagoACuenta, hasCuentaCorriente, onAccountAmount }, tx),
+      { timeout: 30000 },
+    );
+    return true;
+  }
+
+  // True when this OP impacts the supplier's cuenta corriente. Every purchase
+  // invoice does (contado included: its debit is in the account, so its payment
+  // must credit it — before, an OP paying CC + contado credited the contado part
+  // without the matching debit). Legacy items linked only to a purchase still
+  // follow that purchase's saleCondition.
+  private async _opHasCuentaCorriente(op: OrdenPagoWithRelations): Promise<boolean> {
+    if (op.items.some((i) => i.purchaseInvoiceId)) return true;
     // Legacy fallback: items linked only to a purchase
     const purchaseIds = [...new Set(op.items.map((i) => i.purchaseId).filter(Boolean) as string[])];
     if (purchaseIds.length > 0) {
@@ -1110,8 +1247,8 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
   //     percepciones / otros tributos (folded in by the form), so no separate
   //     tributos movement is needed. Retenciones are NOT part of the invoice:
   //     they are withheld when paying (see OrdenPagoRetencion).
-  // Idempotent: deletes existing movements for this invoice first. Only applies
-  // when the invoice's saleCondition is CUENTA_CORRIENTE.
+  // Idempotent: deletes existing movements for this invoice first. Applies to
+  // every invoice with a supplier (contado included) since 2026-11-07.
   async syncPurchaseInvoiceMovements(purchaseInvoiceId: string): Promise<void> {
     // Always clear previous movements for this invoice (balance is recomputed on read)
     await prisma.$executeRaw`
@@ -1133,7 +1270,9 @@ export class PrismaOrdenPagoRepository implements IOrdenPagoRepository {
       WHERE pi.id = ${purchaseInvoiceId}
     `;
     const inv = rows[0];
-    if (!inv || !inv.supplierId || inv.saleCondition !== 'CUENTA_CORRIENTE') return;
+    // Toda factura/ND/NC con proveedor impacta la cuenta corriente, sea de
+    // contado o no (el pago de contado se acredita con su Orden de Pago).
+    if (!inv || !inv.supplierId) return;
 
     const isNC = String(inv.type).startsWith('NOTA_CREDITO');
     const isND = String(inv.type).startsWith('NOTA_DEBITO');

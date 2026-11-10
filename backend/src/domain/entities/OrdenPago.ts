@@ -25,6 +25,8 @@ export interface OrdenPagoItem {
     amount: Decimal;
     status: string;
     currency: string;
+    /** Modo fiscal de la factura: el crédito de la OP se imputa en ese modo. */
+    fiscalMode?: string | null;
   };
 }
 
@@ -50,6 +52,18 @@ export interface OrdenPago {
   retentionAmount: Decimal;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Forma de pago de la OP (efectivo, transferencia, cheques…). */
+export interface OrdenPagoPaymentLine {
+  id: string;
+  ordenPagoId: string;
+  method: string;
+  amount: Decimal;
+  cashRegisterId: string | null;
+  cashRegisterName?: string | null;
+  bank: string | null;
+  reference: string | null;
 }
 
 export interface OrdenPagoCheque {
@@ -103,6 +117,8 @@ export interface OrdenPagoWithRelations extends OrdenPago {
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
   retenciones?: OrdenPagoRetencion[];
+  /** Desglose por forma de pago; su suma es el neto (amount - retentionAmount). */
+  payments?: OrdenPagoPaymentLine[];
   /**
    * Excedente pagado por encima de lo imputado a las facturas (derivado de
    * `amount`, no es una columna). Al pagar la orden se convierte en crédito
@@ -145,6 +161,14 @@ export interface CreateOrdenPagoAjusteInput {
   amount: number;
 }
 
+export interface CreateOrdenPagoPaymentInput {
+  method: 'CASH' | 'BANK_TRANSFER' | 'CARD' | 'MERCADO_PAGO' | 'COMPENSACION';
+  amount: number;
+  cashRegisterId?: string | null;
+  bank?: string | null;
+  reference?: string | null;
+}
+
 export interface CreateOrdenPagoInput {
   supplierId: string;
   userId: string;
@@ -153,7 +177,10 @@ export interface CreateOrdenPagoInput {
   date?: Date;
   currency?: Currency;
   exchangeRate?: number;
-  paymentMethod: PaymentMethod;
+  /** Método único (formato anterior); con `payments` se deriva (o MIXED). */
+  paymentMethod?: PaymentMethod | 'MIXED';
+  /** Formas de pago (sin los cheques, que van aparte y suman como CHECK). */
+  payments?: CreateOrdenPagoPaymentInput[];
   reference?: string;
   bank?: string;
   checkDueDate?: Date;

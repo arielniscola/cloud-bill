@@ -13,6 +13,7 @@ import prisma from '../prisma';
 import { Prisma } from '@prisma/client';
 import { allocateDocumentNumber } from '../DocumentSequence';
 import { attachItemDetails, saveItemDetail } from '../itemDetail';
+import { readBuyer } from '../partyExtras';
 
 const includeWithoutItems = {
   customer: { select: { id: true, name: true, taxId: true, email: true, address: true } },
@@ -99,7 +100,8 @@ export class PrismaOrdenPedidoRepository implements IOrdenPedidoRepository {
       warehouseId = extra[0]?.warehouseId ?? null;
     } catch { /* migraciones pendientes */ }
 
-    return { ...op, items, budgetId, warehouseId } as OrdenPedidoWithItems;
+    const buyer = await readBuyer('orden_pedidos', id);
+    return { ...op, items, budgetId, warehouseId, ...buyer } as OrdenPedidoWithItems;
   }
 
   async create(data: CreateOrdenPedidoInput): Promise<OrdenPedidoWithItems> {

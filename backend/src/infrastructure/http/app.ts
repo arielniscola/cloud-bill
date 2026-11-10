@@ -53,6 +53,7 @@ import { internalNoteRoutes } from './routes/internalNoteRoutes';
 import { accountingRoutes } from './routes/accountingRoutes';
 import { pdvRoutes } from './routes/pdvRoutes';
 import { chequeRoutes } from './routes/chequeRoutes';
+import { chequeEgresoReasonRoutes } from './routes/chequeEgresoReasonRoutes';
 import { exchangeRateRoutes } from './routes/exchangeRateRoutes';
 import { fiscalModeMiddleware } from './middlewares/fiscalModeMiddleware';
 import { approvalRoutes } from './routes/approvalRoutes';
@@ -175,6 +176,7 @@ export function createApp(): Application {
   app.use('/api/approvals', approvalRoutes);
   app.use('/api/push', pushRoutes);
   app.use('/api/cash-movement-reasons', cashMovementReasonRoutes);
+  app.use('/api/cheque-egreso-reasons', chequeEgresoReasonRoutes);
 
   // 404 handler
   app.use((_req, res) => {

@@ -30,6 +30,12 @@ export const createInvoiceSchema = z.object({
   ]),
   // Sin cliente = venta a "Consumidor Final" (se resuelve en el controller).
   customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
+  // Venta a Consumidor Final (sin cliente): nombre y DNI/CUIL del comprador, opcionales.
+  buyerName: z.string().trim().max(120).optional().nullable(),
+  buyerDocument: z.string().optional().nullable().refine(
+    (v) => !v || [7, 8, 11].includes(v.replace(/\D/g, '').length),
+    'El documento del comprador debe ser un DNI (7 u 8 dígitos) o un CUIL (11 dígitos)',
+  ),
   dueDate: z.preprocess(emptyToUndefined, z.string().optional()),
   notes: z.preprocess(emptyToUndefined, z.string().optional()),
   currency: z.enum(['ARS', 'USD']).default('ARS'),

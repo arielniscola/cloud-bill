@@ -89,6 +89,15 @@ export class PrismaChequeRepository implements IChequeRepository {
     if (filters.supplierId) { conditions.push(`c."supplierId" = $${i++}`); params.push(filters.supplierId); }
     if (filters.chequeraId) { conditions.push(`c."chequeraId" = $${i++}`); params.push(filters.chequeraId); }
     if (filters.fiscalMode) { conditions.push(`c."fiscalMode" = $${i++}`); params.push(filters.fiscalMode); }
+    if (filters.search) {
+      // El N° se guarda como "banco-sucursal-nro": se compara también sin separadores.
+      const like = `%${filters.search}%`;
+      const digits = filters.search.replace(/\D/g, '');
+      const n1 = i++, n2 = i++, n3 = i++;
+      conditions.push(`(c."checkNumber" ILIKE $${n1} OR c."number" ILIKE $${n2}`
+        + ` OR ($${n3} <> '' AND regexp_replace(COALESCE(c."checkNumber", ''), '\\D', '', 'g') LIKE '%' || $${n3} || '%'))`);
+      params.push(like, like, digits);
+    }
 
     const where = conditions.join(' AND ');
 

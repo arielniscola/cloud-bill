@@ -17,7 +17,7 @@ import {
 } from '../../../domain/entities/Invoice';
 import { PaginationParams, PaginatedResult, InvoiceType } from '../../../shared/types';
 import prisma from '../prisma';
-import { attachCustomerExtra, readTransport } from '../partyExtras';
+import { attachCustomerExtra, readTransport, readBuyer } from '../partyExtras';
 import { allocateDocumentNumber, INVOICE_DOC_TYPE } from '../DocumentSequence';
 import { attachItemDetails, normalizeItemDetail, saveItemDetail } from '../itemDetail';
 
@@ -46,11 +46,12 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
       warehouseId = extra[0]?.warehouseId ?? null;
     } catch { /* migración 20260713 pendiente */ }
 
-    const [customer, transport] = await Promise.all([
+    const [customer, transport, buyer] = await Promise.all([
       attachCustomerExtra(invoice.customer),
       readTransport('invoices', id),
+      readBuyer('invoices', id),
     ]);
-    return { ...invoice, customer, items, warehouseId, transport } as unknown as InvoiceWithItems;
+    return { ...invoice, customer, items, warehouseId, transport, ...buyer } as unknown as InvoiceWithItems;
   }
 
   async findByNumber(number: string, companyId: string): Promise<Invoice | null> {

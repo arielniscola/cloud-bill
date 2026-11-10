@@ -43,13 +43,27 @@ export const ordenPagoChequePropioSchema = z.object({
   dueDate:     z.string().optional(),
 });
 
+// Forma de pago (una OP puede tener varias). Los cheques NO van acá: se mandan
+// en chequesEnCartera / chequesPropios y suman como una forma de pago más.
+export const ordenPagoPaymentSchema = z.object({
+  method:         z.enum(['CASH', 'BANK_TRANSFER', 'CARD', 'MERCADO_PAGO', 'COMPENSACION']),
+  amount:         z.number().positive('El importe de cada forma de pago debe ser mayor a 0'),
+  cashRegisterId: z.string().optional().nullable(),   // solo CASH
+  bank:           z.string().optional().nullable(),
+  reference:      z.string().optional().nullable(),
+});
+
 export const createOrdenPagoSchema = z.object({
   supplierId:     z.string().min(1, 'Proveedor requerido'),
   cashRegisterId: z.string().optional(),
   date:           z.string().optional(),
   currency:       z.enum(['ARS', 'USD']).default('ARS'),
   exchangeRate:   z.number().positive().default(1),
-  paymentMethod:  paymentMethodSchema,
+  // Método único (formato anterior). Con `payments` se deriva solo: el método
+  // si hay uno, MIXED si hay varios.
+  paymentMethod:  paymentMethodSchema.optional(),
+  // Formas de pago: su suma + los cheques tiene que dar el neto a pagar.
+  payments:       z.array(ordenPagoPaymentSchema).optional(),
   reference:      z.string().optional(),
   bank:           z.string().optional(),
   checkDueDate:   z.string().optional(),
@@ -71,6 +85,10 @@ export const createOrdenPagoSchema = z.object({
 }).refine(
   (d) => d.items.length > 0 || (typeof d.amount === 'number' && d.amount > 0),
   { message: 'Seleccioná al menos una factura o indicá un importe para el pago a cuenta', path: ['amount'] },
+).refine(
+  (d) => !!d.paymentMethod || (d.payments?.length ?? 0) > 0
+    || (d.chequesEnCartera?.length ?? 0) > 0 || (d.chequesPropios?.length ?? 0) > 0,
+  { message: 'Indicá al menos una forma de pago', path: ['payments'] },
 );
 
 export const ordenPagoQuerySchema = z.object({

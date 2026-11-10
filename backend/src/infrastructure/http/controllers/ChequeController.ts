@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { IChequeRepository } from '../../../domain/repositories/IChequeRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
-import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
+import { recordChequeBounceMovement, ChequeBounceResult } from '../../services/ChequeBounceService';
 import prisma from '../../database/prisma';
 
 const createChequeSchema = z.object({
@@ -28,6 +28,10 @@ const createChequeSchema = z.object({
 const updateStatusSchema = z.object({
   status: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'ENDOSADO']),
   bankAccountId: z.string().uuid().optional(),
+  // Al rechazar: cómo se documenta el débito (nota interna o Nota de Débito).
+  bounceMode:      z.enum(['INTERNAL_NOTE', 'DEBIT_NOTE']).optional(),
+  debitNoteNumber: z.string().trim().max(50).optional().nullable(),
+  debitNoteLetter: z.enum(['A', 'B', 'C']).optional().nullable(),
 });
 
 // Máquina de transiciones del cheque — espejo server-side de
@@ -42,6 +46,8 @@ const CHEQUE_TRANSITIONS: Record<string, string[]> = {
   BOUNCED:   ['PENDING'],
   RETURNED:  ['PENDING'],
   ENDOSADO:  [],
+  // Egresado de cartera: vuelve solo anulando el egreso (/cheques/egresos/:id/cancel).
+  EGRESADO:  [],
 };
 
 const CHEQUE_STATUS_LABELS: Record<string, string> = {
@@ -51,23 +57,25 @@ const CHEQUE_STATUS_LABELS: Record<string, string> = {
   BOUNCED: 'Rechazado',
   RETURNED: 'Devuelto',
   ENDOSADO: 'Endosado',
+  EGRESADO: 'Egresado',
 };
 
 const listQuerySchema = z.object({
   page:       z.coerce.number().int().positive().optional(),
   limit:      z.coerce.number().int().positive().max(200).optional(),
   type:       z.enum(['INGRESO', 'EGRESO']).optional(),
-  status:     z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'ENDOSADO']).optional(),
+  status:     z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'ENDOSADO', 'EGRESADO']).optional(),
   customerId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
   chequeraId: z.string().uuid().optional(),
+  search:     z.string().trim().max(100).optional(),   // N° de cheque o número interno
 });
 
 export class ChequeController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IChequeRepository>('ChequeRepository');
-      const { page, limit, type, status, customerId, supplierId, chequeraId } = listQuerySchema.parse(req.query);
+      const { page, limit, type, status, customerId, supplierId, chequeraId, search } = listQuerySchema.parse(req.query);
       const result = await repo.findAll({
         companyId:   req.companyId!,
         type,
@@ -75,6 +83,7 @@ export class ChequeController {
         customerId,
         supplierId,
         chequeraId,
+        search:      search || undefined,
         fiscalMode:  req.fiscalMode,
         page:  page  ?? 1,
         limit: limit ?? 50,
@@ -114,7 +123,7 @@ export class ChequeController {
   async updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo   = container.resolve<IChequeRepository>('ChequeRepository');
-      const { status, bankAccountId } = updateStatusSchema.parse(req.body);
+      const { status, bankAccountId, bounceMode, debitNoteNumber, debitNoteLetter } = updateStatusSchema.parse(req.body);
 
       const existing = await repo.findById(req.params.id, req.companyId!);
       if (!existing) throw new NotFoundError('Cheque');
@@ -140,36 +149,47 @@ export class ChequeController {
         `;
       }
 
-      const cheque = await repo.updateStatus(req.params.id, status, req.companyId!);
-
-      // Débito interno al cliente/proveedor cuando el cheque se rechaza
-      // (y reversión si se vuelve atrás desde Rechazado).
+      // Débito al cliente/proveedor cuando el cheque se rechaza (nota interna o
+      // Nota de Débito, a elección del usuario) y reversión si vuelve atrás.
+      // Va ANTES del cambio de estado: si el débito falla (p.ej. falta el número
+      // de la ND, o hay una ND sin anular) el cheque queda como estaba.
       const enteringBounced = status === 'BOUNCED' && oldStatus !== 'BOUNCED';
       const leavingBounced  = oldStatus === 'BOUNCED' && status !== 'BOUNCED';
+      let bounce: ChequeBounceResult | null = null;
       if (enteringBounced || leavingBounced) {
-        await recordChequeBounceMovement({
-          customerId: cheque.customerId,
-          supplierId: cheque.supplierId,
-          amount:     Number(cheque.amount),
-          currency:   cheque.currency,
-          reference:  cheque.checkNumber || cheque.number,
-          direction:  enteringBounced ? 'DEBIT' : 'CREDIT',
-          companyId:  req.companyId!,
-          userId:     req.user!.userId,
-          fiscalMode: cheque.fiscalMode,
+        bounce = await recordChequeBounceMovement({
+          customerId:   existing.customerId,
+          supplierId:   existing.supplierId,
+          amount:       Number(existing.amount),
+          currency:     existing.currency,
+          exchangeRate: Number((existing as any).exchangeRate ?? 1),
+          reference:    existing.checkNumber || existing.number,
+          direction:    enteringBounced ? 'DEBIT' : 'CREDIT',
+          companyId:    req.companyId!,
+          userId:       req.user!.userId,
+          fiscalMode:   existing.fiscalMode,
+          mode:         bounceMode ?? 'INTERNAL_NOTE',
+          debitNoteNumber,
+          debitNoteLetter,
         });
-        if (enteringBounced) {
-          container.resolve<IActivityLogRepository>('ActivityLogRepository').create({
-            userId: req.user!.userId,
-            action: 'UPDATE',
-            entity: 'Cheque',
-            entityId: cheque.id,
-            description: `Cheque ${cheque.checkNumber || cheque.number} rechazado — débito a ${cheque.customer?.name ?? cheque.supplier?.name ?? 'cuenta'}`,
-          }).catch(() => { /* log no crítico */ });
-        }
       }
 
-      res.json({ status: 'success', data: cheque });
+      const cheque = await repo.updateStatus(req.params.id, status, req.companyId!);
+
+      if (enteringBounced) {
+        const doc = bounce?.kind === 'SALES_DEBIT_NOTE' || bounce?.kind === 'PURCHASE_DEBIT_NOTE'
+          ? `Nota de Débito ${bounce.number}`
+          : 'débito interno';
+        container.resolve<IActivityLogRepository>('ActivityLogRepository').create({
+          userId: req.user!.userId,
+          action: 'UPDATE',
+          entity: 'Cheque',
+          entityId: cheque.id,
+          description: `Cheque ${cheque.checkNumber || cheque.number} rechazado — ${doc} a ${cheque.customer?.name ?? cheque.supplier?.name ?? 'cuenta'}`,
+        }).catch(() => { /* log no crítico */ });
+      }
+
+      res.json({ status: 'success', data: cheque, bounce });
     } catch (err) { next(err); }
   }
 

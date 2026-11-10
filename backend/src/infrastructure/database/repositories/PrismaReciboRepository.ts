@@ -189,6 +189,14 @@ export class PrismaReciboRepository implements IReciboRepository {
     if (filters.customerId) where.customerId = filters.customerId;
     if ((filters as any).companyId) where.customer = { companyId: (filters as any).companyId };
     if (filters.checkStatus !== undefined) where.checkStatus = filters.checkStatus;
+    const search = (filters as any).search as string | undefined;
+    if (search) {
+      // N° de cheque (guardado como "banco-sucursal-nro") o N° de recibo.
+      where.OR = [
+        { reference: { contains: search, mode: 'insensitive' } },
+        { number:    { contains: search, mode: 'insensitive' } },
+      ];
+    }
     if (filters.dueDateFrom || filters.dueDateTo) {
       where.checkDueDate = {};
       if (filters.dueDateFrom) where.checkDueDate.gte = filters.dueDateFrom;

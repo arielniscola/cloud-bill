@@ -131,7 +131,7 @@ describe('Excedente de orden de pago → crédito interno', () => {
       .send(invoiceBody('0008-00000004', 80000, 'CONTADO'));
     expectStatus(inv, 201);
 
-    // Una factura de contado no mueve la cuenta corriente...
+    // La factura de contado ya está en la cuenta corriente (DEBIT al crearla)...
     const before = (await balance()).ARS ?? 0;
 
     const op = await api.post('/api/orden-pagos').set(auth(A)).send({
@@ -143,8 +143,9 @@ describe('Excedente de orden de pago → crédito interno', () => {
     expectStatus(op, 201);
     expectStatus(await api.post(`/api/orden-pagos/${op.body.data.id}/pay`).set(auth(A)), 200);
 
-    // ...pero el excedente sí: son 20.000 entregados sin comprobante que los respalde.
-    expect((await balance()).ARS ?? 0).toBeCloseTo(before - 20000, 2);
+    // ...el pago la cancela (80.000) y el excedente queda a favor nuestro (20.000):
+    // son 20.000 entregados sin comprobante que los respalde.
+    expect((await balance()).ARS ?? 0).toBeCloseTo(before - 80000 - 20000, 2);
     const available = await credits();
     expect(available).toHaveLength(1);
     expect(available[0].balance).toBeCloseTo(20000, 2);

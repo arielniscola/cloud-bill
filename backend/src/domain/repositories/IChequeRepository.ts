@@ -9,6 +9,8 @@ export interface ChequeFilters {
   supplierId?: string;
   /** Talonario del que salió el cheque (solo egresos propios). */
   chequeraId?: string;
+  /** Busca por N° de cheque físico o número interno (ignora guiones/espacios). */
+  search?:     string;
   fiscalMode?: string;
   page?:       number;
   limit?:      number;

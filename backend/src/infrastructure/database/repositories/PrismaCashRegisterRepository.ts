@@ -112,8 +112,11 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     // Also include OrdenPago outflows (unless filtering only CREDIT)
     let opMovements: CashRegisterMovement[] = [];
     if (!filters.type || filters.type === 'DEBIT') {
+      // Cada OP descuenta solo sus formas de pago EN EFECTIVO de esta caja (una
+      // OP puede pagarse parte en efectivo y parte con transferencia o cheques).
       const opConditions: Prisma.Sql[] = [
-        Prisma.sql`op."cashRegisterId" = ${cashRegisterId}`,
+        Prisma.sql`p."cashRegisterId" = ${cashRegisterId}`,
+        Prisma.sql`p.method = 'CASH'`,
         Prisma.sql`op.status != 'CANCELLED'`,
       ];
       if (filters.fiscalMode) {
@@ -124,13 +127,13 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
       if (opFrom) opConditions.push(Prisma.sql`op."createdAt" >= ${opFrom}`);
       if (opTo)   opConditions.push(Prisma.sql`op."createdAt" <= ${opTo}`);
       const opWhere = Prisma.join(opConditions, ' AND ');
-      // El egreso de caja es el NETO: `amount` es el bruto imputado a las
-      // facturas y `retentionAmount` no sale de la caja (queda a depositar).
+      // El egreso es el importe de la línea en efectivo (ya neto de retenciones:
+      // las líneas suman amount - retentionAmount).
       const opRows = await prisma.$queryRaw<any[]>`
-        SELECT op.id, (op.amount - op."retentionAmount") AS amount,
-               op."cashRegisterId", op."createdAt", op.number,
-               s.name AS "supplierName"
-        FROM "orden_pagos" op
+        SELECT p.id, p.amount, p."cashRegisterId", op."createdAt", op.number,
+               s.name AS "supplierName", op."paymentMethod"
+        FROM "orden_pago_payments" p
+        JOIN "orden_pagos" op ON op.id = p."ordenPagoId"
         LEFT JOIN "suppliers" s ON s.id = op."supplierId"
         WHERE ${opWhere}
       `;
@@ -140,7 +143,7 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
         type: 'DEBIT' as const,
         amount: op.amount,
         balance: 0 as any,
-        description: `Orden de Pago ${op.number}${op.supplierName ? ' — ' + op.supplierName : ''}`,
+        description: `Orden de Pago ${op.number}${op.supplierName ? ' — ' + op.supplierName : ''}${op.paymentMethod === 'MIXED' ? ' (parte en efectivo)' : ''}`,
         invoiceId: null,
         cashRegisterId: op.cashRegisterId,
         createdAt: op.createdAt,
@@ -175,16 +178,18 @@ export class PrismaCashRegisterRepository implements ICashRegisterRepository {
     fiscalMode?: string
   ): Promise<{ total: number; count: number }> {
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`"cashRegisterId" = ${cashRegisterId}`,
-      Prisma.sql`status != 'CANCELLED'`,
+      Prisma.sql`p."cashRegisterId" = ${cashRegisterId}`,
+      Prisma.sql`p.method = 'CASH'`,
+      Prisma.sql`op.status != 'CANCELLED'`,
     ];
-    if (fromDate) conditions.push(Prisma.sql`"createdAt" > ${fromDate}`);
-    if (fiscalMode) conditions.push(Prisma.sql`"fiscalMode" = ${fiscalMode}`);
+    if (fromDate) conditions.push(Prisma.sql`op."createdAt" > ${fromDate}`);
+    if (fiscalMode) conditions.push(Prisma.sql`op."fiscalMode" = ${fiscalMode}`);
     const where = Prisma.join(conditions, ' AND ');
-    // Neto: lo retenido no sale de la caja (ver _getOrdenPagoOutflows en el listado).
+    // Solo las formas de pago en efectivo de esta caja (ya netas de retenciones).
     const rows = await prisma.$queryRaw<{ total: any; count: bigint }[]>`
-      SELECT COALESCE(SUM(amount - "retentionAmount"), 0) AS total, COUNT(*) AS count
-      FROM "orden_pagos"
+      SELECT COALESCE(SUM(p.amount), 0) AS total, COUNT(DISTINCT op.id) AS count
+      FROM "orden_pago_payments" p
+      JOIN "orden_pagos" op ON op.id = p."ordenPagoId"
       WHERE ${where}
     `;
     return { total: Number(rows[0]?.total ?? 0), count: Number(rows[0]?.count ?? 0) };

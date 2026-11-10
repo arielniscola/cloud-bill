@@ -454,6 +454,8 @@ export async function recordSupplierPayment(payment: {
   userId: string;
   supplierName?: string;
   retenciones?: { type: string; amount: number }[];
+  /** Desglose por forma de pago (OP mixta). Suma `amount`; si falta, todo va a `paymentMethod`. */
+  breakdown?: { method: string; amount: number }[];
 }): Promise<void> {
   try {
     if (!(await companyHasFeature(payment.companyId, 'accounting'))) return;
@@ -491,7 +493,25 @@ export async function recordSupplierPayment(payment: {
       { code: ACCOUNT_CODES.PROVEEDORES, debit: gross, credit: 0, description: desc },
     ];
     if (cash > 0) {
-      lines.push({ code: cashAccount, debit: 0, credit: cash, description: desc });
+      const accountFor = (method: string) =>
+        method === 'BANK_TRANSFER' ? ACCOUNT_CODES.BANCOS :
+        method === 'CHECK'         ? ACCOUNT_CODES.CHEQUES :
+        ACCOUNT_CODES.CAJA;
+      const parts = (payment.breakdown ?? []).filter((b) => b.amount > 0);
+      if (parts.length > 0) {
+        // Una línea por cuenta (efectivo → Caja, transferencia → Bancos, cheques → Valores).
+        const byAccount = new Map<string, number>();
+        for (const b of parts) byAccount.set(accountFor(b.method), (byAccount.get(accountFor(b.method)) ?? 0) + b.amount);
+        // Redondeo: la última línea absorbe la diferencia para que el asiento balancee.
+        const entries = Array.from(byAccount.entries()).map(([code, amt]) => [code, round2(amt)] as [string, number]);
+        const drift = round2(cash - entries.reduce((s, [, a]) => s + a, 0));
+        if (entries.length > 0) entries[entries.length - 1][1] = round2(entries[entries.length - 1][1] + drift);
+        for (const [code, amt] of entries) {
+          if (amt > 0) lines.push({ code, debit: 0, credit: amt, description: desc });
+        }
+      } else {
+        lines.push({ code: cashAccount, debit: 0, credit: cash, description: desc });
+      }
     }
     for (const [type, amt] of retencionTotals.entries()) {
       const acc = RETENCION_ACCOUNT_BY_TYPE[type];

@@ -4,8 +4,9 @@ import prisma from '../../src/infrastructure/database/prisma';
 
 /**
  * Flujo crítico de compras (factura standalone → CC proveedor → orden de pago):
- *  - La factura de proveedor en CUENTA_CORRIENTE genera el DEBIT en la cuenta
- *    del proveedor al crearse; en CONTADO no genera movimientos.
+ *  - Toda factura de proveedor (CUENTA_CORRIENTE o CONTADO) genera el DEBIT en
+ *    la cuenta del proveedor al crearse; la OP que la paga genera el CREDIT.
+ *    Una OP que paga facturas de contado y de CC acredita exactamente lo imputado.
  *  - La orden de pago pagada genera el CREDIT y recalcula el estado de la
  *    factura: pago parcial → PARTIALLY_PAID, saldo → PAID, balance CC en 0.
  *  - Una NC de proveedor genera CREDIT (reduce la deuda).
@@ -119,8 +120,10 @@ describe('Flujo crítico: compras (factura proveedor → CC → orden de pago)',
     expect(movements[movements.length - 1]).toEqual({ type: 'CREDIT', amount: 1210 });
   });
 
-  it('factura CONTADO no genera movimientos en la cuenta corriente del proveedor', async () => {
-    const before = (await supplierMovements()).length;
+  it('factura CONTADO también impacta la cuenta corriente: DEBIT al crearla, CREDIT al pagarla', async () => {
+    const before = await supplierMovements();
+    const net = (ms: Array<{ type: string; amount: number }>) =>
+      ms.reduce((s, m) => s + (m.type === 'DEBIT' ? m.amount : -m.amount), 0);
 
     const contado = await api
       .post('/api/purchase-invoices')
@@ -128,7 +131,47 @@ describe('Flujo crítico: compras (factura proveedor → CC → orden de pago)',
       .send(invoiceBody('0001-00003333', 500, { saleCondition: 'CONTADO' }));
     expectStatus(contado, 201);
 
-    expect(await supplierMovements()).toHaveLength(before);
+    const afterInvoice = await supplierMovements();
+    expect(afterInvoice).toHaveLength(before.length + 1);
+    expect(afterInvoice[afterInvoice.length - 1]).toEqual({ type: 'DEBIT', amount: 500 });
+
+    const op = await api
+      .post('/api/orden-pagos')
+      .set(auth(A))
+      .send({ supplierId, paymentMethod: 'CASH', items: [{ purchaseInvoiceId: contado.body.data.id, amount: 500 }] });
+    expectStatus(op, 201);
+    expectStatus(await api.post(`/api/orden-pagos/${op.body.data.id}/pay`).set(auth(A)), 200);
+
+    const afterPay = await supplierMovements();
+    expect(afterPay).toHaveLength(before.length + 2);
+    expect(net(afterPay)).toBeCloseTo(net(before), 2);
+    expect((await getInvoice(contado.body.data.id)).status).toBe('PAID');
+  });
+
+  it('una OP que paga una factura CC y otra de CONTADO acredita solo lo imputado (sin crédito de más)', async () => {
+    const before = await supplierMovements();
+    const net = (ms: Array<{ type: string; amount: number }>) =>
+      ms.reduce((s, m) => s + (m.type === 'DEBIT' ? m.amount : -m.amount), 0);
+
+    const cc = await api.post('/api/purchase-invoices').set(auth(A)).send(invoiceBody('0001-00004441', 1000));
+    expectStatus(cc, 201);
+    const contado = await api.post('/api/purchase-invoices').set(auth(A))
+      .send(invoiceBody('0001-00004442', 300, { saleCondition: 'CONTADO' }));
+    expectStatus(contado, 201);
+
+    const op = await api.post('/api/orden-pagos').set(auth(A)).send({
+      supplierId,
+      paymentMethod: 'CASH',
+      items: [
+        { purchaseInvoiceId: cc.body.data.id, amount: 1000 },
+        { purchaseInvoiceId: contado.body.data.id, amount: 300 },
+      ],
+    });
+    expectStatus(op, 201);
+    expectStatus(await api.post(`/api/orden-pagos/${op.body.data.id}/pay`).set(auth(A)), 200);
+
+    // Débitos 1000 + 300, crédito 1300: el saldo queda como estaba.
+    expect(net(await supplierMovements())).toBeCloseTo(net(before), 2);
   });
 
   it('una OP sin facturas es un pago a cuenta: genera solo el CREDIT por el importe', async () => {

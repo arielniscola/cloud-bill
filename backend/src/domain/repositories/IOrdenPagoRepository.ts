@@ -64,6 +64,8 @@ export interface IOrdenPagoRepository {
   cancelSupplierMovement(ordenPagoId: string, tx?: Prisma.TransactionClient): Promise<void>;
   reverseSupplierMovementByPurchase(purchaseId: string): Promise<void>;
   syncPurchaseInvoiceMovements(purchaseInvoiceId: string): Promise<void>;
+  /** Genera los movimientos de una OP PAGADA que no los tenga (idempotente). */
+  syncOrdenPagoMovements(id: string): Promise<boolean>;
 
   // Imputación manual de cuenta corriente (fuera del flujo de Orden de Pago)
   getOpenAccountItems(supplierId: string, companyId?: string, tx?: Prisma.TransactionClient): Promise<{ debits: OpenDebitItem[]; credits: OpenCreditItem[] }>;

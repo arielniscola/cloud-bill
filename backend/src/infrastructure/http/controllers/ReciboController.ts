@@ -8,7 +8,7 @@ import { IActivityLogRepository } from '../../../domain/repositories/IActivityLo
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
 import { NotFoundError, AppError } from '../../../shared/errors/AppError';
 import { reciboQuerySchema, reciboCheckQuerySchema, updateCheckStatusSchema } from '../../../application/dtos/recibo.dto';
-import { recordChequeBounceMovement } from '../../services/ChequeBounceService';
+import { recordChequeBounceMovement, ChequeBounceResult } from '../../services/ChequeBounceService';
 import prisma from '../../database/prisma';
 import { recalcInvoiceStatus, reverseReciboMovements } from '../../services/CustomerSettlementService';
 
@@ -66,6 +66,7 @@ export class ReciboController {
           dueDateTo: query.dueDateTo ? new Date(query.dueDateTo) : undefined,
           dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
           dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+          search: query.search || undefined,
           companyId: req.companyId,
         } as any
       );
@@ -86,26 +87,32 @@ export class ReciboController {
       if (recibo.paymentMethod !== 'CHECK') throw new AppError('Solo se puede cambiar el estado de cheques', 400);
       if (recibo.status === 'CANCELLED') throw new AppError('El recibo está cancelado', 400);
 
+      if ((recibo as any).checkStatus === 'EGRESADO') throw new AppError('El cheque fue egresado de cartera: anulá el egreso para volver a operarlo', 400);
       const oldStatus = (recibo as any).checkStatus;
-      const { checkStatus } = updateCheckStatusSchema.parse(req.body);
-      const updated = await repo.updateCheckStatus(req.params.id, checkStatus);
+      const { checkStatus, bounceMode } = updateCheckStatusSchema.parse(req.body);
 
-      // Débito interno al cliente cuando el cheque de cobranza se rechaza
-      // (y reversión si se vuelve atrás desde Rechazado).
+      // Débito al cliente cuando el cheque de cobranza se rechaza (nota interna o
+      // Nota de Débito, a elección del usuario) y reversión si vuelve atrás.
+      // Antes del cambio de estado: si falla, el cheque queda como estaba.
       const enteringBounced = checkStatus === 'BOUNCED' && oldStatus !== 'BOUNCED';
       const leavingBounced  = oldStatus === 'BOUNCED' && checkStatus !== 'BOUNCED';
+      let bounce: ChequeBounceResult | null = null;
       if ((enteringBounced || leavingBounced) && (recibo as any).customerId) {
-        await recordChequeBounceMovement({
-          customerId: (recibo as any).customerId,
-          amount:     Number((recibo as any).amount),
-          currency:   (recibo as any).currency ?? 'ARS',
-          reference:  (recibo as any).reference || recibo.number,
-          direction:  enteringBounced ? 'DEBIT' : 'CREDIT',
-          companyId:  req.companyId!,
-          userId:     req.user!.userId,
-          fiscalMode: req.fiscalMode,
+        bounce = await recordChequeBounceMovement({
+          customerId:   (recibo as any).customerId,
+          amount:       Number((recibo as any).amount),
+          currency:     (recibo as any).currency ?? 'ARS',
+          exchangeRate: Number((recibo as any).exchangeRate ?? 1),
+          reference:    (recibo as any).reference || recibo.number,
+          direction:    enteringBounced ? 'DEBIT' : 'CREDIT',
+          companyId:    req.companyId!,
+          userId:       req.user!.userId,
+          fiscalMode:   (recibo as any).fiscalMode ?? req.fiscalMode,
+          mode:         bounceMode ?? 'INTERNAL_NOTE',
         });
       }
+
+      const updated = await repo.updateCheckStatus(req.params.id, checkStatus);
 
       await activityLogRepo.create({
         userId: req.user!.userId,
@@ -113,11 +120,11 @@ export class ReciboController {
         entity: 'Recibo',
         entityId: recibo.id,
         description: enteringBounced
-          ? `Cheque ${recibo.number} rechazado — débito al cliente`
+          ? `Cheque ${recibo.number} rechazado — ${bounce?.kind === 'SALES_DEBIT_NOTE' ? `Nota de Débito ${bounce.number}` : 'débito interno'} al cliente`
           : `Cheque ${recibo.number} actualizado a estado ${checkStatus}`,
       });
 
-      res.json({ status: 'success', data: updated });
+      res.json({ status: 'success', data: updated, bounce });
     } catch (error) {
       next(error);
     }
@@ -136,6 +143,7 @@ export class ReciboController {
       if ((recibo as any).paymentMethod !== 'CHECK') throw new AppError('El recibo no es de tipo cheque', 400);
       if ((recibo as any).status === 'CANCELLED')    throw new AppError('El recibo está cancelado', 400);
       if ((recibo as any).checkStatus === 'CLEARED') throw new AppError('El cheque ya fue acreditado', 400);
+      if ((recibo as any).checkStatus === 'EGRESADO') throw new AppError('El cheque fue egresado de cartera: anulá el egreso para volver a operarlo', 400);
 
       const { cashRegisterId } = req.body as { cashRegisterId: string };
       if (!cashRegisterId) throw new AppError('cashRegisterId requerido', 400);

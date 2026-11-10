@@ -115,6 +115,7 @@ export class BankController {
       if ((recibo as any).paymentMethod !== 'CHECK') throw new AppError('El recibo no es de tipo cheque', 400);
       if ((recibo as any).status === 'CANCELLED')    throw new AppError('El recibo está cancelado', 400);
       if ((recibo as any).checkStatus === 'CLEARED') throw new AppError('El cheque ya fue acreditado', 400);
+      if ((recibo as any).checkStatus === 'EGRESADO') throw new AppError('El cheque fue egresado de cartera: anulá el egreso para volver a operarlo', 400);
 
       const account = await bankRepo.findAccountById(req.params.id);
       if (!account) throw new NotFoundError('Cuenta bancaria');

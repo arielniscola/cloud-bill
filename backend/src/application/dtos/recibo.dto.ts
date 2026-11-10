@@ -32,17 +32,20 @@ export const reciboQuerySchema = z.object({
 
 export const updateCheckStatusSchema = z.object({
   checkStatus: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED']),
+  // Al rechazar: nota de débito interna o Nota de Débito de venta (emitida sin ARCA).
+  bounceMode:  z.enum(['INTERNAL_NOTE', 'DEBIT_NOTE']).optional(),
 });
 
 export const reciboCheckQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().default(50),
   customerId: z.string().optional(),
-  checkStatus: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED']).optional(),
+  checkStatus: z.enum(['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'EGRESADO']).optional(),
   dueDateFrom: z.string().optional(),
   dueDateTo: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
+  search: z.string().trim().max(100).optional(),   // N° de cheque o de recibo
 });
 
 export type CreateReciboDTO = z.infer<typeof createReciboSchema>;

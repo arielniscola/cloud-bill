@@ -32,7 +32,7 @@ import {
 } from '../../services/CustomerSettlementService';
 import { addCustomerMovement } from '../../services/customerAccountMovements';
 import prisma from '../../database/prisma';
-import { writeTransport } from '../../database/partyExtras';
+import { writeTransport, writeBuyer, normalizeBuyer, BuyerInfo } from '../../database/partyExtras';
 import {
   assertItemsMatchRemitos,
   assertRemitosBillable,
@@ -59,6 +59,11 @@ async function resolveInvoiceCustomerId(body: any, companyId: string): Promise<s
     throw new AppError('Una venta a cuenta corriente requiere seleccionar un cliente', 400);
   }
   return resolveConsumidorFinalCustomerId(companyId);
+}
+
+/** Nombre/DNI del comprador: solo cuenta en una venta sin cliente (Consumidor Final). */
+function invoiceBuyer(body: any): BuyerInfo {
+  return body.customerId ? { buyerName: null, buyerDocument: null } : normalizeBuyer(body.buyerName, body.buyerDocument);
 }
 
 /**
@@ -218,7 +223,7 @@ const MANUAL_STATUS_HINTS: Record<string, string> = {
  * sin importar el camino (emitir, emitir a ARCA o cobrar), y que la factura
  * pase a ISSUED en la misma transacción que sus efectos.
  */
-async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx, opts: IssuanceOpts = {}): Promise<boolean> {
+export async function leaveDraftIfNeeded(invoice: any, ctx: IssuanceCtx, opts: IssuanceOpts = {}): Promise<boolean> {
   if (invoice && invoice.status === 'DRAFT') {
     return applyIssuanceEffects(invoice, ctx, opts);
   }
@@ -481,6 +486,9 @@ export class InvoiceController {
       await saveLotSelections('invoices', invoice.id, selectionsFromItems(req.body.items));
       await writeTransport('invoices', invoice.id, req.body.transport);
       (invoice as any).transport = req.body.transport ?? null;
+      const buyer = invoiceBuyer(req.body);
+      await writeBuyer('invoices', invoice.id, buyer);
+      Object.assign(invoice as any, buyer);
 
       // Vincula los remitos bajo cerrojo: si otra factura los tomó entre la
       // validación y el alta, este borrador se descarta.
@@ -764,6 +772,9 @@ export class InvoiceController {
       await setSaleWarehouse('invoices', req.params.id, req.body.warehouseId ?? null);
       await saveLotSelections('invoices', req.params.id, selectionsFromItems(req.body.items));
       await writeTransport('invoices', req.params.id, req.body.transport);
+      const buyer = invoiceBuyer(req.body);
+      await writeBuyer('invoices', req.params.id, buyer);
+      Object.assign(invoice as any, buyer);
 
       res.json({
         status: 'success',

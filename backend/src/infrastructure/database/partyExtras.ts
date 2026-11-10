@@ -92,3 +92,35 @@ export async function writeTransport(
     Prisma.sql`UPDATE ${Prisma.raw(`"${table}"`)} SET "transport" = ${transport || null} WHERE id = ${id}`
   );
 }
+
+/** Comprador de una venta a Consumidor Final (sin cliente): nombre y DNI cargados a mano. */
+export type BuyerInfo = { buyerName: string | null; buyerDocument: string | null };
+type BuyerTable = 'invoices' | 'orden_pedidos';
+
+/** Normaliza lo que llega del formulario: texto recortado, documento solo dígitos. */
+export function normalizeBuyer(name: unknown, document: unknown): BuyerInfo {
+  const n = typeof name === 'string' ? name.trim() : '';
+  const d = typeof document === 'string' ? document.replace(/\D/g, '') : '';
+  return { buyerName: n || null, buyerDocument: d || null };
+}
+
+export async function readBuyer(table: BuyerTable, id: string): Promise<BuyerInfo> {
+  if (!(await columnExists(table, 'buyerName'))) return { buyerName: null, buyerDocument: null };
+  const rows = await prisma.$queryRaw<BuyerInfo[]>(
+    Prisma.sql`SELECT "buyerName", "buyerDocument" FROM ${Prisma.raw(`"${table}"`)} WHERE id = ${id}`
+  );
+  return { buyerName: rows[0]?.buyerName ?? null, buyerDocument: rows[0]?.buyerDocument ?? null };
+}
+
+export async function writeBuyer(
+  table: BuyerTable,
+  id: string,
+  buyer: BuyerInfo,
+  tx?: Prisma.TransactionClient,
+): Promise<void> {
+  if (!(await columnExists(table, 'buyerName'))) return;
+  const client = tx ?? prisma;
+  await client.$executeRaw(
+    Prisma.sql`UPDATE ${Prisma.raw(`"${table}"`)} SET "buyerName" = ${buyer.buyerName}, "buyerDocument" = ${buyer.buyerDocument} WHERE id = ${id}`
+  );
+}

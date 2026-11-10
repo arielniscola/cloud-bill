@@ -38,7 +38,7 @@ export interface Product {
 
 /** Origen de un cambio de precio/costo (ver product_price_history). */
 export type PriceChangeSource =
-  | 'CREATE' | 'MANUAL' | 'BULK' | 'IMPORT' | 'USD_RECALC' | 'PURCHASE_INVOICE' | 'REVERT' | 'OTHER';
+  | 'CREATE' | 'MANUAL' | 'BULK' | 'IMPORT' | 'USD_RECALC' | 'PRICE_LIST_RATE' | 'PURCHASE_INVOICE' | 'REVERT' | 'OTHER';
 
 /**
  * Quién y por qué cambia el precio. Se estampa en la misma sentencia que el
