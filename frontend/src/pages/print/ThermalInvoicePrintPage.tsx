@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { invoicesService, afipService } from '../../services';
 import companiesService from '../../services/companies.service';
-import { formatCuit } from '../../utils/formatters';
+import { formatCuit, formatBuyerDocument } from '../../utils/formatters';
 import {
   afipInvoiceNumber,
   buildAfipQrUrl,
@@ -164,8 +164,10 @@ export default function ThermalInvoicePrintPage() {
       {/* ── Cliente ── */}
       {invoice.customer ? (
         <>
-          <p className="b">Cliente: {invoice.customer.name}</p>
-          {invoice.customer.taxId && <p className="sm">CUIT/DNI: {formatCuit(invoice.customer.taxId)}</p>}
+          <p className="b">Cliente: {invoice.buyerName || invoice.customer.name}</p>
+          {invoice.buyerDocument
+            ? <p className="sm">{formatBuyerDocument(invoice.buyerDocument)}</p>
+            : invoice.customer.taxId && <p className="sm">CUIT/DNI: {formatCuit(invoice.customer.taxId)}</p>}
           {invoice.customer.taxCondition && (
             <p className="sm">{invoice.customer.taxCondition.replace(/_/g, ' ')}</p>
           )}

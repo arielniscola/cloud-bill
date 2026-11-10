@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -308,10 +308,11 @@ export default function RemitoFormPage() {
     }
   };
 
-  const sourceProductOptions = [
-    { value: '', label: 'Seleccioná un producto' },
-    ...sourceProducts.map((p) => ({ value: p.id, label: `${p.sku} - ${p.name}` })),
-  ];
+  // Productos del comprobante de origen (lista acotada): se buscan en memoria.
+  const sourceProductsAsProducts = useMemo(
+    () => sourceProducts.map((p) => ({ id: p.id, name: p.name, sku: p.sku }) as unknown as Product),
+    [sourceProducts],
+  );
 
   const sourceLabel = invoiceId ? 'Factura' : 'Presupuesto';
   const sourceNumber = sourceDoc
@@ -383,10 +384,12 @@ export default function RemitoFormPage() {
                     >
                       <div>
                         {hasSource ? (
-                          <Select
-                            options={sourceProductOptions}
+                          <ProductSearchSelect
+                            products={sourceProductsAsProducts}
                             value={items[index]?.productId || ''}
                             onChange={(value) => setValue(`items.${index}.productId`, value)}
+                            placeholder="Seleccioná un producto"
+                            showStock={false}
                             error={errors.items?.[index]?.productId?.message}
                           />
                         ) : (

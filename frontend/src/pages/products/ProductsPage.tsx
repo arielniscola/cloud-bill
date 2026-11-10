@@ -92,8 +92,10 @@ function FilterSelect({
 
 // ── Brand searchable select ──────────────────────────────────────
 function BrandSearchSelect({
-  value, onChange, options,
+  value, onChange, options, label = 'Marca', searchPlaceholder = 'Buscar marca…',
 }: {
+  label?: string;
+  searchPlaceholder?: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
@@ -140,7 +142,7 @@ function BrandSearchSelect({
             : 'bg-white dark:bg-slate-700 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-500'
         }`}
       >
-        {selectedLabel ?? 'Marca'}
+        {selectedLabel ?? label}
         {isActive ? (
           <X
             className="w-3 h-3 ml-0.5 opacity-60 hover:opacity-100"
@@ -161,7 +163,7 @@ function BrandSearchSelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Buscar marca…"
+              placeholder={searchPlaceholder}
               className="flex-1 text-xs bg-transparent outline-none text-gray-700 dark:text-slate-200 placeholder-gray-400 dark:placeholder-slate-500"
             />
             {query && (
@@ -901,6 +903,7 @@ export default function ProductsPage() {
             <HeaderMenu
               items={[
                 { label: 'Importar CSV',          icon: Upload,    onClick: () => setShowImport(true) },
+                { label: 'Lista de precios',      icon: Search,    onClick: () => navigate('/products/price-list') },
                 { label: 'Actualizar precios',    icon: RefreshCw, onClick: () => navigate('/products/bulk-price-update') },
                 { label: 'Actualización masiva',  icon: Wand2,     onClick: () => navigate('/products/bulk-update') },
                 { label: 'Recalcular costos USD', icon: DollarSign, onClick: () => setShowRecalcUsd(true) },
@@ -943,7 +946,7 @@ export default function ProductsPage() {
                 <BrandSearchSelect value={brandFilter} onChange={(v) => { setBrandFilter(v); resetPage(); }} options={brandOptions} />
               )}
               {supplierOptions.length > 0 && (
-                <FilterSelect label="Proveedor" value={supplierFilter} onChange={(v) => { setSupplierFilter(v); resetPage(); }} options={supplierOptions} />
+                <BrandSearchSelect label="Proveedor" searchPlaceholder="Buscar proveedor…" value={supplierFilter} onChange={(v) => { setSupplierFilter(v); resetPage(); }} options={supplierOptions} />
               )}
               <FilterSelect
                 label="Stock"

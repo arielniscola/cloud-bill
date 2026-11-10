@@ -1,5 +1,5 @@
 import api from './api';
-import type { Cheque, CreateChequeDTO, ChequeStatus } from '../types/cheque.types';
+import type { Cheque, CreateChequeDTO, ChequeStatus, ChequeBounceOptions, ChequeBounceResult } from '../types/cheque.types';
 
 interface ChequesResponse {
   status: string;
@@ -14,6 +14,8 @@ interface ChequeFilters {
   supplierId?: string;
   /** Talonario propio del que salió el cheque. */
   chequeraId?: string;
+  /** N° de cheque o número interno. */
+  search?:     string;
   page?:       number;
   limit?:      number;
 }
@@ -34,9 +36,14 @@ const chequesService = {
     return res.data.data;
   },
 
-  async updateStatus(id: string, status: ChequeStatus): Promise<Cheque> {
-    const res = await api.patch<{ data: Cheque }>(`/cheques/${id}/status`, { status });
-    return res.data.data;
+  /** `bounce`: al rechazar, cómo se documenta el débito al cliente/proveedor. */
+  async updateStatus(
+    id: string, status: ChequeStatus, bounce?: ChequeBounceOptions,
+  ): Promise<{ data: Cheque; bounce: ChequeBounceResult | null }> {
+    const res = await api.patch<{ data: Cheque; bounce?: ChequeBounceResult | null }>(
+      `/cheques/${id}/status`, { status, ...(bounce ?? {}) },
+    );
+    return { data: res.data.data, bounce: res.data.bounce ?? null };
   },
 
   async delete(id: string): Promise<void> {

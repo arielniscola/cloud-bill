@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { Plus, Trash2, Calculator, AlertTriangle, Info, ClipboardList, Search, ChevronDown, FileText, Send, Zap, RotateCcw, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal, ItemDetailInput } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, ImportFromOPModal, ItemDetailInput, ConsumidorFinalFields, buyerDocumentError } from '../../components/shared';
 import type { ImportedItem } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
@@ -168,6 +168,9 @@ const invoiceSchema = z.object({
   ]),
   // Vacío = venta a "Consumidor Final" (el backend la imputa al cliente genérico).
   customerId: z.string().optional().nullable(),
+  // Sin cliente: nombre y DNI/CUIL del consumidor final (opcionales).
+  buyerName: z.string().max(120).optional().nullable(),
+  buyerDocument: z.string().optional().nullable(),
   date: z.string().optional(),
   isService: z.boolean().default(false),
   stockBehavior: z.enum(['DISCOUNT', 'RESERVE']).default('DISCOUNT'),
@@ -195,6 +198,10 @@ const invoiceSchema = z.object({
       message: 'Seleccioná el comprobante de origen',
       path: ['originInvoiceId'],
     });
+  }
+  const docError = !data.customerId ? buyerDocumentError(data.buyerDocument) : null;
+  if (docError) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: docError, path: ['buyerDocument'] });
   }
 });
 
@@ -688,6 +695,8 @@ export default function InvoiceFormPage() {
         reset({
           type: invoice.type,
           customerId: invoice.customerId,
+          buyerName: invoice.buyerName ?? '',
+          buyerDocument: invoice.buyerDocument ?? '',
           date: invoice.date ? invoice.date.substring(0, 10) : new Date().toISOString().substring(0, 10),
           isService: false,
           stockBehavior: (invoice.stockBehavior as 'DISCOUNT' | 'RESERVE') ?? 'DISCOUNT',
@@ -1058,10 +1067,27 @@ export default function InvoiceFormPage() {
 
   // ── Derived warnings ────────────────────────────────────────────────────
   const selectedCustomer = findCustomer(customerId);
+  const buyerName = watch('buyerName') ?? '';
+  const buyerDocument = watch('buyerDocument') ?? '';
+  // Sin cliente se puede identificar al consumidor final con su DNI/CUIL.
+  const buyerIdentified = !customerId && !buyerDocumentError(buyerDocument) && buyerDocument.replace(/\D/g, '').length > 0;
   const needsCustomerId =
     saleCondition === 'CONTADO' &&
     grandTotal > CASH_ID_THRESHOLD &&
-    !selectedCustomer?.taxId;
+    !selectedCustomer?.taxId &&
+    !buyerIdentified;
+  const renderBuyerFields = (compact = false) =>
+    !customerId && !isNcNd ? (
+      <ConsumidorFinalFields
+        compact={compact}
+        name={buyerName}
+        document={buyerDocument}
+        onNameChange={(v) => setValue('buyerName', v)}
+        onDocumentChange={(v) => setValue('buyerDocument', v, { shouldValidate: !!errors.buyerDocument })}
+        error={errors.buyerDocument?.message}
+        disabled={remitoLock}
+      />
+    ) : null;
 
   const advanceDaysLimit = isService ? 10 : 5;
   const dateAdvanceWarning = (() => {
@@ -1371,6 +1397,8 @@ export default function InvoiceFormPage() {
       // cliente también la lleva a Factura C (o al tipo fijado en Configuración).
       type: getConsumidorFinalInvoiceType(configuredInvoiceTypeRef.current),
       customerId: '',
+      buyerName: '',
+      buyerDocument: '',
       date: new Date().toISOString().substring(0, 10),
       isService: false,
       stockBehavior: 'DISCOUNT',
@@ -1533,6 +1561,7 @@ export default function InvoiceFormPage() {
               setValue('customerId', pickedId);
             }}
             customerError={errors.customerId?.message}
+            buyerFields={renderBuyerFields(true)}
             type={type}
             typeOptions={INVOICE_TYPE_OPTIONS}
             onTypeChange={(value) => setValue('type', value as InvoiceType)}
@@ -1587,6 +1616,7 @@ export default function InvoiceFormPage() {
               setValue('customerId', pickedId);
             }}
             customerError={errors.customerId?.message}
+            buyerFields={renderBuyerFields()}
             type={type}
             typeOptions={INVOICE_TYPE_OPTIONS}
             onTypeChange={(value) => setValue('type', value as InvoiceType)}
@@ -1965,6 +1995,7 @@ export default function InvoiceFormPage() {
                 searchParams={{ isActive: true }}
                 disabled={remitoLock}
               />
+              {renderBuyerFields()}
 
               <Select
                 label="Tipo de comprobante"
@@ -2020,7 +2051,7 @@ export default function InvoiceFormPage() {
                 <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2.5">
                   <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800 dark:text-amber-400">
-                    Ventas en efectivo superiores a ${CASH_ID_THRESHOLD.toLocaleString('es-AR')} requieren identificar al cliente (CUIT/DNI). El cliente seleccionado no tiene CUIT registrado.
+                    Ventas en efectivo superiores a ${CASH_ID_THRESHOLD.toLocaleString('es-AR')} requieren identificar al comprador: elegí un cliente con CUIT o cargá el DNI del consumidor final.
                   </p>
                 </div>
               )}

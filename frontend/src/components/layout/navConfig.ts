@@ -108,6 +108,7 @@ export const navModules: NavModule[] = [
     moduleKey: "catalogo",
     items: [
       { name: "Productos",             href: "/products",                icon: Package,       section: "Productos" },
+      { name: "Lista de precios",      href: "/products/price-list",     icon: Tags,          section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Rubros",                href: "/rubros",                  icon: FolderTree,    section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Marcas",                href: "/brands",                  icon: Tag,           section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Categorías",            href: "/categories",              icon: Layers,        section: "Productos", requiredRoles: NOT_WAREHOUSE_ROLES },
@@ -136,6 +137,7 @@ export const navModules: NavModule[] = [
       { name: "Bancos",            href: "/bancos",         icon: Building2, section: "Tesorería" },
       { name: "Motivos de caja",   href: "/cash-movement-reasons", icon: Tags, section: "Tesorería" },
       { name: "Banco de Cheques",  href: "/banco-cheques",  icon: Banknote,  section: "Tesorería", featureKey: "bank_module" },
+      { name: "Motivos de egreso de cheques", href: "/cheque-egreso-reasons", icon: Tags, section: "Tesorería", featureKey: "bank_module" },
       { name: "Cuentas Bancarias", href: "/banks",          icon: Landmark,  section: "Tesorería", featureKey: "bank_module" },
       { name: "Tarjetas",          href: "/cards",          icon: CreditCard,section: "Tesorería", featureKey: "cards" },
       { name: "MercadoPago",       href: "/mercadopago",    icon: Smartphone,section: "Tesorería", featureKey: "mercadopago" },

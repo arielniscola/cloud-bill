@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
-import { PageHeader, Pagination, ConfirmDialog } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, Pagination, ConfirmDialog } from '../../components/shared';
 import type { RemitoPrefill } from '../../components/shared/AddPurchaseInvoiceModal';
 import { purchaseInvoicesService, suppliersService } from '../../services';
 import { formatDate, formatCurrency, daysUntil } from '../../utils/formatters';
@@ -575,10 +575,13 @@ export default function PurchaseInvoicesPage() {
               <div className="absolute right-0 top-full mt-2 z-20 w-80 p-4 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-lg space-y-3">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Proveedor</label>
-                  <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} className={SELECT_CLS}>
-                    <option value="">Todos los proveedores</option>
-                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <SupplierSearchSelect
+                    suppliers={suppliers}
+                    value={supplierFilter}
+                    onChange={(id) => setSupplierFilter(id)}
+                    clearLabel="Todos los proveedores"
+                    serverSearch
+                  />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Tipo de comprobante</label>

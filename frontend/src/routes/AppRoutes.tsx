@@ -16,6 +16,7 @@ import ProductFormPage from '../pages/products/ProductFormPage';
 import ProductDetailPage from '../pages/products/ProductDetailPage';
 import BulkPriceUpdatePage from '../pages/products/BulkPriceUpdatePage';
 import PriceHistoryPage from '../pages/products/PriceHistoryPage';
+import PriceListPage from '../pages/products/PriceListPage';
 import BulkProductUpdatePage from '../pages/products/BulkProductUpdatePage';
 import RubrosPage from '../pages/rubros/RubrosPage';
 import WarehousesPage from '../pages/warehouses/WarehousesPage';
@@ -96,6 +97,7 @@ import BancosPage from '../pages/bancos/BancosPage';
 import ProvinciasPage from '../pages/provincias/ProvinciasPage';
 import LocalidadesPage from '../pages/localidades/LocalidadesPage';
 import CashMovementReasonsPage from '../pages/cash-movement-reasons/CashMovementReasonsPage';
+import ChequeEgresoReasonsPage from '../pages/cheque-egreso-reasons/ChequeEgresoReasonsPage';
 import CategoriesPage from '../pages/categories/CategoriesPage';
 import ProductCustomFieldsPage from '../pages/product-custom-fields/ProductCustomFieldsPage';
 import PlansPage from '../pages/plans/PlansPage';
@@ -197,6 +199,7 @@ export default function AppRoutes() {
           <Route path="/products/new" element={<ProductFormPage />} />
           <Route path="/products/bulk-price-update" element={<BulkPriceUpdatePage />} />
           <Route path="/products/price-history" element={<PriceHistoryPage />} />
+          <Route path="/products/price-list" element={<PriceListPage />} />
           <Route path="/products/bulk-update" element={<BulkProductUpdatePage />} />
           <Route path="/products/:id/edit" element={<ProductFormPage />} />
           <Route path="/warehouses/new" element={<WarehouseFormPage />} />
@@ -282,6 +285,7 @@ export default function AppRoutes() {
 
           {/* Motivos de retiros / ingresos de caja (parametrización) */}
           <Route path="/cash-movement-reasons" element={<CashMovementReasonsPage />} />
+          <Route path="/cheque-egreso-reasons" element={<ChequeEgresoReasonsPage />} />
 
           {/* MercadoPago */}
           <Route element={<FeatureRouteGuard feature="mercadopago" />}>

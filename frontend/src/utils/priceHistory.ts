@@ -7,6 +7,7 @@ export const PRICE_SOURCE_LABEL: Record<PriceChangeSource, string> = {
   BULK:             'Actualización masiva',
   IMPORT:           'Importación',
   USD_RECALC:       'Recálculo de costos USD',
+  PRICE_LIST_RATE:  'Lista de precios (dólar del día)',
   PURCHASE_INVOICE: 'Factura de compra',
   REVERT:           'Deshacer',
   OTHER:            'Otro',

@@ -3,12 +3,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle, ChevronDown,
   Landmark, ArrowUpDown, ArrowUp, ArrowDown, Plus, ArrowDownCircle, ArrowUpCircle,
-  Trash2, Pencil, BookText, ChevronRight,
+  Trash2, Pencil, BookText, ChevronRight, LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Select } from '../../components/ui';
 import {
-  PageHeader, Pagination, BancoSelect, ChequeNumberInput,
+  PageHeader, Pagination, BancoSelect, ChequeNumberInput, CustomerSearchSelect, SupplierSearchSelect, SearchInput,
   useBancos, findBancoByName, joinChequeNumber, parseChequeNumber, formatChequeNumber,
 } from '../../components/shared';
 import { recibosService, customersService, cashRegistersService, bankService, suppliersService } from '../../services';
@@ -20,10 +20,15 @@ import { CHECK_STATUSES, CHECK_STATUS_COLORS } from '../../utils/constants';
 import {
   CHEQUE_STATUS_LABELS, CHEQUE_STATUS_COLORS, CHEQUE_NEXT_STATUSES,
   type Cheque, type CreateChequeDTO, type ChequeStatus,
+  type ChequeBounceMode, type ChequeBounceOptions, type ChequeBounceResult,
 } from '../../types/cheque.types';
-import type { Recibo, CheckStatus, Customer } from '../../types';
+import type { Recibo, CheckStatus, Customer, Supplier } from '../../types';
 import type { BankAccount } from '../../types/bank.types';
 import { apiErrorMessage } from '../../utils/apiError';
+import { useAuthStore } from '../../stores';
+import { roleAllowed } from '../../utils/roles';
+import EgresoCarteraModal from './EgresoCarteraModal';
+import EgresosCarteraTab from './EgresosCarteraTab';
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 function isOverdue(recibo: Recibo): boolean {
@@ -42,6 +47,7 @@ const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'CLEARED',   label: 'Acreditados' },
   { value: 'BOUNCED',   label: 'Rechazados'  },
   { value: 'RETURNED',  label: 'Devueltos'   },
+  { value: 'EGRESADO',  label: 'Egresados'   },
 ];
 
 const NEXT_STATUSES: Record<string, Array<{ value: CheckStatus; label: string }>> = {
@@ -57,6 +63,8 @@ const NEXT_STATUSES: Record<string, Array<{ value: CheckStatus; label: string }>
   CLEARED: [],
   BOUNCED: [{ value: 'PENDING', label: 'Volver a cartera' }],
   RETURNED: [{ value: 'PENDING', label: 'Volver a cartera' }],
+  // Egresado de cartera: se revierte anulando el egreso (pestaña "Egresos de cartera").
+  EGRESADO: [],
 };
 
 /* ── Deposit modal (recibos) ─────────────────────────────────────── */
@@ -135,6 +143,154 @@ function DepositModal({
       </div>
     </div>
   );
+}
+
+/* ── Bounce modal: elegir cómo se documenta el débito ────────────── */
+interface BounceTarget {
+  kind:       'recibo' | 'cheque';
+  id:         string;
+  party:      'CUSTOMER' | 'SUPPLIER';
+  partyName:  string;
+  reference:  string;
+  amount:     number;
+  currency:   string;
+  /** Letra sugerida para la ND de compra (según la condición del proveedor). */
+  defaultLetter?: 'A' | 'B' | 'C';
+}
+
+function BounceModal({
+  target, onClose, onConfirm,
+}: {
+  target:    BounceTarget;
+  onClose:   () => void;
+  onConfirm: (opts: ChequeBounceOptions) => Promise<void>;
+}) {
+  const [mode,   setMode]   = useState<ChequeBounceMode>('INTERNAL_NOTE');
+  const [number, setNumber] = useState('');
+  const [letter, setLetter] = useState<'A' | 'B' | 'C'>(target.defaultLetter ?? 'A');
+  const [saving, setSaving] = useState(false);
+  const isSupplier = target.party === 'SUPPLIER';
+
+  const handleConfirm = async () => {
+    if (mode === 'DEBIT_NOTE' && isSupplier && !number.trim()) {
+      toast.error('Indicá el número de la Nota de Débito del proveedor');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onConfirm({
+        bounceMode: mode,
+        ...(mode === 'DEBIT_NOTE' && isSupplier ? { debitNoteNumber: number.trim(), debitNoteLetter: letter } : {}),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const options: Array<{ value: ChequeBounceMode; title: string; desc: string }> = [
+    {
+      value: 'INTERNAL_NOTE',
+      title: 'Débito interno',
+      desc:  'Nota de débito interna (no fiscal) en la cuenta corriente. Se revierte sola si el cheque vuelve a cartera.',
+    },
+    {
+      value: 'DEBIT_NOTE',
+      title: 'Nota de Débito',
+      desc:  isSupplier
+        ? 'Registra la Nota de Débito que te envió el proveedor (comprobante de compra) por el importe del cheque.'
+        : 'Emite una Nota de Débito al cliente por el importe del cheque (no gravado). No se envía a ARCA: podés autorizarla después desde el comprobante.',
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Rechazar cheque</h2>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
+          {formatChequeNumber(target.reference) || target.reference} · {formatCurrency(target.amount, target.currency as 'ARS' | 'USD')}
+          {' · '}{isSupplier ? 'Proveedor' : 'Cliente'}: <span className="font-medium text-gray-700 dark:text-slate-200">{target.partyName}</span>
+        </p>
+
+        <p className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">¿Cómo se debita el importe?</p>
+        <div className="space-y-2 mb-4">
+          {options.map((o) => (
+            <label
+              key={o.value}
+              className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                mode === o.value
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                  : 'border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <input
+                type="radio"
+                name="bounceMode"
+                className="mt-0.5 accent-indigo-600"
+                checked={mode === o.value}
+                onChange={() => setMode(o.value)}
+              />
+              <span>
+                <span className="block text-sm font-medium text-gray-900 dark:text-white">{o.title}</span>
+                <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">{o.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {mode === 'DEBIT_NOTE' && isSupplier && (
+          <div className="grid grid-cols-3 gap-3 mb-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Letra</label>
+              <select
+                value={letter}
+                onChange={(e) => setLetter(e.target.value as 'A' | 'B' | 'C')}
+                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="A">ND A</option>
+                <option value="B">ND B</option>
+                <option value="C">ND C</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">N° de la ND del proveedor *</label>
+              <input
+                autoFocus
+                value={number}
+                onChange={(e) => setNumber(e.target.value)}
+                placeholder="0001-00001234"
+                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 mt-5">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button isLoading={saving} onClick={handleConfirm} className="bg-red-600 hover:bg-red-700">
+            Rechazar cheque
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Mensaje de éxito según el documento que generó el rechazo. */
+function bounceToast(bounce: ChequeBounceResult | null) {
+  switch (bounce?.kind) {
+    case 'SALES_DEBIT_NOTE':    toast.success(`Cheque rechazado · Nota de Débito ${bounce.number} emitida (sin enviar a ARCA)`); break;
+    case 'PURCHASE_DEBIT_NOTE': toast.success(`Cheque rechazado · Nota de Débito de compra ${bounce.number} cargada`); break;
+    case 'INTERNAL_NOTE':       toast.success(`Cheque rechazado · débito interno ${bounce.number ?? ''} generado`.trim()); break;
+    case 'REVERSED':            toast.success('Estado actualizado · débito del rechazo revertido'); break;
+    default:                    toast.success('Estado actualizado');
+  }
+}
+
+/** Letra habitual de la ND que manda un proveedor según su condición fiscal. */
+function supplierDefaultLetter(taxCondition?: string | null): 'A' | 'B' | 'C' {
+  if (taxCondition === 'RESPONSABLE_INSCRIPTO') return 'A';
+  if (taxCondition === 'MONOTRIBUTISTA' || taxCondition === 'EXENTO') return 'C';
+  return 'B';
 }
 
 /* ── Manual cheque form modal ────────────────────────────────────── */
@@ -319,26 +475,24 @@ function ChequeFormModal({
           {isIngreso ? (
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Cliente (opcional)</label>
-              <select
+              <CustomerSearchSelect
+                customers={customers}
                 value={form.customerId ?? ''}
-                onChange={(e) => set('customerId', e.target.value || null)}
-                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Sin cliente</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+                onChange={(id) => set('customerId', id || null)}
+                clearLabel="Sin cliente"
+                serverSearch
+              />
             </div>
           ) : (
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Proveedor (opcional)</label>
-              <select
+              <SupplierSearchSelect
+                suppliers={suppliers}
                 value={form.supplierId ?? ''}
-                onChange={(e) => set('supplierId', e.target.value || null)}
-                className="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Sin proveedor</option>
-                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+                onChange={(id) => set('supplierId', id || null)}
+                clearLabel="Sin proveedor"
+                serverSearch
+              />
             </div>
           )}
 
@@ -824,7 +978,13 @@ export default function BancoCheques() {
   const navigate = useNavigate();
 
   // ── Tab state ──────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'cobranzas' | 'ingreso' | 'egreso' | 'chequeras'>('cobranzas');
+  const [activeTab, setActiveTab] = useState<'cobranzas' | 'ingreso' | 'egreso' | 'egresosCartera' | 'chequeras'>('cobranzas');
+
+  // ── Egreso de cheques en cartera ───────────────────────────────
+  const role = useAuthStore((s) => s.user?.role);
+  const canEgresar = roleAllowed(role, ['ADMIN', 'FINANCES']);
+  const [showEgresoModal, setShowEgresoModal] = useState(false);
+  const [egresosReloadKey, setEgresosReloadKey] = useState(0);
 
   // ── Recibos (cobranzas CHECK) state ───────────────────────────
   const [checks,    setChecks]    = useState<Recibo[]>([]);
@@ -835,6 +995,8 @@ export default function BancoCheques() {
   const [totalPages,  setTotalPages]  = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [checkSearch, setCheckSearch] = useState('');
+  const [bounceTarget, setBounceTarget] = useState<BounceTarget | null>(null);
   const [updatingId,  setUpdatingId]  = useState<string | null>(null);
   const [openMenuId,  setOpenMenuId]  = useState<string | null>(null);
   const [menuPos,     setMenuPos]     = useState<{ top: number; right: number } | null>(null);
@@ -849,6 +1011,7 @@ export default function BancoCheques() {
   const [manualTotal,    setManualTotal]    = useState(0);
   const [updatingManId,  setUpdatingManId]  = useState<string | null>(null);
   const [showFormType,   setShowFormType]   = useState<'INGRESO' | 'EGRESO' | null>(null);
+  const [manualSearch,   setManualSearch]   = useState('');
 
   // ── Chequeras state ────────────────────────────────────────────
   const [chequeras,        setChequeras]        = useState<Chequera[]>([]);
@@ -859,7 +1022,7 @@ export default function BancoCheques() {
 
   // ── Shared reference data ──────────────────────────────────────
   const [customers,     setCustomers]     = useState<Customer[]>([]);
-  const [suppliers,     setSuppliers]     = useState<{ id: string; name: string }[]>([]);
+  const [suppliers,     setSuppliers]     = useState<Supplier[]>([]);
   const [bankAccounts,  setBankAccounts]  = useState<BankAccount[]>([]);
   const [cashRegisters, setCashRegisters] = useState<{ id: string; name: string }[]>([]);
 
@@ -869,6 +1032,7 @@ export default function BancoCheques() {
     try {
       const filters: Record<string, any> = { page, limit };
       if (selectedCustomerId) filters.customerId = selectedCustomerId;
+      if (checkSearch.trim()) filters.search = checkSearch.trim();
       if (statusFilter === 'OVERDUE') {
         filters.checkStatus = 'PENDING';
         filters.dueDateTo = new Date().toISOString();
@@ -886,13 +1050,13 @@ export default function BancoCheques() {
     } finally {
       setIsLoadingR(false);
     }
-  }, [page, statusFilter, selectedCustomerId]);
+  }, [page, statusFilter, selectedCustomerId, checkSearch]);
 
   // ── Load manual cheques ────────────────────────────────────────
   const loadManual = useCallback(async (type: 'INGRESO' | 'EGRESO') => {
     setIsLoadingM(true);
     try {
-      const result = await chequesService.getAll({ type, limit: 200 });
+      const result = await chequesService.getAll({ type, limit: 200, search: manualSearch.trim() || undefined });
       setManualCheques(result.data);
       setManualTotal(result.total);
     } catch {
@@ -900,7 +1064,7 @@ export default function BancoCheques() {
     } finally {
       setIsLoadingM(false);
     }
-  }, []);
+  }, [manualSearch]);
 
   const loadChequeras = useCallback(async () => {
     setIsLoadingCheq(true);
@@ -939,13 +1103,31 @@ export default function BancoCheques() {
       if (recibo) setDepositRecibo(recibo);
       return;
     }
+    if (status === 'BOUNCED') {
+      const recibo = checks.find((c) => c.id === id);
+      if (recibo?.customerId) {
+        setBounceTarget({
+          kind: 'recibo', id, party: 'CUSTOMER',
+          partyName: recibo.customer?.name ?? 'Cliente',
+          reference: recibo.reference || recibo.number,
+          amount:    Number(recibo.amount),
+          currency:  recibo.currency ?? 'ARS',
+        });
+        return;
+      }
+    }
+    await applyReciboStatus(id, status).catch(() => { /* ya avisado */ });
+  };
+
+  const applyReciboStatus = async (id: string, status: CheckStatus, bounceMode?: ChequeBounceMode) => {
     setUpdatingId(id);
     try {
-      const updated = await recibosService.updateCheckStatus(id, status);
+      const { data: updated, bounce } = await recibosService.updateCheckStatus(id, status, bounceMode);
       setChecks((prev) => prev.map((c) => (c.id === id ? updated : c)));
-      toast.success(`Estado actualizado`);
+      bounceToast(bounce);
     } catch (error) {
       toast.error(apiErrorMessage(error) || 'Error al actualizar');
+      throw error;
     } finally {
       setUpdatingId(null);
     }
@@ -953,16 +1135,46 @@ export default function BancoCheques() {
 
   // ── Manual cheques actions ─────────────────────────────────────
   const handleManualStatusChange = async (id: string, status: ChequeStatus) => {
+    if (status === 'BOUNCED') {
+      const ch = manualCheques.find((c) => c.id === id);
+      if (ch && (ch.customerId || ch.supplierId)) {
+        const supplier = ch.supplierId ? suppliers.find((s) => s.id === ch.supplierId) : undefined;
+        setBounceTarget({
+          kind: 'cheque', id,
+          party:     ch.customerId ? 'CUSTOMER' : 'SUPPLIER',
+          partyName: ch.customer?.name ?? ch.supplier?.name ?? supplier?.name ?? '—',
+          reference: ch.checkNumber || ch.number,
+          amount:    Number(ch.amount),
+          currency:  ch.currency ?? 'ARS',
+          defaultLetter: supplierDefaultLetter(supplier?.taxCondition),
+        });
+        return;
+      }
+    }
+    await applyManualStatus(id, status).catch(() => { /* ya avisado */ });
+  };
+
+  const applyManualStatus = async (id: string, status: ChequeStatus, bounce?: ChequeBounceOptions) => {
     setUpdatingManId(id);
     try {
-      const updated = await chequesService.updateStatus(id, status);
+      const { data: updated, bounce: result } = await chequesService.updateStatus(id, status, bounce);
       setManualCheques((prev) => prev.map((c) => (c.id === id ? updated : c)));
-      toast.success(`Estado actualizado`);
+      bounceToast(result);
     } catch (error) {
       toast.error(apiErrorMessage(error) || 'Error al actualizar');
+      throw error;
     } finally {
       setUpdatingManId(null);
     }
+  };
+
+  const handleBounceConfirm = async (opts: ChequeBounceOptions) => {
+    if (!bounceTarget) return;
+    try {
+      if (bounceTarget.kind === 'recibo') await applyReciboStatus(bounceTarget.id, 'BOUNCED', opts.bounceMode);
+      else await applyManualStatus(bounceTarget.id, 'BOUNCED', opts);
+      setBounceTarget(null);
+    } catch { /* el error ya se mostró; el modal queda abierto para corregir */ }
   };
 
   const handleManualDelete = async (id: string) => {
@@ -1005,9 +1217,23 @@ export default function BancoCheques() {
         subtitle="Gestión de cheques recibidos y emitidos"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => activeTab === 'cobranzas' ? loadRecibos() : loadManual(activeTab === 'ingreso' ? 'INGRESO' : 'EGRESO')}>
+            <Button variant="outline" onClick={() => {
+              if (activeTab === 'cobranzas') loadRecibos();
+              else if (activeTab === 'egresosCartera') setEgresosReloadKey((k) => k + 1);
+              else if (activeTab === 'chequeras') loadChequeras();
+              else loadManual(activeTab === 'ingreso' ? 'INGRESO' : 'EGRESO');
+            }}>
               <RefreshCw className="w-4 h-4 mr-2" />Actualizar
             </Button>
+            {canEgresar && (
+              <Button
+                variant="outline"
+                onClick={() => setShowEgresoModal(true)}
+                className="border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-900/20"
+              >
+                <LogOut className="w-4 h-4 mr-2" />Egresar de cartera
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => { setActiveTab('ingreso'); setShowFormType('INGRESO'); }}
@@ -1051,6 +1277,7 @@ export default function BancoCheques() {
           { key: 'cobranzas', label: 'Cobranzas (recibos)', icon: Clock },
           { key: 'ingreso',   label: 'Ingresos manuales',   icon: ArrowDownCircle },
           { key: 'egreso',    label: 'Egresos manuales',    icon: ArrowUpCircle   },
+          { key: 'egresosCartera', label: 'Egresos de cartera', icon: LogOut },
           { key: 'chequeras', label: 'Chequeras',           icon: BookText },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
@@ -1086,15 +1313,20 @@ export default function BancoCheques() {
                 </button>
               ))}
             </div>
-            <div className="relative ml-auto">
-              <select
-                className="text-sm border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-48"
+            <SearchInput
+              value={checkSearch}
+              onChange={(v) => { setCheckSearch(v); setPage(1); }}
+              placeholder="Buscar por N° de cheque…"
+              className="w-56 ml-auto"
+            />
+            <div className="relative w-64">
+              <CustomerSearchSelect
+                customers={customers}
                 value={selectedCustomerId}
-                onChange={(e) => { setSelectedCustomerId(e.target.value); setPage(1); }}
-              >
-                <option value="">Todos los clientes</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+                onChange={(id) => { setSelectedCustomerId(id); setPage(1); }}
+                clearLabel="Todos los clientes"
+                serverSearch
+              />
             </div>
           </div>
 
@@ -1231,9 +1463,17 @@ export default function BancoCheques() {
         <>
           <div className="flex justify-between items-center mb-4">
             <p className="text-sm text-gray-500 dark:text-slate-400">{manualTotal} cheque{manualTotal !== 1 ? 's' : ''} registrado{manualTotal !== 1 ? 's' : ''}</p>
-            <Button onClick={() => setShowFormType('INGRESO')}>
-              <Plus className="w-4 h-4 mr-2" />Nuevo ingreso
-            </Button>
+            <div className="flex items-center gap-3">
+              <SearchInput
+                value={manualSearch}
+                onChange={setManualSearch}
+                placeholder="Buscar por N° de cheque…"
+                className="w-56"
+              />
+              <Button onClick={() => setShowFormType('INGRESO')}>
+                <Plus className="w-4 h-4 mr-2" />Nuevo ingreso
+              </Button>
+            </div>
           </div>
           <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
             <ManualChequesTab
@@ -1252,9 +1492,17 @@ export default function BancoCheques() {
         <>
           <div className="flex justify-between items-center mb-4">
             <p className="text-sm text-gray-500 dark:text-slate-400">{manualTotal} cheque{manualTotal !== 1 ? 's' : ''} registrado{manualTotal !== 1 ? 's' : ''}</p>
-            <Button onClick={() => setShowFormType('EGRESO')}>
-              <Plus className="w-4 h-4 mr-2" />Nuevo egreso
-            </Button>
+            <div className="flex items-center gap-3">
+              <SearchInput
+                value={manualSearch}
+                onChange={setManualSearch}
+                placeholder="Buscar por N° de cheque…"
+                className="w-56"
+              />
+              <Button onClick={() => setShowFormType('EGRESO')}>
+                <Plus className="w-4 h-4 mr-2" />Nuevo egreso
+              </Button>
+            </div>
           </div>
           <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
             <ManualChequesTab
@@ -1268,6 +1516,26 @@ export default function BancoCheques() {
         </>
       )}
 
+      {/* ── Tab: Egresos de cartera ── */}
+      {activeTab === 'egresosCartera' && (
+        <EgresosCarteraTab
+          reloadKey={egresosReloadKey}
+          canCancel={roleAllowed(role, ['ADMIN'])}
+          onChanged={() => { loadRecibos(); }}
+        />
+      )}
+
+      <EgresoCarteraModal
+        isOpen={showEgresoModal}
+        onClose={() => setShowEgresoModal(false)}
+        onDone={() => {
+          setShowEgresoModal(false);
+          setActiveTab('egresosCartera');
+          setEgresosReloadKey((k) => k + 1);
+          loadRecibos();
+        }}
+      />
+
       {/* ── Tab: Chequeras ── */}
       {activeTab === 'chequeras' && (
         <ChequerasTab
@@ -1280,6 +1548,14 @@ export default function BancoCheques() {
       )}
 
       {/* ── Modals ── */}
+      {bounceTarget && (
+        <BounceModal
+          target={bounceTarget}
+          onClose={() => setBounceTarget(null)}
+          onConfirm={handleBounceConfirm}
+        />
+      )}
+
       {depositRecibo && (
         <DepositModal
           recibo={depositRecibo}

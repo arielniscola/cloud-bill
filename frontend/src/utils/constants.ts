@@ -190,6 +190,13 @@ export const OP_PAYMENT_METHOD_OPTIONS = [
   { value: 'COMPENSACION', label: 'Compensación Cli/Prov' },
 ];
 
+/** Rótulo del método de una OP: incluye MIXED (pagada con varias formas de pago). */
+export const OP_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  ...PAYMENT_METHODS,
+  COMPENSACION: 'Compensación Cli/Prov',
+  MIXED: 'Varios medios',
+};
+
 export const RECIBO_STATUSES = {
   EMITTED: 'Emitido',
   CANCELLED: 'Cancelado',
@@ -201,6 +208,7 @@ export const CHECK_STATUSES = {
   CLEARED: 'Acreditado',
   BOUNCED: 'Rechazado',
   RETURNED: 'Devuelto',
+  EGRESADO: 'Egresado',
 } as const;
 
 export const CHECK_STATUS_COLORS: Record<string, string> = {
@@ -209,6 +217,7 @@ export const CHECK_STATUS_COLORS: Record<string, string> = {
   CLEARED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
   BOUNCED: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
   RETURNED: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300',
+  EGRESADO: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
 };
 
 export const CHECK_STATUS_OPTIONS = Object.entries(CHECK_STATUSES).map(([value, label]) => ({ value, label }));

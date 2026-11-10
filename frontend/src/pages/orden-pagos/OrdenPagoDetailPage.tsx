@@ -7,7 +7,7 @@ import { Badge, Button, Card } from '../../components/ui';
 import { PageHeader, ConfirmDialog, formatChequeNumber, DocumentHistory } from '../../components/shared';
 import { ordenPagosService } from '../../services';
 import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
-import { PAYMENT_METHODS, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
+import { RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS, OP_PAYMENT_METHOD_LABELS } from '../../utils/constants';
 import type { OrdenPago } from '../../types/ordenPago.types';
 import OrdenPagoPDF from '../../components/pdf/OrdenPagoPDF';
 import { loadPrintContext, downloadBlob, printBlob } from '../../utils/printContext';
@@ -195,15 +195,15 @@ export default function OrdenPagoDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Método de pago</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{PAYMENT_METHODS[op.paymentMethod] ?? op.paymentMethod}</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{OP_PAYMENT_METHOD_LABELS[op.paymentMethod] ?? op.paymentMethod}</p>
               </div>
-              {op.cashRegister && (
+              {op.cashRegister && op.paymentMethod !== 'MIXED' && (
                 <div>
                   <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Caja</p>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">{op.cashRegister.name}</p>
                 </div>
               )}
-              {op.reference && (
+              {op.reference && op.paymentMethod !== 'MIXED' && (
                 <div>
                   <p className="text-xs text-gray-400 dark:text-slate-500 mb-0.5">Referencia</p>
                   <p className="text-sm text-gray-700 dark:text-slate-300">{op.reference}</p>
@@ -222,6 +222,23 @@ export default function OrdenPagoDetailPage() {
                 </div>
               )}
             </div>
+            {(op.payments?.length ?? 0) > 1 && (
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
+                <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">Formas de pago</p>
+                <div className="space-y-1.5">
+                  {op.payments!.map((p) => (
+                    <div key={p.id} className="flex items-center gap-3 text-sm">
+                      <span className="font-medium text-gray-800 dark:text-slate-200 w-44">{OP_PAYMENT_METHOD_LABELS[p.method] ?? p.method}</span>
+                      <span className="text-xs text-gray-400 dark:text-slate-500 flex-1 truncate">
+                        {[p.cashRegisterName && `Caja: ${p.cashRegisterName}`, p.bank, p.reference].filter(Boolean).join(' · ')}
+                        {p.method === 'CHECK' && `${op.cheques?.length ?? 0} cheque${(op.cheques?.length ?? 0) !== 1 ? 's' : ''}`}
+                      </span>
+                      <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{formatCurrency(Number(p.amount), op.currency as any)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {op.notes && (
               <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
                 <p className="text-xs text-gray-400 dark:text-slate-500 mb-1">Notas</p>

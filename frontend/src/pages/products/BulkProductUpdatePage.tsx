@@ -4,7 +4,7 @@ import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { Save, RefreshCw, CheckSquare, Square, ChevronDown, X, Wand2, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
-import { PageHeader, SearchInput, ConfirmDialog } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, SearchInput, ConfirmDialog } from '../../components/shared';
 import { productsService, rubrosService, brandsService, suppliersService } from '../../services';
 import type { Product, Rubro, Brand, Supplier } from '../../types';
 import type { ProductFilters } from '../../types/product.types';
@@ -253,7 +253,7 @@ export default function BulkProductUpdatePage() {
 
       {/* Filters */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 mb-4 flex flex-wrap gap-3 items-center">
-        <FilterSelect label="Proveedor" value={supplierId} onChange={setSupplierId} options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+        <FilterSearchSelect placeholder="Proveedor" value={supplierId} onChange={setSupplierId} options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
         <FilterSearchSelect placeholder="Rubro" value={rubroId} onChange={(id) => { setRubroId(id); setSubrubroId(''); }} options={rootRubros.map((c) => ({ value: c.id, label: c.name }))} />
         {subrubros.length > 0 && (
           <FilterSearchSelect placeholder="Subrubro" value={subrubroId} onChange={setSubrubroId} options={subrubros.map((c) => ({ value: c.id, label: c.name }))} />
@@ -314,10 +314,15 @@ export default function BulkProductUpdatePage() {
           </div>
         </ApplyRow>
         <ApplyRow enabled={changeSupplier} onToggle={setChangeSupplier} label="Proveedor">
-          <select className={ctrlCls} value={applySupplierId} onChange={(e) => setApplySupplierId(e.target.value)}>
-            <option value="">(sin proveedor)</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="w-64">
+            <SupplierSearchSelect
+              suppliers={suppliers}
+              value={applySupplierId}
+              onChange={(id) => setApplySupplierId(id)}
+              clearLabel="(sin proveedor)"
+              serverSearch
+            />
+          </div>
         </ApplyRow>
         <ApplyRow enabled={changeStatus} onToggle={setChangeStatus} label="Estado">
           <select className={ctrlCls} value={applyActive ? '1' : '0'} onChange={(e) => setApplyActive(e.target.value === '1')}>

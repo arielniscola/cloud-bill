@@ -6,13 +6,13 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Badge, Button, Card } from '../../components/ui';
-import { PageHeader, Pagination } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, Pagination } from '../../components/shared';
 import { ordenPagosService, suppliersService } from '../../services';
 import { useUrlFilters } from '../../hooks/useUrlFilters';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToExcel } from '../../utils/excelExport';
-import { PAYMENT_METHODS, OP_PAYMENT_METHOD_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
+import { OP_PAYMENT_METHOD_LABELS, OP_PAYMENT_METHOD_OPTIONS, DEFAULT_PAGE_SIZE } from '../../utils/constants';
 import type { OrdenPago, OrdenPagoStatus, OrdenPagoSummary } from '../../types/ordenPago.types';
 import type { Supplier } from '../../types';
 
@@ -162,7 +162,7 @@ export default function OrdenPagosPage() {
       const s = suppliers.find((x) => x.id === values.supplier);
       out.push({ key: 'supplier', label: `Proveedor: ${s?.name ?? '—'}`, clear: () => setFilter({ supplier: '' }) });
     }
-    if (values.method)   out.push({ key: 'method',   label: `Método: ${PAYMENT_METHODS[values.method as keyof typeof PAYMENT_METHODS] ?? values.method}`, clear: () => setFilter({ method: '' }) });
+    if (values.method)   out.push({ key: 'method',   label: `Método: ${OP_PAYMENT_METHOD_LABELS[values.method as keyof typeof OP_PAYMENT_METHOD_LABELS] ?? values.method}`, clear: () => setFilter({ method: '' }) });
     if (values.currency) out.push({ key: 'currency', label: `Moneda: ${values.currency}`, clear: () => setFilter({ currency: '' }) });
     if (values.from)     out.push({ key: 'from',     label: `Desde: ${formatDate(values.from)}`, clear: () => setFilter({ from: '' }) });
     if (values.to)       out.push({ key: 'to',       label: `Hasta: ${formatDate(values.to)}`, clear: () => setFilter({ to: '' }) });
@@ -213,7 +213,7 @@ export default function OrdenPagosPage() {
       numero:     op.number,
       proveedor:  op.supplier?.name ?? '',
       cuit:       op.supplier?.cuit ?? '',
-      metodo:     PAYMENT_METHODS[op.paymentMethod] ?? op.paymentMethod,
+      metodo:     OP_PAYMENT_METHOD_LABELS[op.paymentMethod] ?? op.paymentMethod,
       referencia: op.reference ?? '',
       moneda:     op.currency,
       bruto:      Number(op.amount),
@@ -401,10 +401,13 @@ export default function OrdenPagosPage() {
               <div className="absolute right-0 top-full mt-2 z-20 w-80 p-4 rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-lg space-y-3">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Proveedor</label>
-                  <select className={SELECT_CLS} value={values.supplier} onChange={(e) => setFilter({ supplier: e.target.value })}>
-                    <option value="">Todos los proveedores</option>
-                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <SupplierSearchSelect
+                    suppliers={suppliers}
+                    value={values.supplier}
+                    onChange={(id) => setFilter({ supplier: id })}
+                    clearLabel="Todos los proveedores"
+                    serverSearch
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -564,7 +567,7 @@ export default function OrdenPagosPage() {
                           )}
                         </td>
                         <td className="px-4 py-3.5 align-top">
-                          <p className="text-sm text-gray-600 dark:text-slate-400">{PAYMENT_METHODS[op.paymentMethod] ?? op.paymentMethod}</p>
+                          <p className="text-sm text-gray-600 dark:text-slate-400">{OP_PAYMENT_METHOD_LABELS[op.paymentMethod] ?? op.paymentMethod}</p>
                           {op.reference && <p className="mt-1 font-mono text-[11px] text-gray-400 dark:text-slate-500">{op.reference}</p>}
                         </td>
                         <td className="px-4 py-3.5 align-top">
@@ -672,7 +675,7 @@ export default function OrdenPagosPage() {
                         <td className="px-3 py-2 text-[13px] tabular-nums text-gray-600 dark:text-slate-300">{formatDate(op.date)}</td>
                         <td className="px-3 py-2 font-mono text-[13px] font-semibold text-gray-800 dark:text-slate-200">{op.number}</td>
                         <td className="px-3 py-2 text-[13px] text-gray-700 dark:text-slate-300 truncate">{op.supplier?.name ?? '—'}</td>
-                        <td className="px-3 py-2 text-[13px] text-gray-600 dark:text-slate-400">{PAYMENT_METHODS[op.paymentMethod] ?? op.paymentMethod}</td>
+                        <td className="px-3 py-2 text-[13px] text-gray-600 dark:text-slate-400">{OP_PAYMENT_METHOD_LABELS[op.paymentMethod] ?? op.paymentMethod}</td>
                         <td className="px-3 py-2 font-mono text-[12px] text-gray-400 dark:text-slate-500 truncate">{op.reference ?? '—'}</td>
                         <td className="px-3 py-2 text-[13px] text-right tabular-nums text-gray-600 dark:text-slate-300">
                           {formatCurrency(Number(op.amount), op.currency)}

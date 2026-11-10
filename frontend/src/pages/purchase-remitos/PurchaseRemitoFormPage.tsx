@@ -3,9 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Trash2, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select } from '../../components/ui';
-import { PageHeader, ProductSearchSelect } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, ProductSearchSelect } from '../../components/shared';
 import { purchaseRemitosService, suppliersService, warehousesService, productsService, purchaseInvoicesService } from '../../services';
-import { formatCurrency } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
 import type { CreatePurchaseRemitoItemDTO, Supplier, Warehouse, Product, PurchaseInvoice, PurchaseRemito } from '../../types';
 
@@ -138,8 +137,6 @@ export default function PurchaseRemitoFormPage() {
     );
   };
 
-  const itemTotal = (item: CreatePurchaseRemitoItemDTO) => item.quantity * (item.unitPrice ?? 0);
-  const grandTotal = items.reduce((acc, item) => acc + itemTotal(item), 0);
 
   // Pendiente de recibir para una línea de la factura (cantidad de la FC − ya recibido).
   const pendingForDesc = (description: string): number | null => {
@@ -210,7 +207,6 @@ export default function PurchaseRemitoFormPage() {
     }
   };
 
-  const supplierOptions = suppliers.map((s) => ({ value: s.id, label: `${s.name}${s.cuit ? ` (${s.cuit})` : ''}` }));
   const warehouseOptions = [{ value: '', label: 'Seleccionar almacén...' }, ...warehouses.map((w) => ({ value: w.id, label: w.name }))];
 
   return (
@@ -262,14 +258,14 @@ export default function PurchaseRemitoFormPage() {
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wider">Mercadería recibida</h2>
               </div>
               <div className="px-5 py-3">
-                <div className="hidden md:grid grid-cols-[2fr_3fr_72px_120px_100px_32px] gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
-                  {['Producto', 'Descripción', 'Cant.', 'Costo unit.', 'Total', ''].map((h) => (
+                <div className="hidden md:grid grid-cols-[2fr_3fr_96px_32px] gap-3 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
+                  {['Producto', 'Descripción', 'Cant.', ''].map((h) => (
                     <span key={h} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">{h}</span>
                   ))}
                 </div>
                 <div className="divide-y divide-gray-100 dark:divide-slate-700">
                   {items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_72px_120px_100px_32px] gap-3 items-start py-3">
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-[2fr_3fr_96px_32px] gap-3 items-start py-3">
                       <div>
                         <ProductSearchSelect
                           products={products}
@@ -341,15 +337,6 @@ export default function PurchaseRemitoFormPage() {
                           </div>
                         );
                       })()}
-                      <input
-                        type="number" min="0" step="0.01"
-                        className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={item.unitPrice ?? 0}
-                        onChange={(e) => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
-                      />
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums text-right">
-                        {formatCurrency(itemTotal(item), 'ARS')}
-                      </span>
                       <div className="flex justify-end">
                         <button type="button" onClick={() => removeItem(index)}
                           className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
@@ -384,11 +371,13 @@ export default function PurchaseRemitoFormPage() {
           {/* Sidebar */}
           <div className="lg:sticky lg:top-6 space-y-4">
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
-              <Select
+              <SupplierSearchSelect
                 label="Proveedor *"
-                options={[{ value: '', label: 'Seleccionar proveedor...' }, ...supplierOptions]}
+                suppliers={suppliers}
                 value={form.supplierId}
                 onChange={(v) => setForm((f) => ({ ...f, supplierId: v }))}
+                placeholder="Seleccionar proveedor..."
+                serverSearch
               />
               <Select
                 label="Almacén destino *"
@@ -408,13 +397,6 @@ export default function PurchaseRemitoFormPage() {
                   ? 'La mercadería vinculada a un producto entra al stock cuando un administrador confirma la recepción.'
                   : 'La mercadería vinculada a un producto entra al stock al guardar.'}
               </p>
-            </div>
-
-            <div className="bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-700 rounded-xl p-5">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500 dark:text-slate-400">Valorización estimada</span>
-                <span className="text-xl font-bold text-indigo-600 tabular-nums">{formatCurrency(grandTotal, 'ARS')}</span>
-              </div>
             </div>
 
             <div className="flex flex-col gap-2.5">

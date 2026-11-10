@@ -34,6 +34,27 @@ export interface PendingPurchaseInvoice {
   paidAmount?: number; // ya imputado por OP pagadas (saldo = amount - paidAmount)
 }
 
+/** Forma de pago de la OP. Su suma es el neto (amount - retentionAmount). */
+export interface OrdenPagoPayment {
+  id: string;
+  ordenPagoId: string;
+  method: PaymentMethod;
+  amount: number;
+  cashRegisterId: string | null;
+  cashRegisterName?: string | null;
+  bank: string | null;
+  reference: string | null;
+}
+
+/** Forma de pago a cargar al crear la OP (los cheques van aparte). */
+export interface CreateOrdenPagoPaymentDTO {
+  method: Exclude<PaymentMethod, 'CHECK'>;
+  amount: number;
+  cashRegisterId?: string | null;
+  bank?: string | null;
+  reference?: string | null;
+}
+
 export interface OrdenPago {
   id: string;
   number: string;
@@ -50,7 +71,8 @@ export interface OrdenPago {
   amount: number;
   currency: Currency;
   exchangeRate: number;
-  paymentMethod: PaymentMethod;
+  /** El método si se pagó con uno solo; MIXED si se combinaron varios (ver `payments`). */
+  paymentMethod: PaymentMethod | 'MIXED';
   reference: string | null;
   bank: string | null;
   checkDueDate: string | null;
@@ -63,6 +85,8 @@ export interface OrdenPago {
   cheques?: OrdenPagoCheque[];
   ajustes?: OrdenPagoAjuste[];
   retenciones?: OrdenPagoRetencion[];
+  /** Desglose por forma de pago (efectivo, transferencia, cheques…). */
+  payments?: OrdenPagoPayment[];
   /**
    * Excedente pagado por encima de lo imputado a las facturas (derivado de
    * `amount`). Al pagar la orden se convirtió en crédito interno a favor
@@ -197,7 +221,10 @@ export interface CreateOrdenPagoDTO {
   date?: string;
   currency?: Currency;
   exchangeRate?: number;
-  paymentMethod: PaymentMethod;
+  /** Formato anterior (un solo método). Con `payments` se deriva en el backend. */
+  paymentMethod?: PaymentMethod;
+  /** Formas de pago: su suma + los cheques tiene que dar el neto a pagar. */
+  payments?: CreateOrdenPagoPaymentDTO[];
   reference?: string;
   bank?: string;
   checkDueDate?: string;

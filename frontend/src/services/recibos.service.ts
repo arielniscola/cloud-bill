@@ -1,4 +1,5 @@
 import api from './api';
+import type { ChequeBounceMode, ChequeBounceResult } from '../types/cheque.types';
 import type { Recibo, ReciboFilters, CheckFilters, CheckStatus, ApiResponse, PaginatedResponse } from '../types';
 
 export const recibosService = {
@@ -17,9 +18,14 @@ export const recibosService = {
     return response.data;
   },
 
-  async updateCheckStatus(id: string, checkStatus: CheckStatus): Promise<Recibo> {
-    const response = await api.patch<ApiResponse<Recibo>>(`/recibos/${id}/check-status`, { checkStatus });
-    return response.data.data;
+  /** `bounceMode`: al rechazar, nota de débito interna o Nota de Débito de venta. */
+  async updateCheckStatus(
+    id: string, checkStatus: CheckStatus, bounceMode?: ChequeBounceMode,
+  ): Promise<{ data: Recibo; bounce: ChequeBounceResult | null }> {
+    const response = await api.patch<ApiResponse<Recibo> & { bounce?: ChequeBounceResult | null }>(
+      `/recibos/${id}/check-status`, { checkStatus, ...(bounceMode ? { bounceMode } : {}) },
+    );
+    return { data: response.data.data, bounce: response.data.bounce ?? null };
   },
 
   async cancel(id: string): Promise<Recibo> {

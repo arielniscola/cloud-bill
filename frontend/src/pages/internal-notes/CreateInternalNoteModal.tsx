@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { X, FileEdit } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
-import { CustomerSearchSelect } from '../../components/shared';
+import { SupplierSearchSelect, CustomerSearchSelect } from '../../components/shared';
 import { internalNotesService, customersService, suppliersService } from '../../services';
-import type { CreateInternalNoteDTO, Customer, Supplier, InternalNoteEntity } from '../../types';
+import type { CreateInternalNoteDTO, Customer, Supplier, InternalNoteEntity } from '../../types';
+
 import { apiErrorMessage } from '../../utils/apiError';
 
 interface Props {
@@ -177,16 +178,13 @@ export default function CreateInternalNoteModal({ onClose, onCreated, defaultCus
           {!entityLocked && entity === 'SUPPLIER' && (
             <div>
               <label className={labelCls}>Proveedor *</label>
-              <select
-                className={inputCls}
+              <SupplierSearchSelect
+                suppliers={suppliers}
                 value={form.supplierId ?? ''}
-                onChange={(e) => set('supplierId', e.target.value || null)}
-              >
-                <option value="">Seleccionar proveedor…</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                onChange={(id) => set('supplierId', id || null)}
+                placeholder="Seleccionar proveedor…"
+                serverSearch
+              />
             </div>
           )}
 

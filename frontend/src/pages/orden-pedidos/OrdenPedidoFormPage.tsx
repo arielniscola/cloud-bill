@@ -7,7 +7,7 @@ import { clsx } from 'clsx';
 import { Plus, Trash2, Calculator, Info, AlertTriangle, UserPlus, Search, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select, Textarea, Modal } from '../../components/ui';
-import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal, ItemDetailInput } from '../../components/shared';
+import { PageHeader, BarcodeProductInput, ProductSearchSelect, ProductCatalogModal, CustomerSearchSelect, ConfirmDialog, CreateCustomerModal, PaymentModal, ItemDetailInput, ConsumidorFinalFields, buyerDocumentError } from '../../components/shared';
 import type { BarcodeProductInputHandle } from '../../components/shared';
 import { useFormKeyboardShortcuts } from '../../hooks/useFormKeyboardShortcuts';
 import { ordenPedidosService, customersService, productsService, appSettingsService, stockService, budgetsService, warehousesService, productVariantsService } from '../../services';
@@ -44,6 +44,9 @@ const ordenPedidoItemSchema = z.object({
 
 const ordenPedidoSchema = z.object({
   customerId: z.string().optional().nullable(),
+  // Sin cliente: nombre y DNI/CUIL del consumidor final (opcionales).
+  buyerName: z.string().max(120).optional().nullable(),
+  buyerDocument: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   paymentTerms: z.string().optional().nullable(),
@@ -59,6 +62,10 @@ const ordenPedidoSchema = z.object({
       message: 'Una venta a cuenta corriente requiere seleccionar un cliente',
       path: ['customerId'],
     });
+  }
+  const docError = !data.customerId ? buyerDocumentError(data.buyerDocument) : null;
+  if (docError) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: docError, path: ['buyerDocument'] });
   }
 });
 
@@ -299,6 +306,8 @@ export default function OrdenPedidoFormPage() {
         if (fromOrdenPedido && !isEditing) {
           reset({
             customerId: fromOrdenPedido.customerId,
+            buyerName: fromOrdenPedido.buyerName ?? '',
+            buyerDocument: fromOrdenPedido.buyerDocument ?? '',
             notes: fromOrdenPedido.notes,
             paymentTerms: fromOrdenPedido.paymentTerms,
             saleCondition: (fromOrdenPedido as any).saleCondition ?? 'CONTADO',
@@ -336,6 +345,8 @@ export default function OrdenPedidoFormPage() {
         }
         reset({
           customerId: op.customerId,
+          buyerName: op.buyerName ?? '',
+          buyerDocument: op.buyerDocument ?? '',
           dueDate: op.dueDate ? op.dueDate.substring(0, 10) : null,
           notes: op.notes,
           paymentTerms: op.paymentTerms,
@@ -578,6 +589,8 @@ export default function OrdenPedidoFormPage() {
     try {
       const payload = {
         customerId: data.customerId || null,
+        buyerName: data.customerId ? null : (data.buyerName?.trim() || null),
+        buyerDocument: data.customerId ? null : (data.buyerDocument?.replace(/\D/g, '') || null),
         dueDate: data.dueDate || null,
         notes: data.notes || null,
         paymentTerms: data.paymentTerms || null,
@@ -604,7 +617,7 @@ export default function OrdenPedidoFormPage() {
           customerName: data.customerId
             ? (customerCache[data.customerId] ??
                customers.find((c) => c.id === data.customerId))?.name ?? null
-            : null,
+            : (data.buyerName?.trim() || null),
         });
         toast.success(`Venta guardada sin conexión — ${queued.provisionalNumber}`);
         navigate('/ventas-pendientes');
@@ -987,6 +1000,17 @@ export default function OrdenPedidoFormPage() {
                   searchParams={{ isActive: true }}
                   serverSearch
                 />
+                {!customerId && (
+                  <div className="mt-3">
+                    <ConsumidorFinalFields
+                      name={watch('buyerName') ?? ''}
+                      document={watch('buyerDocument') ?? ''}
+                      onNameChange={(v) => setValue('buyerName', v)}
+                      onDocumentChange={(v) => setValue('buyerDocument', v, { shouldValidate: !!errors.buyerDocument })}
+                      error={errors.buyerDocument?.message}
+                    />
+                  </div>
+                )}
               </div>
 
               <Input

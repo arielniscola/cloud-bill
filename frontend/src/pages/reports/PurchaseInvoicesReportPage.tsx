@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FileDown, ChevronLeft, Search, FileText, AlertCircle, CheckCircle2, Receipt } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Select } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, SupplierSearchSelect } from '../../components/shared';
+import type { Supplier } from '../../types';
 import {
   reportsService,
   type PurchaseInvoiceReportRow,
@@ -57,16 +58,13 @@ export default function PurchaseInvoicesReportPage() {
   const [totals, setTotals]       = useState<PurchaseInvoiceReportTotals | null>(null);
   const [loading, setLoading]     = useState(false);
   const [hasGenerated, setHasGen] = useState(false);
-  const [supplierOptions, setSupplierOptions] = useState<{ value: string; label: string }[]>([{ value: '', label: 'Todos los proveedores' }]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   useEffect(() => {
     suppliersService
       .getAll({ limit: 500 })
       .then((res) => {
-        setSupplierOptions([
-          { value: '', label: 'Todos los proveedores' },
-          ...res.data.map((s) => ({ value: s.id, label: s.name })),
-        ]);
+        setSuppliers(res.data);
       })
       .catch(() => { /* silent — filter still usable without options */ });
   }, []);
@@ -189,7 +187,7 @@ export default function PurchaseInvoicesReportPage() {
           </div>
           <div className="flex flex-col gap-1 min-w-[220px]">
             <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Proveedor</label>
-            <Select value={params.supplierId ?? ''} onChange={(v) => set('supplierId', v)} options={supplierOptions} />
+            <SupplierSearchSelect suppliers={suppliers} value={params.supplierId ?? ''} onChange={(v) => set('supplierId', v)} clearLabel="Todos los proveedores" serverSearch />
           </div>
           <div className="flex flex-col gap-1 min-w-[160px]">
             <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Estado</label>

@@ -47,6 +47,8 @@ export default function OrdenPagoPDF({ op, ctx }: { op: OrdenPago; ctx: PrintCon
   const chequesTotal = cheques.reduce((acc, c) => acc + Number(c.amount), 0);
   // Lo que no se pagó con cheques sale por el medio de la orden.
   const rest = Math.round((net - chequesTotal) * 100) / 100;
+  // OP con desglose: una fila por cada forma de pago que no es cheque.
+  const otherPayments = (op.payments ?? []).filter((p) => p.method !== 'CHECK');
   const restLabel = op.paymentMethod === 'CHECK' ? 'Otros' : titleCase(paymentMethodText(op.paymentMethod));
   const items = op.items ?? [];
   const status = op.status === 'PAID' ? 'Pagada' : op.status === 'CANCELLED' ? 'Anulada' : 'Emitida';
@@ -195,7 +197,14 @@ export default function OrdenPagoPDF({ op, ctx }: { op: OrdenPago; ctx: PrintCon
             <Text style={s.pAmount}>{fmtNum(c.amount)}</Text>
           </View>
         ))}
-        {rest > 0.005 && (
+        {otherPayments.length > 0 ? otherPayments.map((p) => (
+          <View key={p.id} style={ps.tableRow} wrap={false}>
+            <Text style={[s.pMethod, { width: 120 }]}>{titleCase(paymentMethodText(p.method))}</Text>
+            <Text style={s.pBank}>{p.bank ?? (p.cashRegisterName ? `Caja ${p.cashRegisterName}` : '')}</Text>
+            <Text style={[ps.mono, s.pNum, { width: 172.5 }]}>{p.reference ?? ''}</Text>
+            <Text style={s.pAmount}>{fmtNum(p.amount)}</Text>
+          </View>
+        )) : rest > 0.005 && (
           <View style={ps.tableRow}>
             <Text style={[s.pMethod, { width: 120 }]}>{restLabel}</Text>
             <Text style={s.pBank}>{op.bank ?? ''}</Text>

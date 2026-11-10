@@ -64,6 +64,8 @@ export interface InvoiceFastLayoutProps {
   effectiveWarehouseId: string;
   onWarehouseChange: (id: string) => void;
   needsCustomerId: boolean;
+  /** Nombre/DNI del consumidor final (solo sin cliente). */
+  buyerFields?: ReactNode;
   cashIdThreshold: number;
   dateAdvanceWarning: boolean;
   advanceDaysLimit: number;
@@ -127,7 +129,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
     paymentTermsValue, paymentTermsOptions, onPaymentTermsChange, saleCondition,
     invoiceDate, isService, stockBehavior, onStockBehaviorChange,
     warehouses, warehouseId, effectiveWarehouseId, onWarehouseChange,
-    needsCustomerId, cashIdThreshold, dateAdvanceWarning, advanceDaysLimit,
+    needsCustomerId, buyerFields, cashIdThreshold, dateAdvanceWarning, advanceDaysLimit,
     register, products, fields, items, itemErrors, itemsError,
     findProduct, variantsByProduct, stockFor, renderLotPicker, renderItemDetail, calcItemAmounts, itemDiscountPct,
     onProductChange, onVariantChange, onAddProduct, onQuantityChange,
@@ -273,6 +275,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
                 onChange={onPaymentTermsChange}
               />
             </div>
+            {buyerFields}
 
             {isNcNd && (
               <div>
@@ -325,7 +328,7 @@ export default function InvoiceFastLayout(props: InvoiceFastLayoutProps) {
               <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2.5">
                 <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800 dark:text-amber-400">
-                  Ventas en efectivo superiores a ${cashIdThreshold.toLocaleString('es-AR')} requieren identificar al cliente (CUIT/DNI). El cliente seleccionado no tiene CUIT registrado.
+                  Ventas en efectivo superiores a ${cashIdThreshold.toLocaleString('es-AR')} requieren identificar al comprador: elegí un cliente con CUIT o cargá el DNI del consumidor final.
                 </p>
               </div>
             )}

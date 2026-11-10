@@ -458,6 +458,20 @@ export default function SupplierAccountDetailPage() {
   };
 
   const allSelected = movements.length > 0 && selected.size === movements.length;
+
+  // Facturas / ND de compra marcadas en la tabla: van preseleccionadas a la
+  // Orden de Pago (las ya pagadas las descarta el formulario, que solo lista pendientes).
+  const selectedInvoiceIds = useMemo(() => Array.from(new Set(
+    movements
+      .filter((m) => selected.has(m.id) && m.type === 'DEBIT' && m.purchaseInvoiceId)
+      .map((m) => m.purchaseInvoiceId as string)
+  )), [movements, selected]);
+
+  const goToPayment = () => {
+    const params = new URLSearchParams({ supplierId: supplier!.id });
+    if (selectedInvoiceIds.length > 0) params.set('invoices', selectedInvoiceIds.join(','));
+    navigate(`/orden-pagos/new?${params.toString()}`);
+  };
   const toggleAll = () => {
     setSelected(allSelected ? new Set() : new Set(movements.map((m) => m.id)));
   };
@@ -548,9 +562,9 @@ export default function SupplierAccountDetailPage() {
               <Plus className="w-3.5 h-3.5 mr-1.5" />
               Nuevo ajuste
             </Button>
-            <Button size="sm" onClick={() => navigate('/orden-pagos/new')}>
+            <Button size="sm" onClick={goToPayment}>
               <DollarSign className="w-3.5 h-3.5 mr-1.5" />
-              Nueva orden de pago
+              {selectedInvoiceIds.length > 0 ? `Pagar seleccionadas (${selectedInvoiceIds.length})` : 'Nueva orden de pago'}
             </Button>
           </div>
         }
@@ -873,6 +887,12 @@ export default function SupplierAccountDetailPage() {
                   </div>
                 );
               })()}
+              <Button size="sm" onClick={goToPayment}>
+                <DollarSign className="w-3.5 h-3.5 mr-1.5" />
+                {selectedInvoiceIds.length > 0
+                  ? `Pagar ${selectedInvoiceIds.length} factura${selectedInvoiceIds.length !== 1 ? 's' : ''}`
+                  : 'Nueva orden de pago'}
+              </Button>
             </div>
           </div>
         </div>

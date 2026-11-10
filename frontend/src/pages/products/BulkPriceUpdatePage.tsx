@@ -461,8 +461,8 @@ export default function BulkPriceUpdatePage() {
 
       {/* ── Filter bar ── */}
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl px-4 py-3 mb-4 flex flex-wrap gap-3 items-center">
-        <FilterSelect
-          label="Proveedor"
+        <FilterSearchSelect
+          placeholder="Proveedor"
           value={supplierId}
           onChange={setSupplierId}
           options={suppliers.map((s) => ({ value: s.id, label: s.name }))}

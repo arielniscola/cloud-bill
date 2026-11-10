@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { FileDown, ChevronLeft, Search, Percent, Receipt, Landmark, FileCode2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Card, Select } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, SupplierSearchSelect } from '../../components/shared';
+import type { Supplier } from '../../types';
 import {
   reportsService,
   type RetentionReportRow,
@@ -56,18 +57,13 @@ export default function RetentionsReportPage() {
   const [byType, setByType]   = useState<RetentionReportByType[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
-  const [supplierOptions, setSupplierOptions] = useState<{ value: string; label: string }[]>([
-    { value: '', label: 'Todos los proveedores' },
-  ]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   useEffect(() => {
     suppliersService
       .getAll({ limit: 500 })
       .then((res) => {
-        setSupplierOptions([
-          { value: '', label: 'Todos los proveedores' },
-          ...res.data.map((s) => ({ value: s.id, label: s.name })),
-        ]);
+        setSuppliers(res.data);
       })
       .catch(() => { /* silent — el filtro sigue usable sin opciones */ });
   }, []);
@@ -233,7 +229,7 @@ export default function RetentionsReportPage() {
           </div>
           <div className="flex flex-col gap-1 min-w-[220px]">
             <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Proveedor</label>
-            <Select value={params.supplierId ?? ''} onChange={(v) => set('supplierId', v)} options={supplierOptions} />
+            <SupplierSearchSelect suppliers={suppliers} value={params.supplierId ?? ''} onChange={(v) => set('supplierId', v)} clearLabel="Todos los proveedores" serverSearch />
           </div>
           <div className="flex flex-col gap-1 min-w-[180px]">
             <label className="text-xs font-medium text-gray-500 dark:text-slate-400">Régimen</label>

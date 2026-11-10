@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, X, Search, FileStack } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader } from '../../components/shared';
 import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { ordenComprasService, suppliersService } from '../../services';
 import { useFiscalModeStore } from '../../stores/fiscalMode.store';
@@ -191,14 +191,15 @@ export default function OrdenComprasPage() {
             />
           </div>
 
-          <select
-            value={supplierId}
-            onChange={(e) => { setSupplierId(e.target.value); setPage(1); }}
-            className="h-[34px] px-2.5 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-600 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-          >
-            <option value="">Todos los proveedores</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="w-56">
+            <SupplierSearchSelect
+              suppliers={suppliers}
+              value={supplierId}
+              onChange={(id) => { setSupplierId(id); setPage(1); }}
+              clearLabel="Todos los proveedores"
+              serverSearch
+            />
+          </div>
 
           <DateInput value={dateFrom} onChange={(v) => { setDateFrom(v); setPage(1); }} />
           <DateInput value={dateTo}   onChange={(v) => { setDateTo(v);   setPage(1); }} />

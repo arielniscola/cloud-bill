@@ -45,6 +45,8 @@ interface Props {
   saleCondition: string;
   onSaleConditionChange: (cuentaCorriente: boolean) => void;
   needsCustomerId: boolean;
+  /** Nombre/DNI del consumidor final (solo sin cliente). */
+  buyerFields?: ReactNode;
   cashIdThreshold: number;
 
   // ── Ítems ──
@@ -139,7 +141,7 @@ export default function InvoiceCounterLayout(props: Props) {
   const {
     customers, customerId, selectedCustomer, onCustomerChange, customerError,
     type, typeOptions, onTypeChange, isTypeC, warehouses, effectiveWarehouseId, onWarehouseChange,
-    saleCondition, onSaleConditionChange, needsCustomerId, cashIdThreshold,
+    saleCondition, onSaleConditionChange, needsCustomerId, buyerFields, cashIdThreshold,
     products, fields, items, itemsError, findProduct, variantsByProduct, stockFor, renderItemDetail, calcItemAmounts,
     onAddProduct, onQuantityChange, onVariantChange, onRemoveItem, onOpenCatalog,
     totals, grandTotal, discountType, discountValue, onDiscountChange,
@@ -369,6 +371,7 @@ export default function InvoiceCounterLayout(props: Props) {
               error={customerError}
             />
           </div>
+          {buyerFields}
           <label className="sr-only" htmlFor="counter-type">Tipo de comprobante</label>
           <select id="counter-type" value={type} onChange={(e) => onTypeChange(e.target.value)} className={selectClass}>
             {typeOptions.filter((o) => o.value.startsWith('FACTURA_')).map((o) => (
@@ -710,7 +713,7 @@ export default function InvoiceCounterLayout(props: Props) {
         {needsCustomerId && (
           <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            Supera {formatCurrency(cashIdThreshold, 'ARS')}: ARCA exige identificar al comprador (F2).
+            Supera {formatCurrency(cashIdThreshold, 'ARS')}: ARCA exige identificar al comprador (F2 o DNI).
           </p>
         )}
 

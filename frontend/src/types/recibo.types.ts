@@ -1,7 +1,7 @@
 // COMPENSACION = aplicación de saldo a favor (NC, NC interna, pago a cuenta): no mueve plata.
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'MERCADO_PAGO' | 'CHECK' | 'CARD' | 'COMPENSACION';
 export type ReciboStatus = 'EMITTED' | 'CANCELLED';
-export type CheckStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED';
+export type CheckStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'RETURNED' | 'EGRESADO';
 
 export interface Recibo {
   id: string;
@@ -111,4 +111,6 @@ export interface CheckFilters {
   dueDateTo?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** N° de cheque o de recibo. */
+  search?: string;
 }

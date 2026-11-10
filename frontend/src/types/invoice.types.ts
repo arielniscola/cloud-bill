@@ -85,6 +85,9 @@ export interface Invoice {
   saleCondition: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior: 'DISCOUNT' | 'RESERVE';
   transport?: string | null;
+  /** Venta sin cliente (Consumidor Final): comprador cargado a mano. */
+  buyerName?: string | null;
+  buyerDocument?: string | null;
   fiscalMode?: string;
   originInvoiceId: string | null;
   originInvoice?: Invoice;
@@ -126,6 +129,9 @@ export interface CreateInvoiceDTO {
   notes?: string | null;
   paymentTerms?: string | null;
   transport?: string | null;
+  /** Venta sin cliente (Consumidor Final): comprador cargado a mano. */
+  buyerName?: string | null;
+  buyerDocument?: string | null;
   saleCondition?: 'CONTADO' | 'CUENTA_CORRIENTE';
   stockBehavior?: 'DISCOUNT' | 'RESERVE';
   originInvoiceId?: string | null;

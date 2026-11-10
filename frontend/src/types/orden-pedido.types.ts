@@ -27,6 +27,9 @@ export interface OrdenPedido {
   id: string;
   number: string;
   customerId: string | null;
+  /** Venta sin cliente (Consumidor Final): comprador cargado a mano. */
+  buyerName?: string | null;
+  buyerDocument?: string | null;
   userId: string;
   date: string;
   dueDate: string | null;
@@ -73,6 +76,9 @@ export interface CreateOrdenPedidoItemDTO {
 
 export interface CreateOrdenPedidoDTO {
   customerId?: string | null;
+  /** Venta sin cliente (Consumidor Final): comprador cargado a mano. */
+  buyerName?: string | null;
+  buyerDocument?: string | null;
   dueDate?: string | null;
   currency: Currency;
   exchangeRate: number;

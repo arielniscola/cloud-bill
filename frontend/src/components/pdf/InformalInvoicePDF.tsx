@@ -51,7 +51,7 @@ function Slip({ invoice, logoDataUrl }: { invoice: Invoice; logoDataUrl?: string
           <View style={ps.kv}>
             <Text style={{ width: 55, color: LABEL }}>Señor/es</Text>
             <Text style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 600 }}>{c?.name ?? 'CONSUMIDOR FINAL'}</Text>
+              <Text style={{ fontWeight: 600 }}>{(invoice as { buyerName?: string | null }).buyerName || c?.name || 'CONSUMIDOR FINAL'}</Text>
               {c?.code ? <Text style={{ fontFamily: 'PlexMono', fontSize: 8.25, color: LABEL }}>{`  · ${fmtCode(c.code)}`}</Text> : null}
             </Text>
           </View>
@@ -67,7 +67,9 @@ function Slip({ invoice, logoDataUrl }: { invoice: Invoice; logoDataUrl?: string
           <KV
             labelWidth={62}
             rows={[
-              ['CUIT', fmtCuit(c?.taxId) || '-'],
+              (invoice as { buyerDocument?: string | null }).buyerDocument
+                ? ['DNI/CUIL', String((invoice as { buyerDocument?: string | null }).buyerDocument)]
+                : ['CUIT', fmtCuit(c?.taxId) || '-'],
               ['Tipo IVA', taxConditionShort(c?.taxCondition) || 'CF'],
               ['Teléfono', c?.phone || '-'],
               ['Cond. venta', saleConditionTitle(invoice.saleCondition, invoice.paymentTerms)],

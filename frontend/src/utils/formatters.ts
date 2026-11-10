@@ -58,6 +58,14 @@ export function formatDateTime(date: string | Date): string {
   }).format(new Date(date));
 }
 
+/** Documento del consumidor final: "DNI 12.345.678" o "CUIL 20-12345678-9". */
+export function formatBuyerDocument(value: string | null | undefined): string {
+  const digits = (value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 11) return `CUIL ${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits[10]}`;
+  return `DNI ${Number(digits).toLocaleString('es-AR')}`;
+}
+
 export function formatCuit(value: string | null | undefined): string {
   if (!value) return '';
   const digits = value.replace(/\D/g, '');

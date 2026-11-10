@@ -9,7 +9,7 @@ import {
   Power, Barcode, Boxes,
 } from 'lucide-react';
 import { Button, Input, Select, Textarea, Card } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader } from '../../components/shared';
 import {
   productsService,
   rubrosService,
@@ -532,11 +532,6 @@ export default function ProductFormPage() {
     ...brands.map((b) => ({ value: b.id, label: b.name })),
   ], [brands]);
 
-  const supplierOptions = useMemo(() => [
-    { value: '', label: 'Sin proveedor' },
-    ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-  ], [suppliers]);
-
   const categoryOptions = useMemo(() => [
     { value: '', label: 'Sin category' },
     ...categories.map((r) => ({ value: r.id, label: r.name })),
@@ -648,11 +643,13 @@ export default function ProductFormPage() {
                     value={categoryId}
                     onChange={(v) => setValue('categoryId', v || null)}
                   />
-                  <Select
+                  <SupplierSearchSelect
                     label="Proveedor"
-                    options={supplierOptions}
-                    value={supplierId}
+                    suppliers={suppliers}
+                    value={supplierId ?? ''}
                     onChange={(v) => setValue('supplierId', v || null)}
+                    clearLabel="Sin proveedor"
+                    serverSearch
                   />
                 </div>
               </div>

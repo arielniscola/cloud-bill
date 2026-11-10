@@ -4,7 +4,7 @@ import { Truck, Search, X, Download, Wallet, BarChart2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import { Button, Card } from '../../components/ui';
-import { PageHeader, Pagination } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, Pagination } from '../../components/shared';
 import { purchaseInvoicesService, suppliersService, afipService } from '../../services';
 import { formatDate, formatCurrency } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE, RETENTION_TYPE_OPTIONS, RETENTION_BASE_OPTIONS } from '../../utils/constants';
@@ -119,14 +119,15 @@ export default function PurchaseRetentionsPage() {
             className="w-64 text-sm pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300"
           />
         </div>
-        <select
-          value={supplierFilter}
-          onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }}
-          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300"
-        >
-          <option value="">Todos los proveedores</option>
-          {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <div className="w-60">
+          <SupplierSearchSelect
+            suppliers={suppliers}
+            value={supplierFilter}
+            onChange={(id) => { setSupplierFilter(id); setPage(1); }}
+            clearLabel="Todos los proveedores"
+            serverSearch
+          />
+        </div>
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as '' | RetentionType); setPage(1); }}

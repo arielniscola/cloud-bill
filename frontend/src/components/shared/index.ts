@@ -35,7 +35,12 @@ export { RelatedDocuments } from './RelatedDocuments';
 export type { RelatedDocGroup } from './RelatedDocuments';
 
 export { default as CustomerSearchSelect } from './CustomerSearchSelect';
+export { default as ConsumidorFinalFields } from './ConsumidorFinalFields';
+export { buyerDocumentError } from '../../utils/buyerDocument';
 export type { CustomerSearchSelectProps } from './CustomerSearchSelect';
+
+export { default as SupplierSearchSelect } from './SupplierSearchSelect';
+export type { SupplierSearchSelectProps, SupplierOption } from './SupplierSearchSelect';
 
 export { default as SendEmailModal } from './SendEmailModal';
 export { default as ImportFromOPModal } from './ImportFromOPModal';

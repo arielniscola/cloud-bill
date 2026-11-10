@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Package, Truck, Warehouse as WarehouseIcon, CheckCircle2, XCircle, FileText, Search, X, Clock, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button } from '../../components/ui';
-import { PageHeader, Pagination } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, Pagination } from '../../components/shared';
 import { purchaseRemitosService, suppliersService, warehousesService } from '../../services';
 import { formatDate } from '../../utils/formatters';
 import { DEFAULT_PAGE_SIZE } from '../../utils/constants';
@@ -144,14 +144,15 @@ export default function PurchaseRemitosPage() {
             className="w-56 text-sm pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300"
           />
         </div>
-        <select
-          value={supplierFilter}
-          onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }}
-          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300"
-        >
-          <option value="">Todos los proveedores</option>
-          {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <div className="w-60">
+          <SupplierSearchSelect
+            suppliers={suppliers}
+            value={supplierFilter}
+            onChange={(id) => { setSupplierFilter(id); setPage(1); }}
+            clearLabel="Todos los proveedores"
+            serverSearch
+          />
+        </div>
         <select
           value={warehouseFilter}
           onChange={(e) => { setWarehouseFilter(e.target.value); setPage(1); }}

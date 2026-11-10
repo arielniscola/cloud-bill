@@ -9,7 +9,7 @@ import { PageHeader, ConfirmDialog, PaymentModal, RecibosList, SendEmailModal, D
 import type { TimelineEvent, RelatedDocGroup } from '../../components/shared';
 import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import { ordenPedidosService, recibosService, remitosService, appSettingsService, budgetsService } from '../../services';
-import { formatCurrency, formatDate, formatCuit } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit, formatBuyerDocument } from '../../utils/formatters';
 import {
   ORDEN_PEDIDO_STATUSES,
   INVOICE_TYPE_OPTIONS,
@@ -711,7 +711,17 @@ export default function OrdenPedidoDetailPage() {
               </div>
             ) : (
               <div className="px-5 py-4">
-                <p className="text-sm text-gray-400 dark:text-slate-500 italic">Sin cliente asignado</p>
+                {op.buyerName || op.buyerDocument ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{op.buyerName || 'Consumidor final'}</p>
+                    {op.buyerDocument && (
+                      <p className="text-xs font-mono text-gray-500 dark:text-slate-400">{formatBuyerDocument(op.buyerDocument)}</p>
+                    )}
+                    <p className="text-xs text-gray-400 dark:text-slate-500">Consumidor final (sin cliente)</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 dark:text-slate-500 italic">Sin cliente asignado</p>
+                )}
               </div>
             )}
           </div>

@@ -3,12 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { X, Plus, CheckCircle2, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card, Button} from '../../components/ui';
-import { PageHeader, Pagination, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, Pagination, CustomerSearchSelect, ConfirmDialog } from '../../components/shared';
 import { internalNotesService, customersService, suppliersService } from '../../services';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { usePermissions } from '../../hooks/usePermissions';
 import type { InternalNote, InternalNoteType, InternalNoteStatus, Customer, Supplier } from '../../types';
-import CreateInternalNoteModal from './CreateInternalNoteModal';
+import CreateInternalNoteModal from './CreateInternalNoteModal';
+
 import { apiErrorMessage } from '../../utils/apiError';
 
 const TYPE_LABEL: Record<InternalNoteType, string> = {
@@ -195,16 +196,16 @@ export default function InternalNotesPage() {
             </div>
           )}
           {entityFilter === 'SUPPLIER' && (
-            <select
-              className={selectCls}
-              value={supplierFilter}
-              onChange={(e) => { setSupplierFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">Todos los proveedores</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <div className="w-64">
+              <SupplierSearchSelect
+                suppliers={suppliers}
+                value={supplierFilter}
+                onChange={(id) => { setSupplierFilter(id); setPage(1); }}
+                placeholder="Filtrar por proveedor"
+                clearLabel="Todos los proveedores"
+                serverSearch
+              />
+            </div>
           )}
           <input
             type="date" className={selectCls}

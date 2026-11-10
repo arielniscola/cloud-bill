@@ -217,7 +217,7 @@ export default function StockLotsPage() {
         isOpen={trace !== null}
         onClose={() => setTrace(null)}
         title={trace ? `Lote ${trace.lotNumber} · ${trace.productName}` : ''}
-        size="xl"
+        size="full"
       >
         {trace && (
           <div>
@@ -231,9 +231,9 @@ export default function StockLotsPage() {
             ) : trace.movements.length === 0 ? (
               <p className="py-8 text-center text-gray-400">Sin movimientos.</p>
             ) : (
-              <div className="overflow-x-auto border border-gray-200 dark:border-slate-700 rounded-lg">
+              <div className="overflow-auto max-h-[65vh] border border-gray-200 dark:border-slate-700 rounded-lg">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50 dark:bg-slate-800 text-xs uppercase text-gray-500 dark:text-slate-400">
+                  <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800 text-xs uppercase text-gray-500 dark:text-slate-400">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold">Fecha</th>
                       <th className="px-3 py-2 text-left font-semibold">Movimiento</th>
@@ -246,7 +246,7 @@ export default function StockLotsPage() {
                     {trace.movements.map((m) => (
                       <tr key={m.id}>
                         <td className="px-3 py-2 text-gray-600 dark:text-slate-300 whitespace-nowrap">{formatDateTime(m.createdAt)}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 whitespace-nowrap">
                           <span className="inline-flex items-center gap-1 text-gray-700 dark:text-slate-200">
                             {m.outgoing
                               ? <ArrowUpRight className="w-3.5 h-3.5 text-red-500" aria-hidden="true" />
@@ -254,7 +254,7 @@ export default function StockLotsPage() {
                             {MOVEMENT_LABEL[m.type] ?? m.type}
                           </span>
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs">
+                        <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
                           {m.documentNumber && m.documentType && m.referenceId ? (
                             <Link to={DOC_LINK[m.documentType](m.referenceId)} className="text-indigo-600 dark:text-indigo-400 hover:underline">
                               {m.documentNumber}
@@ -264,7 +264,7 @@ export default function StockLotsPage() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-gray-700 dark:text-slate-200">{m.customerName ?? m.supplierName ?? '—'}</td>
-                        <td className={clsx('px-3 py-2 text-right font-semibold tabular-nums', m.outgoing ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                        <td className={clsx('px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap', m.outgoing ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
                           {m.outgoing ? '−' : '+'}{fmtQty(m.quantity)}
                         </td>
                       </tr>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ordenPedidosService, afipService } from '../../services';
 import companiesService from '../../services/companies.service';
-import { formatCuit } from '../../utils/formatters';
+import { formatCuit, formatBuyerDocument } from '../../utils/formatters';
 import type { OrdenPedido } from '../../types';
 import type { AfipConfigSummary } from '../../types/afip.types';
 import type { Company } from '../../types/company.types';
@@ -99,6 +99,14 @@ export default function ThermalOrdenPedidoPrintPage() {
           <p>{op.customer.name}</p>
           {op.customer.taxId && <p className="sm">CUIT/DNI: {formatCuit(op.customer.taxId)}</p>}
           {op.customer.address && <p className="sm">{op.customer.address}</p>}
+        </>
+      )}
+      {!op.customer && (op.buyerName || op.buyerDocument) && (
+        <>
+          <div className="div" />
+          <p className="b">Cliente:</p>
+          <p>{op.buyerName || 'Consumidor final'}</p>
+          {op.buyerDocument && <p className="sm">{formatBuyerDocument(op.buyerDocument)}</p>}
         </>
       )}
 

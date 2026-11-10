@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Card, Button, Modal, Textarea } from '../../components/ui';
 import { PageHeader, ConfirmDialog, DocumentHistory } from '../../components/shared';
 import { purchaseRemitosService } from '../../services';
-import { formatDate, formatCurrency } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
 import type { PurchaseRemito, PurchaseRemitoStatus } from '../../types';
 import { approvalOutcome } from '../../utils/approvalActions';
 import PendingApprovalBanner from '../../components/approvals/PendingApprovalBanner';
@@ -187,9 +187,6 @@ export default function PurchaseRemitoDetailPage() {
   const StatusIcon = cfg.icon;
   const isPending = remito.status === 'PENDING_CONFIRMATION';
   const editing = isPending && canConfirm;
-  const qtyOf = (lineId: string, fallback: number) =>
-    editing ? Number((draft[lineId]?.quantity ?? '0').replace(',', '.')) || 0 : Number(fallback);
-  const total = remito.items.reduce((s, i) => s + qtyOf(i.id, i.quantity) * i.unitPrice, 0);
 
   return (
     <div className="space-y-5">
@@ -321,8 +318,6 @@ export default function PurchaseRemitoDetailPage() {
               <tr className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 <th className="px-4 py-2.5">Descripción</th>
                 <th className="px-4 py-2.5 text-right">Cant.</th>
-                <th className="px-4 py-2.5 text-right">Costo unit.</th>
-                <th className="px-4 py-2.5 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
@@ -380,17 +375,9 @@ export default function PurchaseRemitoDetailPage() {
                       />
                     ) : Number(it.quantity)}
                   </td>
-                  <td className="px-4 py-2.5 text-right text-sm tabular-nums">{formatCurrency(it.unitPrice, 'ARS')}</td>
-                  <td className="px-4 py-2.5 text-right text-sm font-semibold tabular-nums">{formatCurrency(qtyOf(it.id, it.quantity) * it.unitPrice, 'ARS')}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot className="border-t border-gray-100 dark:border-slate-700">
-              <tr>
-                <td colSpan={3} className="px-4 py-3 text-right text-sm text-gray-500">Valorización</td>
-                <td className="px-4 py-3 text-right text-base font-bold text-indigo-600 tabular-nums">{formatCurrency(total, 'ARS')}</td>
-              </tr>
-            </tfoot>
           </table>
         </div>
         {remito.notes && (

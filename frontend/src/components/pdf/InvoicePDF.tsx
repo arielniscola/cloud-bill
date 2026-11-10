@@ -176,7 +176,7 @@ export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [],
             <View style={ps.kv}>
               <Text style={{ width: 55, color: LABEL }}>Cliente</Text>
               <Text style={{ flex: 1 }}>
-                <Text style={{ fontWeight: 600 }}>{customer?.name ?? 'CONSUMIDOR FINAL'}</Text>
+                <Text style={{ fontWeight: 600 }}>{invoice.buyerName || customer?.name || 'CONSUMIDOR FINAL'}</Text>
                 {customer?.code ? <Text style={{ fontFamily: 'PlexMono', fontSize: 8.25, color: LABEL }}>{`  · ${fmtCode(customer.code)}`}</Text> : null}
               </Text>
             </View>
@@ -192,7 +192,9 @@ export default function InvoicePDF({ invoice, ctx, qrCodeDataUrl, payments = [],
             <KV
               labelWidth={61}
               rows={[
-                ['CUIT', fmtCuit(customer?.taxId) || '-'],
+                invoice.buyerDocument
+                  ? [invoice.buyerDocument.replace(/\D/g, '').length === 11 ? 'CUIL' : 'DNI', invoice.buyerDocument.replace(/\D/g, '').length === 11 ? fmtCuit(invoice.buyerDocument) : Number(invoice.buyerDocument.replace(/\D/g, '')).toLocaleString('es-AR')]
+                  : ['CUIT', fmtCuit(customer?.taxId) || '-'],
                 ['Cond. IVA', taxConditionTitle(customer?.taxCondition) || 'Consumidor Final'],
                 ['Ing. Brutos', customer?.grossIncome || '-'],
               ]}

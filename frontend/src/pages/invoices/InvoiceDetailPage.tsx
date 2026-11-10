@@ -15,7 +15,7 @@ import MercadoPagoPayModal from '../../components/shared/MercadoPagoPayModal';
 import FiscalModeBadge from '../../components/shared/FiscalModeBadge';
 import { invoicesService, recibosService, afipService, appSettingsService, activityLogsService, remitosService, ordenPedidosService } from '../../services';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { formatCurrency, formatDate, formatCuit, formatInvoiceNumber } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatCuit, formatBuyerDocument, formatInvoiceNumber } from '../../utils/formatters';
 import { useExchangeRate } from '../../hooks/useExchangeRate';
 import { toArs, isForeign } from '../../utils/currencyConversion';
 import ExchangeRateBadge from '../../components/shared/ExchangeRateBadge';
@@ -637,8 +637,10 @@ export default function InvoiceDetailPage() {
             </div>
 
             <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">
-              <span className="font-semibold text-gray-900 dark:text-white">{invoice.customer?.name ?? 'Consumidor final'}</span>
-              {invoice.customer?.taxId && <> · CUIT {formatCuit(invoice.customer.taxId)}</>}
+              <span className="font-semibold text-gray-900 dark:text-white">{invoice.buyerName || invoice.customer?.name || 'Consumidor final'}</span>
+              {invoice.buyerDocument
+                ? <> · {formatBuyerDocument(invoice.buyerDocument)}</>
+                : invoice.customer?.taxId && <> · CUIT {formatCuit(invoice.customer.taxId)}</>}
               <> · {formatDate(invoice.date)}</>
               {invoice.dueDate && <> · vence {formatDate(invoice.dueDate)}</>}
             </p>
@@ -1018,6 +1020,13 @@ export default function InvoiceDetailPage() {
             </div>
             <div className="px-5 py-4 space-y-1">
               <p className="text-sm font-semibold text-gray-900 dark:text-white">{invoice.customer?.name ?? '—'}</p>
+              {(invoice.buyerName || invoice.buyerDocument) && (
+                <p className="text-sm text-gray-700 dark:text-slate-300">
+                  {invoice.buyerName}
+                  {invoice.buyerName && invoice.buyerDocument && ' · '}
+                  {invoice.buyerDocument && <span className="font-mono text-xs">{formatBuyerDocument(invoice.buyerDocument)}</span>}
+                </p>
+              )}
               {invoice.customer?.taxId && (
                 <p className="text-xs text-gray-500 dark:text-slate-400">CUIT: {formatCuit(invoice.customer.taxId)}</p>
               )}

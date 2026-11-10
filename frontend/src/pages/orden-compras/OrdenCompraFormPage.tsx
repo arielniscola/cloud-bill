@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, Calculator } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button, Input, Select } from '../../components/ui';
-import { PageHeader, ProductSearchSelect } from '../../components/shared';
+import { SupplierSearchSelect, PageHeader, ProductSearchSelect } from '../../components/shared';
 import { ordenComprasService, suppliersService, warehousesService, productsService } from '../../services';
 import { CURRENCY_OPTIONS } from '../../utils/constants';
 import { formatCurrency } from '../../utils/formatters';
@@ -172,10 +172,6 @@ export default function OrdenCompraFormPage() {
     );
   }
 
-  const supplierOptions = [
-    { value: '', label: 'Seleccionar proveedor...' },
-    ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-  ];
   const warehouseOptions = [
     { value: '', label: 'Sin almacén' },
     ...warehouses.map((w) => ({ value: w.id, label: w.name })),
@@ -313,11 +309,13 @@ export default function OrdenCompraFormPage() {
           {/* Right: sticky metadata + totals + actions */}
           <div className="lg:sticky lg:top-6 space-y-4">
             <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
-              <Select
+              <SupplierSearchSelect
                 label="Proveedor *"
-                options={supplierOptions}
+                suppliers={suppliers}
                 value={form.supplierId}
                 onChange={(v) => setForm((f) => ({ ...f, supplierId: v }))}
+                placeholder="Seleccionar proveedor..."
+                serverSearch
               />
               <Input
                 label="Fecha"
