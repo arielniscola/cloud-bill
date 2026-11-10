@@ -30,7 +30,7 @@ function Change({ oldV, newV, currency }: { oldV: number | null; newV: number | 
 }
 
 const margin = (cost: number | null, price: number | null) =>
-  cost != null && price != null && cost > 0 ? `${(((price - cost) / cost) * 100).toFixed(1)}%` : '—';
+  cost != null && price != null && price > 0 ? `${(((price - cost) / price) * 100).toFixed(1)}%` : '—';
 
 /**
  * Historial de costo y precio del producto: quién, cuándo y por qué vía

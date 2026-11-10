@@ -75,7 +75,8 @@ export default function ProductDetailPage() {
 
   const cost = Number(product.cost) || 0;
   const price = Number(product.price) || 0;
-  const margin = cost > 0 ? ((price - cost) / cost) * 100 : null;
+  // Margen sobre el precio de venta (mismo criterio que el listado y la lista de precios).
+  const margin = price > 0 ? ((price - cost) / price) * 100 : null;
   const lastPurchase = overview.purchases[0];
   const { sales } = overview;
   // Días de stock al ritmo de venta de los últimos 12 meses.
