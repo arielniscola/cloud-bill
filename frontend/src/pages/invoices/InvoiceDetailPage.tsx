@@ -202,7 +202,8 @@ export default function InvoiceDetailPage() {
     try {
       const [invoiceData, recibosData, afipErrorsData, logsData, remitosData] = await Promise.all([
         invoicesService.getById(id),
-        recibosService.getAll({ invoiceId: id }),
+        // Depósito no ve cobros (403): la factura se abre igual, sin recibos.
+        recibosService.getAll({ invoiceId: id }).catch(() => ({ data: [] as Recibo[] })),
         invoicesService.getAfipErrors(id).catch(() => []),
         // Historia del documento: visible para cualquier rol que abra la factura (no solo admin).
         activityLogsService.getForDocument(id).catch(() => [] as ActivityLog[]),

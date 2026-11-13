@@ -2,7 +2,8 @@ import { roleAllowed } from '../../utils/roles';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
-import { LogOut, X, Search, Pin, PinOff, CloudOff } from "lucide-react";
+import { LogOut, X, Search, Pin, PinOff, CloudOff, KeyRound } from "lucide-react";
+import ChangePasswordModal from "../shared/ChangePasswordModal";
 import { useUIStore, useAuthStore } from "../../stores";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useFeatures } from "../../hooks/useFeatures";
@@ -44,6 +45,7 @@ export default function Sidebar() {
       ? activeCompany()?.logoUrl ?? null
       : user?.companyLogoUrl ?? null;
 
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   /** Índice resaltado en la lista de resultados, movible con las flechas. */
@@ -509,6 +511,15 @@ export default function Sidebar() {
             />
             <button
               type="button"
+              onClick={() => setPasswordOpen(true)}
+              title="Cambiar contraseña"
+              aria-label="Cambiar contraseña"
+              className={tileClass(false)}
+            >
+              <KeyRound className="w-[18px] h-[18px]" />
+            </button>
+            <button
+              type="button"
               onClick={() => { if (confirmLogoutWithPendingSales()) logout(); }}
               title="Cerrar sesión"
               aria-label="Cerrar sesión"
@@ -625,6 +636,7 @@ export default function Sidebar() {
           )}
         </div>
       )}
+      <ChangePasswordModal isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </>
   );
 }

@@ -105,8 +105,10 @@ export default function BankAccountsPage() {
       await bankService.delete(deleteId);
       setAccounts(prev => prev.filter(a => a.id !== deleteId));
       toast.success('Cuenta eliminada');
-    } catch {
-      toast.error('Error al eliminar');
+    } catch (err: unknown) {
+      // El backend explica por qué no se puede (p.ej. la cuenta tiene movimientos).
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || 'Error al eliminar');
     } finally { setDeleteId(null); }
   };
 

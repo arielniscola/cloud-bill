@@ -85,7 +85,8 @@ export default function OrdenPedidoDetailPage() {
     try {
       const [opData, recibosData, remitosData] = await Promise.all([
         ordenPedidosService.getById(id),
-        recibosService.getAll({ ordenPedidoId: id }),
+        // Depósito no ve cobros (403): la orden se abre igual, sin recibos.
+        recibosService.getAll({ ordenPedidoId: id }).catch(() => ({ data: [] as Recibo[] })),
         remitosService.getAll({ ordenPedidoId: id, limit: 100 }),
       ]);
       setOp(opData);

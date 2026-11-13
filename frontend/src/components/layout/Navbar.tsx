@@ -1,12 +1,13 @@
 import { roleAllowed } from '../../utils/roles';
-import { Fragment, useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { clsx } from 'clsx';
 import { confirmLogoutWithPendingSales } from '../../lib/offline/logoutGuard';
 import { isAvailableOffline, OFFLINE_UNAVAILABLE_HINT } from '../../lib/offline/offlineRoutes';
 import { useOfflineStore } from '../../stores/offline.store';
-import { Settings, History, ChevronDown, LogOut, User } from 'lucide-react';
+import { Settings, History, ChevronDown, LogOut, User, KeyRound } from 'lucide-react';
+import ChangePasswordModal from '../shared/ChangePasswordModal';
 import { useAuthStore, useUIStore } from '../../stores';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useFeatures } from '../../hooks/useFeatures';
@@ -47,6 +48,7 @@ export default function Navbar() {
   const theme = getNavTheme(navTheme);
   const navigate = useNavigate();
   const connection = useOfflineStore((s) => s.connection);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const handleLogout = () => {
     if (!confirmLogoutWithPendingSales()) return;
@@ -293,6 +295,21 @@ export default function Navbar() {
                         </Menu.Item>
                       )}
 
+                      <Menu.Item>
+                        {({ active }) => (
+                          <button
+                            onClick={() => setPasswordOpen(true)}
+                            className={clsx(
+                              'flex items-center gap-2.5 mx-1 px-3 py-2 text-sm rounded-lg w-[calc(100%-0.5rem)] transition-colors duration-100',
+                              active ? 'bg-gray-50 dark:bg-slate-700 text-gray-900 dark:text-slate-200' : 'text-gray-700 dark:text-slate-300'
+                            )}
+                          >
+                            <KeyRound className="w-4 h-4 text-gray-400 dark:text-slate-500" />
+                            Cambiar contraseña
+                          </button>
+                        )}
+                      </Menu.Item>
+
                       <div className="my-1 border-t border-gray-100 dark:border-slate-700" />
 
                       <Menu.Item>
@@ -318,6 +335,7 @@ export default function Navbar() {
 
         </div>
       </div>
+      <ChangePasswordModal isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </nav>
   );
 }

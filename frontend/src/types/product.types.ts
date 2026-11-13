@@ -93,7 +93,7 @@ export type ProductSortKey = 'name' | 'sku' | 'cost' | 'price' | 'priceUpdatedAt
 
 // ── Historial de precios ─────────────────────────────────────────
 export type PriceChangeSource =
-  | 'CREATE' | 'MANUAL' | 'BULK' | 'IMPORT' | 'USD_RECALC' | 'PRICE_LIST_RATE' | 'PURCHASE_INVOICE' | 'REVERT' | 'OTHER';
+  | 'CREATE' | 'MANUAL' | 'BULK' | 'IMPORT' | 'USD_RECALC' | 'PRICE_LIST_RATE' | 'PRICE_LIST_ADJUST' | 'PRICE_LIST_EDIT' | 'PRICE_LIST_IMPORT' | 'PURCHASE_INVOICE' | 'REVERT' | 'OTHER';
 
 export interface PriceChangeValues {
   oldCost: number | null;          newCost: number | null;

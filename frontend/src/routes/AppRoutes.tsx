@@ -307,8 +307,10 @@ export default function AppRoutes() {
         </Route>
 
         {/* Recibos */}
-        <Route path="/recibos" element={<RecibosPage />} />
-        <Route path="/recibos/:id" element={<ReciboDetailPage />} />
+        <Route element={<RoleGuard allowed={['ADMIN', 'SELLER', 'FINANCES']} />}>
+          <Route path="/recibos" element={<RecibosPage />} />
+          <Route path="/recibos/:id" element={<ReciboDetailPage />} />
+        </Route>
 
         {/* Contabilidad */}
         <Route path="/accounting/accounts" element={<AccountsPage />} />

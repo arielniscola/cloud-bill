@@ -49,6 +49,11 @@ const usersService = {
   async changePassword(id: string, password: string): Promise<void> {
     await api.patch(`/users/${id}/password`, { password });
   },
+  /** Cambia la contraseña del usuario actual; devuelve el token que reemplaza al de la sesión. */
+  async changeMyPassword(currentPassword: string, newPassword: string): Promise<string> {
+    const res = await api.patch<{ data: { token: string } }>('/users/me/password', { currentPassword, newPassword });
+    return res.data.data.token;
+  },
   async delete(id: string): Promise<void> {
     await api.delete(`/users/${id}`);
   },

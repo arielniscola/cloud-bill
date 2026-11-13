@@ -75,7 +75,7 @@ export const navModules: NavModule[] = [
       { name: "Facturas",          href: "/invoices",           icon: FileText },
       { name: "Abonos",            href: "/recurring-invoices", icon: Repeat, requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Remitos",           href: "/remitos",            icon: ClipboardList },
-      { name: "Recibos",           href: "/recibos",            icon: Receipt },
+      { name: "Recibos",           href: "/recibos",            icon: Receipt, requiredRoles: ["ADMIN", "SELLER", "FINANCES"] },
       { name: "Clientes",          href: "/customers",          icon: Users },
       { name: "Cuentas Corrientes",href: "/current-accounts",   icon: CreditCard, featureKey: "current_accounts", requiredRoles: NOT_WAREHOUSE_ROLES },
       { name: "Notas Internas",    href: "/internal-notes?entity=CUSTOMER", icon: FileEdit, requiredRoles: NOT_WAREHOUSE_ROLES },

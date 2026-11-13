@@ -2,25 +2,63 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
-import { ArrowDown, ArrowUp, ArrowUpDown, DollarSign, Download, History, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, DollarSign, Download, History, Percent, Plus, RefreshCw, Search, Upload, X } from 'lucide-react';
 import { Button, Modal } from '../../components/ui';
 import { PageHeader, Pagination, SupplierSearchSelect } from '../../components/shared';
 import { categoriesService, rubrosService } from '../../services';
 import priceListService, {
-  type PriceListFilters, type PriceListQuery, type PriceListRateMode, type PriceListRow, type PriceListResult,
+  previewAdjust,
+  type ImportMatchRow, type PriceAdjustInput, type PriceListFilters, type PriceListQuery, type PriceListRateMode, type PriceListRow, type PriceListResult,
 } from '../../services/price-list.service';
 import { useExchangeRate } from '../../hooks/useExchangeRate';
 import { useAuthStore } from '../../stores';
 import { roleAllowed } from '../../utils/roles';
-import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { PRICE_SOURCE_LABEL, pctChange } from '../../utils/priceHistory';
+import * as XLSX from 'xlsx';
 import { apiErrorMessage } from '../../utils/apiError';
 import { exportToExcel } from '../../utils/excelExport';
-import type { Category, Rubro } from '../../types';
+import type { Category, PriceChangeSource, Rubro } from '../../types';
 
 type SortKey = NonNullable<PriceListQuery['sort']>;
 type ChipKey = 'supplier' | 'category' | 'rubro' | 'usd';
 
 const withTax = (net: number, rate: number) => net * (1 + rate / 100);
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Celda numérica editable con un clic: Enter guarda, Esc cancela, salir del campo guarda. */
+function EditableNumber({ value, onCommit, disabled, children }: {
+  value: number; onCommit: (v: number) => void | Promise<void>; disabled?: boolean; children: React.ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const done = useRef(false);
+  if (disabled) return <>{children}</>;
+  const finish = (save: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    setEditing(false);
+    if (!save) return;
+    const n = Number(text.replace(',', '.'));
+    if (text.trim() !== '' && Number.isFinite(n) && n >= 0 && Math.abs(n - value) >= 0.005) onCommit(n);
+  };
+  if (!editing) {
+    return (
+      <button type="button" title="Clic para editar"
+        onClick={() => { done.current = false; setText(String(value).replace('.', ',')); setEditing(true); }}
+        className="-mx-1 cursor-text rounded px-1 text-right hover:bg-indigo-50 hover:ring-1 hover:ring-indigo-200 dark:hover:bg-slate-700">
+        {children}
+      </button>
+    );
+  }
+  return (
+    <input autoFocus inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => finish(true)}
+      onKeyDown={(e) => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); }}
+      className="h-7 w-24 rounded border border-indigo-400 bg-white px-1.5 text-right text-sm tabular-nums outline-none dark:bg-slate-700 dark:text-white" />
+  );
+}
 /** Margen sobre el precio de venta (mismo criterio que la ficha del producto). */
 const marginPct = (r: PriceListRow): number | null => (r.price > 0 ? ((r.price - r.cost) / r.price) * 100 : null);
 /** Rojo < 10 %, ámbar < 20 %, verde el resto. */
@@ -85,6 +123,9 @@ export default function PriceListPage() {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
   const [barRate, setBarRate] = useState('');
   const [showUpdate, setShowUpdate] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [keepMarginOnEdit, setKeepMarginOnEdit] = useState(false);
   const [exporting, setExporting] = useState(false);
   const chipsRef = useRef<HTMLDivElement>(null);
 
@@ -245,6 +286,27 @@ export default function PriceListPage() {
 
   const barRateNum = parseRate(barRate);
 
+  /** Guarda una celda editada. Los valores "c/IVA" se pasan a s/IVA con la alícuota del producto. */
+  const saveEdit = async (r: PriceListRow, field: 'price' | 'priceIva' | 'cost' | 'costIva' | 'margin', v: number) => {
+    const net = (x: number) => round2(x / (1 + r.taxRate / 100));
+    try {
+      let body: Parameters<typeof priceListService.edit>[0];
+      if (field === 'margin') {
+        if (v < 0 || v > 95) { toast.error('El margen debe estar entre 0 y 95 %'); return; }
+        body = { id: r.id, margin: v };
+      } else if (field === 'price' || field === 'priceIva') {
+        body = { id: r.id, price: field === 'price' ? v : net(v) };
+      } else {
+        body = { id: r.id, cost: field === 'cost' ? v : net(v), keepMargin: keepMarginOnEdit };
+      }
+      const res = await priceListService.edit(body);
+      setResult((prev) => prev && { ...prev, data: prev.data.map((x) => (x.id === r.id ? { ...x, price: res.price, cost: res.cost } : x)) });
+      load();
+    } catch (error) {
+      toast.error(apiErrorMessage(error) ?? 'No se pudo guardar el cambio');
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -274,6 +336,7 @@ export default function PriceListPage() {
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
             </div>
+            {canEdit && <Button variant="outline" onClick={() => setShowImport(true)}><Upload className="mr-2 h-4 w-4" />Importar lista de proveedor</Button>}
             <Button variant="outline" onClick={exportExcel} isLoading={exporting}><Download className="mr-2 h-4 w-4" />Exportar Excel</Button>
             <Link to="/products/price-history">
               <Button variant="outline"><History className="mr-2 h-4 w-4" />Historial</Button>
@@ -368,6 +431,12 @@ export default function PriceListPage() {
             Limpiar
           </button>
         )}
+        {canEdit && (
+          <label className="flex h-10 items-center gap-2 px-1 text-sm text-gray-600 dark:text-slate-300" title="Al editar un costo en la tabla, el precio de venta se mueve en la misma proporción">
+            <input type="checkbox" checked={keepMarginOnEdit} onChange={(e) => setKeepMarginOnEdit(e.target.checked)} className="rounded border-gray-300" />
+            Al editar el costo, el precio acompaña
+          </label>
+        )}
         <span className="ml-auto text-sm text-gray-500 dark:text-slate-400">
           {loading ? 'Cargando…' : `${total.toLocaleString('es-AR')} resultado${total === 1 ? '' : 's'}`}
         </span>
@@ -385,7 +454,7 @@ export default function PriceListPage() {
       {/* Tabla */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800">
         <div className="max-h-[calc(100vh-17rem)] overflow-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1100px] text-sm">
             <thead className="sticky top-0 z-10 bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 dark:bg-slate-800 dark:text-slate-400">
               <tr className="text-right">
                 {canEdit && (
@@ -402,13 +471,14 @@ export default function PriceListPage() {
                   <SortHeader k="cost">Costo</SortHeader> <span className="normal-case font-medium">s/IVA · c/IVA</span>
                 </th>
                 <th className="w-40 border-l border-gray-200 px-3.5 py-2.5 font-semibold dark:border-slate-700"><SortHeader k="margin">Margen</SortHeader></th>
+                <th className="border-l border-gray-200 px-3 py-2.5 text-left font-semibold dark:border-slate-700"><SortHeader k="changed">Último cambio</SortHeader></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
               {loading && rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-400">Cargando…</td></tr>
+                <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">Cargando…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-400">No hay productos con estos filtros.</td></tr>
+                <tr><td colSpan={9}className="px-4 py-12 text-center text-gray-400">No hay productos con estos filtros.</td></tr>
               ) : rows.map((r) => {
                 const m = marginPct(r);
                 const tone = marginTone(m);
@@ -427,27 +497,53 @@ export default function PriceListPage() {
                       {!r.isActive && <span className="text-xs text-gray-400"> · inactivo</span>}
                     </td>
                     <td className="whitespace-nowrap border-l border-gray-100 px-2 py-2 tabular-nums dark:border-slate-700/60">
-                      <b className="text-gray-900 dark:text-white">{money(r.price)}</b>
+                      <EditableNumber value={r.price} disabled={!canEdit} onCommit={(v) => saveEdit(r, 'price', v)}>
+                        <b className="text-gray-900 dark:text-white">{money(r.price)}</b>
+                      </EditableNumber>
                       {r.salePriceUSD ? <span className="block text-[11px] text-sky-700 dark:text-sky-400">{usd(r.salePriceUSD)}</span> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 tabular-nums text-gray-700 dark:text-slate-300">
-                      {money(withTax(r.price, r.taxRate))}
+                      <EditableNumber value={round2(withTax(r.price, r.taxRate))} disabled={!canEdit} onCommit={(v) => saveEdit(r, 'priceIva', v)}>
+                        {money(withTax(r.price, r.taxRate))}
+                      </EditableNumber>
                       {r.taxRate !== 21 && <span className="block text-[11px] text-gray-400">IVA {r.taxRate.toLocaleString('es-AR')} %</span>}
                     </td>
                     <td className="whitespace-nowrap border-l border-gray-100 px-2 py-2 tabular-nums text-gray-700 dark:border-slate-700/60 dark:text-slate-300">
-                      {money(r.cost)}
+                      <EditableNumber value={r.cost} disabled={!canEdit} onCommit={(v) => saveEdit(r, 'cost', v)}>
+                        {money(r.cost)}
+                      </EditableNumber>
                       {r.costUSD ? <span className="block text-[11px] text-sky-700 dark:text-sky-400">{usd(r.costUSD)}</span> : null}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 tabular-nums text-gray-700 dark:text-slate-300">{money(withTax(r.cost, r.taxRate))}</td>
+                    <td className="whitespace-nowrap px-2 py-2 tabular-nums text-gray-700 dark:text-slate-300">
+                      <EditableNumber value={round2(withTax(r.cost, r.taxRate))} disabled={!canEdit} onCommit={(v) => saveEdit(r, 'costIva', v)}>
+                        {money(withTax(r.cost, r.taxRate))}
+                      </EditableNumber>
+                    </td>
                     <td className="border-l border-gray-100 px-3.5 py-2 dark:border-slate-700/60">
                       <div className="flex items-center justify-end gap-2">
                         <span className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-600" aria-hidden="true">
                           <span className={clsx('block h-1.5', tone.bar)} style={{ width: `${Math.max(0, Math.min(100, (m ?? 0) * 2.5))}%` }} />
                         </span>
-                        <b className={clsx('w-14 tabular-nums', tone.text)}>
-                          {m === null ? '—' : `${m.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`}
-                        </b>
+                        <EditableNumber value={m === null ? 0 : Math.round(m * 10) / 10} disabled={!canEdit || !(r.cost > 0)} onCommit={(v) => saveEdit(r, 'margin', v)}>
+                          <b className={clsx('inline-block w-14 tabular-nums', tone.text)}>
+                            {m === null ? '—' : `${m.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`}
+                          </b>
+                        </EditableNumber>
                       </div>
+                    </td>
+                    <td className="whitespace-nowrap border-l border-gray-100 px-3 py-2 text-xs dark:border-slate-700/60"
+                      title={r.lastChangeSource ? PRICE_SOURCE_LABEL[r.lastChangeSource as PriceChangeSource] ?? r.lastChangeSource : undefined}>
+                      {r.lastChangeAt ? (
+                        <>
+                          <span className="block text-gray-700 dark:text-slate-300">{formatDate(r.lastChangeAt)}</span>
+                          {[['Venta', pctChange(r.lastOldPrice, r.lastNewPrice)], ['Costo', pctChange(r.lastOldCost, r.lastNewCost)]].map(([l, c]) =>
+                            c === null ? null : (
+                              <span key={l as string} className={clsx('block tabular-nums', (c as number) > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-sky-700 dark:text-sky-400')}>
+                                {l as string} {(c as number) > 0 ? '+' : ''}{(c as number).toLocaleString('es-AR', { maximumFractionDigits: 1 })} %
+                              </span>
+                            ))}
+                        </>
+                      ) : <span className="text-gray-400">—</span>}
                     </td>
                   </tr>
                 );
@@ -493,6 +589,13 @@ export default function PriceListPage() {
             </label>
             <button
               type="button"
+              onClick={() => setShowAdjust(true)}
+              className="flex h-11 items-center gap-2 rounded-xl border border-gray-600 px-4 text-sm font-semibold hover:bg-gray-800"
+            >
+              <Percent className="h-4 w-4" /> Ajustar en pesos
+            </button>
+            <button
+              type="button"
               onClick={() => setShowUpdate(true)}
               disabled={!(barRateNum > 0)}
               className="flex h-11 items-center gap-2 rounded-xl bg-indigo-500 px-4 text-sm font-semibold hover:bg-indigo-400 disabled:opacity-50"
@@ -502,6 +605,17 @@ export default function PriceListPage() {
           </div>
         </div>
       )}
+
+      <ImportListModal isOpen={showImport} onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); load(); }} />
+
+      <AdjustModal
+        isOpen={showAdjust}
+        onClose={() => setShowAdjust(false)}
+        selectedRows={allMatching ? null : [...selected.values()]}
+        filters={filters}
+        total={selectionCount}
+        onDone={() => { setShowAdjust(false); clearSelection(); load(); }}
+      />
 
       <UpdateFromRateModal
         isOpen={showUpdate}
@@ -513,6 +627,418 @@ export default function PriceListPage() {
         onDone={() => { setShowUpdate(false); clearSelection(); load(); }}
       />
     </div>
+  );
+}
+
+/* ── Modal: importar la lista de precios de un proveedor ───────────────── */
+const normHeader = (s: unknown) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const CODE_ALIASES = ['codigo', 'cod', 'sku', 'codart', 'codigoarticulo', 'codigodearticulo', 'articulo', 'ean', 'codigobarras', 'codigodebarras', 'codprov'];
+const COST_ALIASES = ['costo', 'preciolista', 'precio', 'preciocompra', 'costoars', 'pcosto', 'lista', 'precionetounitario', 'preciounitario'];
+
+/** "1.234,56", "$ 1234.5", 12.5 → número; null si no se entiende. */
+function parseCellNumber(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let s = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(','); const lastDot = s.lastIndexOf('.');
+  if (lastComma >= 0 && lastDot >= 0) s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (lastComma >= 0) s = s.replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function ImportListModal({ isOpen, onClose, onDone }: { isOpen: boolean; onClose: () => void; onDone: () => void }) {
+  const [fileName, setFileName] = useState('');
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [data, setData] = useState<unknown[][]>([]);
+  const [codeCol, setCodeCol] = useState(-1);
+  const [costCol, setCostCol] = useState(-1);
+  const [matches, setMatches] = useState<ImportMatchRow[] | null>(null);
+  const [matching, setMatching] = useState(false);
+  const [costIncludesTax, setCostIncludesTax] = useState(false);
+  const [keepMargin, setKeepMargin] = useState(true);
+  const [rounding, setRounding] = useState<PriceAdjustInput['rounding']>(0);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setFileName(''); setHeaders([]); setData([]); setCodeCol(-1); setCostCol(-1); setMatches(null);
+    setCostIncludesTax(false); setKeepMargin(true); setRounding(0); setExcluded(new Set());
+  }, [isOpen]);
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const name = wb.SheetNames.find((n) => wb.Sheets[n]?.['!ref']);
+      if (!name) { toast.error('El archivo no tiene datos'); return; }
+      const all = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, raw: true, defval: '' })
+        .filter((row) => row.some((c) => String(c).trim() !== ''));
+      if (all.length < 2) { toast.error('El archivo no tiene filas de datos'); return; }
+      const hdr = all[0].map((h) => String(h ?? '').trim());
+      setFileName(file.name);
+      setHeaders(hdr);
+      setData(all.slice(1));
+      setCodeCol(hdr.findIndex((h) => CODE_ALIASES.includes(normHeader(h))));
+      setCostCol(hdr.findIndex((h) => COST_ALIASES.includes(normHeader(h))));
+      setMatches(null);
+      setExcluded(new Set());
+    } catch {
+      toast.error('No se pudo leer el archivo (usá .xlsx, .xls o .csv)');
+    }
+  };
+
+  // Cruza los códigos del archivo con SKU / código de barras.
+  useEffect(() => {
+    if (codeCol < 0 || data.length === 0) { setMatches(null); return; }
+    const codes = [...new Set(data.map((r) => String(r[codeCol] ?? '').trim()).filter(Boolean))];
+    if (codes.length === 0) { setMatches([]); return; }
+    let cancelled = false;
+    setMatching(true);
+    priceListService.importMatch(codes)
+      .then((m) => { if (!cancelled) setMatches(m); })
+      .catch(() => { if (!cancelled) toast.error('No se pudo cruzar la lista con tus productos'); })
+      .finally(() => { if (!cancelled) setMatching(false); });
+    return () => { cancelled = true; };
+  }, [codeCol, data]);
+
+  const analysis = useMemo(() => {
+    if (!matches || codeCol < 0 || costCol < 0) return null;
+    const byCode = new Map<string, ImportMatchRow>();
+    matches.forEach((p) => { byCode.set(p.sku.toLowerCase(), p); if (p.barcode) byCode.set(p.barcode.toLowerCase(), p); });
+    const perProduct = new Map<string, { p: ImportMatchRow; fileCost: number }>(); // si el código se repite, gana la última fila
+    let unmatched = 0; let noCost = 0;
+    for (const row of data) {
+      const code = String(row[codeCol] ?? '').trim().toLowerCase();
+      if (!code) continue;
+      const p = byCode.get(code);
+      if (!p) { unmatched++; continue; }
+      const fileCost = parseCellNumber(row[costCol]);
+      if (fileCost === null || fileCost < 0) { noCost++; continue; }
+      perProduct.set(p.id, { p, fileCost });
+    }
+    const rows = [...perProduct.values()].map(({ p, fileCost }) => {
+      const newCost = round2(costIncludesTax ? fileCost / (1 + p.taxRate / 100) : fileCost);
+      const raw = keepMargin && p.cost > 0 ? (p.price * newCost) / p.cost : p.price;
+      const newPrice = rounding > 0 ? Math.round(raw / rounding) * rounding : round2(raw);
+      return { p, fileCost, newCost, newPrice, changed: Math.abs(newCost - p.cost) >= 0.005 || Math.abs(newPrice - p.price) >= 0.005 };
+    });
+    return { rows: rows.filter((r) => r.changed), same: rows.filter((r) => !r.changed).length, unmatched, noCost };
+  }, [matches, data, codeCol, costCol, costIncludesTax, keepMargin, rounding]);
+
+  const toApply = (analysis?.rows ?? []).filter((r) => !excluded.has(r.p.id));
+  const marginOf = (price: number, cost: number) => (price > 0 ? ((price - cost) / price) * 100 : null);
+  const pctTxt = (n: number | null) => (n === null ? '—' : `${n.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+  const delta = (a: number, b: number) => (a > 0 ? ((b - a) / a) * 100 : null);
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      const res = await priceListService.importApply({
+        items: toApply.map((r) => ({ id: r.p.id, cost: r.fileCost })),
+        costIncludesTax, keepMargin, rounding,
+      });
+      toast.success(`${res.updated} producto${res.updated === 1 ? '' : 's'} actualizado${res.updated === 1 ? '' : 's'} desde la lista`, { duration: 6000 });
+      onDone();
+    } catch (error) {
+      toast.error(apiErrorMessage(error) ?? 'No se pudo aplicar la lista');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Importar lista de precios de un proveedor" size="xl">
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">Archivo (Excel o CSV)</label>
+          <input type="file" accept=".xlsx,.xls,.xlsm,.csv" onChange={(e) => onFile(e.target.files?.[0])}
+            className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-indigo-700 dark:text-slate-300" />
+          <p className="mt-1 text-xs text-gray-400">La primera fila debe tener los encabezados. Se cruza por SKU o código de barras de tus productos.</p>
+        </div>
+
+        {headers.length > 0 && (
+          <>
+            <div className="flex flex-wrap items-end gap-3">
+              {([['Columna del código', codeCol, setCodeCol], ['Columna del costo', costCol, setCostCol]] as const).map(([label, val, set]) => (
+                <div key={label}>
+                  <span className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">{label}</span>
+                  <select value={val} onChange={(e) => set(Number(e.target.value))} className={clsx(selectClass, 'w-56')}>
+                    <option value={-1}>Elegí una columna…</option>
+                    {headers.map((h, i) => <option key={i} value={i}>{h || `Columna ${i + 1}`}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">Redondear precio</span>
+                <select value={rounding} onChange={(e) => setRounding(Number(e.target.value) as PriceAdjustInput['rounding'])} className={clsx(selectClass, 'w-36')}>
+                  <option value={0}>Sin redondeo</option><option value={1}>Al peso</option><option value={10}>A $10</option><option value={50}>A $50</option><option value={100}>A $100</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700 dark:text-slate-200">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input type="checkbox" checked={costIncludesTax} onChange={(e) => setCostIncludesTax(e.target.checked)} className="rounded border-gray-300" />
+                Los costos del archivo ya incluyen IVA
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input type="checkbox" checked={keepMargin} onChange={(e) => setKeepMargin(e.target.checked)} className="rounded border-gray-300" />
+                El precio de venta acompaña (mantiene el margen)
+              </label>
+            </div>
+          </>
+        )}
+
+        {matching && <p className="text-sm text-gray-500">Cruzando con tus productos…</p>}
+
+        {analysis && (
+          <>
+            <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:bg-slate-700/50 dark:text-slate-200">
+              <strong>{analysis.rows.length}</strong> producto{analysis.rows.length === 1 ? '' : 's'} con cambios
+              {analysis.same > 0 && <> · {analysis.same} sin cambios</>}
+              {analysis.unmatched > 0 && <> · <span className="text-amber-700 dark:text-amber-400">{analysis.unmatched} fila{analysis.unmatched === 1 ? '' : 's'} del archivo sin producto en el sistema</span></>}
+              {analysis.noCost > 0 && <> · {analysis.noCost} sin costo válido</>}
+            </p>
+            {analysis.rows.length > 0 && (
+              <div className="max-h-72 overflow-auto rounded-lg border border-gray-200 dark:border-slate-700">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-gray-50 text-gray-400 dark:bg-slate-800">
+                    <tr>
+                      <th className="w-8 px-3 py-1.5" />
+                      <th className="px-3 py-1.5 text-left font-semibold">Producto</th>
+                      <th className="px-3 py-1.5 text-right font-semibold">Costo s/IVA</th>
+                      <th className="px-3 py-1.5 text-right font-semibold">Venta s/IVA</th>
+                      <th className="px-3 py-1.5 text-right font-semibold">Margen</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                    {analysis.rows.slice(0, 200).map((r) => {
+                      const off = excluded.has(r.p.id);
+                      const cd = delta(r.p.cost, r.newCost);
+                      return (
+                        <tr key={r.p.id} className={off ? 'opacity-40' : ''}>
+                          <td className="px-3 py-1.5">
+                            <input type="checkbox" checked={!off} aria-label={`Aplicar ${r.p.name}`}
+                              onChange={() => setExcluded((prev) => { const n = new Set(prev); if (n.has(r.p.id)) n.delete(r.p.id); else n.add(r.p.id); return n; })} />
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700 dark:text-slate-200">
+                            {r.p.name}<span className="ml-1 font-mono text-gray-400">{r.p.sku}</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                            <span className="text-gray-400 line-through">{money(r.p.cost)}</span>{' '}
+                            <b className="text-gray-900 dark:text-white">{money(r.newCost)}</b>
+                            {cd !== null && <span className={clsx('ml-1', cd > 0 ? 'text-amber-700' : 'text-sky-700')}>{cd > 0 ? '+' : ''}{cd.toLocaleString('es-AR', { maximumFractionDigits: 1 })} %</span>}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                            <span className="text-gray-400 line-through">{money(r.p.price)}</span>{' '}
+                            <b className="text-gray-900 dark:text-white">{money(r.newPrice)}</b>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                            <span className="text-gray-400">{pctTxt(marginOf(r.p.price, r.p.cost))}</span> → <b>{pctTxt(marginOf(r.newPrice, r.newCost))}</b>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {analysis.rows.length > 200 && <p className="px-3 py-2 text-xs text-gray-400">Se muestran 200 de {analysis.rows.length}; se aplican todos los tildados.</p>}
+              </div>
+            )}
+          </>
+        )}
+
+        <p className="text-xs text-gray-400">Queda en el historial de precios y se puede deshacer desde ahí.</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={submit} isLoading={saving} disabled={toApply.length === 0}>Aplicar a {toApply.length} producto{toApply.length === 1 ? '' : 's'}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Modal: ajustar precios/costos en pesos (sin cotización) ───────────── */
+type AdjustTarget = 'PRICE' | 'COST' | 'MARGIN';
+
+function AdjustModal({
+  isOpen, onClose, selectedRows, filters, total, onDone,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  /** null = todos los del filtro. */
+  selectedRows: PriceListRow[] | null;
+  filters: PriceListFilters;
+  total: number;
+  onDone: () => void;
+}) {
+  const [target, setTarget] = useState<AdjustTarget>('PRICE');
+  const [type, setType] = useState<'PERCENT' | 'AMOUNT'>('PERCENT');
+  const [valueText, setValueText] = useState('');
+  const [keepMargin, setKeepMargin] = useState(true);
+  const [rounding, setRounding] = useState<PriceAdjustInput['rounding']>(0);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setTarget('PRICE'); setType('PERCENT'); setValueText(''); setKeepMargin(true); setRounding(0);
+  }, [isOpen]);
+
+  const value = Number(valueText.replace(',', '.'));
+  const valueOk = valueText.trim() !== '' && Number.isFinite(value) &&
+    (target === 'MARGIN' ? value >= 0 && value <= 95 : type === 'PERCENT' ? value > -100 : true);
+  const input: PriceAdjustInput = { target, type, value, keepMargin, rounding };
+
+  const previews = useMemo(() => {
+    if (!selectedRows || !valueOk) return [];
+    return selectedRows.map((r) => ({ r, p: previewAdjust(r, input) }));
+  }, [selectedRows, valueOk, target, type, value, keepMargin, rounding]); // eslint-disable-line react-hooks/exhaustive-deps
+  const affected = selectedRows ? previews.filter((x) => x.p).length : total;
+  const showCost = target === 'COST';
+  const marginOf = (price: number, cost: number) => (price > 0 ? ((price - cost) / price) * 100 : null);
+  const pct = (n: number | null) => (n === null ? '—' : `${n.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`);
+
+  const submit = async () => {
+    if (!valueOk) { toast.error('Ingresá un valor válido'); return; }
+    setSaving(true);
+    try {
+      const res = await priceListService.adjust({
+        ...input,
+        ...(selectedRows ? { ids: selectedRows.map((r) => r.id) } : { filter: filters }),
+      });
+      toast.success(
+        `${res.updated} producto${res.updated === 1 ? '' : 's'} actualizado${res.updated === 1 ? '' : 's'}` +
+        (res.skipped ? ` · ${res.skipped} sin costo, sin cambios` : ''),
+        { duration: 6000 },
+      );
+      onDone();
+    } catch (error) {
+      toast.error(apiErrorMessage(error) ?? 'No se pudieron ajustar los precios');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const options: Array<{ v: AdjustTarget; t: string; d: string }> = [
+    { v: 'PRICE', t: 'Precio de venta', d: 'Sube o baja el precio de venta. El costo no cambia, así que el margen se mueve.' },
+    { v: 'COST', t: 'Costo', d: 'Sube o baja el costo. Podés hacer que el precio de venta acompañe y el margen se mantenga.' },
+    { v: 'MARGIN', t: 'Fijar margen', d: 'Recalcula el precio de venta desde el costo para que todos queden con el mismo margen.' },
+  ];
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Ajustar precios en pesos" size="lg">
+      <div className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="mb-1.5 text-sm font-medium text-gray-700 dark:text-slate-300">Qué se ajusta</legend>
+          {options.map((o) => (
+            <label key={o.v} className={clsx('flex cursor-pointer gap-3 rounded-lg border p-3',
+              target === o.v ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-700 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-slate-600')}>
+              <input type="radio" name="adj-target" checked={target === o.v} onChange={() => { setTarget(o.v); setValueText(''); }} className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium text-gray-900 dark:text-white">{o.t}</span>
+                <span className="block text-xs text-gray-500 dark:text-slate-400">{o.d}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+
+        <div className="flex flex-wrap items-end gap-3">
+          {target !== 'MARGIN' && (
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">Cómo</span>
+              <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 dark:border-slate-600">
+                {([['PERCENT', 'Porcentaje %'], ['AMOUNT', 'Monto $']] as const).map(([k, l]) => (
+                  <button key={k} type="button" onClick={() => setType(k)}
+                    className={clsx('px-3 py-2 text-sm', type === k ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 dark:bg-slate-700 dark:text-slate-200')}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <label htmlFor="adj-value" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">
+              {target === 'MARGIN' ? 'Margen objetivo (%)' : type === 'PERCENT' ? 'Variación (%)' : 'Monto a sumar ($)'}
+            </label>
+            <input id="adj-value" inputMode="decimal" autoFocus value={valueText} onChange={(e) => setValueText(e.target.value)}
+              placeholder={target === 'MARGIN' ? '30' : '10'}
+              className={clsx(selectClass, 'w-36 text-right font-semibold tabular-nums')} />
+          </div>
+          <div>
+            <label htmlFor="adj-round" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-slate-300">Redondear precio</label>
+            <select id="adj-round" value={rounding} onChange={(e) => setRounding(Number(e.target.value) as PriceAdjustInput['rounding'])} className={clsx(selectClass, 'w-40')}>
+              <option value={0}>Sin redondeo</option>
+              <option value={1}>Al peso</option>
+              <option value={10}>A $10</option>
+              <option value={50}>A $50</option>
+              <option value={100}>A $100</option>
+            </select>
+          </div>
+        </div>
+        {target !== 'MARGIN' && <p className="-mt-2 text-xs text-gray-400">Usá un número negativo para bajar (ej. -5).</p>}
+
+        {target === 'COST' && (
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-700 dark:text-slate-200">
+            <input type="checkbox" checked={keepMargin} onChange={(e) => setKeepMargin(e.target.checked)} className="mt-0.5 rounded border-gray-300" />
+            <span>
+              Que el precio de venta acompañe (mantiene el margen)
+              <span className="block text-xs text-gray-500 dark:text-slate-400">Si lo destildás, sube solo el costo y el margen baja.</span>
+            </span>
+          </label>
+        )}
+
+        <p className={clsx('rounded-lg px-3 py-2 text-sm',
+          affected > 0 || !valueOk ? 'bg-gray-50 text-gray-700 dark:bg-slate-700/50 dark:text-slate-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300')}>
+          Se ajustan <strong>{affected.toLocaleString('es-AR')}</strong> de {total.toLocaleString('es-AR')} producto{total === 1 ? '' : 's'}.
+          {selectedRows && valueOk && affected < total && ' Los demás no tienen costo cargado y quedan como están.'}
+          {!selectedRows && target === 'MARGIN' && ' Los que no tengan costo cargado quedan como están.'}
+        </p>
+
+        {selectedRows && valueOk && affected > 0 && (
+          <div className="max-h-60 overflow-auto rounded-lg border border-gray-200 dark:border-slate-700">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50 text-gray-400 dark:bg-slate-800">
+                <tr>
+                  <th className="px-3 py-1.5 text-left font-semibold">Producto</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">Venta s/IVA</th>
+                  {showCost && <th className="px-3 py-1.5 text-right font-semibold">Costo s/IVA</th>}
+                  <th className="px-3 py-1.5 text-right font-semibold">Margen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {previews.filter((x) => x.p).slice(0, 50).map(({ r, p }) => (
+                  <tr key={r.id}>
+                    <td className="px-3 py-1.5 text-gray-700 dark:text-slate-200">{r.name}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                      <span className="text-gray-400 line-through">{money(r.price)}</span>{' '}
+                      <span className="font-semibold text-gray-900 dark:text-white">{money(p!.price)}</span>
+                    </td>
+                    {showCost && (
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                        <span className="text-gray-400 line-through">{money(r.cost)}</span>{' '}
+                        <span className="font-semibold text-gray-900 dark:text-white">{money(p!.cost)}</span>
+                      </td>
+                    )}
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                      <span className="text-gray-400">{pct(marginOf(r.price, r.cost))}</span> → <b>{pct(marginOf(p!.price, p!.cost))}</b>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400">
+          Queda en el historial de precios y se puede deshacer desde ahí. Si el producto tiene costo/venta en USD, ese valor no se toca.
+        </p>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={submit} isLoading={saving} disabled={!valueOk || affected === 0}>Aplicar a {affected.toLocaleString('es-AR')} producto{affected === 1 ? '' : 's'}</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
