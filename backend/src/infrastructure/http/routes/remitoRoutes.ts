@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendEmailLimiter } from '../utils/emailRequest';
 import { RemitoController } from '../controllers/RemitoController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
@@ -38,6 +39,6 @@ router.post(
   requireRoles('SUPER_ADMIN', 'ADMIN'),
   ...withApproval('remitos.cancel', resolveRemitoCancel, remitoController.cancel)
 );
-router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'), remitoController.sendEmail);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER', 'WAREHOUSE_CLERK'), sendEmailLimiter, remitoController.sendEmail);
 
 export { router as remitoRoutes };

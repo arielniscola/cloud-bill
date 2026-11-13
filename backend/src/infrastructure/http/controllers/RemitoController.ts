@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { parseSendEmailBody, logEmailSent } from '../utils/emailRequest';
 import { logActivity } from '../utils/activityLog';
 import { container } from 'tsyringe';
 import { Prisma } from '@prisma/client';
@@ -66,14 +67,14 @@ export class RemitoController {
 
       if (linkedOrdenPedidoId) {
         // Remito linked to an OP: stock was already handled at OP creation
-        const op = await (prisma as any).ordenPedido.findUnique({ where: { id: linkedOrdenPedidoId } });
+        const op = await (prisma as any).ordenPedido.findFirst({ where: { id: linkedOrdenPedidoId, companyId: req.companyId } });
         if (!op) throw new AppError('Orden de pedido no encontrada', 404);
         stockBehaviorForRemito = (op.stockBehavior ?? 'DISCOUNT') as 'DISCOUNT' | 'RESERVE';
         fiscalModeForRemito = (op.fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
         isLinked = true;
       } else if (invoiceId) {
-        const invoice = await prisma.invoice.findUnique({
-          where: { id: invoiceId },
+        const invoice = await prisma.invoice.findFirst({
+          where: { id: invoiceId, companyId: req.companyId },
           include: { items: true },
         });
         if (!invoice) throw new AppError('Factura no encontrada', 404);
@@ -103,8 +104,8 @@ export class RemitoController {
         fiscalModeForRemito = ((invoice as any).fiscalMode ?? 'FORMAL') as 'FORMAL' | 'INFORMAL';
         isLinked = true;
       } else if (budgetId) {
-        const budget = await prisma.budget.findUnique({
-          where: { id: budgetId },
+        const budget = await prisma.budget.findFirst({
+          where: { id: budgetId, companyId: req.companyId },
           include: { items: true },
         });
         if (!budget) throw new AppError('Presupuesto no encontrado', 404);
@@ -496,9 +497,9 @@ export class RemitoController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to, pdfBase64 } = req.body;
-      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
+      const { to, pdfBase64 } = parseSendEmailBody(req.body);
       await sendRemitoEmail(id, to, req.companyId!, pdfBase64);
+      await logEmailSent(req, 'Remito', id, to);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

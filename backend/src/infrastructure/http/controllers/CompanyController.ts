@@ -7,6 +7,7 @@ import { PLAN_NAMES } from '../../../shared/constants/planFeatures';
 import { invalidatePlanCache } from '../middlewares/featureMiddleware';
 import { invalidateModuleCache } from '../middlewares/moduleMiddleware';
 import prisma from '../../database/prisma';
+import { invalidateAllUserStates } from '../middlewares/authMiddleware';
 
 export class CompanyController {
   async findAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -100,6 +101,8 @@ export class CompanyController {
       if (!company) throw new NotFoundError('Empresa');
       const data = updateCompanySchema.parse(req.body);
       const updated = await repo.update(req.params.id, data);
+      // Activar/desactivar la empresa rige para sus usuarios en el próximo request.
+      if (data.isActive !== undefined) invalidateAllUserStates();
       res.json({ status: 'success', data: updated });
     } catch (error) { next(error); }
   }

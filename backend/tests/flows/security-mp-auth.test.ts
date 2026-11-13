@@ -62,7 +62,7 @@ describe('MercadoPago — webhook y aislamiento entre empresas', () => {
   const prefStatus = async (id: string) =>
     (await prisma.$queryRaw<{ status: string }[]>`SELECT status FROM "mp_preferences" WHERE id = ${id}`)[0].status;
 
-  /** El webhook responde 200 y procesa después: se espera a que termine. */
+  /** El webhook responde al terminar de procesar; el sondeo queda como margen. */
   const waitFor = async (check: () => Promise<boolean>, ms = 8000) => {
     const until = Date.now() + ms;
     while (Date.now() < until) {
@@ -158,6 +158,49 @@ describe('MercadoPago — webhook y aislamiento entre empresas', () => {
     expect(await recibosOf(paymentId)).toHaveLength(0);
     expect(await prefStatus(pref)).toBe('PENDING');
     await prisma.$executeRaw`DELETE FROM "mp_preferences" WHERE id = ${pref}`;
+  });
+
+  it('el primer pago emitió el borrador y dejó la factura saldada', async () => {
+    const inv = await api.get(`/api/invoices/${invoiceB}`).set(auth(ADMIN_B));
+    expectStatus(inv, 200);
+    expect(inv.body.data.status).toBe('PAID');
+  });
+
+  it('un pago sobre una factura ya saldada no se pierde ni la sobrepaga: queda a cuenta', async () => {
+    const pref = await addPreference(invoiceB);
+    const paymentId = `${Date.now()}4`;
+    expectStatus(await notify(paymentId), 200);
+
+    // El webhook ahora responde cuando terminó de procesar.
+    expect(await prefStatus(pref)).toBe('COMPLETED');
+    const rows = await prisma.$queryRaw<{ invoiceId: string | null; amount: number; id: string }[]>`
+      SELECT id, "invoiceId", amount::float8 AS amount FROM "recibos" WHERE "mpPaymentId" = ${paymentId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].invoiceId).toBeNull();
+    expect(rows[0].amount).toBe(1210);
+    expect(await prisma.recibo.count({ where: { invoiceId: invoiceB } })).toBe(1);
+
+    // Saldo a favor en la cuenta corriente del cliente.
+    const mov = await prisma.$queryRaw<{ type: string; amount: number }[]>`
+      SELECT type::text AS type, amount::float8 AS amount FROM "account_movements" WHERE "reciboId" = ${rows[0].id}
+    `;
+    expect(mov).toEqual([{ type: 'CREDIT', amount: 1210 }]);
+  });
+
+  it('si el registro falla responde 500 para que MP reintente', async () => {
+    getPayment.mockImplementationOnce(async () => { throw new Error('MP caído'); });
+    const paymentId = `${Date.now()}5`;
+    expectStatus(await notify(paymentId), 500);
+    expect(await recibosOf(paymentId)).toHaveLength(0);
+  });
+
+  it('la vinculación manual rechaza una factura ya saldada', async () => {
+    const paymentId = `${Date.now()}6`;
+    const link = await api.post('/api/mercadopago/link-payment').set(auth(ADMIN_B))
+      .send({ mpPaymentId: paymentId, invoiceId: invoiceB });
+    expectStatus(link, 400);
+    expect(await recibosOf(paymentId)).toHaveLength(0);
   });
 
   it('con el secret configurado descarta los avisos sin firma o con firma inválida', async () => {

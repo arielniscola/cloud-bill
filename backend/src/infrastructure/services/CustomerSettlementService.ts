@@ -71,6 +71,38 @@ export async function invoicePending(invoice: { id: string; type: string; total:
   return Math.round((total - used) * 100) / 100;
 }
 
+/** Bloquea la fila de la factura hasta el fin de la transacción. Devuelve su estado, o null si no existe. */
+export async function lockInvoiceRow(invoiceId: string, tx: Prisma.TransactionClient): Promise<string | null> {
+  const rows = await tx.$queryRaw<{ status: string }[]>`
+    SELECT status::text AS status FROM "invoices" WHERE id = ${invoiceId} FOR UPDATE
+  `;
+  return rows[0]?.status ?? null;
+}
+
+/**
+ * Toma el cerrojo de la factura dentro de la transacción del cobro y revalida,
+ * ya con la fila bloqueada, que siga cobrable y que `applied` entre en lo
+ * pendiente. Validar solo antes de abrir la transacción dejaba pasar dos cobros
+ * simultáneos (doble clic, dos cajas): ambos leían el mismo saldo y la factura
+ * terminaba con recibos por más que su total.
+ */
+export async function lockInvoiceForPayment(
+  invoice: { id: string; type: string; total: any },
+  applied: number,
+  tx: Prisma.TransactionClient
+): Promise<void> {
+  const status = await lockInvoiceRow(invoice.id, tx);
+  if (!status) throw new AppError('El comprobante ya no existe', 404);
+  if (status === 'CANCELLED') throw new AppError('El comprobante fue anulado por otra operación', 409);
+  if (status === 'DRAFT') throw new AppError('El comprobante todavía es un borrador', 409);
+
+  const pending = await invoicePending(invoice, tx);
+  if (pending <= 0.001) throw new AppError('El comprobante ya fue saldado por otra operación', 409);
+  if (applied > pending + 0.001) {
+    throw new AppError(`El monto excede el saldo pendiente (${pending.toFixed(2)}): se registró otro cobro mientras tanto`, 409);
+  }
+}
+
 /**
  * Recalcula el estado de cobro de un comprobante de venta a partir de sus
  * recibos. En una NC además mueve el stock al entrar/salir de PAID.

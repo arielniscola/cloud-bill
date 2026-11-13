@@ -37,7 +37,6 @@ import { ordenPagoRoutes } from './routes/ordenPagoRoutes';
 import { bankRoutes } from './routes/bankRoutes';
 import { searchRoutes } from './routes/searchRoutes';
 import { remindersRoutes } from './routes/remindersRoutes';
-import { syncRoutes } from './routes/syncRoutes';
 import { catalogRoutes } from './routes/catalogRoutes';
 import { reportsRoutes } from './routes/reportsRoutes';
 import { mpRoutes } from './routes/mpRoutes';
@@ -157,7 +156,11 @@ export function createApp(): Application {
   app.use('/api/banks', bankRoutes);
   app.use('/api/search', searchRoutes);
   app.use('/api/reminders', remindersRoutes);
-  app.use('/api/sync', syncRoutes);
+  // `/api/sync` DESMONTADO: alimentaba la instalación local (retirada, la
+  // reemplazó la PWA) y su export entregaba a cualquier ADMIN los hashes de
+  // contraseñas, el certificado y la clave privada de ARCA. El código queda en
+  // routes/syncRoutes.ts + controllers/SyncController.ts; no volver a montarlo
+  // sin quitar antes esos campos del export.
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/reports', reportsRoutes);
   app.use('/api/mercadopago', mpRoutes);

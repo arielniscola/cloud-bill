@@ -7,6 +7,7 @@ import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
 import { AppError, NotFoundError, ConflictError } from '../../../shared/errors/AppError';
 import prisma from '../../database/prisma';
+import { signAuthToken } from '../../services/authToken';
 
 const createUserSchema = z.object({
   name:      z.string().min(1),
@@ -28,6 +29,11 @@ const updateUserSchema = z.object({
 
 const changePasswordSchema = z.object({
   password: z.string().min(8, 'Mínimo 8 caracteres'),
+});
+
+const changeMyPasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Ingresá tu contraseña actual'),
+  newPassword:     z.string().min(8, 'Mínimo 8 caracteres').max(200),
 });
 
 const dashboardShortcutsSchema = z.object({
@@ -150,6 +156,8 @@ export class UserController {
       const hashed       = await bcrypt.hash(password, 10);
 
       await repo.update(req.params.id, { password: hashed });
+      // Los tokens emitidos con la contraseña anterior dejan de valer ya mismo.
+      invalidateUserState(req.params.id);
 
       const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
       await activityLogRepo.create({
@@ -161,6 +169,47 @@ export class UserController {
       });
 
       res.json({ status: 'success', message: 'Contraseña actualizada' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Cambio de contraseña por el propio usuario (cualquier rol). Pide la actual
+   * para que un token robado no alcance para quedarse con la cuenta. El resto
+   * de las sesiones se cierra; esta sigue con el token nuevo de la respuesta.
+   */
+  async changeMyPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const repo = container.resolve<IUserRepository>('UserRepository');
+      const user = await repo.findById(req.user!.userId);
+      if (!user) throw new NotFoundError('Usuario');
+
+      const { currentPassword, newPassword } = changeMyPasswordSchema.parse(req.body);
+
+      // 400 y no 401: el front cierra la sesión ante cualquier 401.
+      if (!(await bcrypt.compare(currentPassword, user.password))) {
+        throw new AppError('La contraseña actual no es correcta', 400);
+      }
+      if (currentPassword === newPassword) {
+        throw new AppError('La contraseña nueva tiene que ser distinta de la actual', 400);
+      }
+
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await repo.update(user.id, { password: hashed });
+      invalidateUserState(user.id);
+
+      const activityLogRepo = container.resolve<IActivityLogRepository>('ActivityLogRepository');
+      await activityLogRepo.create({
+        userId: user.id,
+        action: 'UPDATE',
+        entity: 'User',
+        entityId: user.id,
+        description: `${user.name} cambió su contraseña`,
+      });
+
+      const token = signAuthToken({ ...user, companyId: (user as any).companyId ?? null, password: hashed });
+      res.json({ status: 'success', message: 'Contraseña actualizada', data: { token } });
     } catch (error) {
       next(error);
     }

@@ -1,3 +1,4 @@
+import { assertProductInCompany, assertWarehouseInCompany } from '../utils/tenantRefs';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { IStockRepository } from '../../../domain/repositories/IWarehouseRepository';
@@ -28,6 +29,7 @@ export class StockController {
   async getStockByProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
+      await assertProductInCompany(req.params.productId, req.companyId);
       const stocks = await stockRepository.getStockByProduct(req.params.productId);
 
       res.json({
@@ -42,6 +44,7 @@ export class StockController {
   async getStockByWarehouse(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
+      await assertWarehouseInCompany(req.params.warehouseId, req.companyId);
       const stocks = await stockRepository.getStockByWarehouse(req.params.warehouseId);
 
       res.json({
@@ -215,6 +218,7 @@ export class StockController {
   async exportWarehouseStock(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const stockRepository = container.resolve<IStockRepository>('StockRepository');
+      await assertWarehouseInCompany(req.params.warehouseId, req.companyId);
       const csv = await stockRepository.exportWarehouseStock(req.params.warehouseId);
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');

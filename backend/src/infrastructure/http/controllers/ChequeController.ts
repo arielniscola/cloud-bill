@@ -1,3 +1,4 @@
+import { assertBankAccountInCompany } from '../utils/tenantRefs';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { z } from 'zod';
@@ -105,6 +106,7 @@ export class ChequeController {
     try {
       const repo   = container.resolve<IChequeRepository>('ChequeRepository');
       const data   = createChequeSchema.parse(req.body);
+      await assertBankAccountInCompany(data.bankAccountId, req.companyId);
       const cheque = await repo.create({
         ...data,
         customerId:     data.customerId  ?? undefined,
@@ -143,6 +145,7 @@ export class ChequeController {
 
       // Al depositar se puede indicar (o corregir) la cuenta bancaria destino.
       if (status === 'DEPOSITED' && bankAccountId) {
+        await assertBankAccountInCompany(bankAccountId, req.companyId);
         await prisma.$executeRaw`
           UPDATE "cheques" SET "bankAccountId" = ${bankAccountId}, "updatedAt" = NOW()
           WHERE id = ${req.params.id} AND "companyId" = ${req.companyId!}

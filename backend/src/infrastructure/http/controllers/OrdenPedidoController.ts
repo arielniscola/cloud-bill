@@ -1,3 +1,5 @@
+import { assertBankAccountInCompany } from '../utils/tenantRefs';
+import { parseSendEmailBody, logEmailSent } from '../utils/emailRequest';
 import { LotPool, loadLotSelections, saveLotSelections, selectionsFromItems, stripItemLots } from '../../../shared/utils/lotSelections';
 import { Request, Response, NextFunction } from 'express';
 import type { Prisma } from '@prisma/client';
@@ -176,7 +178,7 @@ export class OrdenPedidoController {
 
       if (data.customerId) {
         const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
-        const customer = await customerRepo.findById(data.customerId);
+        const customer = await customerRepo.findById(data.customerId, req.companyId);
         if (!customer) throw new NotFoundError('Cliente');
         if (!customer.isActive) throw new AppError('El cliente está inactivo', 400);
       }
@@ -247,7 +249,7 @@ export class OrdenPedidoController {
       if (itemsWithProduct.length > 0) {
         let stockWarehouse = null;
         if ((data as any).warehouseId) {
-          stockWarehouse = await warehouseRepo.findById((data as any).warehouseId);
+          stockWarehouse = await warehouseRepo.findById((data as any).warehouseId, req.companyId);
           if (!stockWarehouse) throw new AppError('Almacén seleccionado no encontrado', 400);
         } else {
           stockWarehouse = await warehouseRepo.findDefaultOrFirstActive(req.companyId);
@@ -522,6 +524,10 @@ export class OrdenPedidoController {
         saleCondition: opSaleCondition,
         stockBehavior: 'RESERVE', // Prevent stock movements in InvoiceController
         ordenPedidoId: op.id,
+        // Nace EMITIDA, nunca en borrador: el alta de la orden ya aplicó stock
+        // y cuenta corriente, y un borrador habilitaría "Emitir", que volvería
+        // a dispararlos (applyIssuanceEffects duplicaría el DEBIT y la reserva).
+        status: 'ISSUED',
         items: op.items.map((item) => ({
           productId: item.productId!,
           detail: item.detail ?? null,
@@ -532,38 +538,37 @@ export class OrdenPedidoController {
         })),
       } as any);
 
-      // La factura hereda el depósito de la orden (relevante para NC futuras).
-      await setSaleWarehouse('invoices', invoice.id, await getSaleWarehouseId('orden_pedidos', op.id));
-      // ... y el comprador cargado a mano si la orden era a Consumidor Final.
-      if (!op.customerId) await writeBuyer('invoices', invoice.id, await readBuyer('orden_pedidos', op.id));
+      // Depósito y comprador heredados, orden marcada como convertida y cobros
+      // heredados: todo junto o nada. Si algo falla, la factura recién creada
+      // se descarta y la orden queda como estaba.
+      const warehouseId = await getSaleWarehouseId('orden_pedidos', op.id);
+      const buyer = op.customerId ? null : await readBuyer('orden_pedidos', op.id);
+      try {
+        await prisma.$transaction(async (tx) => {
+          // La orden se reclama con un UPDATE condicional: dos conversiones
+          // simultáneas no pueden generar dos facturas.
+          const claimed = await tx.$executeRaw`
+            UPDATE "orden_pedidos" SET status = 'CONVERTED', "invoiceId" = ${invoice.id}, "updatedAt" = NOW()
+            WHERE id = ${op.id} AND status NOT IN ('CONVERTED', 'CANCELLED')
+          `;
+          if (claimed === 0) throw new AppError('La orden ya fue convertida a factura', 400);
 
-      // Mark OP as CONVERTED and link to invoice
-      await opRepo.update(req.params.id, { status: 'CONVERTED', invoiceId: invoice.id });
+          // La factura hereda el depósito de la orden (relevante para NC futuras)
+          // y el comprador cargado a mano si la orden era a Consumidor Final.
+          await setSaleWarehouse('invoices', invoice.id, warehouseId, tx);
+          if (buyer) await writeBuyer('invoices', invoice.id, buyer, tx);
 
-      // Inherit payment from OP: link existing recibos and set invoice status
-      const opRecibos = await (prisma as any).recibo.findMany({
-        where: { ordenPedidoId: op.id, status: 'EMITTED' },
-      });
-
-      if (opRecibos.length > 0) {
-        // Link each recibo to the invoice
-        for (const recibo of opRecibos) {
-          await (prisma as any).recibo.update({
-            where: { id: recibo.id },
-            data: { invoiceId: invoice.id },
-          });
-        }
-
-        // La factura nace emitida y su estado sale de los cobros heredados.
-        await invoiceRepo.update(invoice.id, { status: 'ISSUED' });
-        invoice.status = (await recalcInvoiceStatus(invoice.id, prisma, req.user!.userId) ?? invoice.status) as any;
-      } else {
-        // Sin cobros previos la factura nace EMITIDA, no en borrador: el alta de
-        // la orden ya aplicó stock y cuenta corriente, y un borrador habilitaría
-        // "Emitir", que volvería a dispararlos (applyIssuanceEffects duplicando
-        // el DEBIT y reservando stock ya descontado).
-        await invoiceRepo.update(invoice.id, { status: 'ISSUED' });
-        invoice.status = 'ISSUED' as any;
+          // Los cobros de la orden pasan a la factura y definen su estado.
+          await tx.$executeRaw`
+            UPDATE "recibos" SET "invoiceId" = ${invoice.id}
+            WHERE "ordenPedidoId" = ${op.id} AND status = 'EMITTED'
+          `;
+          invoice.status = (await recalcInvoiceStatus(invoice.id, tx, req.user!.userId) ?? invoice.status) as any;
+        });
+      } catch (convertError) {
+        await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${invoice.id}` // invoice_items cascade
+          .catch(() => { /* se informa el error original */ });
+        throw convertError;
       }
 
       await activityLogRepo.create({
@@ -608,7 +613,7 @@ export class OrdenPedidoController {
 
       let cashRegisterName = '';
       if (usesCaja && paymentData.cashRegisterId) {
-        const cashRegister = await cashRegisterRepo.findById(paymentData.cashRegisterId);
+        const cashRegister = await cashRegisterRepo.findById(paymentData.cashRegisterId, req.companyId);
         if (!cashRegister) throw new AppError('Caja no encontrada', 400);
         if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
         cashRegisterName = cashRegister.name;
@@ -621,6 +626,8 @@ export class OrdenPedidoController {
       const alreadyPaid = activeRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
       const total = Number(op.total);
       const remaining = total - alreadyPaid;
+
+      if (isBankTransfer) await assertBankAccountInCompany((paymentData as any).bankAccountId, req.companyId);
 
       if (paymentData.amount > remaining + 0.001) {
         throw new AppError(`El monto excede el saldo pendiente (${remaining.toFixed(2)})`, 400);
@@ -742,9 +749,9 @@ export class OrdenPedidoController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to, pdfBase64 } = req.body;
-      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
+      const { to, pdfBase64 } = parseSendEmailBody(req.body);
       await sendOrdenPedidoEmail(id, to, req.companyId!, pdfBase64);
+      await logEmailSent(req, 'OrdenPedido', id, to);
       res.json({ status: 'success', message: 'Email enviado' });
     } catch (error) {
       next(error);

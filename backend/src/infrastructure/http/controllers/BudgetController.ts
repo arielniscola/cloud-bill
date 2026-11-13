@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { parseSendEmailBody, logEmailSent } from '../utils/emailRequest';
 import { container } from 'tsyringe';
 import { IBudgetRepository } from '../../../domain/repositories/IBudgetRepository';
 import { IActivityLogRepository } from '../../../domain/repositories/IActivityLogRepository';
@@ -91,7 +92,7 @@ export class BudgetController {
 
       if (data.customerId) {
         const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
-        const customer = await customerRepo.findById(data.customerId);
+        const customer = await customerRepo.findById(data.customerId, req.companyId);
         if (!customer) throw new NotFoundError('Cliente');
         if (!customer.isActive) throw new AppError('El cliente está inactivo y no puede recibir nuevos presupuestos', 400);
       }
@@ -251,9 +252,9 @@ export class BudgetController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to, pdfBase64 } = req.body;
-      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
+      const { to, pdfBase64 } = parseSendEmailBody(req.body);
       await sendBudgetEmail(id, to, req.companyId!, pdfBase64);
+      await logEmailSent(req, 'Budget', id, to);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);

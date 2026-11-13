@@ -1,3 +1,4 @@
+import { assertBankAccountInCompany } from '../utils/tenantRefs';
 import { Request, Response, NextFunction } from 'express';
 import { logActivity, diffFields } from '../utils/activityLog';
 
@@ -122,10 +123,12 @@ export class CurrentAccountController {
       const isBankTransfer = data.paymentMethod === 'BANK_TRANSFER';
       const usesCaja = data.paymentMethod === 'CASH' || data.paymentMethod === 'CARD';
       if (usesCaja && data.cashRegisterId) {
-        const cashRegister = await cashRegisterRepo.findById(data.cashRegisterId);
+        const cashRegister = await cashRegisterRepo.findById(data.cashRegisterId, req.companyId);
         if (!cashRegister) throw new AppError('Caja no encontrada', 400);
         if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
       }
+
+      if (isBankTransfer) await assertBankAccountInCompany(data.bankAccountId, req.companyId);
 
       let recibo: any;
       let movement: any;

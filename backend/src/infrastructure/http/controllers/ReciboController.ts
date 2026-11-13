@@ -147,7 +147,7 @@ export class ReciboController {
 
       const { cashRegisterId } = req.body as { cashRegisterId: string };
       if (!cashRegisterId) throw new AppError('cashRegisterId requerido', 400);
-      const cashRegister = await cashRepo.findById(cashRegisterId);
+      const cashRegister = await cashRepo.findById(cashRegisterId, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
       // Link recibo to cash register + set DEPOSITED
@@ -271,12 +271,12 @@ export class ReciboController {
 
       // Recalculate budget status
       if (recibo.budgetId) {
-        await this._recalculateBudgetStatus(recibo.budgetId, budgetRepo);
+        await this._recalculateBudgetStatus(recibo.budgetId, budgetRepo, req.companyId);
       }
 
       // Recalculate orden pedido status
       if ((recibo as any).ordenPedidoId) {
-        await this._recalculateOrdenPedidoStatus((recibo as any).ordenPedidoId, opRepo);
+        await this._recalculateOrdenPedidoStatus((recibo as any).ordenPedidoId, opRepo, req.companyId);
       }
 
       await activityLogRepo.create({
@@ -295,9 +295,10 @@ export class ReciboController {
 
   private async _recalculateOrdenPedidoStatus(
     ordenPedidoId: string,
-    opRepo: IOrdenPedidoRepository
+    opRepo: IOrdenPedidoRepository,
+    companyId?: string
   ): Promise<void> {
-    const op = await opRepo.findById(ordenPedidoId);
+    const op = await opRepo.findById(ordenPedidoId, companyId);
     if (!op || op.status === 'CANCELLED' || op.status === 'CONVERTED') return;
 
     const activeRecibos = await prisma.recibo.findMany({
@@ -326,9 +327,10 @@ export class ReciboController {
 
   private async _recalculateBudgetStatus(
     budgetId: string,
-    budgetRepo: IBudgetRepository
+    budgetRepo: IBudgetRepository,
+    companyId?: string
   ): Promise<void> {
-    const budget = await budgetRepo.findById(budgetId);
+    const budget = await budgetRepo.findById(budgetId, companyId);
     if (!budget || budget.status === 'CONVERTED' || budget.status === 'REJECTED') return;
 
     const activeRecibos = await prisma.recibo.findMany({

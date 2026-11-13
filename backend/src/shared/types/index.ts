@@ -59,4 +59,6 @@ export interface JwtPayload {
   username: string;
   role: UserRole;
   companyId?: string;
+  /** Huella de la contraseña vigente al emitir el token (ver authToken.ts). */
+  pv?: string;
 }

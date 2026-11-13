@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendEmailLimiter } from '../utils/emailRequest';
 import { InvoiceController } from '../controllers/InvoiceController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 import { validate } from '../middlewares/validationMiddleware';
@@ -66,7 +67,7 @@ router.delete(
   ...withApproval('invoices.delete', resolveInvoiceDelete, invoiceController.remove)
 );
 router.post('/:id/emit', requireRoles('ADMIN', 'SELLER'), blockIfPendingApproval('INVOICE'), invoiceController.emit);
-router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), invoiceController.sendEmail);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), sendEmailLimiter, invoiceController.sendEmail);
 router.get('/:id/afip-errors', invoiceController.getAfipErrors);
 
 export { router as invoiceRoutes };

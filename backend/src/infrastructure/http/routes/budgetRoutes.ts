@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendEmailLimiter } from '../utils/emailRequest';
 import { BudgetController } from '../controllers/BudgetController';
 import { authMiddleware, requireRoles } from '../middlewares/authMiddleware';
 
@@ -13,6 +14,6 @@ router.post('/', requireRoles('ADMIN', 'SELLER'), budgetController.create);
 router.put('/:id', requireRoles('ADMIN', 'SELLER'), budgetController.update);
 router.patch('/:id/status', requireRoles('ADMIN', 'SELLER'), budgetController.updateStatus);
 router.delete('/:id', requireRoles('SUPER_ADMIN', 'ADMIN'), budgetController.delete);
-router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), budgetController.sendEmail);
+router.post('/:id/send-email', requireRoles('ADMIN', 'SELLER'), sendEmailLimiter, budgetController.sendEmail);
 
 export { router as budgetRoutes };

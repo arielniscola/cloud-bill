@@ -225,7 +225,7 @@ export async function sendInvoiceEmail(invoiceId: string, to: string, companyId:
     LEFT JOIN customers c ON i."customerId" = c.id
     LEFT JOIN invoice_items ii ON ii."invoiceId" = i.id
     LEFT JOIN products p ON ii."productId" = p.id
-    WHERE i.id = ${invoiceId}
+    WHERE i.id = ${invoiceId} AND i."companyId" = ${companyId}
     GROUP BY i.id, c.name, c.email, c."taxId"
   `;
 
@@ -355,7 +355,7 @@ export async function sendBudgetEmail(budgetId: string, to: string, companyId: s
     FROM budgets b
     LEFT JOIN customers c ON b."customerId" = c.id
     LEFT JOIN budget_items bi ON bi."budgetId" = b.id
-    WHERE b.id = ${budgetId}
+    WHERE b.id = ${budgetId} AND b."companyId" = ${companyId}
     GROUP BY b.id, c.name, c.email, c."taxId"
   `;
 
@@ -468,7 +468,7 @@ export async function sendOrdenPedidoEmail(ordenPedidoId: string, to: string, co
     FROM orden_pedidos op
     LEFT JOIN customers c ON op."customerId" = c.id
     LEFT JOIN orden_pedido_items oi ON oi."ordenPedidoId" = op.id
-    WHERE op.id = ${ordenPedidoId}
+    WHERE op.id = ${ordenPedidoId} AND op."companyId" = ${companyId}
     GROUP BY op.id, c.name, c.email, c."taxId"
   `;
 
@@ -575,7 +575,7 @@ export async function sendRemitoEmail(remitoId: string, to: string, companyId: s
     LEFT JOIN customers c ON r."customerId" = c.id
     LEFT JOIN remito_items ri ON ri."remitoId" = r.id
     LEFT JOIN products p ON ri."productId" = p.id
-    WHERE r.id = ${remitoId}
+    WHERE r.id = ${remitoId} AND r."companyId" = ${companyId}
     GROUP BY r.id, c.name, c.email
   `;
 

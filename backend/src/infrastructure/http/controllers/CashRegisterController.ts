@@ -1,3 +1,4 @@
+import { assertBankAccountInCompany } from '../utils/tenantRefs';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { ICashRegisterRepository } from '../../../domain/repositories/ICashRegisterRepository';
@@ -99,7 +100,7 @@ export class CashRegisterController {
       const { id } = req.params;
       const { page, limit, type, startDate, endDate, reasonId } = req.query;
 
-      const cashRegister = await repo.findById(id);
+      const cashRegister = await repo.findById(id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
       const result = await repo.getMovements(
@@ -155,6 +156,8 @@ export class CashRegisterController {
       const repo = container.resolve<ICashRegisterRepository>('CashRegisterRepository');
       const cashRegister = await repo.findById(req.params.id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
+
+      await assertBankAccountInCompany(req.body.bankAccountId, req.companyId);
 
       const reason = await resolveCashMovementReason(req.body.reasonId, req.companyId!, req.body.type);
       const movement = await repo.createCashMovement({
@@ -227,7 +230,7 @@ export class CashRegisterController {
       const { id } = req.params;
       const { page, limit } = req.query;
 
-      const cashRegister = await repo.findById(id);
+      const cashRegister = await repo.findById(id, req.companyId);
       if (!cashRegister) throw new NotFoundError('Caja');
 
       const result = await repo.getCloses(id, {

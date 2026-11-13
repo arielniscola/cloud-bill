@@ -1,13 +1,14 @@
 import { inject, injectable } from 'tsyringe';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { LoginDTO } from '../../dtos/auth.dto';
 import { UnauthorizedError } from '../../../shared/errors/AppError';
-import { env } from '../../../infrastructure/config/env';
-import { JwtPayload } from '../../../shared/types';
+import { signAuthToken } from '../../../infrastructure/services/authToken';
 import prisma from '../../../infrastructure/database/prisma';
 import { getFeaturesForPlan } from '../../../shared/constants/planFeatures';
+
+// Hash válido que no corresponde a ninguna contraseña real.
+const DUMMY_HASH = bcrypt.hashSync('cloudbill-no-user', 10);
 
 interface LoginResult {
   token: string;
@@ -35,18 +36,17 @@ export class LoginUseCase {
   async execute(data: LoginDTO): Promise<LoginResult> {
     const user = await this.userRepository.findByUsername(data.username);
 
-    if (!user) {
+    // La contraseña se compara siempre —contra un hash de relleno si el usuario
+    // no existe— y recién después se mira el estado de la cuenta. Así ni el
+    // mensaje ni el tiempo de respuesta delatan qué usuarios existen.
+    const passwordMatch = await bcrypt.compare(data.password, user?.password ?? DUMMY_HASH);
+
+    if (!user || !passwordMatch) {
       throw new UnauthorizedError('Credenciales inválidas');
     }
 
     if (!user.isActive) {
       throw new UnauthorizedError('La cuenta está desactivada');
-    }
-
-    const passwordMatch = await bcrypt.compare(data.password, user.password);
-
-    if (!passwordMatch) {
-      throw new UnauthorizedError('Credenciales inválidas');
     }
 
     const companyId = (user as any).companyId ?? null;
@@ -58,9 +58,12 @@ export class LoginUseCase {
     let companyName: string | null = null;
     let companyLogoUrl: string | null = null;
     if (companyId) {
-      const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string; name: string; logoUrl: string | null }[]>`
-        SELECT "enabledModules", "plan", "name", "logoUrl" FROM companies WHERE id = ${companyId}
+      const rows = await prisma.$queryRaw<{ enabledModules: string; plan: string; name: string; logoUrl: string | null; isActive: boolean }[]>`
+        SELECT "enabledModules", "plan", "name", "logoUrl", "isActive" FROM companies WHERE id = ${companyId}
       `;
+      if (rows[0] && rows[0].isActive === false) {
+        throw new UnauthorizedError('La empresa está desactivada');
+      }
       const raw = rows[0]?.enabledModules;
       enabledModules = (!raw || raw === 'ALL') ? ['ALL'] : raw.split(',').filter(Boolean);
       plan = rows[0]?.plan ?? 'PRO';
@@ -69,16 +72,7 @@ export class LoginUseCase {
       companyLogoUrl = rows[0]?.logoUrl ?? null;
     }
 
-    const payload: JwtPayload = {
-      userId:   user.id,
-      username: user.username,
-      role:     user.role,
-      ...(companyId ? { companyId } : {}),
-    };
-
-    const token = jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
-    });
+    const token = signAuthToken({ ...user, companyId });
 
     return {
       token,

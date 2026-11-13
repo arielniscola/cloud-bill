@@ -1,3 +1,4 @@
+import { assertUserInCompany } from '../utils/tenantRefs';
 import { Request, Response, NextFunction } from 'express';
 import { container } from 'tsyringe';
 import { z } from 'zod';
@@ -78,6 +79,7 @@ export class PdvController {
 
       const pdv = await pdvRepo.findById(req.params.id, req.companyId);
       if (!pdv) throw new NotFoundError('Punto de Venta');
+      await assertUserInCompany(userId, req.companyId);
 
       await pdvRepo.assignToUser(userId, req.params.id);
       res.json({ status: 'success', message: 'Usuario asignado al Punto de Venta' });
@@ -95,6 +97,7 @@ export class PdvController {
       }
 
       // Verify the user belongs to a PdV in this company before removing
+      await assertUserInCompany(userId, req.companyId);
       const pdv = await pdvRepo.getForUser(userId);
       if (pdv && pdv.companyId !== req.companyId) throw new AppError('No autorizado', 403);
 

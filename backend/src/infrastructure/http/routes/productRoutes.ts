@@ -33,6 +33,10 @@ router.get('/usd-costs/summary', productController.usdCostSummary);
 // Lista de precios (consulta + actualización con la cotización del día).
 router.get('/price-list', priceListController.list);
 router.post('/price-list/update-from-rate', requireRoles('ADMIN', 'SELLER'), priceListController.updateFromRate);
+router.post('/price-list/adjust', requireRoles('ADMIN', 'SELLER'), priceListController.adjust);
+router.post('/price-list/edit', requireRoles('ADMIN', 'SELLER'), priceListController.edit);
+router.post('/price-list/import-match', requireRoles('ADMIN', 'SELLER'), priceListController.importMatch);
+router.post('/price-list/import-apply', requireRoles('ADMIN', 'SELLER'), priceListController.importApply);
 router.post('/recalculate-usd-costs', requireRoles('ADMIN', 'SELLER'), productController.recalculateUsdCosts);
 // Historial de precios: operaciones (masivas, importación, etc.) y deshacer.
 router.get('/price-history/operations', priceHistoryController.operations);

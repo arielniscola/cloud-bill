@@ -329,10 +329,19 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
         total,
         currency: data.currency,
         exchangeRate: new Decimal(data.exchangeRate),
+        // Solo para comprobantes que nacen emitidos (factura de una orden de
+        // pedido); el resto arranca en borrador por el default de la columna.
+        ...((data as any).status ? { status: (data as any).status } : {}),
       },
     });
 
-    await this._insertItemsRaw(invoice.id, computedItems);
+    // Sin sus ítems la cabecera no sirve: si fallan, no queda una factura vacía.
+    try {
+      await this._insertItemsRaw(invoice.id, computedItems);
+    } catch (error) {
+      await this.prisma.invoice.delete({ where: { id: invoice.id } }).catch(() => { /* se informa el error original */ });
+      throw error;
+    }
 
     return this.findById(invoice.id) as Promise<InvoiceWithItems>;
   }

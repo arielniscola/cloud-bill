@@ -1,3 +1,5 @@
+import { assertBankAccountInCompany, assertWarehouseInCompany } from '../utils/tenantRefs';
+import { parseSendEmailBody, logEmailSent } from '../utils/emailRequest';
 import { LotPool, loadLotSelections, saveLotSelections, selectionsFromItems, stripItemLots } from '../../../shared/utils/lotSelections';
 import { Prisma } from '@prisma/client';
 import { Request, Response, NextFunction } from 'express';
@@ -29,6 +31,7 @@ import { round2 } from '../../../shared/utils/money';
 import {
   invoicePending, requireCustomerCredit, createCompensationRecibo, recalcInvoiceStatus,
   applyCreditNoteToOrigin, cancelCompensationsFromCreditNote,
+  lockInvoiceForPayment,
 } from '../../services/CustomerSettlementService';
 import { addCustomerMovement } from '../../services/customerAccountMovements';
 import prisma from '../../database/prisma';
@@ -275,7 +278,7 @@ async function emitOneToArca(
     if (!invoice.originInvoiceId) {
       throw new AppError('La nota de crédito/débito no tiene un comprobante de origen asociado.', 400);
     }
-    originInvoice = await invoiceRepo.findById(invoice.originInvoiceId);
+    originInvoice = await invoiceRepo.findById(invoice.originInvoiceId, ctx.companyId);
     if (!originInvoice) throw new AppError('No se encontró el comprobante de origen asociado.', 400);
     if (!originInvoice.cae || !originInvoice.afipPtVenta || !originInvoice.afipCbtNum) {
       throw new AppError('El comprobante de origen debe estar autorizado por ARCA (con CAE) antes de emitir la nota.', 400);
@@ -444,11 +447,12 @@ export class InvoiceController {
 
       if (req.body.customerId) {
         const customerRepo = container.resolve<ICustomerRepository>('CustomerRepository');
-        const customer = await customerRepo.findById(req.body.customerId);
+        const customer = await customerRepo.findById(req.body.customerId, req.companyId);
         if (!customer) throw new NotFoundError('Cliente');
         if (!customer.isActive) throw new AppError('El cliente está inactivo y no puede recibir nuevas facturas', 400);
       }
       const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
+      if (req.body.warehouseId) await assertWarehouseInCompany(req.body.warehouseId, req.companyId);
 
       const remitoIds: string[] = req.body.remitoIds ?? [];
       if (remitoIds.length > 0) {
@@ -480,29 +484,30 @@ export class InvoiceController {
         items: stripItemLots(req.body.items),
       } as any);
 
-      // Depósito elegido para el stock (raw SQL: el cliente Prisma puede no
-      // conocer la columna todavía).
-      await setSaleWarehouse('invoices', invoice.id, req.body.warehouseId ?? null);
-      await saveLotSelections('invoices', invoice.id, selectionsFromItems(req.body.items));
-      await writeTransport('invoices', invoice.id, req.body.transport);
-      (invoice as any).transport = req.body.transport ?? null;
+      // Datos complementarios del borrador (depósito, lotes, transporte,
+      // comprador) y vínculo con los remitos: todo junto o nada. Van en raw SQL
+      // porque el cliente Prisma puede no conocer las columnas todavía. Si algo
+      // falla —o si otra factura tomó los remitos entre la validación y el
+      // alta— el borrador se descarta entero en vez de quedar a medias.
       const buyer = invoiceBuyer(req.body);
-      await writeBuyer('invoices', invoice.id, buyer);
-      Object.assign(invoice as any, buyer);
-
-      // Vincula los remitos bajo cerrojo: si otra factura los tomó entre la
-      // validación y el alta, este borrador se descarta.
-      if (remitoIds.length > 0) {
-        try {
-          await prisma.$transaction(async (tx) => {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await setSaleWarehouse('invoices', invoice.id, req.body.warehouseId ?? null, tx);
+          await saveLotSelections('invoices', invoice.id, selectionsFromItems(req.body.items), tx);
+          await writeTransport('invoices', invoice.id, req.body.transport, tx);
+          await writeBuyer('invoices', invoice.id, buyer, tx);
+          if (remitoIds.length > 0) {
             await assertRemitosBillable(remitoIds, { companyId: req.companyId!, customerId, invoiceId: invoice.id }, tx);
             await linkRemitosToInvoice(invoice.id, remitoIds, tx);
-          });
-        } catch (linkError) {
-          await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${invoice.id}`; // invoice_items cascade
-          throw linkError;
-        }
+          }
+        });
+      } catch (setupError) {
+        await prisma.$executeRaw`DELETE FROM "invoices" WHERE id = ${invoice.id}` // invoice_items cascade
+          .catch(() => { /* se informa el error original */ });
+        throw setupError;
       }
+      (invoice as any).transport = req.body.transport ?? null;
+      Object.assign(invoice as any, buyer);
 
       // NOTA: la factura nace en BORRADOR (DRAFT). Mientras esté en borrador NO
       // genera movimientos (cuenta corriente, stock, remito, asiento contable) —
@@ -535,37 +540,10 @@ export class InvoiceController {
         throw new NotFoundError('Invoice');
       }
 
-      // Auto-heal: if invoice came from an OP and is still DRAFT, recalculate status from recibos
-      const opId = (invoice as any).ordenPedidoId;
-      if (opId && invoice.status === 'DRAFT') {
-        // Find recibos linked directly to this invoice
-        const linked = await (prisma as any).recibo.findMany({
-          where: { invoiceId: invoice.id, status: 'EMITTED' },
-        });
-        // Also find recibos still linked only to the OP (not yet migrated to the invoice)
-        const opOnly = await (prisma as any).recibo.findMany({
-          where: { ordenPedidoId: opId, invoiceId: null, status: 'EMITTED' },
-        });
-
-        // Link any OP-only recibos to this invoice
-        if (opOnly.length > 0) {
-          for (const r of opOnly) {
-            await (prisma as any).recibo.update({
-              where: { id: r.id },
-              data: { invoiceId: invoice.id },
-            });
-          }
-        }
-
-        const allRecibos = [...linked, ...opOnly];
-        if (allRecibos.length > 0) {
-          const totalPaid = allRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
-          const invoiceTotal = Number(invoice.total);
-          const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-          await invoiceRepository.update(invoice.id, { status: newStatus as any });
-          (invoice as any).status = newStatus;
-        }
-      }
+      // (Acá había un "auto-heal" que corregía, al leer, facturas de orden de
+      // pedido que quedaban en borrador. La conversión ya las crea emitidas y
+      // con sus cobros en una transacción; para datos viejos está
+      // scripts/repair-op-draft-invoices.ts.)
 
       const deliveryStatus = await computeDeliveryStatus('invoiceId', invoice.id, invoice.items);
 
@@ -658,33 +636,6 @@ export class InvoiceController {
       const ids = result.data.map((i: any) => i.id);
       const deliveryStatuses = await computeDeliveryStatusBatch('invoiceId', ids);
 
-      // Auto-heal: recalculate status for any DRAFT invoices that came from a paid OP
-      const draftOpInvoices = result.data.filter((i: any) => i.status === 'DRAFT' && (i as any).ordenPedidoId);
-      if (draftOpInvoices.length > 0) {
-        for (const inv of draftOpInvoices) {
-          const opId = (inv as any).ordenPedidoId;
-          const linked = await (prisma as any).recibo.findMany({
-            where: { invoiceId: inv.id, status: 'EMITTED' },
-          });
-          const opOnly = await (prisma as any).recibo.findMany({
-            where: { ordenPedidoId: opId, invoiceId: null, status: 'EMITTED' },
-          });
-          if (opOnly.length > 0) {
-            for (const r of opOnly) {
-              await (prisma as any).recibo.update({ where: { id: r.id }, data: { invoiceId: inv.id } });
-            }
-          }
-          const allRecibos = [...linked, ...opOnly];
-          if (allRecibos.length > 0) {
-            const totalPaid = allRecibos.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
-            const invoiceTotal = Number(inv.total);
-            const newStatus = totalPaid >= invoiceTotal - 0.001 ? 'PAID' : 'PARTIALLY_PAID';
-            await invoiceRepository.update(inv.id, { status: newStatus as any });
-            (inv as any).status = newStatus;
-          }
-        }
-      }
-
       // Cobrado por factura, para que el listado pueda mostrar el saldo sin
       // que el front tenga que abrir cada comprobante.
       // Lo aplicado incluye descuentos cedidos, recargos y compensaciones (NC o
@@ -742,6 +693,7 @@ export class InvoiceController {
       const exchangeRate: number = req.body.exchangeRate || 1;
 
       const customerId = await resolveInvoiceCustomerId(req.body, req.companyId!);
+      if (req.body.warehouseId) await assertWarehouseInCompany(req.body.warehouseId, req.companyId);
 
       // Factura de remitos: cliente, tipo y cantidades quedan atados a ellos.
       const billedRemitos = await findBilledRemitos(req.params.id);
@@ -887,10 +839,13 @@ export class InvoiceController {
       // Validate cash register if provided
       let cashRegisterName = '';
       if (paymentData.cashRegisterId && !isCompensation) {
-        const cashRegister = await cashRegisterRepository.findById(paymentData.cashRegisterId);
+        const cashRegister = await cashRegisterRepository.findById(paymentData.cashRegisterId, req.companyId);
         if (!cashRegister) throw new AppError('Caja no encontrada', 400);
         if (!cashRegister.isActive) throw new AppError('La caja seleccionada está inactiva', 400);
         cashRegisterName = cashRegister.name;
+      }
+      if (paymentData.paymentMethod === 'BANK_TRANSFER') {
+        await assertBankAccountInCompany(paymentData.bankAccountId, req.companyId);
       }
 
       // Lo que este cobro aplica a la factura (plata + descuento cedido − recargo)
@@ -927,6 +882,10 @@ export class InvoiceController {
       // se confirman o revierten juntos — un cobro a medias es una caja que no cierra.
       let recibo: any;
       await prisma.$transaction(async (tx) => {
+        // Cerrojo + revalidación del saldo: la validación de arriba corrió sin
+        // bloqueo y otro cobro pudo haber entrado entre medio.
+        await lockInvoiceForPayment(invoice, applied, tx);
+
         if (credit) {
           recibo = await createCompensationRecibo({
             invoice: invoice as any,
@@ -1353,9 +1312,9 @@ export class InvoiceController {
   sendEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const { to, pdfBase64 } = req.body;
-      if (!to || typeof to !== 'string') throw new AppError('Destinatario requerido', 400);
+      const { to, pdfBase64 } = parseSendEmailBody(req.body);
       await sendInvoiceEmail(id, to, req.companyId!, pdfBase64);
+      await logEmailSent(req, 'Invoice', id, to);
       res.json({ status: 'success', message: 'Correo enviado correctamente' });
     } catch (error) {
       next(error);
@@ -1367,10 +1326,11 @@ export class InvoiceController {
       const errors = await prisma.$queryRaw<
         { id: string; errorMessage: string; errorType: string | null; rawResponse: string | null; createdAt: Date }[]
       >`
-        SELECT id, "errorMessage", "errorType", "rawResponse", "createdAt"
-        FROM "invoice_afip_errors"
-        WHERE "invoiceId" = ${req.params.id}
-        ORDER BY "createdAt" DESC
+        SELECT e.id, e."errorMessage", e."errorType", e."rawResponse", e."createdAt"
+        FROM "invoice_afip_errors" e
+        JOIN "invoices" i ON i.id = e."invoiceId" AND i."companyId" = ${req.companyId}
+        WHERE e."invoiceId" = ${req.params.id}
+        ORDER BY e."createdAt" DESC
       `;
       res.json({ status: 'success', data: errors });
     } catch (error) {

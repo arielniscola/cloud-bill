@@ -1,20 +1,34 @@
 import { z } from 'zod';
 
+// Texto opcional: '' y null significan "sin dato" y se guardan como NULL (un
+// CUIT '' chocaría con el índice único por empresa).
+const optionalText = (max: number) =>
+  z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(max).nullable().optional());
+
+// El body validado llega tal cual a Prisma: Zod descarta cualquier campo que no
+// esté acá (companyId, relaciones anidadas, fechas…). Sin este schema en la
+// ruta, un body crudo podía mover el proveedor de empresa o escribir relaciones.
 export const createSupplierSchema = z.object({
-  name: z.string().min(1, 'El nombre es requerido'),
-  cuit: z.string().optional(),
+  name: z.string().trim().min(1, 'El nombre es requerido').max(200),
+  cuit: optionalText(20),
   taxCondition: z
     .enum(['RESPONSABLE_INSCRIPTO', 'MONOTRIBUTISTA', 'EXENTO', 'CONSUMIDOR_FINAL'])
     .optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email().optional().or(z.literal('')),
-  notes: z.string().optional(),
+  address: optionalText(300),
+  city: optionalText(120),
+  phone: optionalText(60),
+  email: z.preprocess((v) => (v === '' ? null : v), z.string().trim().email('Email inválido').nullable().optional()),
+  notes: optionalText(2000),
   isActive: z.boolean().optional(),
+  // Retención automática legacy (las vigentes van por /suppliers/:id/retentions).
+  retentionType: optionalText(30),
+  retentionPercentage: z.coerce.number().min(0).max(100).nullable().optional(),
 });
 
+export const updateSupplierSchema = createSupplierSchema.partial();
+
 export type CreateSupplierDTO = z.infer<typeof createSupplierSchema>;
+export type UpdateSupplierDTO = z.infer<typeof updateSupplierSchema>;
 
 // Retención configurada para el proveedor: se propone automáticamente al emitir
 // una Orden de Pago, calculando `percentage` sobre la base elegida.

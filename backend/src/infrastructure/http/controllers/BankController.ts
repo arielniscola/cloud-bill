@@ -36,7 +36,7 @@ export class BankController {
   async findById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBankRepository>('BankRepository');
-      const account = await repo.findAccountById(req.params.id);
+      const account = await repo.findAccountById(req.params.id, req.companyId!);
       if (!account) throw new NotFoundError('Cuenta bancaria');
       res.json({ status: 'success', data: account });
     } catch (error) { next(error); }
@@ -54,10 +54,10 @@ export class BankController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBankRepository>('BankRepository');
-      const existing = await repo.findAccountById(req.params.id);
+      const existing = await repo.findAccountById(req.params.id, req.companyId!);
       if (!existing) throw new NotFoundError('Cuenta bancaria');
       const data = updateAccountSchema.parse(req.body);
-      const account = await repo.updateAccount(req.params.id, data);
+      const account = await repo.updateAccount(req.params.id, req.companyId!, data);
       res.json({ status: 'success', data: account });
     } catch (error) { next(error); }
   }
@@ -65,9 +65,9 @@ export class BankController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBankRepository>('BankRepository');
-      const existing = await repo.findAccountById(req.params.id);
+      const existing = await repo.findAccountById(req.params.id, req.companyId!);
       if (!existing) throw new NotFoundError('Cuenta bancaria');
-      await repo.deleteAccount(req.params.id);
+      await repo.deleteAccount(req.params.id, req.companyId!);
       res.json({ status: 'success' });
     } catch (error) { next(error); }
   }
@@ -75,7 +75,7 @@ export class BankController {
   async getMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBankRepository>('BankRepository');
-      const account = await repo.findAccountById(req.params.id);
+      const account = await repo.findAccountById(req.params.id, req.companyId!);
       if (!account) throw new NotFoundError('Cuenta bancaria');
       const page  = Number(req.query.page)  || 1;
       const limit = Number(req.query.limit) || 20;
@@ -87,7 +87,7 @@ export class BankController {
   async addMovement(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const repo = container.resolve<IBankRepository>('BankRepository');
-      const account = await repo.findAccountById(req.params.id);
+      const account = await repo.findAccountById(req.params.id, req.companyId!);
       if (!account) throw new NotFoundError('Cuenta bancaria');
       const data = addMovementSchema.parse(req.body);
       const movement = await repo.addMovement({
@@ -117,7 +117,7 @@ export class BankController {
       if ((recibo as any).checkStatus === 'CLEARED') throw new AppError('El cheque ya fue acreditado', 400);
       if ((recibo as any).checkStatus === 'EGRESADO') throw new AppError('El cheque fue egresado de cartera: anulá el egreso para volver a operarlo', 400);
 
-      const account = await bankRepo.findAccountById(req.params.id);
+      const account = await bankRepo.findAccountById(req.params.id, req.companyId!);
       if (!account) throw new NotFoundError('Cuenta bancaria');
 
       await bankRepo.addMovement({
